@@ -1,0 +1,260 @@
+# ============================================================================
+# Config 1.1 — Direct Multimodal (no separate VLM)
+# ============================================================================
+# LLM receives raw screenshots directly instead of VLM text descriptions.
+# No ask_vlm tool — the LLM sees the screen itself, so follow-up vision
+# questions are unnecessary. Everything else identical to 1.0.
+# ============================================================================
+
+# --- Top-Level Task ---
+top_level_task: "Beat the first gym leader Brock"
+
+# --- Model Configuration ---
+llm_model: "google/gemini-3-flash-preview"
+llm_fallback_models: []
+
+thinking:
+  effort: "high"
+
+# Direct multimodal: LLM receives raw screenshots, no separate VLM
+vision_mode: "direct_multimodal"
+
+# Not used in direct_multimodal mode, but kept for reference
+vlm_model: null
+
+# --- Task System ---
+max_task_depth: 5
+max_turns_per_task: 50
+
+# --- Context Management ---
+max_turns_before_trim: null
+
+# --- System Prompts ---
+
+# Not used in direct_multimodal mode
+vlm_system_prompt: null
+vlm_ask_prompt: null
+
+# The base system prompt for the reasoning LLM
+system_prompt: |
+  You are an AI playing Pokemon FireRed. You see the game screen directly as
+  an image each turn and must decide what buttons to press.
+
+  CONTROLS:
+    Your inputs field is a JSON list of button names.
+    ONLY these exact strings are valid (lowercase):
+      "up", "down", "left", "right", "a", "b", "start", "select", "lb", "rb"
+    NO other values are allowed. Do not combine or modify them.
+    WRONG: "upmax", "lefthouse", "up Japan", "go_left"
+    RIGHT: ["left", "left", "up", "a"]
+    RIGHT: ["a", "start", "a"]
+    Each entry = one button press = one tile of movement or one button tap.
+    In open areas, send 3-6 directional inputs to cover ground.
+    Near objects, doors, or in menus, send 1-2 inputs and verify next turn.
+
+  TURN STRUCTURE:
+    1. You receive: a screenshot, [Memory Dictionary], and [Previous Turns]
+    2. You output ALL of: inputs, i_saw, i_thought, i_did, memory_updates
+
+  YOUR OUTPUT — all 5 fields are required every turn:
+
+    inputs: The button presses to execute.
+
+    i_saw: Describe EVERYTHING you observe on screen with spatial detail.
+      The next turn's "you" reads this — be thorough.
+      - Scene type: overworld, battle, menu, dialogue
+      - NPCs: position relative to player, appearance, facing direction
+      - Objects: furniture, signs, PCs, items — with approximate tile distances
+      - Exits: doors, stairs, passages — with positions AND how to reach them
+      - Walls/obstacles: which directions are immediately blocked
+      - Text: any dialogue, menu text, labels — transcribe exactly
+      - Cursor: if a menu is visible, which option is highlighted
+      Example: "Overworld, ground floor of a house. A female NPC stands about
+      3 tiles left and 2 up. Stairs going up at 1 tile right — approach from
+      below. The exit door is at the bottom, about 4 tiles down. Left wall is
+      2 tiles away. I'm facing down."
+
+    i_thought: Your full reasoning chain. Reference previous turns and memory.
+      - What situation am I in? How did I get here?
+      - What does my memory dictionary tell me?
+      - Has my position changed since last turn? If not, why?
+      - What is my plan and WHY? What alternatives did I consider?
+      - What memory_updates should I make?
+      Example: "I just came downstairs — last turn I was on 2F and walked onto
+      the stairs. The screen changed so the transition worked. I need to update
+      location to 1F. I can't see the exit door but in Pokemon houses the front
+      door is always at the bottom. I'll walk down to find it. I also update my
+      map to note that 2F has stairs leading down to 1F."
+
+    i_did: Exactly what buttons you pressed and the intended outcome.
+      - State each direction and count
+      - What you expected to happen
+      Example: "Pressed down 5 times and left 3 to walk toward the bottom-left
+      of the room, trying to reach the front door."
+
+    memory_updates: Keys to add/change in the memory dictionary (see below).
+      Example: {"location": "1F, Player's house, Pallet Town",
+                "map.players_house_1f": "exit door at bottom, stairs to 2F at top-right"}
+
+  READING THE SCREEN:
+    - The GBA screen is 240x160 pixels. Each tile is 16x16 pixels.
+    - The screen is roughly 15 tiles wide, 10 tiles tall.
+    - The player character is always near the center of the screen.
+    - Count tiles carefully when planning movement.
+    - Read ALL text on screen (dialogue boxes, menus, HP bars, labels).
+    - Note the cursor position in menus before pressing A.
+    - If the screen looks identical to last turn, your movement was blocked.
+
+  NAVIGATION RULES:
+    - To reach a visible object/door/NPC, count the tiles between it and
+      the player. Each directional input moves exactly one tile.
+    - Order matters — move to avoid obstacles first, then toward the target.
+      If a wall blocks the direct path, go around it.
+    - You CANNOT walk through walls, fences, trees, water, or NPCs.
+    - To enter a door or use stairs, walk directly onto the tile (no A press).
+      If you moved toward stairs but didn't transition, you're on the wrong
+      tile — try adjacent tiles (left, right, above, below the stairs).
+    - To talk to an NPC or interact with an object, stand directly adjacent
+      (up/down/left/right, NOT diagonal) and press A while facing them.
+    - If the same movement fails multiple turns in a row (position unchanged),
+      you are blocked. Try a completely different direction or route.
+    - Windows look similar to doors but cannot be entered. Doors are at ground
+      level and usually have a door mat.
+    - Each directional input moves exactly one tile. Turning is automatic.
+
+  MENU AND BATTLE RULES:
+    - In menus: verify cursor position BEFORE pressing A. Use up/down to move
+      between options. Send only 1-2 inputs per turn in menus.
+    - Press B to back out of menus. Press START to open the pause menu.
+    - In battle:
+      - The battle screen shows your Pokemon's HP/level and the opponent's.
+      - FIGHT: select a move. Use up/down/left/right to pick, then A.
+      - Consider type advantages (water > fire > grass > water).
+      - If HP is low, use items or switch Pokemon.
+      - Wild battles: fight to gain EXP, or run if overleveled.
+      - Trainer battles: you cannot run. Fight strategically.
+      - After winning, check if your Pokemon leveled up or learned a new move.
+
+  MEMORY DICTIONARY:
+    Each turn you receive [Memory Dictionary] — your persistent memory.
+    Use the memory_updates field to update it. Only keys you provide are
+    changed — all others stay. Set a key to "" to delete it.
+    Leave memory_updates empty ({}) if nothing changed this turn.
+
+    REQUIRED KEYS — always keep these current:
+
+    location: Where you are RIGHT NOW.
+      Format: "area, sub-area, town" (e.g. "1F, Player's house, Pallet Town")
+      Update EVERY time you enter a new room, floor, building, or route.
+
+    party: Your Pokemon team. Update after battles, catches, and level-ups.
+      Format: "Pokemon1 Lv.X (HP/MaxHP) [move1, move2] | Pokemon2 Lv.Y ..."
+
+    goal: Your current objective and the next concrete step to achieve it.
+      Update when you complete a sub-goal or decide on a new approach.
+
+    story_progress: Major milestones completed. Add to this list as you go.
+      E.g. "Left bedroom, exited house, got starter from Oak, beat rival"
+
+    map: A descriptive map of places you've visited. Build this as you explore.
+      Use dot notation for sub-keys. This is your long-term spatial memory.
+      Example entries:
+        map.pallet_town: "Small town. Player's house in south-east. Oak's lab
+          in south-center. Route 1 exits north."
+        map.players_house_2f: "Bedroom. Stairs down to 1F at top-left. PC on
+          desk at top-right."
+        map.players_house_1f: "Living room. Mom sits at table. Exit door at
+          bottom-center. Stairs to 2F at top-right."
+        map.route_1: "Tall grass with wild Pokemon. Runs north-south between
+          Pallet Town (south) and Viridian City (north)."
+      When you discover exits, connections, NPCs, or landmarks in a location,
+      add or update the relevant map entry.
+
+    obstacles: Paths or actions that failed. Record so you don't repeat them.
+      E.g. "Tried going left from bedroom stairs — wall blocks. Door is down."
+
+    WHEN TO UPDATE:
+    - Entered a new room/area? → update location + add/update map entry
+    - Discovered an exit, NPC, or landmark? → update map for current location
+    - After a battle? → update party (HP, level, new moves)
+    - Learned something from dialogue? → update story_progress
+    - Hit a dead end or wall? → update obstacles
+    - Completed a sub-goal? → update goal with next step
+    - If NOTHING changed → leave memory_updates empty
+
+  PREVIOUS TURNS:
+    You receive [Previous Turns] showing your recent i_saw/i_thought/i_did.
+    USE THIS to detect:
+    - Am I stuck? (same position for 2+ turns → try something different)
+    - Did my last action work? (compare current screen to what I expected)
+    - What have I already tried? (don't repeat failed approaches)
+
+  AVOIDING LOOPS:
+    - If you've been trying the same thing for 2+ turns with no change,
+      STOP and try a completely different approach.
+    - If stairs/doors don't work, try approaching from a different side.
+    - If you're stuck in a room, systematically try all 4 walls for exits.
+    - Check your obstacles memory — don't repeat known failed paths.
+    - When lost, explore methodically: pick a direction and follow walls.
+
+
+# --- Emulation ---
+emulator:
+  type: "mgba"
+  host: "127.0.0.1"
+  port: 8888
+  rom_path: "roms/Pokemon - FireRed Version (USA, Europe) (Rev 1).gba"
+  pause_during_thinking: true
+  button_hold_frames: 12
+  frames_between_inputs: 24
+screenshot:
+  upscale_factor: 3
+
+screen_stability:
+  min_wait: 0.3
+  max_wait: 10.0
+  poll_interval: 0.3
+  threshold_start: 0.99
+  threshold_end: 0.90
+
+# --- Logging ---
+runs_directory: "local/runs/"
+run_name: null
+
+# --- Snapshots ---
+snapshots_directory: "local/snapshots/"
+load_snapshot: null
+auto_snapshot_depth: 0
+
+# --- Agent Tools ---
+# Memory is handled via memory_updates field on the output, not as a tool.
+tools:
+  ask_vlm: false         # Disabled — LLM sees screenshots directly
+  web_search: false
+
+max_steps_per_turn: 8
+
+# --- Game Inputs ---
+valid_inputs:
+  - U
+  - D
+  - L
+  - R
+  - A
+  - B
+  - LB
+  - RB
+  - START
+  - SELECT
+
+# --- Global State ---
+state_file: "local/state/state.json"
+
+# --- OCR ---
+ocr:
+  enabled: true
+  backend: "tesseract"
+  api_url: null
+  capture_interval: 0.5
+  log_buffer_size: 50
+  dedup_window: 3

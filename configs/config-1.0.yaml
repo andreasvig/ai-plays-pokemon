@@ -1,0 +1,298 @@
+# ============================================================================
+# Config 1.0 — Baseline
+# ============================================================================
+# First versioned config. Identical to the original config.yaml from sessions
+# 1-2. Gemini 3 Flash LLM + Gemini 3.1 Flash Lite VLM, medium thinking,
+# separate_vlm pipeline, coordinate-based VLM prompts, per-tool budgets.
+# ============================================================================
+
+# --- Top-Level Task ---
+# Set by a human. The agent works towards this goal and awaits a new one when complete.
+top_level_task: "Beat the first gym leader Brock"
+
+# --- Model Configuration ---
+# Model agnostic - all models accessed via OpenRouter
+# API key loaded from .env file (OPENROUTER_API_KEY)
+# openrouter_api_key: loaded from environment
+
+# The reasoning/decision-making LLM (primary model)
+llm_model: "google/gemini-3-flash-preview"
+
+# Fallback models: tried in order if the primary model fails.
+# Set to empty list to disable fallback.
+llm_fallback_models: []
+#  - "google/gemini-2.5-flash"
+
+# Thinking/reasoning configuration (passed to OpenRouter)
+# Set to null to disable. Effort: "low", "medium", "high"
+thinking:
+  effort: "medium"
+
+# Vision pipeline mode: "separate_vlm" or "direct_multimodal"
+#   separate_vlm: A dedicated VLM analyses screenshots into text, LLM receives text only.
+#   direct_multimodal: The LLM receives raw screenshots directly (LLM must be multimodal).
+vision_mode: "separate_vlm"
+
+# The vision model - only used when vision_mode is "separate_vlm"
+vlm_model: "google/gemini-3.1-flash-lite-preview"
+
+# --- Task System ---
+# Maximum depth of the agent tree (how many levels of sub-agents can be spawned)
+max_task_depth: 5
+
+# Maximum turns an agent gets before being forced to return failed to its parent
+max_turns_per_task: 50
+
+# --- Context Management ---
+# (Optional) Maximum number of turn explanations kept before older ones are trimmed.
+# Set to null to disable trimming (relies on max_turns_per_task to cap context growth).
+max_turns_before_trim: null
+
+# --- System Prompts ---
+
+# System prompt for the VLM when analysing screenshots at turn start
+# Only used when vision_mode is "separate_vlm"
+vlm_system_prompt: |
+  You are a vision model analysing Pokemon FireRed (GBA) screenshots.
+  Your job is to give the player agent accurate, actionable spatial information.
+
+  COORDINATE SYSTEM (critical — use this for ALL positions):
+    The player character is ALWAYS at (0, 0).
+    x-axis: negative = left, positive = right
+    y-axis: negative = up, positive = down
+    One tile = one step the player can take.
+    For multi-tile objects, give a range: x=1..3, y=-2..-1
+    GBA screen is roughly 15 tiles wide, 10 tiles tall.
+
+  ALWAYS structure your response with these sections:
+
+  SCENE: One of: overworld, battle, menu, dialogue, transition
+  LOCATION: Where in the game world (be specific: "Player's bedroom 2F, Pallet Town")
+  PLAYER: facing direction (up/down/left/right)
+
+  OBJECTS: List ALL notable objects, NPCs, exits using coordinates.
+    Format: "- name: x=N, y=N | notes"
+    For each object include: what it is, its coordinates, and how to interact
+    (walk onto it, face it and press A, etc.)
+    Examples:
+    - stairs_down: x=1, y=-1 | walk onto tile to descend
+    - PC: x=-2, y=-2 | face up and press A
+    - door: x=0, y=5 | walk down onto it to exit
+    - NPC_girl: x=3, y=0 | face right and press A to talk
+    - wall: x=-1..5, y=-3 | impassable
+
+  BLOCKED: Which directions from the player are immediately blocked (wall/object).
+    Example: "left: blocked (bed), up: open, right: open, down: open"
+
+  TEXT: Transcribe ALL visible text exactly (dialogue, menus, labels, HP bars).
+  CURSOR: If a menu is visible, which option is highlighted.
+
+  RULES:
+  - Count tiles carefully. Each tile is a 16x16 pixel square.
+  - Do NOT guess the location — describe what you see if uncertain.
+  - Be concise. No introductions. Jump straight to the sections.
+
+# System prompt for the VLM when called as a tool via ask_vlm()
+# Used in both vision modes - this is for on-demand follow-up questions
+vlm_ask_prompt: |
+  You are answering a specific question about a Pokemon FireRed screenshot.
+  Be precise and concise.
+
+  COORDINATE SYSTEM: Player is at (0,0). x: left=negative, right=positive.
+  y: up=negative, down=positive. Give positions as x=N, y=N.
+  For multi-tile objects use ranges: x=1..3, y=-2..-1
+
+  Always answer with coordinates when spatial. If you can see text,
+  transcribe it exactly. If you're unsure, say so.
+
+# The base system prompt for the reasoning LLM (shared by all agents)
+system_prompt: |
+  You are an AI playing Pokemon FireRed. You experience the game world through
+  vision descriptions and must decide what buttons to press each turn.
+
+  CONTROLS:
+    Your inputs field is a JSON list of button names.
+    ONLY these exact strings are valid (lowercase):
+      "up", "down", "left", "right", "a", "b", "start", "select", "lb", "rb"
+    NO other values are allowed. Do not combine or modify them.
+    WRONG: "upmax", "lefthouse", "up Japan", "go_left"
+    RIGHT: ["left", "left", "up", "a"]
+    RIGHT: ["a", "start", "a"]
+    Each entry = one button press = one tile of movement or one button tap.
+
+  TURN STRUCTURE:
+    1. You receive a vision description of the current screen
+    2. You may use tools (state memory, ask_vlm for follow-up vision questions)
+    3. You MUST call game_action with button presses to end your turn
+
+  NAVIGATION RULES:
+    - Vision descriptions use coordinates: player is at (0,0),
+      x: left=negative, right=positive. y: up=negative, down=positive.
+      To reach an object at x=2, y=-3: press "right" 2 times, "up" 3 times.
+      Order matters — move to avoid obstacles first, then toward the target.
+      If a wall blocks the direct path, go around it.
+    - You CANNOT walk through walls, fences, trees, water, or NPCs.
+    - To enter a door or use stairs, walk directly onto the tile (no A press needed).
+    - To talk to an NPC or interact with an object, stand orthogonally adjacent
+      (directly up/down/left/right, NOT diagonal) and press A while facing them.
+    - If the same movement fails multiple turns in a row (position unchanged),
+      you are probably blocked. Try a different direction or route around.
+    - Windows look similar to doors but cannot be entered. Doors are at ground level.
+    - Each directional input moves you exactly one tile. Turning is handled
+      automatically — just specify the directions you want to move.
+
+  MENU AND BATTLE RULES:
+    - When in a menu or battle, the cursor position matters. Verify where the
+      cursor is before pressing A. Use U/D to move between options.
+    - Don't chain many inputs in menus — verify cursor position each step.
+    - Press B to back out of menus. Press START to open the pause menu.
+    - In battle: consider type advantages. Check your Pokemon's HP before deciding.
+
+  STATE MANAGEMENT:
+    Each turn you receive [Agent State] — this IS the full state. Everything
+    visible there is already loaded. You do NOT need to call read_state unless
+    a value shows "<hidden>" (meaning you used set_hide on it earlier).
+
+    Use update_state to track important info across turns:
+    - location: where you are right now
+    - goal: what you're trying to accomplish
+    - party: your Pokemon, their levels, HP, key moves
+    - story_progress: what you've done so far (got starter, defeated rival, etc.)
+    - obstacles: things that blocked you, paths that didn't work
+
+    update_state only changes the keys you provide — everything else stays.
+    Set a key to "" or null to delete it.
+
+    IMPORTANT: Do NOT call update_state unless you have gathered specific new
+    information to store (e.g. from ask_vlm, from reading screen text, from a
+    battle result). If nothing has changed, skip it entirely. Never call it
+    with an empty dict. Never call it at the same time as your final output —
+    decide your action FIRST, then output it alone.
+    The state starts empty. Build it up as you learn things.
+    Keep it concise. Use set_hide for details you don't need every turn.
+
+  AVOIDING LOOPS:
+    - Check your previous turns. If you've been trying the same thing for 3+ turns
+      with no progress, STOP and try a completely different approach.
+    - If you can't interact with something, you may not be aligned correctly.
+      Try approaching from a different direction.
+    - If you're lost, use ask_vlm to get more details about your surroundings.
+
+  POKEMON FIRERED KNOWLEDGE:
+    - Game starts in your bedroom in Pallet Town. Go downstairs, outside, then
+      north toward Route 1. Prof. Oak stops you and takes you to his lab.
+    - You choose a starter: Bulbasaur (grass), Charmander (fire), Squirtle (water).
+    - Rival battle immediately after getting your starter.
+    - Route 1 leads north to Viridian City. Route 2 continues to Viridian Forest.
+    - First gym is in Pewter City (Brock, Rock type). Water/Grass types are strong.
+    - Heal at Pokemon Centers (free). Buy items at Poke Marts.
+    - Wild Pokemon appear in tall grass. Grind levels if your team is underleveled.
+
+# --- Emulation ---
+# Emulator: mGBA with Lua TCP socket server
+emulator:
+  type: "mgba"
+  host: "127.0.0.1"
+  port: 8888
+  rom_path: "roms/Pokemon - FireRed Version (USA, Europe) (Rev 1).gba"
+  # Pause emulator while LLM is thinking (safe for turn-based games like Pokemon)
+  pause_during_thinking: true
+  # How many frames each button is held when pressed
+  # 12 frames = 200ms — ensures a walk, not just a turn
+  button_hold_frames: 12
+  # How many frames to wait between sequential button presses
+  # Walking animation is 16 frames (~267ms). 24 frames gives margin.
+  frames_between_inputs: 24
+# Screenshot preprocessing before sending to VLM/LLM
+screenshot:
+  upscale_factor: 3
+
+# Screen stability detection: waits for the screen to stop changing after
+# button presses before taking the next turn's screenshot.
+# Handles battle transitions, door fades, cutscenes, walk animations, etc.
+screen_stability:
+  min_wait: 0.3          # Always wait at least this long (seconds)
+  max_wait: 10.0         # Never wait longer than this (seconds)
+  poll_interval: 0.3     # How often to check the screen (seconds)
+  # Similarity threshold (0-1). Screen must score above this to proceed.
+  # Starts strict and linearly relaxes to threshold_end at max_wait.
+  threshold_start: 0.99  # Strict at first (screen must be nearly identical)
+  threshold_end: 0.90    # Relaxed at max_wait (allows minor animation loops)
+
+# --- Logging ---
+# Each run creates a folder with all logs, screenshots, prompts, and tool calls
+runs_directory: "local/runs/"
+# Optional name/description for this run (used in folder name and report)
+run_name: null  # e.g., "firered_gemini_test_1"
+
+# --- Snapshots ---
+snapshots_directory: "local/snapshots/"
+
+# Load a snapshot to start from (set to null to start fresh)
+load_snapshot: null  # e.g., "local/snapshots/after_brock"
+
+# Auto-snapshot on task completion at this depth level
+# 0 = only top-level task, 1 = also first-level sub-tasks, etc.
+# null = disable auto-snapshots (manual only)
+auto_snapshot_depth: 0
+
+# --- Agent Tools ---
+# List of all available tools. Set to true/false to enable/disable each.
+# Disabling a tool removes it from the agent's tool definitions entirely.
+tools:
+  # Information tools
+  ask_vlm: true        # Ask the VLM follow-up questions about the current screenshot
+  web_search: false     # Search the web for help
+
+  # State tools
+  read_state: true      # Read full (unhidden) content for keys
+  update_state: true    # Add, edit, or delete keys (set to "" to delete)
+  move_state: true      # Move a key to a new location
+  set_hide: true        # Control key visibility in turn-start summary
+
+  # Output tools (actions the agent can take to end a turn)
+  game_action: true     # Send button presses to the emulator
+  create_subtask: true  # Spawn a sub-agent for a focused task
+  return_to_parent: true # Return control to the parent agent
+
+# Maximum LLM round-trips per turn (each tool call = 1 step).
+# Typical turn: 1 read_state + 1 ask_vlm + 1 game_action = 3 steps.
+# Set higher if the agent needs more tool calls, but >10 usually means it's stuck.
+max_steps_per_turn: 8
+
+# --- Game Inputs ---
+# The valid game inputs the agent can use
+# These map to emulator button presses
+valid_inputs:
+  - U  # Up
+  - D  # Down
+  - L  # Left
+  - R  # Right
+  - A  # A button
+  - B  # B button
+  - LB # Left shoulder (GBA)
+  - RB # Right shoulder (GBA)
+  - START
+  - SELECT
+
+# --- Global State ---
+# The agent's state is a single JSON file managed through tool calls.
+# No predefined schema - the agent decides the structure.
+state_file: "local/state/state.json"
+
+# --- OCR ---
+# Configuration for the continuously running OCR process
+# OCR log is stored in the run folder (harness-generated, not agent-managed)
+ocr:
+  # Enable/disable the OCR system entirely
+  enabled: true
+  # OCR backend: "tesseract" (local) or "api" (external OCR service)
+  backend: "tesseract"
+  # API URL - only used when backend is "api"
+  api_url: null
+  # Capture interval in seconds
+  capture_interval: 0.5
+  # How many recent OCR entries are served to the agent each turn
+  log_buffer_size: 50
+  # Number of recent captures to compare against for deduplication
+  dedup_window: 3

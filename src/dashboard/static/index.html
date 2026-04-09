@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Plays Pokemon</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg-panel: #161b22;
+    --bg-card: #1c2333;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --accent: #53d8fb;
+    --accent2: #e94560;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --purple: #bc8cff;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .header-title {
+    font-size: 16px;
+    font-weight: bold;
+    color: var(--accent);
+  }
+  .header-task {
+    font-size: 13px;
+    color: var(--text);
+    flex: 1;
+    margin: 0 20px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .header-stats {
+    display: flex;
+    gap: 16px;
+    font-size: 12px;
+    color: var(--text-dim);
+    flex-shrink: 0;
+  }
+  .stat-value { color: var(--accent); font-weight: bold; }
+
+  /* Main layout */
+  .main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* Chat panel (left) */
+  .chat-panel {
+    width: 55%;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border);
+  }
+  .chat-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+  }
+  .chat-scroll::-webkit-scrollbar { width: 6px; }
+  .chat-scroll::-webkit-scrollbar-track { background: var(--bg); }
+  .chat-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* Right panel */
+  .right-panel {
+    width: 45%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Screen area */
+  .screen-area {
+    padding: 12px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: #000;
+    border-bottom: 1px solid var(--border);
+  }
+  .screen-area img {
+    image-rendering: pixelated;
+    max-width: 100%;
+    max-height: 100%;
+    border: 2px solid var(--border);
+  }
+
+  /* State area */
+  .state-area {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+  }
+  .state-area::-webkit-scrollbar { width: 6px; }
+  .state-area::-webkit-scrollbar-track { background: var(--bg); }
+  .state-area::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  .state-header {
+    font-size: 12px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+  }
+
+  /* Footer */
+  .footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 16px;
+    background: var(--bg-panel);
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--text-dim);
+    flex-shrink: 0;
+  }
+  .footer .connected { color: var(--green); }
+  .footer .disconnected { color: var(--accent2); }
+
+  /* Turn blocks */
+  .turn-block {
+    margin-bottom: 4px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-panel);
+  }
+  .turn-block.active {
+    border-color: var(--accent);
+  }
+  .turn-header {
+    padding: 6px 10px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    user-select: none;
+  }
+  .turn-header:hover { background: var(--bg-card); }
+  .turn-arrow {
+    font-size: 10px;
+    color: var(--text-dim);
+    transition: transform 0.15s;
+    width: 12px;
+  }
+  .turn-block.open .turn-arrow { transform: rotate(90deg); }
+  .turn-label { color: var(--accent); font-weight: bold; }
+  .turn-summary { color: var(--text-dim); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .turn-cost { color: var(--yellow); font-size: 11px; }
+  .turn-body {
+    display: none;
+    padding: 4px 10px 8px 30px;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .turn-block.open .turn-body { display: block; }
+
+  /* Chat entries */
+  .chat-entry {
+    margin: 2px 0;
+    padding: 2px 0;
+  }
+  /* Boxed entry sections */
+  .entry-box {
+    margin: 6px 0;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg);
+    overflow: hidden;
+  }
+  .entry-box-header {
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border);
+  }
+  .entry-box-body {
+    padding: 8px 10px;
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+  }
+  .entry-box-body strong {
+    font-weight: bold;
+    display: block;
+    margin-top: 8px;
+  }
+
+  /* Box color variants */
+  .box-vision .entry-box-header { background: #0d2818; color: var(--green); }
+  .box-vision .entry-box-body { color: var(--green); }
+  .box-thinking .entry-box-header { background: #1a1028; color: var(--purple); }
+  .box-thinking .entry-box-body { color: #c9b0e8; }
+  .box-thinking .entry-box-body strong { color: #d2a8ff; }
+  .box-output .entry-box-header { background: #0a1929; color: var(--accent); }
+  .box-output .entry-box-body { color: var(--text); }
+  .box-action .entry-box-header { background: #290a14; color: var(--accent2); }
+  .box-action .entry-box-body { color: var(--accent2); font-weight: bold; font-size: 14px; }
+  .box-tool .entry-box-header { background: #1a1508; color: var(--yellow); }
+  .box-tool .entry-box-body { color: var(--text-dim); font-size: 11px; }
+  .box-memory .entry-box-header { background: #0a1a0a; color: #7ddf64; }
+  .box-memory .entry-box-body { color: #7ddf64; font-size: 12px; white-space: pre-wrap; font-family: 'SF Mono', monospace; }
+  .box-error .entry-box-header { background: #290a0a; color: var(--accent2); }
+  .box-error .entry-box-body { color: var(--accent2); }
+
+  .entry-system {
+    color: var(--text-dim);
+    font-size: 11px;
+  }
+
+  /* JSON tree */
+  .json-tree { font-size: 12px; line-height: 1.6; }
+  .json-key { color: var(--accent); }
+  .json-string { color: var(--green); }
+  .json-number { color: var(--yellow); }
+  .json-bool { color: var(--purple); }
+  .json-null { color: var(--text-dim); }
+  .json-bracket { color: var(--text-dim); }
+  .json-toggle {
+    cursor: pointer;
+    user-select: none;
+    color: var(--text-dim);
+  }
+  .json-toggle:hover { color: var(--text); }
+  .json-children { padding-left: 16px; }
+  .json-hidden { display: none; }
+
+  /* Connection banner */
+  .reconnecting {
+    background: var(--accent2);
+    color: white;
+    text-align: center;
+    padding: 4px;
+    font-size: 11px;
+    display: none;
+  }
+  .reconnecting.show { display: block; }
+</style>
+</head>
+<body>
+
+<div class="reconnecting" id="reconnectBanner">Reconnecting...</div>
+
+<div class="header">
+  <div class="header-title">AI Plays Pokemon</div>
+  <div class="header-task" id="taskLabel">Loading...</div>
+  <div class="header-stats">
+    <span>Cost: <span class="stat-value" id="statCost">$0.00</span></span>
+    <span>Turn: <span class="stat-value" id="statTurn">0</span></span>
+    <span>Tokens: <span class="stat-value" id="statTokens">0/0</span></span>
+  </div>
+</div>
+
+<div class="main">
+  <div class="chat-panel">
+    <div class="chat-scroll" id="chatScroll"></div>
+  </div>
+  <div class="right-panel">
+    <div class="screen-area">
+      <img id="screen" alt="GBA Screen" width="720" height="480" />
+    </div>
+    <div class="state-area">
+      <div class="state-header">Memory Dictionary</div>
+      <div class="json-tree" id="stateTree">Waiting for data...</div>
+    </div>
+  </div>
+</div>
+
+<div class="footer">
+  <span>
+    Screen: <span id="screenStatus" class="disconnected">disconnected</span> |
+    Events: <span id="eventsStatus" class="disconnected">disconnected</span>
+  </span>
+  <span id="footerModel">Model: —</span>
+  <span id="footerEvents">Events: 0</span>
+</div>
+
+<script>
+// --- State ---
+const state = {
+  currentTurn: 0,
+  eventCount: 0,
+  userScrolled: false,
+  screenConnected: false,
+  eventsConnected: false,
+};
+
+const chatScroll = document.getElementById('chatScroll');
+const screenImg = document.getElementById('screen');
+let currentTurnBlock = null;
+let currentTurnBody = null;
+let prevObjectURL = null;
+
+// --- Auto-scroll logic ---
+chatScroll.addEventListener('scroll', () => {
+  const atBottom = chatScroll.scrollTop + chatScroll.clientHeight >= chatScroll.scrollHeight - 60;
+  state.userScrolled = !atBottom;
+});
+
+function autoScroll() {
+  if (!state.userScrolled) {
+    chatScroll.scrollTop = chatScroll.scrollHeight;
+  }
+}
+
+// --- Fetch initial config ---
+fetch('/api/config').then(r => r.json()).then(cfg => {
+  document.getElementById('taskLabel').textContent = 'Task: ' + (cfg.task || '—');
+  document.getElementById('footerModel').textContent =
+    'LLM: ' + (cfg.llm_model || '—') + ' | VLM: ' + (cfg.vlm_model || '—');
+}).catch(() => {});
+
+fetch('/api/state').then(r => r.json()).then(data => {
+  renderStateTree(data);
+}).catch(() => {});
+
+// --- Screen WebSocket ---
+function connectScreen() {
+  const ws = new WebSocket(`ws://${location.host}/ws/screen`);
+  ws.binaryType = 'arraybuffer';
+
+  ws.onopen = () => {
+    state.screenConnected = true;
+    updateStatus();
+  };
+
+  ws.onmessage = (e) => {
+    const blob = new Blob([e.data], { type: 'image/png' });
+    const url = URL.createObjectURL(blob);
+    screenImg.src = url;
+    if (prevObjectURL) URL.revokeObjectURL(prevObjectURL);
+    prevObjectURL = url;
+  };
+
+  ws.onclose = () => {
+    state.screenConnected = false;
+    updateStatus();
+    setTimeout(connectScreen, 2000);
+  };
+
+  ws.onerror = () => ws.close();
+}
+
+// --- Events WebSocket ---
+function connectEvents() {
+  const ws = new WebSocket(`ws://${location.host}/ws/events`);
+
+  ws.onopen = () => {
+    state.eventsConnected = true;
+    updateStatus();
+  };
+
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'event') handleEvent(msg.data);
+    else if (msg.type === 'state_update') renderStateTree(msg.data);
+    else if (msg.type === 'stats') updateStats(msg.data);
+  };
+
+  ws.onclose = () => {
+    state.eventsConnected = false;
+    updateStatus();
+    setTimeout(connectEvents, 2000);
+  };
+
+  ws.onerror = () => ws.close();
+}
+
+// --- Event handling ---
+function handleEvent(evt) {
+  state.eventCount++;
+  document.getElementById('footerEvents').textContent = 'Events: ' + state.eventCount;
+
+  const t = evt.type;
+
+  if (t === 'run_start') {
+    addSystemEntry('Run started');
+  }
+  else if (t === 'turn_start') {
+    startNewTurn(evt.turn);
+  }
+  else if (t === 'turn_trace') {
+    // turn_trace is the authoritative view of the turn — replace streaming entries
+    // with the full trace including thinking (not available as individual events)
+    renderTurnTrace(evt);
+  }
+  else if (t === 'turn_explanation') {
+    renderTurnExplanation(evt);
+  }
+  else if (t === 'turn_usage') {
+    renderTurnUsage(evt);
+  }
+  else if (t === 'llm_thinking') {
+    addBox('thinking', '💭 Thinking', evt.content || '', true);
+  }
+  else if (t === 'llm_output') {
+    let args = evt.args || '';
+    if (typeof args === 'string') { try { args = JSON.parse(args); } catch(e) { console.error('llm_output parse fail', e); } }
+    if (typeof args === 'object') {
+      let lines = [];
+      if (args.i_saw) lines.push('👁 ' + args.i_saw);
+      if (args.i_thought) lines.push('🧠 ' + args.i_thought);
+      if (args.i_did) lines.push('📝 ' + args.i_did);
+      if (lines.length) addBox('output', '💬 Output', lines.join('\n'));
+      if (args.inputs) {
+        const inputs = Array.isArray(args.inputs) ? JSON.stringify(args.inputs) : args.inputs;
+        addBox('action', '🎮 Action', inputs);
+      }
+    } else {
+      console.error('llm_output args not object:', typeof args, args);
+    }
+  }
+  else if (t === 'memory_update_output') {
+    const raw = evt.content || '(no changes)';
+    let display = raw;
+    if (raw !== '(no changes)' && raw.toLowerCase() !== 'none') {
+      try { display = JSON.stringify(JSON.parse(raw), null, 2); } catch(e) {}
+    }
+    addBox('memory', '🧠 Memory Update', display);
+  }
+  else if (t === 'llm_text') {
+    addBox('output', '💬 Output', evt.content || '');
+  }
+  else if (t === 'vlm_request') {
+    // skip — vlm_response will show the result
+  }
+  else if (t === 'vlm_response') {
+    addBox('vision', '📷 Vision', evt.response || '');
+  }
+  else if (t === 'tool_call') {
+    addBox('tool', '🔧 ' + evt.tool, JSON.stringify(evt.args, null, 2));
+  }
+  else if (t === 'tool_response') {
+    const resp = typeof evt.response === 'string' ? evt.response : JSON.stringify(evt.response, null, 2);
+    addBox('tool', '↳ Response', resp);
+  }
+  else if (t === 'button_sequence') {
+    // Skip — already shown via llm_output action
+  }
+  else if (t === 'output_retry') {
+    addBox('error', '🔄 Output Retry', evt.content || 'Validation failed — retrying.');
+  }
+  else if (t === 'agent_error' || t === 'action_error') {
+    addBox('error', '❌ Error', evt.error || evt.message || JSON.stringify(evt));
+  }
+  else if (t === 'run_end') {
+    addSystemEntry('Run ended.');
+  }
+  // screenshot, state_change, ocr, etc. — silently ignore
+}
+
+function startNewTurn(turnNum) {
+  // Keep last 2 turns open — collapse any older ones
+  const blocks = chatScroll.querySelectorAll('.turn-block');
+  for (const b of blocks) {
+    const bTurn = parseInt(b.dataset.turn);
+    if (bTurn < turnNum - 1) {
+      b.classList.remove('active', 'open');
+    }
+  }
+  if (currentTurnBlock) {
+    currentTurnBlock.classList.remove('active');
+  }
+
+  state.currentTurn = turnNum;
+
+  const block = document.createElement('div');
+  block.className = 'turn-block active open';
+  block.dataset.turn = turnNum;
+
+  const header = document.createElement('div');
+  header.className = 'turn-header';
+  header.innerHTML = `
+    <span class="turn-arrow">▶</span>
+    <span class="turn-label">Turn ${turnNum}</span>
+    <span class="turn-summary" id="turnSummary${turnNum}"></span>
+    <span class="turn-cost" id="turnCost${turnNum}"></span>
+  `;
+  header.onclick = () => block.classList.toggle('open');
+
+  const body = document.createElement('div');
+  body.className = 'turn-body';
+
+  block.appendChild(header);
+  block.appendChild(body);
+  chatScroll.appendChild(block);
+
+  currentTurnBlock = block;
+  currentTurnBody = body;
+  autoScroll();
+}
+
+function renderTurnTrace(evt) {
+  // turn_trace is used only during replay (page loaded after turn completed).
+  // During live streaming, llm_thinking/llm_output/tool_call events already
+  // populated the turn body. If the body already has content, skip replay.
+  const turnNum = evt.turn;
+  let turnBody = currentTurnBody;
+
+  // Find matching turn block if not the current turn
+  if (!turnBody || (currentTurnBlock && currentTurnBlock.dataset.turn != turnNum)) {
+    const blocks = chatScroll.querySelectorAll('.turn-block');
+    for (const b of blocks) {
+      if (b.dataset.turn == turnNum) {
+        turnBody = b.querySelector('.turn-body');
+        break;
+      }
+    }
+  }
+
+  if (!turnBody) return;
+
+  // If body already has streaming content, don't duplicate
+  if (turnBody.children.length > 0) return;
+
+  // Replay from trace (page loaded after run or reconnected)
+  const messages = evt.messages || [];
+
+  for (const msg of messages) {
+    const role = msg.role || msg.kind || '';
+
+    if (role === 'system') {
+      const det = document.createElement('details');
+      det.innerHTML = '<summary style="color:var(--text-dim);cursor:pointer;font-size:11px;">System Prompt</summary>';
+      const pre = document.createElement('pre');
+      pre.style.cssText = 'font-size:10px;color:var(--text-dim);white-space:pre-wrap;max-height:200px;overflow-y:auto;margin:4px 0;';
+      pre.textContent = truncate(msg.content || '', 2000);
+      det.appendChild(pre);
+      turnBody.appendChild(det);
+    }
+    else if (role === 'user') {
+      const det = document.createElement('details');
+      det.innerHTML = '<summary style="color:var(--text-dim);cursor:pointer;font-size:11px;">Input (vision + state)</summary>';
+      const pre = document.createElement('pre');
+      pre.style.cssText = 'font-size:10px;color:var(--text-dim);white-space:pre-wrap;max-height:200px;overflow-y:auto;margin:4px 0;';
+      pre.textContent = truncate(msg.content || '', 2000);
+      det.appendChild(pre);
+      turnBody.appendChild(det);
+    }
+    else if (role === 'thinking') {
+      addBoxTo(turnBody, 'thinking', '💭 Thinking', msg.content || '', true);
+    }
+    else if (role === 'tool_call') {
+      const name = msg.tool_name || '?';
+      if (name === 'final_result') {
+        // Render the final output (same as llm_output handling)
+        let fargs = msg.args || '';
+        if (typeof fargs === 'string') { try { fargs = JSON.parse(fargs); } catch(e) {} }
+        if (typeof fargs === 'object') {
+          let lines = [];
+          if (fargs.i_saw) lines.push('👁 ' + fargs.i_saw);
+          if (fargs.i_thought) lines.push('🧠 ' + fargs.i_thought);
+          if (fargs.i_did) lines.push('📝 ' + fargs.i_did);
+          if (lines.length) addBoxTo(turnBody, 'output', '💬 Output', lines.join('\n'));
+          if (fargs.inputs) {
+            const inputs = Array.isArray(fargs.inputs) ? JSON.stringify(fargs.inputs) : fargs.inputs;
+            addBoxTo(turnBody, 'action', '🎮 Action', inputs);
+          }
+          const fMemRaw = fargs.memory_updates || '';
+          if (typeof fMemRaw === 'string' && fMemRaw.length > 0 && fMemRaw.toLowerCase() !== 'none') {
+            let fMemDisplay = fMemRaw;
+            try { fMemDisplay = JSON.stringify(JSON.parse(fMemRaw), null, 2); } catch(e) {}
+            addBoxTo(turnBody, 'memory', '🧠 Memory Update', fMemDisplay);
+          } else {
+            addBoxTo(turnBody, 'memory', '🧠 Memory Update', '(no changes)');
+          }
+        }
+        continue;
+      }
+      addBoxTo(turnBody, 'tool', '🔧 ' + name, msg.args || '');
+    }
+    else if (role === 'tool_result') {
+      const content = msg.content || '';
+      if (content === 'Final result processed.') continue;
+      if (content.startsWith('Tool not executed')) continue;
+      addBoxTo(turnBody, 'tool', '↳ Response', content);
+    }
+    else if (role === 'retry') {
+      addBoxTo(turnBody, 'error', '🔄 Retry', msg.content || 'Validation failed — retrying.');
+    }
+    // role === 'final_result' is handled above in tool_call with name === 'final_result'
+  }
+
+  autoScroll();
+}
+
+function renderTurnExplanation(evt) {
+  const exp = evt.explanation || {};
+  const summary = document.getElementById('turnSummary' + evt.turn);
+  if (summary) {
+    summary.textContent = truncate(exp.i_did || '', 60);
+  }
+}
+
+function renderTurnUsage(evt) {
+  const costEl = document.getElementById('turnCost' + (evt.turn || state.currentTurn));
+  if (costEl) {
+    costEl.textContent = '$' + (evt.cost_usd || 0).toFixed(4);
+  }
+}
+
+function addBox(variant, title, content, markdown) {
+  const target = currentTurnBody || chatScroll;
+  const box = document.createElement('div');
+  box.className = 'entry-box box-' + variant;
+
+  const header = document.createElement('div');
+  header.className = 'entry-box-header';
+  header.textContent = title;
+
+  const body = document.createElement('div');
+  body.className = 'entry-box-body';
+  if (markdown) {
+    body.innerHTML = renderMarkdownLight(content);
+  } else {
+    body.textContent = content;
+  }
+
+  box.appendChild(header);
+  box.appendChild(body);
+  target.appendChild(box);
+  autoScroll();
+}
+
+function addChatEntry(cls, text) {
+  const target = currentTurnBody || chatScroll;
+  addEntryTo(target, cls, text);
+  autoScroll();
+}
+
+function renderMarkdownLight(text) {
+  let html = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  return html;
+}
+
+function addEntryTo(parent, cls, text) {
+  const div = document.createElement('div');
+  div.className = 'chat-entry ' + cls;
+  div.textContent = text;
+  parent.appendChild(div);
+}
+
+function addBoxTo(parent, variant, title, content, markdown) {
+  const box = document.createElement('div');
+  box.className = 'entry-box box-' + variant;
+  const header = document.createElement('div');
+  header.className = 'entry-box-header';
+  header.textContent = title;
+  const body = document.createElement('div');
+  body.className = 'entry-box-body';
+  if (markdown) {
+    body.innerHTML = renderMarkdownLight(content);
+  } else {
+    body.textContent = content;
+  }
+  box.appendChild(header);
+  box.appendChild(body);
+  parent.appendChild(box);
+}
+
+function addSystemEntry(text) {
+  const div = document.createElement('div');
+  div.className = 'chat-entry entry-system';
+  div.textContent = '⚙ ' + text;
+  chatScroll.appendChild(div);
+  autoScroll();
+}
+
+// --- Stats ---
+function updateStats(stats) {
+  document.getElementById('statCost').textContent = '$' + (stats.cost || 0).toFixed(4);
+  document.getElementById('statTurn').textContent = stats.turns || 0;
+  document.getElementById('statTokens').textContent =
+    Math.round((stats.input_tokens || 0) / 1000) + 'k / ' +
+    Math.round((stats.output_tokens || 0) / 1000) + 'k';
+}
+
+// --- State tree ---
+function renderStateTree(data) {
+  const container = document.getElementById('stateTree');
+  container.innerHTML = '';
+  if (!data || Object.keys(data).length === 0) {
+    container.textContent = '(empty)';
+    return;
+  }
+  container.appendChild(renderJsonNode(data, true));
+}
+
+function renderJsonNode(value, expanded) {
+  if (value === null) {
+    const s = document.createElement('span');
+    s.className = 'json-null';
+    s.textContent = 'null';
+    return s;
+  }
+  if (typeof value === 'boolean') {
+    const s = document.createElement('span');
+    s.className = 'json-bool';
+    s.textContent = String(value);
+    return s;
+  }
+  if (typeof value === 'number') {
+    const s = document.createElement('span');
+    s.className = 'json-number';
+    s.textContent = String(value);
+    return s;
+  }
+  if (typeof value === 'string') {
+    const s = document.createElement('span');
+    s.className = 'json-string';
+    s.textContent = '"' + value + '"';
+    return s;
+  }
+  if (Array.isArray(value)) {
+    const wrapper = document.createElement('span');
+    if (value.length === 0) {
+      wrapper.innerHTML = '<span class="json-bracket">[]</span>';
+      return wrapper;
+    }
+    const toggle = document.createElement('span');
+    toggle.className = 'json-toggle';
+    toggle.textContent = expanded ? '▾ [' : '▸ [...]';
+    const children = document.createElement('div');
+    children.className = 'json-children' + (expanded ? '' : ' json-hidden');
+    value.forEach((item, i) => {
+      const row = document.createElement('div');
+      row.appendChild(renderJsonNode(item, false));
+      if (i < value.length - 1) {
+        const comma = document.createTextNode(',');
+        row.appendChild(comma);
+      }
+      children.appendChild(row);
+    });
+    const close = document.createElement('span');
+    close.className = 'json-bracket';
+    close.textContent = ']';
+    toggle.onclick = () => {
+      children.classList.toggle('json-hidden');
+      toggle.textContent = children.classList.contains('json-hidden') ? '▸ [...]' : '▾ [';
+    };
+    wrapper.appendChild(toggle);
+    wrapper.appendChild(children);
+    wrapper.appendChild(close);
+    return wrapper;
+  }
+  if (typeof value === 'object') {
+    const keys = Object.keys(value);
+    const wrapper = document.createElement('span');
+    if (keys.length === 0) {
+      wrapper.innerHTML = '<span class="json-bracket">{}</span>';
+      return wrapper;
+    }
+    const toggle = document.createElement('span');
+    toggle.className = 'json-toggle';
+    toggle.textContent = expanded ? '▾ {' : '▸ {...}';
+    const children = document.createElement('div');
+    children.className = 'json-children' + (expanded ? '' : ' json-hidden');
+    keys.forEach((key, i) => {
+      const row = document.createElement('div');
+      const keySpan = document.createElement('span');
+      keySpan.className = 'json-key';
+      keySpan.textContent = key + ': ';
+      row.appendChild(keySpan);
+      row.appendChild(renderJsonNode(value[key], expanded));
+      if (i < keys.length - 1) {
+        row.appendChild(document.createTextNode(','));
+      }
+      children.appendChild(row);
+    });
+    const close = document.createElement('span');
+    close.className = 'json-bracket';
+    close.textContent = '}';
+    toggle.onclick = () => {
+      children.classList.toggle('json-hidden');
+      toggle.textContent = children.classList.contains('json-hidden') ? '▸ {...}' : '▾ {';
+    };
+    wrapper.appendChild(toggle);
+    wrapper.appendChild(children);
+    wrapper.appendChild(close);
+    return wrapper;
+  }
+  const s = document.createElement('span');
+  s.textContent = String(value);
+  return s;
+}
+
+// --- Connection status ---
+function updateStatus() {
+  const se = document.getElementById('screenStatus');
+  const ee = document.getElementById('eventsStatus');
+  se.textContent = state.screenConnected ? 'connected' : 'disconnected';
+  se.className = state.screenConnected ? 'connected' : 'disconnected';
+  ee.textContent = state.eventsConnected ? 'connected' : 'disconnected';
+  ee.className = state.eventsConnected ? 'connected' : 'disconnected';
+
+  const banner = document.getElementById('reconnectBanner');
+  banner.classList.toggle('show', !state.screenConnected || !state.eventsConnected);
+}
+
+// --- Helpers ---
+function truncate(s, max) {
+  if (typeof s !== 'string') s = JSON.stringify(s) || '';
+  return s.length > max ? s.slice(0, max) + '...' : s;
+}
+
+// --- Start ---
+connectScreen();
+connectEvents();
+</script>
+</body>
+</html>
