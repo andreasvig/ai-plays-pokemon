@@ -188,13 +188,13 @@ def _print_trace_summary(turn_num: int, trace: list[dict]) -> None:
                 if isinstance(action, list):
                     action = "[" + ", ".join(str(a) for a in action) + "]"
                 i_saw = parsed.get("i_saw", "")
-                i_thought = parsed.get("i_thought", "")
                 i_did = parsed.get("i_did", "")
+                i_expect = parsed.get("i_expect", "")
                 memory = parsed.get("memory_updates", "")
                 print(f"{tag('Output')} {action}")
                 print(f"{tag('Saw')} {_truncate(i_saw, 100)}")
-                print(f"{tag('Thought')} {_truncate(i_thought, 100)}")
                 print(f"{tag('Did')} {_truncate(i_did, 100)}")
+                print(f"{tag('Expect')} {_truncate(i_expect, 100)}")
                 print(f"{tag('Memory')} {_truncate(str(memory), 200) if memory else '(none)'}")
             else:
                 if isinstance(args, dict):
@@ -342,8 +342,8 @@ class TurnManager:
             # Log the turn explanation
             explanation = {
                 "i_saw": result.i_saw,
-                "i_thought": result.i_thought,
                 "i_did": result.i_did,
+                "i_expect": result.i_expect,
                 "action": result.inputs,
                 "memory_updates": updates,
                 "memory_updates_raw": result.memory_updates,
@@ -665,43 +665,35 @@ class TurnManager:
 
         # OCR
         if ocr_text:
-            text_parts.append(f"\n[OCR Text Captured]\n{ocr_text}")
+            text_parts.append(f"\n## OCR Text\n{ocr_text}")
 
-        # Memory dictionary + missing key reminder
+        # Memory dictionary
         state_json = json.dumps(state_view, indent=2)
-        text_parts.append(f"\n[Memory Dictionary]\n{state_json}")
-
-        # Check for missing required keys and remind the agent
-        required_keys = ["location", "goal", "party", "story_progress"]
-        missing = [k for k in required_keys if k not in state_view]
-        if missing:
-            text_parts.append(
-                f"\n⚠ MISSING MEMORY KEYS: {', '.join(missing)} — "
-                f"you MUST add these in memory_updates this turn."
-            )
+        text_parts.append(f"\n## Memory\n```json\n{state_json}\n```")
 
         # Turn history
         if self.turn_explanations:
-            history = "\n[Previous Turns]"
+            history = "\n## Previous Turns"
             for i, exp in enumerate(self.turn_explanations, 1):
                 action = exp['action']
                 if isinstance(action, list):
                     action = "[" + ", ".join(action) + "]"
-                history += f"\nTurn {i}: Action={action}"
-                history += f"\n  I saw: {exp['i_saw']}"
-                history += f"\n  I thought: {exp['i_thought']}"
-                history += f"\n  I did: {exp['i_did']}"
+                history += f"\n### Turn {i} — {action}"
+                history += f"\n- **I saw:** {exp['i_saw']}"
+                history += f"\n- **I did:** {exp['i_did']}"
+                history += f"\n- **I expected:** {exp['i_expect']}"
             text_parts.append(history)
 
-        # Task
-        if self.tasks:
-            task_text = f"Goal: {self.tasks.get('goal', '')}"
-            desc = self.tasks.get('description', '')
-            if desc:
-                task_text += f"\n{desc}"
-            text_parts.append(f"\n[Current Task]\n{task_text}")
-        else:
-            text_parts.append(f"\n[Current Task]\n{self.config.get('top_level_task', 'Play the game.')}")
+        # Task (tasks.json overrides config task)
+        task = self.tasks or self.config.get("task", {})
+        if isinstance(task, str):
+            task = {"goal": task}
+        goal = task.get("goal", "Play the game.")
+        desc = task.get("description", "")
+        task_text = f"**Goal:** {goal}"
+        if desc:
+            task_text += f"\n{desc}"
+        text_parts.append(f"\n## Current Task\n{task_text}")
 
         text_parts.append("\nOutput your action (inputs) and update memory_updates with any new information.")
 
@@ -725,7 +717,7 @@ class TurnManager:
                 "vision_mode": self.config.get("vision_mode", ""),
                 "thinking": self.config.get("thinking"),
                 "fallback_models": self.fallback_models,
-                "task": self.tasks.get("goal", self.config.get("top_level_task", "")) if self.tasks else self.config.get("top_level_task", ""),
+                "task": (self.tasks or self.config.get("task", {})).get("goal", ""),
                 "total_turns": self.turn_number,
                 "duration_seconds": round(duration, 1),
                 "started_at": time.strftime(
@@ -746,8 +738,8 @@ class TurnManager:
                     "turn": i + 1,
                     "action": exp.get("action", ""),
                     "i_saw": exp.get("i_saw", ""),
-                    "i_thought": exp.get("i_thought", ""),
                     "i_did": exp.get("i_did", ""),
+                    "i_expect": exp.get("i_expect", ""),
                 }
                 for i, exp in enumerate(self.turn_explanations)
             ],

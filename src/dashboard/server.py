@@ -50,7 +50,7 @@ async def get_state():
 @app.get("/api/config")
 async def get_config():
     return JSONResponse({
-        "task": _config.get("top_level_task", ""),
+        "task": _config.get("task", {}).get("goal", ""),
         "llm_model": _config.get("llm_model", ""),
         "vlm_model": _config.get("vlm_model", ""),
     })

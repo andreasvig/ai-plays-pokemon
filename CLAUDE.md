@@ -77,7 +77,7 @@ python -m src.cli.report local/runs/<run_folder>
 - **Vision pipeline**: Two modes configured via `vision_mode`:
   - `separate_vlm`: VLM analyzes screenshots into text, LLM receives text only
   - `direct_multimodal`: LLM receives raw screenshots as `ImageUrl` (used in config 1.1+)
-- **Memory dictionary**: Agent's persistent memory across turns. Stored as JSON state file. Agent writes updates via `memory_updates` string field on `GameAction` output (not a tool call). Harness parses JSON and applies updates after each turn. Required keys: location, party, goal, story_progress, map, obstacles. Map entries use compass directions (north, south-east, etc.), not coordinates.
+- **Memory dictionary**: Agent's persistent memory across turns. Stored as JSON state file. Agent writes updates via `memory_updates` string field on `GameAction` output (not a tool call). Harness parses JSON and applies updates after each turn. Suggested keys: current_location, party, map, notes. Map entries use compass directions (north, south-east, etc.), not coordinates. Agent can create additional keys freely (badges, bag, pc_pokemon, etc.).
 - **Coordinate system**: Player at (0,0). x: left=negative, right=positive. y: up=positive, down=negative. Ranges for uncertainty: `(-3..-4, -2..-3)`. Coordinates are only for real-time player-relative positions, not for map memory.
 - **Grid overlay**: Optional red semi-transparent tile grid on agent screenshots (not live stream). Enabled via `screenshot.grid_overlay: true` in config. Helps VLM count tiles for spatial reasoning.
 - **Socket protocol**: Newline-delimited commands over TCP port 8888. `CAP` for screenshots, `SEQ:btn1;btn2` for button sequences. Sequences are fire-and-forget (sleep for calculated duration, no TCP recv wait).
@@ -105,4 +105,5 @@ Key settings:
 - Screenshots go to `/tmp/mgba_screenshot.png` (agent) and `/tmp/mgba_stream.png` (dashboard stream) — separate files to avoid contention.
 - All events are logged to `events.jsonl` as JSON lines, flushed immediately for crash safety.
 - The `local/` folder is for runtime data and should be git-ignored.
-- Button inputs use `Literal["up","down","left","right","a","b","start","select","lb","rb"]` enum constraint.
+- Button inputs use `Literal["up","down","left","right","a","b","start","select"]` enum constraint.
+- **GameAction output fields**: `inputs` (button list), `i_saw` (screen observation), `i_did` (action + reasoning + memory notes), `i_expect` (predicted next screen), `memory_updates` (JSON string with dot-notation keys).

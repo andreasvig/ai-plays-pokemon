@@ -7,7 +7,9 @@
 # ============================================================================
 
 # --- Top-Level Task ---
-top_level_task: "Beat the first gym leader Brock"
+task:
+  goal: "Beat the first gym leader Brock"
+  description: "Explore Pallet Town, get a starter Pokemon from Professor Oak, train it, and defeat Brock at Pewter City Gym."
 
 # --- Model Configuration ---
 llm_model: "google/gemini-3-flash-preview"

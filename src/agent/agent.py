@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext, Tool
 from pydantic_ai.models.openai import OpenAIModel
 
-Button = Literal["up", "down", "left", "right", "a", "b", "start", "select", "lb", "rb"]
+Button = Literal["up", "down", "left", "right", "a", "b", "start", "select"]
 
 # Apply patches before creating any models
 from src.core.patches import apply_patches
@@ -20,19 +20,42 @@ from src.core import RunLogger, StateManager
 # --- Output models ---
 
 class GameAction(BaseModel):
-    """Output: send button presses to the game."""
-    inputs: list[Button]
-    i_saw: str
-    i_thought: str
-    i_did: str
+    """Output: button presses, observations, reasoning, and memory updates."""
+    inputs: list[Button] = Field(
+        description="Button presses to send to the game. Aim for 6-12 for predictable actions (walking, dialogue). Use fewer (1-5) when the outcome is uncertain (entering a new room, using a move in battle).",
+    )
+    i_saw: str = Field(
+        description=(
+            "Detailed description of everything you observe on screen. "
+            "Include: screen type (overworld/menu/battle), all visible text and dialogue, "
+            "positions of key objects, NPCs, doors, and exits using coordinates, "
+            "obstacles and walls, your player's position and facing direction, "
+            "menu cursor position and options, Pokemon HP/levels, and any changes from last turn."
+        ),
+    )
+    i_did: str = Field(
+        description=(
+            "Describe what you did, why, and how it ties in to the plan. "
+            "E.g. 'Chained [left, up, left, up, left, up] to enter the Gym door at (-2, 1), "
+            "with the goal of getting closer to our sub-goal of beating the Gym leader. "
+            "Overestimated by a few tiles since the exact distance is hard to judge from the screenshot.' "
+            "Also mention any memory updates you made and why. "
+            "E.g. 'Updated party.pikachu since we successfully caught the Pikachu.'"
+        ),
+    )
+    i_expect: str = Field(
+        description=(
+            "What you expect to see next turn. Be specific — next turn will compare the actual screen against this to judge if this turn succeeded. "
+            "E.g. 'Should have entered the Gym, standing inside at the entrance.' "
+            "Or: 'Thunderbolt should deal super-effective damage since the opponent is a water type. Expect their HP to drop below 20% or even 0%.'"
+        ),
+    )
     memory_updates: str = Field(
         description=(
-            "JSON object string with keys to update in the memory dictionary. "
-            "You MUST provide updates when: location changed, required keys are "
-            "missing (location, goal, party, story_progress, map), or you learned "
-            "new info. Only keys you include are changed — others stay. "
-            'Example: \'{"location": "1F, Player\'s house", "goal": "Exit house"}\' '
-            "Write \"none\" ONLY if absolutely nothing changed this turn."
+            "JSON object with keys to update in the memory dictionary (dot notation for nesting). "
+            "Only include changed keys — others stay. Set a key to \"\" to delete it. "
+            "Example: '{\"current_location\": \"Viridian City\", \"party.pikachu.hp\": \"28/40\"}'. "
+            "Write \"none\" only if absolutely nothing changed this turn."
         ),
     )
 
@@ -93,7 +116,7 @@ def create_agent(config: dict[str, Any]) -> tuple[Agent, Any, list[str]]:
         raw_prompt,
         game_name="Pokemon FireRed",
         button_list=", ".join(config.get("valid_inputs", [])),
-        current_task=config.get("top_level_task", "Play the game."),
+        current_task=config.get("task", {}).get("goal", "Play the game."),
     )
 
     # Build tool list based on config toggles

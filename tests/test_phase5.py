@@ -126,7 +126,7 @@ def main():
     turn_mgr.setup(emu, state, vision, logger, ocr_runner)
 
     print(f"\nRunning {args.turns} turns...")
-    print(f"Task: {config.get('top_level_task', 'Play the game')}")
+    print(f"Task: {config.get('task', {}).get('goal', 'Play the game')}")
     print(f"LLM: {config['llm_model']}")
     print(f"VLM: {config['vlm_model']}")
     print(f"Run log: {logger.run_dir}\n")

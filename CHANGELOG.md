@@ -1,5 +1,38 @@
 # Changelog
 
+## 2026-04-09 — Session 5: Config 2.0 Prompt Rewrite, Output Schema Overhaul
+
+### Config 2.0 System Prompt
+- New markdown-formatted system prompt with clear sections: Top Goal, Input Descriptions, High-Level Turn Strategy, Movement & Navigation Guidelines, Memory Guidelines, Miscellaneous Guidelines, Output Format
+- Game-agnostic top goal (follows task description, not hardcoded to FireRed)
+- Screenshot descriptions per screen type: overworld (with coordinate system inline), menu, battle
+- 5-step turn strategy: observe inputs → evaluate last action → update memory → plan ahead → execute and document
+- Movement guidelines compressed from config 1.2 with action chaining, wall hugging, corner sweep
+- Added dialogue chaining (e.g. Pokemon Center healing with [A, A, A, A, A, A])
+- Menu/battle chaining example (e.g. selecting 4th move with [A, down, right, A])
+- Memory guidelines with suggested keys: current_location, party, map, notes, plus free-form keys (bag, badges, pc_pokemon)
+- Stuck detection: change approach after 2+ turns without progress
+- Ambitious turn guidance: aim for 6-12 inputs for predictable actions, fewer for uncertain outcomes
+
+### Output Schema Changes
+- Renamed `i_thought` → removed, `i_did` now includes reasoning and plan context
+- Added `i_expect`: predicted next screen state, used by next turn to evaluate success
+- All `Field(description=...)` rewritten with detailed guidance and examples
+- `i_saw`: detailed observation including coordinates for objects, NPCs, doors, exits
+- `i_did`: action + why + plan context + memory update notes
+- `i_expect`: specific prediction with battle example (type effectiveness, HP estimates)
+- `inputs`: guidance on 6-12 for predictable, 1-5 for uncertain outcomes
+- Updated all references across turn.py, report.py, dashboard/index.html
+
+### Other Changes
+- Removed LB/RB from valid inputs (config + Button Literal type)
+- Unified task format: `task: {goal, description}` across all configs
+- Disabled OCR in config 2.0
+- Removed hardcoded missing memory key warning from turn.py
+- User input messages now use markdown formatting (## headings, ```json blocks, **bold** labels)
+
+---
+
 ## 2026-04-09 — Session 4: Code Cleanup, Coordinate Fix, Grid Overlay
 
 ### Codebase Cleanup (~340 lines removed)

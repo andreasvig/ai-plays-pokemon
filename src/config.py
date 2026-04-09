@@ -75,7 +75,7 @@ def load_config(path: Optional[str] = None) -> dict[str, Any]:
 def _validate_config(config: dict[str, Any]) -> None:
     """Validate required config fields exist."""
     required = [
-        "top_level_task",
+        "task",
         "llm_model",
         "vision_mode",
         "emulator",

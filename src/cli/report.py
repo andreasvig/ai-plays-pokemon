@@ -255,7 +255,7 @@ def _render_trace_html(trace: list[dict]) -> str:
             if step["thinking"]:
                 inner += f'<div class="step-thinking"><div class="thinking-label">Thinking</div><pre>{_escape(step["thinking"][:5000])}</pre></div>'
 
-            if isinstance(parsed, dict) and "i_thought" in parsed:
+            if isinstance(parsed, dict) and ("i_did" in parsed or "i_expect" in parsed):
                 memory_html = ""
                 mem_raw = parsed.get('memory_updates', '')
                 if mem_raw and str(mem_raw).strip().lower() != 'none':
@@ -268,8 +268,8 @@ def _render_trace_html(trace: list[dict]) -> str:
                     memory_html = f'<div class="decision-row"><strong>Memory Update:</strong> <pre style="display:inline-block;margin:4px 0;background:#1a2e1a;padding:4px 8px;border-radius:4px;font-size:12px;">{_escape(mem_display)}</pre></div>'
                 inner += f"""<div class="step-decision">
                     <div class="decision-row"><strong>I saw:</strong> {_escape(parsed.get('i_saw', ''))}</div>
-                    <div class="decision-row"><strong>I thought:</strong> {_escape(parsed.get('i_thought', ''))}</div>
                     <div class="decision-row"><strong>I did:</strong> {_escape(parsed.get('i_did', ''))}</div>
+                    <div class="decision-row"><strong>I expect:</strong> {_escape(parsed.get('i_expect', ''))}</div>
                     <div class="decision-row"><strong>Action:</strong> <code>{_escape(_format_action(parsed.get('inputs', '')))}</code></div>
                     {memory_html}
                 </div>"""
@@ -320,7 +320,7 @@ def generate_html(run_dir: Path, events: list[dict], turns: list[dict]) -> str:
             summary = json.load(f)
 
     run_name = run_dir.name
-    task = config.get("top_level_task", "")
+    task = config.get("task", {}).get("goal", "")
 
     # Cost info from summary
     cost_info = summary.get("cost", {})
@@ -392,8 +392,8 @@ def generate_html(run_dir: Path, events: list[dict], turns: list[dict]) -> str:
                     <div class="turn-right">
                         <div class="explanation">
                             <div class="exp-row"><strong>I saw:</strong> {_escape(exp.get('i_saw', ''))}</div>
-                            <div class="exp-row"><strong>I thought:</strong> {_escape(exp.get('i_thought', ''))}</div>
                             <div class="exp-row"><strong>I did:</strong> {_escape(exp.get('i_did', ''))}</div>
+                            <div class="exp-row"><strong>I expect:</strong> {_escape(exp.get('i_expect', ''))}</div>
                             {_render_memory_update_html(exp)}
                         </div>
                     </div>
