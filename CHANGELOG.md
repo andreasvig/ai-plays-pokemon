@@ -1,5 +1,39 @@
 # Changelog
 
+## 2026-04-09 — Session 4: Code Cleanup, Coordinate Fix, Grid Overlay
+
+### Codebase Cleanup (~340 lines removed)
+- Removed dead code from `emulator.py`: `_insert_turning_frames()`, `_DIRECTION_CODES`, `_CODE_TO_FACING`, `_FACING_TO_CODE`, unused `import hashlib`
+- Simplified `state.py` from 274 → 68 lines: removed entire visibility system (`_hide`, `_seen` tracking, `start_turn`, `read_state`, `update_state`, `move_state`, `set_hide`). Made `set_by_path`, `delete_by_path`, `save`, `get_by_path` public API
+- Cleaned `agent.py`: removed unused imports (`field`, `Dict`, `OpenAI`), removed unused `for_subtask()` method
+- Consolidated `logger.py` from 216 → 140 lines: removed 6 unused methods (`log_button_press`, `log_llm_request`, `log_llm_response`, `log_task_event`, `log_ocr`, `log_snapshot`), removed `remove_listener()`, added generic `log_event()` method
+- Extracted duplicated agent iteration block in `turn.py` into `_run_agent_iter()` helper
+- Fixed `dashboard/server.py`: removed duplicate `import time`, removed `import time as _time` alias
+- Deleted dead `tests/test_movement.py` (tested only removed methods)
+- Rewrote `tests/test_phase3.py` for simplified state API
+- Pinned `pydantic-ai>=0.8.0,<0.9.0` in requirements.txt (monkey-patches depend on 0.8.x internals)
+
+### Coordinate System Fix
+- Flipped y-axis to natural convention: positive = up, negative = down
+- Previously: `y: negative = up, positive = down` (screen coordinates)
+- Now: `y: negative = down, positive = up` (mathematical/intuitive)
+- Updated all examples in config-1.2.yaml prompt (coordinate system, action chaining, i_saw, i_thought, memory_updates)
+
+### Map Memory: Compass Directions
+- Map entries in memory dictionary now use compass directions (north, south-east, etc.) instead of coordinates
+- Coordinates `(x,y)` are reserved for real-time player-relative positions in `i_saw` only
+- Prevents confusion between persistent map descriptions and per-turn relative positions
+
+### Grid Overlay
+- New `screenshot.grid_overlay` config option (default: false)
+- Draws red semi-transparent tile grid on agent screenshots and report images
+- NOT applied to live dashboard stream (comes from separate Lua capture)
+- Grid aligns to GBA 16×16 tile boundaries with 8px vertical offset
+- Line width scales with upscale factor (`scale * 2` pixels)
+- Helps VLM count tiles for more accurate spatial reasoning
+
+---
+
 ## 2026-04-09 — Session 3: Direct Multimodal, Memory System, Reliable Movement
 
 ### Config Versioning

@@ -32,8 +32,6 @@ async def index():
     """Serve the dashboard HTML with inline cache busting."""
     html_path = STATIC_DIR / "index.html"
     content = html_path.read_text()
-    # Inject timestamp to bust any browser cache
-    import time
     content = content.replace("</head>", f"<!-- cache-bust: {time.time()} -->\n</head>")
     from starlette.responses import HTMLResponse
     return HTMLResponse(
@@ -167,7 +165,6 @@ def start_dashboard(
 
     # Wait briefly for server to start, then open browser with cache-busting URL
     time.sleep(0.8)
-    import time as _time
-    webbrowser.open(f"http://localhost:{port}/?v={int(_time.time())}")
+    webbrowser.open(f"http://localhost:{port}/?v={int(time.time())}")
 
     print(f"  Dashboard: http://localhost:{port}")

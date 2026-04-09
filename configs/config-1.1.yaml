@@ -209,6 +209,7 @@ emulator:
   frames_between_inputs: 24
 screenshot:
   upscale_factor: 3
+  grid_overlay: false
 
 screen_stability:
   min_wait: 0.3

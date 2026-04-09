@@ -206,6 +206,7 @@ emulator:
 # Screenshot preprocessing before sending to VLM/LLM
 screenshot:
   upscale_factor: 3
+  grid_overlay: false
 
 # Screen stability detection: waits for the screen to stop changing after
 # button presses before taking the next turn's screenshot.

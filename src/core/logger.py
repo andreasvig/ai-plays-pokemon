@@ -44,7 +44,7 @@ class RunLogger:
         self._event_id = 0
         self._screenshot_id = 0
 
-        # Event listeners (for live dashboard, etc.)
+        # Event listeners (for live dashboard)
         self._listeners: list[Callable[[dict], None]] = []
 
         # Save config snapshot
@@ -55,15 +55,7 @@ class RunLogger:
         self._log_event("run_start", {"run_dir": str(self.run_dir)})
 
     def log_screenshot(self, image, label: str = "") -> str:
-        """Save a screenshot image and log it.
-
-        Args:
-            image: PIL Image
-            label: Optional label (e.g., "turn_start", "after_action")
-
-        Returns:
-            Path to the saved screenshot file
-        """
+        """Save a screenshot image and log it. Returns path to saved file."""
         self._screenshot_id += 1
         filename = f"{self._screenshot_id:05d}"
         if label:
@@ -81,100 +73,40 @@ class RunLogger:
 
         return str(filepath)
 
-    def log_button_press(self, button: str) -> None:
-        """Log a single button press."""
-        self._log_event("button_press", {"button": button})
+    def log_event(self, event_type: str, data: dict) -> None:
+        """Log any event by type and data dict."""
+        self._log_event(event_type, data)
 
-    def log_button_sequence(self, sequence: str) -> None:
-        """Log a button sequence."""
-        self._log_event("button_sequence", {"sequence": sequence})
+    # Convenience aliases for frequently-used event types
+    log_custom = log_event
 
     def log_tool_call(self, tool_name: str, args: dict, agent_id: str = "") -> None:
-        """Log an agent tool call."""
-        self._log_event("tool_call", {
-            "tool": tool_name,
-            "args": args,
-            "agent_id": agent_id,
-        })
+        self._log_event("tool_call", {"tool": tool_name, "args": args, "agent_id": agent_id})
 
     def log_tool_response(self, tool_name: str, response: Any, agent_id: str = "") -> None:
-        """Log a tool response."""
-        self._log_event("tool_response", {
-            "tool": tool_name,
-            "response": _safe_serialize(response),
-            "agent_id": agent_id,
-        })
-
-    def log_llm_request(self, model: str, messages: list, agent_id: str = "") -> None:
-        """Log an LLM API request."""
-        self._log_event("llm_request", {
-            "model": model,
-            "messages": _safe_serialize(messages),
-            "agent_id": agent_id,
-        })
-
-    def log_llm_response(self, model: str, response: Any, agent_id: str = "") -> None:
-        """Log an LLM API response."""
-        self._log_event("llm_response", {
-            "model": model,
-            "response": _safe_serialize(response),
-            "agent_id": agent_id,
-        })
-
-    def log_turn_start(self, turn_number: int, agent_id: str = "") -> None:
-        """Log the start of a new turn."""
-        self._log_event("turn_start", {
-            "turn": turn_number,
-            "agent_id": agent_id,
-        })
-
-    def log_turn_explanation(self, turn_number: int, explanation: dict, agent_id: str = "") -> None:
-        """Log a turn explanation (I saw / I thought / I did)."""
-        self._log_event("turn_explanation", {
-            "turn": turn_number,
-            "explanation": explanation,
-            "agent_id": agent_id,
-        })
-
-    def log_task_event(self, event_type: str, details: dict) -> None:
-        """Log a task system event (spawn, complete, fail, etc.)."""
-        self._log_event(f"task_{event_type}", details)
-
-    def log_state_change(self, operation: str, details: dict, agent_id: str = "") -> None:
-        """Log a state file change."""
-        self._log_event("state_change", {
-            "operation": operation,
-            "details": _safe_serialize(details),
-            "agent_id": agent_id,
-        })
-
-    def log_ocr(self, text: str) -> None:
-        """Log OCR captured text."""
-        self._log_event("ocr", {"text": text})
+        self._log_event("tool_response", {"tool": tool_name, "response": _safe_serialize(response), "agent_id": agent_id})
 
     def log_vlm_request(self, prompt: str, agent_id: str = "") -> None:
-        """Log a VLM request."""
         self._log_event("vlm_request", {"prompt": prompt, "agent_id": agent_id})
 
     def log_vlm_response(self, response: str, agent_id: str = "") -> None:
-        """Log a VLM response."""
         self._log_event("vlm_response", {"response": response, "agent_id": agent_id})
 
-    def log_snapshot(self, snapshot_path: str, trigger: str = "") -> None:
-        """Log a snapshot event."""
-        self._log_event("snapshot", {"path": snapshot_path, "trigger": trigger})
+    def log_turn_start(self, turn_number: int, agent_id: str = "") -> None:
+        self._log_event("turn_start", {"turn": turn_number, "agent_id": agent_id})
 
-    def log_custom(self, event_type: str, data: dict) -> None:
-        """Log a custom event."""
-        self._log_event(event_type, data)
+    def log_turn_explanation(self, turn_number: int, explanation: dict, agent_id: str = "") -> None:
+        self._log_event("turn_explanation", {"turn": turn_number, "explanation": explanation, "agent_id": agent_id})
+
+    def log_button_sequence(self, sequence: str) -> None:
+        self._log_event("button_sequence", {"sequence": sequence})
+
+    def log_state_change(self, operation: str, details: dict, agent_id: str = "") -> None:
+        self._log_event("state_change", {"operation": operation, "details": _safe_serialize(details), "agent_id": agent_id})
 
     def add_listener(self, callback: Callable[[dict], None]) -> None:
         """Register a callback that receives every event dict after it's logged."""
         self._listeners.append(callback)
-
-    def remove_listener(self, callback: Callable[[dict], None]) -> None:
-        """Unregister an event listener."""
-        self._listeners.remove(callback)
 
     def close(self) -> None:
         """Close the log file."""

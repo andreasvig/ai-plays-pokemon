@@ -1,6 +1,5 @@
 """Python server that mGBA's Lua script connects to."""
 
-import hashlib
 import socket
 import time
 from pathlib import Path
@@ -29,6 +28,7 @@ class EmulatorClient:
 
         screenshot_config = config.get("screenshot", {})
         self.upscale_factor = screenshot_config.get("upscale_factor", 3)
+        self.grid_overlay = screenshot_config.get("grid_overlay", False)
 
         self.valid_inputs = set(config.get("valid_inputs", []))
 
@@ -256,33 +256,6 @@ class EmulatorClient:
         except (socket.timeout, BlockingIOError, OSError):
             pass  # No more data available
 
-    _DIRECTION_CODES = {"U", "D", "L", "R"}
-    _CODE_TO_FACING = {"U": "up", "D": "down", "L": "left", "R": "right"}
-    _FACING_TO_CODE = {"up": "U", "down": "D", "left": "L", "right": "R"}
-
-    def _insert_turning_frames(self, buttons: list[str]) -> list[str]:
-        """Insert extra direction presses to compensate for turning frames.
-
-        In Pokemon, if you face up and press right, the first press just turns
-        you — no movement. This method doubles the first press in a new direction
-        so the model's intended movement actually happens.
-        """
-        if not buttons:
-            return buttons
-
-        result = []
-        current_facing = self._FACING_TO_CODE.get(self.facing) if self.facing else None
-
-        for btn in buttons:
-            if btn in self._DIRECTION_CODES:
-                if current_facing is not None and btn != current_facing:
-                    # Need to turn first — insert an extra press
-                    result.append(btn)
-                current_facing = btn
-            result.append(btn)
-
-        return result
-
     def normalize_button_list(self, buttons: list[str]) -> list[str]:
         """Normalize a list of button names to emulator short codes.
 
@@ -441,7 +414,7 @@ class EmulatorClient:
         return 1.0 - mean_diff
 
     def _preprocess_screenshot(self, img: Image.Image) -> Image.Image:
-        """Upscale a screenshot for better VLM readability."""
+        """Upscale a screenshot and optionally add tile grid overlay."""
         if self.upscale_factor > 1:
             new_size = (
                 img.width * self.upscale_factor,
@@ -449,4 +422,30 @@ class EmulatorClient:
             )
             img = img.resize(new_size, Image.NEAREST)
 
+        if self.grid_overlay:
+            img = self._draw_grid_overlay(img)
+
         return img
+
+    def _draw_grid_overlay(self, img: Image.Image) -> Image.Image:
+        """Draw a semi-transparent red grid at tile boundaries (16px native = 16*scale)."""
+        from PIL import ImageDraw
+
+        scale = self.upscale_factor
+        tile_size = 16 * scale
+        # GBA viewport has an 8px vertical offset from tile boundaries
+        y_offset = 8 * scale
+
+        overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        draw = ImageDraw.Draw(overlay)
+        color = (255, 0, 0, 70)  # red, semi-transparent
+        width = max(3, scale * 2)  # thick lines visible at all scales
+
+        # Vertical lines
+        for x in range(0, img.width, tile_size):
+            draw.line([(x, 0), (x, img.height)], fill=color, width=width)
+        # Horizontal lines (offset by half a tile to align with game tiles)
+        for y in range(y_offset, img.height, tile_size):
+            draw.line([(0, y), (img.width, y)], fill=color, width=width)
+
+        return Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")

@@ -330,10 +330,10 @@ class TurnManager:
             if updates:
                 for key, value in updates.items():
                     if value is None or value == "":
-                        self.state._delete_by_path(key)
+                        self.state.delete_by_path(key)
                     else:
-                        self.state._set_by_path(key, value)
-                self.state._save()
+                        self.state.set_by_path(key, value)
+                self.state.save()
                 print(f"  [Turn {self.turn_number}] Memory: {json.dumps(updates)}")
                 self.logger.log_state_change("memory_update", {
                     "updates": updates,
@@ -518,6 +518,24 @@ class TurnManager:
             })
             return None
 
+    async def _run_agent_iter(self, user_message, deps, model, usage_limits, model_settings=None):
+        """Run a single agent iteration with streaming. Returns (result, captured_messages)."""
+        from pydantic_ai import capture_run_messages
+        from pydantic_ai._agent_graph import CallToolsNode, ModelRequestNode
+
+        with capture_run_messages() as captured:
+            kwargs = {"model_settings": model_settings} if model_settings else {}
+            async with self.agent.iter(
+                user_message, deps=deps, model=model,
+                usage_limits=usage_limits, **kwargs,
+            ) as agent_run:
+                async for node in agent_run:
+                    if isinstance(node, CallToolsNode):
+                        self._emit_node_events(node, deps)
+                    elif isinstance(node, ModelRequestNode):
+                        self._emit_retry_events(node, deps)
+            return agent_run.result, list(captured)
+
     async def _run_agent_with_fallback(
         self,
         user_message,
@@ -526,19 +544,13 @@ class TurnManager:
     ) -> tuple:
         """Run the agent, trying fallback models if the primary fails.
 
-        Uses agent.iter() to stream nodes as they execute, emitting log events
-        for thinking, tool calls, and results in real-time.
-
         Populates out_messages with the captured message history.
         Returns (result, model_id_used).
         """
-        from pydantic_ai import capture_run_messages
         from pydantic_ai.usage import UsageLimits
-        from pydantic_ai._agent_graph import CallToolsNode, ModelRequestNode
 
         usage_limits = UsageLimits(request_limit=self.max_steps_per_turn)
 
-        # Build model chain: primary + fallbacks
         primary_model_id = self.config.get("llm_model", "")
         model_chain = [primary_model_id] + list(self.fallback_models)
 
@@ -546,25 +558,11 @@ class TurnManager:
 
         for model_id in model_chain:
             model = OpenAIModel(model_id, provider="openrouter")
-            model_settings = self.model_settings
 
             try:
-                with capture_run_messages() as captured:
-                    async with self.agent.iter(
-                        user_message,
-                        deps=deps,
-                        model=model,
-                        usage_limits=usage_limits,
-                        **({"model_settings": model_settings} if model_settings else {}),
-                    ) as agent_run:
-                        async for node in agent_run:
-                            # Stream thinking and tool calls as they happen
-                            if isinstance(node, CallToolsNode):
-                                self._emit_node_events(node, deps)
-                            elif isinstance(node, ModelRequestNode):
-                                self._emit_retry_events(node, deps)
-
-                    result = agent_run.result
+                result, captured = await self._run_agent_iter(
+                    user_message, deps, model, usage_limits, self.model_settings
+                )
                 out_messages.extend(captured)
                 return result, model_id
 
@@ -572,31 +570,17 @@ class TurnManager:
                 last_error = exc
                 logger.warning(f"Model {model_id} failed: {exc}")
 
-                if model_settings and _should_retry_without_thinking(exc):
+                if self.model_settings and _should_retry_without_thinking(exc):
                     try:
                         logger.info(f"Retrying {model_id} without thinking params")
-                        with capture_run_messages() as captured:
-                            async with self.agent.iter(
-                                user_message,
-                                deps=deps,
-                                model=model,
-                                usage_limits=usage_limits,
-                            ) as agent_run:
-                                async for node in agent_run:
-                                    if isinstance(node, CallToolsNode):
-                                        self._emit_node_events(node, deps)
-                                    elif isinstance(node, ModelRequestNode):
-                                        self._emit_retry_events(node, deps)
-
-                            result = agent_run.result
+                        result, captured = await self._run_agent_iter(
+                            user_message, deps, model, usage_limits
+                        )
                         out_messages.extend(captured)
                         return result, model_id
-
                     except Exception as exc2:
                         last_error = exc2
                         logger.warning(f"Model {model_id} failed without thinking: {exc2}")
-
-                out_messages.extend(captured)
 
         raise last_error
 

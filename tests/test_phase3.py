@@ -11,164 +11,90 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 def test_state_manager():
-    """Test the StateManager with all tools and visibility rules."""
+    """Test the StateManager with get/set/delete operations."""
     from src.core import StateManager
 
-    # Use a temp file
     tmp = tempfile.mktemp(suffix=".json")
     sm = StateManager(tmp)
 
     print("=== State Manager Tests ===\n")
 
-    # --- Test update_state (add new keys) ---
-    print("1. update_state (add top-level keys)...")
-    sm.start_turn()
-    result = sm.update_state({"current_location": "Route 1", "party": {}})
-    assert result["current_location"] == "ok"
-    assert result["party"] == "ok"
+    # --- Test set_by_path (add new keys) ---
+    print("1. set_by_path (add top-level keys)...")
+    sm.set_by_path("current_location", "Route 1")
+    sm.set_by_path("party", {})
+    sm.save()
+    assert sm.get_by_path("current_location") == "Route 1"
+    assert sm.get_by_path("party") == {}
     print("   OK")
 
-    # --- Test add nested key under seen parent ---
-    print("2. update_state under seen parent...")
-    sm.start_turn()  # party is visible (not hidden), so it's seen
-    result = sm.update_state({"party.charmander": {"hp": 20, "moves": ["Scratch", "Ember"]}})
-    assert result["party.charmander"] == "ok", f"Expected ok, got: {result}"
+    # --- Test set nested key ---
+    print("2. set_by_path nested key...")
+    sm.set_by_path("party.charmander", {"hp": 20, "moves": ["Scratch", "Ember"]})
+    sm.save()
+    assert sm.get_by_path("party.charmander")["hp"] == 20
     print("   OK")
 
-    # --- Test update_state on existing visible key ---
-    print("3. update_state on visible key...")
-    sm.start_turn()
-    result = sm.update_state({"current_location": "Viridian City"})
-    assert result["current_location"] == "ok"
+    # --- Test update existing key ---
+    print("3. set_by_path overwrites existing...")
+    sm.set_by_path("current_location", "Viridian City")
+    sm.save()
+    assert sm.get_by_path("current_location") == "Viridian City"
     print("   OK")
 
-    # --- Test bulk update ---
-    print("4. update_state bulk (multiple keys)...")
-    sm.start_turn()
-    result = sm.update_state({
-        "current_location": "Pewter City",
-        "party.charmander.hp": 15,
-    })
-    assert result["current_location"] == "ok"
-    assert result["party.charmander.hp"] == "ok"
+    # --- Test deep nested update ---
+    print("4. set_by_path deep nested...")
+    sm.set_by_path("party.charmander.hp", 15)
+    sm.save()
+    assert sm.get_by_path("party.charmander.hp") == 15
     print("   OK")
 
-    # --- Test set_hide ---
-    print("5. set_hide...")
-    sm.start_turn()
-    result = sm.set_hide("party.charmander", True)
-    assert result == "ok"
-    print("   OK")
-
-    # --- Test truncated view with hidden key ---
-    print("6. get_truncated_view with hidden key...")
-    sm.start_turn()
+    # --- Test get_truncated_view ---
+    print("5. get_truncated_view returns full state...")
     view = sm.get_truncated_view()
-    assert view["party"]["charmander"] == "<hidden>"
-    assert view["current_location"] == "Pewter City"
+    assert view["current_location"] == "Viridian City"
+    assert view["party"]["charmander"]["hp"] == 15
     print(f"   View: {json.dumps(view, indent=2)}")
     print("   OK")
 
-    # --- Test update on hidden key FAILS ---
-    print("7. update_state on hidden key fails...")
-    sm.start_turn()
-    result = sm.update_state({"party.charmander.hp": 10})
-    assert "Error" in result["party.charmander.hp"]
-    print(f"   Got expected error: {result['party.charmander.hp']}")
+    # --- Test get_by_path missing key ---
+    print("6. get_by_path returns None for missing keys...")
+    assert sm.get_by_path("nonexistent") is None
+    assert sm.get_by_path("party.pikachu") is None
     print("   OK")
 
-    # --- Test read_state reveals hidden key ---
-    print("8. read_state reveals hidden key, then update works...")
-    sm.start_turn()
-    read_result = sm.read_state(["party.charmander"])
-    assert read_result["party.charmander"]["hp"] == 15
-    # Now update should work
-    result = sm.update_state({"party.charmander.hp": 10})
-    assert result["party.charmander.hp"] == "ok"
+    # --- Test delete_by_path ---
+    print("7. delete_by_path removes key...")
+    sm.delete_by_path("current_location")
+    sm.save()
+    assert sm.get_by_path("current_location") is None
+    assert "current_location" not in sm.get_truncated_view()
     print("   OK")
 
-    # --- Test delete via update (set to "") on hidden key FAILS ---
-    print("9. update_state delete on hidden key fails...")
-    sm.set_hide("party.charmander", True)
-    sm.start_turn()
-    result = sm.update_state({"party.charmander": ""})
-    assert "Error" in result["party.charmander"]
-    print(f"   Got expected error: {result['party.charmander']}")
+    # --- Test delete nested ---
+    print("8. delete_by_path nested...")
+    sm.delete_by_path("party.charmander")
+    sm.save()
+    assert sm.get_by_path("party.charmander") is None
+    assert "charmander" not in sm.get_truncated_view()["party"]
     print("   OK")
 
-    # --- Test move_state (doesn't require reading source content) ---
-    print("10. move_state without reading source...")
-    sm.start_turn()
-    # Add a box key first
-    sm.update_state({"box": {}})
-    # charmander is hidden but move only needs it to exist
-    result = sm.move_state("party.charmander", "box.charmander")
-    assert result == "ok"
-    # Verify it moved
-    view = sm.get_truncated_view()
-    assert "charmander" not in view.get("party", {})
-    assert "charmander" in view.get("box", {})
+    # --- Test delete nonexistent is no-op ---
+    print("9. delete_by_path nonexistent is no-op...")
+    sm.delete_by_path("nonexistent")  # Should not raise
     print("   OK")
 
-    # --- Test update under unseen parent FAILS ---
-    print("11. update_state under hidden parent fails...")
-    sm.set_hide("box", True)
-    sm.start_turn()
-    result = sm.update_state({"box.pidgey": {"hp": 30}})
-    assert "Error" in result["box.pidgey"]
-    print(f"   Got expected error: {result['box.pidgey']}")
+    # --- Test creates intermediate dicts ---
+    print("10. set_by_path creates intermediate dicts...")
+    sm.set_by_path("map.pallet_town.exits", ["north"])
+    sm.save()
+    assert sm.get_by_path("map.pallet_town.exits") == ["north"]
     print("   OK")
 
-    # --- Test seen tracking resets between turns ---
-    print("12. seen tracking resets between turns...")
-    sm.start_turn()
-    sm.read_state(["box.charmander"])  # Now it's seen
-    sm.start_turn()  # Reset! box is hidden again
-    result = sm.update_state({"box.charmander.hp": 5})
-    assert "Error" in result["box.charmander.hp"]
-    print("   OK")
-
-    # --- Test update_state on existing key overwrites (no add error) ---
-    print("13. update_state on existing key overwrites...")
-    sm.start_turn()
-    result = sm.update_state({"current_location": "Cerulean City"})
-    assert result["current_location"] == "ok"
-    print("   OK")
-
-    # --- Test empty update is a no-op ---
-    print("14. update_state with empty dict is a no-op...")
-    sm.start_turn()
-    result = sm.update_state({})
-    assert "_info" in result
-    print(f"   Got expected info: {result['_info']}")
-    print("   OK")
-
-    # --- Test delete via "" ---
-    print("15. update_state with '' deletes the key...")
-    sm.start_turn()
-    result = sm.update_state({"current_location": ""})
-    assert result["current_location"] == "deleted"
-    view = sm.get_truncated_view()
-    assert "current_location" not in view
-    print("   OK")
-
-    # --- Test delete via None ---
-    print("16. update_state with null deletes the key...")
-    sm.start_turn()
-    # party should still exist
-    assert "party" in sm.get_truncated_view()
-    result = sm.update_state({"party": None})
-    assert result["party"] == "deleted"
-    view = sm.get_truncated_view()
-    assert "party" not in view
-    print("   OK")
-
-    # --- Test delete nonexistent key fails ---
-    print("17. update_state delete nonexistent key fails...")
-    sm.start_turn()
-    result = sm.update_state({"nonexistent": ""})
-    assert "Error" in result["nonexistent"]
-    print(f"   Got expected error: {result['nonexistent']}")
+    # --- Test persistence ---
+    print("11. State persists to disk...")
+    sm2 = StateManager(tmp)
+    assert sm2.get_by_path("map.pallet_town.exits") == ["north"]
     print("   OK")
 
     # Cleanup
@@ -196,19 +122,19 @@ def test_run_logger():
 
     # Log various events
     print("2. Logging events...")
-    logger.log_button_press("A")
+    logger.log_event("button_press", {"button": "A"})
     logger.log_button_sequence("RRRRAAA")
-    logger.log_tool_call("read_state", {"keys": ["party"]}, agent_id="agent_0")
-    logger.log_tool_response("read_state", {"party": {}}, agent_id="agent_0")
+    logger.log_tool_call("ask_vlm", {"question": "What do I see?"}, agent_id="agent_0")
+    logger.log_tool_response("ask_vlm", "A bedroom", agent_id="agent_0")
     logger.log_turn_start(1, agent_id="agent_0")
     logger.log_turn_explanation(1, {
         "i_saw": "Player standing in bedroom",
         "i_thought": "Should go outside",
         "i_did": "Walked down to the door",
     }, agent_id="agent_0")
-    logger.log_state_change("edit", {"key": "location", "value": "Route 1"})
-    logger.log_task_event("spawn", {"task": "Navigate to Viridian City", "depth": 1})
-    logger.log_ocr("Welcome to the world of Pokemon!")
+    logger.log_state_change("memory_update", {"updates": {"location": "Route 1"}})
+    logger.log_event("task_spawn", {"task": "Navigate to Viridian City", "depth": 1})
+    logger.log_event("ocr", {"text": "Welcome to the world of Pokemon!"})
     logger.log_custom("test_event", {"data": "hello"})
     print("   OK")
 
@@ -228,7 +154,7 @@ def test_run_logger():
     assert events_file.exists()
     with open(events_file) as f:
         lines = f.readlines()
-    # run_start + 11 events (screenshot logs twice: file + event) + run_end = 13
+    # run_start + 10 events + screenshot + run_end = 13
     assert len(lines) == 13, f"Expected 13 events, got {len(lines)}"
 
     # Verify each line is valid JSON
@@ -246,7 +172,7 @@ def test_run_logger():
         "runs_directory": config["runs_directory"],
         "run_name": "crash_test",
     })
-    logger2.log_button_press("B")
+    logger2.log_event("button_press", {"button": "B"})
     logger2.log_button_sequence("UUUU")
     # Don't call close() - simulate crash
     events_file2 = logger2.run_dir / "events.jsonl"

@@ -1,10 +1,8 @@
 """Agent turn loop using Pydantic AI with OpenRouter."""
 
 import json
-from dataclasses import dataclass, field
-from typing import Any, Dict, Literal, Optional
-
-from openai import OpenAI
+from dataclasses import dataclass
+from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext, Tool
 from pydantic_ai.models.openai import OpenAIModel
@@ -56,17 +54,6 @@ class AgentDeps:
     turn_number: int = 0
     agent_id: str = "agent_0"
 
-    def for_subtask(self, agent_id: str) -> "AgentDeps":
-        """Create deps for a sub-agent: shared infra, fresh per-turn state."""
-        return AgentDeps(
-            emulator=self.emulator,
-            state=self.state,
-            vision=self.vision,
-            logger=self.logger,
-            ocr=self.ocr,
-            turn_number=0,
-            agent_id=agent_id,
-        )
 
 
 # --- Build the agent ---
