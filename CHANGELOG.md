@@ -1,5 +1,36 @@
 # Changelog
 
+## 2026-04-10 — Session 5b: Button Timing, Screen Stability, Prompt Refinements
+
+### Button Timing: A/B Dialogue Gap
+- A and B button presses now use a longer gap (45 frames / 750ms) vs directional buttons (24 frames / 400ms)
+- Lua `socketserver.lua`: per-button gap — checks if key is A or B, uses `queue_ab_gap_frames`
+- Python sleep calculation accounts for mixed timing per button in sequence
+- New config option: `emulator.ab_gap_frames` (default 45)
+- Fixes: `[A, A, A, A, A, A]` previously only advanced 2 dialogue boxes, now advances ~5-6
+
+### Screen Stability Rewrite
+- New approach: captures 3 images at poll_interval apart, then compares all 3 pairwise
+- Higher resolution comparison: 120×80 grayscale (was 48×32)
+- 3 pairwise comparisons (1↔2, 2↔3, 1↔3) instead of 2 consecutive
+- Sliding window: on failure, captures new image, drops oldest, re-checks latest 3
+- Config changes: `poll_interval: 0.2`, `max_wait: 15.0`, `threshold_end: 0.95`
+
+### Prompt Refinements
+- Memory: "Never update based on what you expect — only after confirmed on screen"
+- Memory: always explain in `i_did` what was updated and why
+- Dialogue guidance: use A to start conversation, B to advance (B won't restart dialogue if you overshoot), A for Yes/No confirmations
+- Approach angles: doors/stairs may need specific direction, use sweeping techniques
+- Trust screen over game knowledge: verify locations via signs/dialogue/landmarks
+- Grid overlay: use red grid lines to count tile coordinates
+
+### Test Results (20 turns, $0.20)
+- Bedroom → 1F → Pallet Town → Oak encounter → Oak's Lab → chose Squirtle → rival battle incoming
+- Dialogue chaining works reliably with A/B timing fix
+- Memory updates correctly deferred until confirmation
+
+---
+
 ## 2026-04-09 — Session 5: Config 2.0 Prompt Rewrite, Output Schema Overhaul
 
 ### Config 2.0 System Prompt

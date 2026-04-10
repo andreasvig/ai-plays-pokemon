@@ -25,6 +25,7 @@ class EmulatorClient:
         self.port = emu_config["port"]
         self.hold_frames = emu_config.get("button_hold_frames", 6)
         self.gap_frames = emu_config.get("frames_between_inputs", 30)
+        self.ab_gap_frames = emu_config.get("ab_gap_frames", 45)  # longer gap for A/B (dialogue)
 
         screenshot_config = config.get("screenshot", {})
         self.upscale_factor = screenshot_config.get("upscale_factor", 3)
@@ -289,9 +290,12 @@ class EmulatorClient:
         self._send(f"SEQ:{seq_str}")
 
         # Sleep for the expected execution time + small buffer
-        n = len(normalized)
-        frames_per_button = self.hold_frames + self.gap_frames
-        total_frames = n * frames_per_button
+        # A/B buttons use a longer gap (dialogue needs time to render)
+        ab_buttons = {"A", "B"}
+        total_frames = 0
+        for btn in normalized:
+            gap = self.ab_gap_frames if btn in ab_buttons else self.gap_frames
+            total_frames += self.hold_frames + gap
         expected_seconds = total_frames / 60.0
         sleep_time = expected_seconds + 0.5  # 0.5s buffer
         time.sleep(sleep_time)
@@ -345,20 +349,26 @@ class EmulatorClient:
     def wait_for_stable_screen(self) -> None:
         """Wait until the screen stabilizes after a sequence.
 
-        Takes screenshots at regular intervals and compares them. The screen
-        is considered stable when the average similarity of the last 3 frames
-        exceeds a threshold. The threshold gradually relaxes from
-        threshold_start to threshold_end over the wait period, so long
-        animations (battle intros, cutscenes) eventually pass.
+        Captures an image every poll_interval seconds. Once 3 images have
+        been collected, compares all 3 pairwise. If the average similarity
+        meets the threshold, the screen is stable.
+
+        The threshold starts strict (threshold_start, e.g. 0.99) and
+        relaxes linearly to threshold_end (e.g. 0.90) over the max_wait
+        period, so long animations eventually pass.
+
+        On each new poll after the first comparison, the oldest image is
+        dropped and a new one is captured, then the latest 3 are compared.
         """
         start = time.time()
+        frames: list[np.ndarray] = []
 
-        # Always wait the minimum first
-        time.sleep(self.stability_min_wait)
+        # Collect 3 images, each poll_interval apart
+        for _ in range(3):
+            time.sleep(self.stability_poll_interval)
+            frames.append(self._capture_raw_frame())
 
-        # Collect recent frame fingerprints for comparison
-        recent_frames: list[np.ndarray] = []
-
+        # First comparison
         while True:
             elapsed = time.time() - start
 
@@ -366,30 +376,33 @@ class EmulatorClient:
             if elapsed >= self.stability_max_wait:
                 break
 
-            # Capture a low-res frame for comparison (raw, no upscale)
-            frame = self._capture_raw_frame()
-            recent_frames.append(frame)
+            # Compare all 3 pairwise
+            last3 = frames[-3:]
+            sim1 = self._frame_similarity(last3[0], last3[1])
+            sim2 = self._frame_similarity(last3[1], last3[2])
+            sim3 = self._frame_similarity(last3[0], last3[2])
+            avg_similarity = (sim1 + sim2 + sim3) / 3.0
 
-            # Need at least 3 frames to compare
-            if len(recent_frames) >= 3:
-                # Compute similarity between consecutive pairs of last 3 frames
-                last3 = recent_frames[-3:]
-                sim1 = self._frame_similarity(last3[0], last3[1])
-                sim2 = self._frame_similarity(last3[1], last3[2])
-                avg_similarity = (sim1 + sim2) / 2.0
+            # Threshold relaxes linearly from start to end over max_wait
+            total_window = self.stability_max_wait - (self.stability_poll_interval * 3)
+            if total_window > 0:
+                progress = (elapsed - self.stability_poll_interval * 3) / total_window
+            else:
+                progress = 1.0
+            progress = min(1.0, max(0.0, progress))
+            threshold = self.stability_threshold_start + progress * (self.stability_threshold_end - self.stability_threshold_start)
 
-                # Interpolate threshold: starts strict, relaxes over time
-                progress = (elapsed - self.stability_min_wait) / (self.stability_max_wait - self.stability_min_wait)
-                progress = min(1.0, max(0.0, progress))
-                threshold = self.stability_threshold_start + progress * (self.stability_threshold_end - self.stability_threshold_start)
+            if avg_similarity >= threshold:
+                break
 
-                if avg_similarity >= threshold:
-                    break
-
+            # Not stable yet — wait, capture new frame, drop oldest
             time.sleep(self.stability_poll_interval)
+            frames.append(self._capture_raw_frame())
+            if len(frames) > 3:
+                frames = frames[-3:]
 
     def _capture_raw_frame(self) -> np.ndarray:
-        """Capture a small grayscale frame for fast comparison."""
+        """Capture a frame for stability comparison."""
         self._send("CAP")
         response = self._recv_line()
         if not response.startswith("SCREENSHOT:"):
@@ -398,8 +411,8 @@ class EmulatorClient:
         time.sleep(0.02)
         img = Image.open(filepath)
         img.load()
-        # Downscale to 48x32 grayscale for fast comparison
-        small = img.resize((48, 32)).convert("L")
+        # 120x80 grayscale — higher resolution for better comparison
+        small = img.resize((120, 80)).convert("L")
         return np.array(small, dtype=np.float32)
 
     @staticmethod

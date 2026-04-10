@@ -31,6 +31,7 @@ local command_queue = {}
 local input_queue = {}
 local queue_hold_frames = 12   -- 200ms hold — ensures walk, not just turn
 local queue_gap_frames = 24    -- 400ms gap — walk animation is ~16 frames (267ms)
+local queue_ab_gap_frames = 45 -- 750ms gap for A/B — dialogue boxes need time to render
 local queue_frame_counter = 0
 local queue_state = "idle" -- "idle", "pressing", "waiting"
 
@@ -158,8 +159,14 @@ local function process_queue()
         if queue_frame_counter >= queue_hold_frames then
             local key = table.remove(input_queue, 1)
             emu:clearKey(key)
+            -- Use longer gap after A/B presses (dialogue needs time to render)
+            local gap = queue_gap_frames
+            if key == BUTTONS.A or key == BUTTONS.B then
+                gap = queue_ab_gap_frames
+            end
             queue_state = "waiting"
             queue_frame_counter = 0
+            queue_current_gap = gap
             if #input_queue == 0 then
                 queue_state = "idle"
                 respond("SEQUENCE_DONE")
@@ -167,7 +174,7 @@ local function process_queue()
         end
     elseif queue_state == "waiting" then
         queue_frame_counter = queue_frame_counter + 1
-        if queue_frame_counter >= queue_gap_frames then
+        if queue_frame_counter >= (queue_current_gap or queue_gap_frames) then
             queue_state = "idle"
         end
     end

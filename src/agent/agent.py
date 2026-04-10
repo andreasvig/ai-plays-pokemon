@@ -45,7 +45,7 @@ class GameAction(BaseModel):
     )
     i_expect: str = Field(
         description=(
-            "What you expect to see next turn. Be specific — next turn will compare the actual screen against this to judge if this turn succeeded. "
+            "What you expect to see on the exact screen next turn. Be specific — next turn will compare the actual screen against this to judge if this turn succeeded. "
             "E.g. 'Should have entered the Gym, standing inside at the entrance.' "
             "Or: 'Thunderbolt should deal super-effective damage since the opponent is a water type. Expect their HP to drop below 20% or even 0%.'"
         ),
@@ -55,6 +55,7 @@ class GameAction(BaseModel):
             "JSON object with keys to update in the memory dictionary (dot notation for nesting). "
             "Only include changed keys — others stay. Set a key to \"\" to delete it. "
             "Example: '{\"current_location\": \"Viridian City\", \"party.pikachu.hp\": \"28/40\"}'. "
+            "Only update after you have confirmed the new information on screen, NOT when you expect a change to happen. "
             "Write \"none\" only if absolutely nothing changed this turn."
         ),
     )
