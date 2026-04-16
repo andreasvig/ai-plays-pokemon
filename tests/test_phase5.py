@@ -114,7 +114,16 @@ def main():
     vision = VisionPipeline(config)
     ocr_runner = None
     if config.get("ocr", {}).get("enabled", False):
-        ocr_runner = OCRRunner(config, screenshot_fn=lambda: emu.capture_screenshot(preprocess=False))
+        # Read the Lua-managed stream file rather than calling CAP over TCP —
+        # avoids socket contention with the main agent thread.
+        from PIL import Image as _PILImage
+        _stream_path = "/tmp/mgba_stream.png"
+
+        def _ocr_screenshot():
+            with _PILImage.open(_stream_path) as im:
+                return im.copy()
+
+        ocr_runner = OCRRunner(config, screenshot_fn=_ocr_screenshot)
         ocr_runner.start()
 
     # Start live dashboard

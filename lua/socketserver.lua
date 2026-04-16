@@ -31,7 +31,8 @@ local command_queue = {}
 local input_queue = {}
 local queue_hold_frames = 12   -- 200ms hold — ensures walk, not just turn
 local queue_gap_frames = 24    -- 400ms gap — walk animation is ~16 frames (267ms)
-local queue_ab_gap_frames = 45 -- 750ms gap for A/B — dialogue boxes need time to render
+local queue_ab_hold_frames = 40 -- ~670ms hold for A/B — holding speeds up text scroll
+local queue_ab_gap_frames = 20  -- ~330ms gap for A/B — wait for next dialogue box to appear
 local queue_frame_counter = 0
 local queue_state = "idle" -- "idle", "pressing", "waiting"
 
@@ -131,6 +132,12 @@ local function execute_command(cmd)
             elseif param == "gap_frames" then
                 queue_gap_frames = val
                 respond("OK:gap_frames=" .. val)
+            elseif param == "ab_hold_frames" then
+                queue_ab_hold_frames = val
+                respond("OK:ab_hold_frames=" .. val)
+            elseif param == "ab_gap_frames" then
+                queue_ab_gap_frames = val
+                respond("OK:ab_gap_frames=" .. val)
             else
                 respond("ERROR:Unknown config param " .. param)
             end
@@ -151,19 +158,19 @@ local function process_queue()
 
     if queue_state == "idle" then
         local key = input_queue[1]
+        local is_ab = (key == BUTTONS.A or key == BUTTONS.B)
+        queue_current_hold = is_ab and queue_ab_hold_frames or queue_hold_frames
         emu:addKey(key)
         queue_state = "pressing"
         queue_frame_counter = 0
     elseif queue_state == "pressing" then
         queue_frame_counter = queue_frame_counter + 1
-        if queue_frame_counter >= queue_hold_frames then
+        if queue_frame_counter >= (queue_current_hold or queue_hold_frames) then
             local key = table.remove(input_queue, 1)
             emu:clearKey(key)
-            -- Use longer gap after A/B presses (dialogue needs time to render)
-            local gap = queue_gap_frames
-            if key == BUTTONS.A or key == BUTTONS.B then
-                gap = queue_ab_gap_frames
-            end
+            -- Use longer gap after A/B presses (wait for next dialogue box)
+            local is_ab = (key == BUTTONS.A or key == BUTTONS.B)
+            local gap = is_ab and queue_ab_gap_frames or queue_gap_frames
             queue_state = "waiting"
             queue_frame_counter = 0
             queue_current_gap = gap

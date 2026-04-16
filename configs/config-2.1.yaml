@@ -1,10 +1,19 @@
 # ============================================================================
-# Config 1.2 — Coordinate System + Wall Hugging + Action Chaining
+# Config 2.1 — OCR supplement (Tesseract + Gemma cleanup)
 # ============================================================================
-# Builds on 1.1 (direct multimodal, no tools, memory on output).
-# Adds: player-centered coordinate system for spatial reasoning,
-# wall-hugging and action-chaining tactics for reliable navigation,
-# range estimates for uncertain positions.
+# Builds on 2.0 (direct multimodal + coord system + action chaining).
+# Adds: background Tesseract OCR captures during button execution + settle,
+# flushed at turn boundary and cleaned by Gemma 4 26B via OpenRouter. The
+# cleaned text is injected as a "Recent OCR Text" section in the user message
+# so the LLM sees dialogue that scrolled by between screenshots.
+#
+# OCR pipeline: dHash dedup → Tesseract (conf≥40) → regex noise strip →
+# text dedup → buffer → Gemma cleanup (structured JSON output).
+# Captures from /tmp/mgba_stream.png (no TCP contention).
+# Gated to execute+settle window only (set_active).
+#
+# Tuned via dialogue coverage benchmark (tests/ocr_benchmark/):
+#   88% coverage, 13/17 lines found, 0 missed, ~$0.0007/run OCR cost.
 # ============================================================================
 
 # --- Top-Level Task ---
@@ -56,6 +65,9 @@ system_prompt: |
 
   ## Memory
   A JSON dictionary of your persistent memory across turns. You control its contents via `memory_updates` in your output.
+
+  ## Recent OCR Text (optional)
+  A cleaned transcript of text captured from the screen between the last turn and now, assembled from background OCR snapshots and cleaned by a small LLM. Includes dialogue that scrolled by, menu labels, Pokemon names, HP numbers, and other on-screen text. Treat this as ground-truth for exact character sequences — especially useful when the current screenshot catches a dialogue mid-scroll or when text is hard to read. Trust the screenshot for spatial layout and the current game state; trust the OCR text for exact strings. This section may be absent if nothing was captured or if cleanup failed.
 
   ## Previous Turns
   A summary of your recent turns showing what you saw, thought, and did. Use this to avoid repeating failed actions and to track progress.
@@ -166,8 +178,8 @@ emulator:
   pause_during_thinking: true
   button_hold_frames: 12
   frames_between_inputs: 24
-  ab_hold_frames: 40           # ~830ms hold for A/B (holding speeds up text scroll)
-  ab_gap_frames: 20            # ~500ms gap after A/B (wait for next dialogue box)
+  ab_hold_frames: 12           # ~200ms hold for A/B
+  ab_gap_frames: 60            # ~1s gap after A/B (gives dialogue time to fully render for OCR capture)
 screenshot:
   upscale_factor: 3
   grid_overlay: true
@@ -213,9 +225,22 @@ state_file: "local/state/state.json"
 
 # --- OCR ---
 ocr:
-  enabled: false
-  backend: "tesseract"
-  api_url: null
-  capture_interval: 0.5
-  log_buffer_size: 50
-  dedup_window: 3
+  enabled: true
+  capture_interval: 0.2          # 5 captures/sec — with 1s A/B gap, gives ~5 samples per dialogue box
+  confidence_threshold: 40       # drop Tesseract words with conf < 40. Note: benchmark (static clean images) suggested 20, but live captures include animation/transition frames where conf<40 is pure pixel noise that poisons the buffer.
+  dedup_window: 8                # 256-bit dHash dedup on last 8 frames
+  dedup_hamming_threshold: 0     # 0 = only dedup byte-identical frozen frames. Priority 1 is coverage — optimize later.
+  max_buffer_size: 50            # allow more captures since dedup is minimal
+  cleanup_enabled: true          # set false to skip Gemma call (debug mode)
+  cleanup_model: "google/gemma-4-26b-a4b-it"
+  cleanup_system_prompt: |
+    You clean up noisy OCR output from Pokemon GBA screenshots. This is the accumulated OCR buffer from multiple screen captures during a single game turn — so it may contain repeated fragments, overlapping dialogue as it scrolls, and garbled pixel-art noise mixed in with real text.
+    Your job: return the coherent in-game text (dialogue, menu labels, Pokemon names, stats, HP, levels, moves, numbers) with the gibberish removed.
+    Fix obvious OCR misreads when confident (e.g. 'SMERRGEE' → 'SMEARGLE', 'unsate' → 'unsafe', 'POK&MON' → 'POKéMON', 'BRASSWHISTLE' → 'GRASSWHISTLE').
+    Drop tokens that are clearly pixel-art noise: isolated symbols like '|', '—', random letter salads like 'eS ES oe', short non-word fragments.
+    Preserve meaningful line breaks. Merge duplicate/overlapping captures into single coherent text.
+    Do NOT invent text that isn't supported by the OCR input.
+  cleanup_user_prompt: |
+    Clean up this OCR buffer. Each key is a separate capture from the same game turn; merge them into coherent text, drop gibberish, fix obvious OCR misreads.
+
+    {raw_json}

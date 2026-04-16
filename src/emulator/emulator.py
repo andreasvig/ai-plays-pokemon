@@ -25,7 +25,8 @@ class EmulatorClient:
         self.port = emu_config["port"]
         self.hold_frames = emu_config.get("button_hold_frames", 6)
         self.gap_frames = emu_config.get("frames_between_inputs", 30)
-        self.ab_gap_frames = emu_config.get("ab_gap_frames", 45)  # longer gap for A/B (dialogue)
+        self.ab_hold_frames = emu_config.get("ab_hold_frames", 50)  # longer hold for A/B (speeds up text)
+        self.ab_gap_frames = emu_config.get("ab_gap_frames", 30)   # gap after A/B (next dialogue box)
 
         screenshot_config = config.get("screenshot", {})
         self.upscale_factor = screenshot_config.get("upscale_factor", 3)
@@ -40,6 +41,7 @@ class EmulatorClient:
         self.stability_poll_interval = stability.get("poll_interval", 0.3)
         self.stability_threshold_start = stability.get("threshold_start", 0.99)
         self.stability_threshold_end = stability.get("threshold_end", 0.90)
+        self.stability_num_frames = stability.get("num_frames", 3)
 
         # Track player facing direction (updated after each directional input)
         self.facing: Optional[str] = None  # "up", "down", "left", "right" or None (unknown)
@@ -89,8 +91,14 @@ class EmulatorClient:
         self._recv_line()
         self._send(f"CONFIG:gap_frames={self.gap_frames}")
         self._recv_line()
+        self._send(f"CONFIG:ab_hold_frames={self.ab_hold_frames}")
+        self._recv_line()
+        self._send(f"CONFIG:ab_gap_frames={self.ab_gap_frames}")
+        self._recv_line()
 
         print(f"mGBA connected from {addr[0]}:{addr[1]}")
+        print(f"  Timing: hold={self.hold_frames}f gap={self.gap_frames}f | A/B hold={self.ab_hold_frames}f gap={self.ab_gap_frames}f")
+        print(f"  Settle: {self.stability_num_frames} frames, threshold {self.stability_threshold_start}→{self.stability_threshold_end}, max {self.stability_max_wait}s")
 
     def disconnect(self) -> None:
         """Close the connection and server."""
@@ -290,12 +298,14 @@ class EmulatorClient:
         self._send(f"SEQ:{seq_str}")
 
         # Sleep for the expected execution time + small buffer
-        # A/B buttons use a longer gap (dialogue needs time to render)
+        # A/B buttons use longer hold (speeds up text) + different gap
         ab_buttons = {"A", "B"}
         total_frames = 0
         for btn in normalized:
-            gap = self.ab_gap_frames if btn in ab_buttons else self.gap_frames
-            total_frames += self.hold_frames + gap
+            is_ab = btn in ab_buttons
+            hold = self.ab_hold_frames if is_ab else self.hold_frames
+            gap = self.ab_gap_frames if is_ab else self.gap_frames
+            total_frames += hold + gap
         expected_seconds = total_frames / 60.0
         sleep_time = expected_seconds + 0.5  # 0.5s buffer
         time.sleep(sleep_time)
@@ -346,60 +356,94 @@ class EmulatorClient:
 
         return parts
 
-    def wait_for_stable_screen(self) -> None:
+    def wait_for_stable_screen(self) -> float:
         """Wait until the screen stabilizes after a sequence.
 
-        Captures an image every poll_interval seconds. Once 3 images have
-        been collected, compares all 3 pairwise. If the average similarity
-        meets the threshold, the screen is stable.
+        Maintains a rolling window of num_frames slots. Each new capture is
+        checked against all previously seen unique frames:
+        - If it matches (similarity >= threshold_start), it's a known animation
+          frame — added as None (empty slot) in the window.
+        - If it's new, added as a real frame in the window and to the seen set.
 
-        The threshold starts strict (threshold_start, e.g. 0.99) and
-        relaxes linearly to threshold_end (e.g. 0.90) over the max_wait
-        period, so long animations eventually pass.
+        The window's non-None frames are compared pairwise. If there are 0 or 1
+        real frames (everything is repeating), the screen is stable. Otherwise
+        the pairwise similarity product must meet the threshold.
 
-        On each new poll after the first comparison, the oldest image is
-        dropped and a new one is captured, then the latest 3 are compared.
+        This handles idle animations (character sway, water waves) that cycle
+        through a small number of frames — once captured, they become None
+        slots and stop blocking the settle.
         """
+        n = self.stability_num_frames
+        dedup_threshold = self.stability_threshold_start
         start = time.time()
-        frames: list[np.ndarray] = []
 
-        # Collect 3 images, each poll_interval apart
-        for _ in range(3):
-            time.sleep(self.stability_poll_interval)
-            frames.append(self._capture_raw_frame())
+        seen_frames: list[np.ndarray] = []  # all unique frames seen so far
+        window: list = []  # rolling window of N: real frames or None (duplicate)
 
-        # First comparison
         while True:
             elapsed = time.time() - start
-
-            # Hard cap
             if elapsed >= self.stability_max_wait:
+                real = [f for f in window if f is not None]
+                n_dup = len(window) - len(real)
+                print(f"    settle: {elapsed:.1f}s | window=[{len(real)} new, {n_dup} dup]/{n} MAX")
                 break
 
-            # Compare all 3 pairwise
-            last3 = frames[-3:]
-            sim1 = self._frame_similarity(last3[0], last3[1])
-            sim2 = self._frame_similarity(last3[1], last3[2])
-            sim3 = self._frame_similarity(last3[0], last3[2])
-            avg_similarity = (sim1 + sim2 + sim3) / 3.0
+            time.sleep(self.stability_poll_interval)
+            frame = self._capture_raw_frame()
 
-            # Threshold relaxes linearly from start to end over max_wait
-            total_window = self.stability_max_wait - (self.stability_poll_interval * 3)
-            if total_window > 0:
-                progress = (elapsed - self.stability_poll_interval * 3) / total_window
+            # Check if this frame matches any previously seen unique frame
+            is_dup = False
+            best_sim = 0.0
+            for sf in seen_frames:
+                sim = self._frame_similarity(frame, sf)
+                best_sim = max(best_sim, sim)
+                if sim >= dedup_threshold:
+                    is_dup = True
+                    break
+
+            if is_dup:
+                window.append(None)
             else:
-                progress = 1.0
-            progress = min(1.0, max(0.0, progress))
+                window.append(frame)
+                seen_frames.append(frame)
+
+            # Keep window at size N
+            if len(window) > n:
+                window = window[-n:]
+
+            # Window stats for logging
+            real = [f for f in window if f is not None]
+            n_dup = len(window) - len(real)
+            tag = "dup" if is_dup else "NEW"
+            base = f"    settle: {elapsed:.1f}s | {tag} best={best_sim:.4f} | window=[{len(real)} new, {n_dup} dup]/{n}"
+
+            # Need full window before checking
+            if len(window) < n:
+                print(f"{base} filling...")
+                continue
+
+            if len(real) <= 1:
+                # All slots are repeats of known frames — stable
+                print(f"{base} ✓")
+                break
+
+            # Compare real frames pairwise
+            product = 1.0
+            for i in range(len(real)):
+                for j in range(i + 1, len(real)):
+                    product *= self._frame_similarity(real[i], real[j])
+
+            # Threshold relaxes linearly over max_wait
+            progress = min(1.0, max(0.0, elapsed / self.stability_max_wait))
             threshold = self.stability_threshold_start + progress * (self.stability_threshold_end - self.stability_threshold_start)
 
-            if avg_similarity >= threshold:
+            stable = product >= threshold
+            print(f"{base} sim={product:.4f} thresh={threshold:.4f} {'✓' if stable else '✗'}")
+
+            if stable:
                 break
 
-            # Not stable yet — wait, capture new frame, drop oldest
-            time.sleep(self.stability_poll_interval)
-            frames.append(self._capture_raw_frame())
-            if len(frames) > 3:
-                frames = frames[-3:]
+        return time.time() - start
 
     def _capture_raw_frame(self) -> np.ndarray:
         """Capture a frame for stability comparison."""

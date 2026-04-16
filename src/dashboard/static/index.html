@@ -228,7 +228,14 @@
   .box-tool .entry-box-body { color: var(--text-dim); font-size: 11px; }
   .box-memory .entry-box-header { background: #0a1a0a; color: #7ddf64; }
   .box-memory .entry-box-body { color: #7ddf64; font-size: 12px; white-space: pre-wrap; font-family: 'SF Mono', monospace; }
+  .box-ocr .entry-box-header { background: #2a1a05; color: #ffb454; }
+  .box-ocr .entry-box-body { color: #ffb454; font-size: 12px; white-space: pre-wrap; font-family: 'SF Mono', monospace; }
+  .box-ocr .entry-box-body details { margin-top: 6px; }
+  .box-ocr .entry-box-body details summary { cursor: pointer; color: #c98a3e; font-size: 11px; }
+  .box-ocr .entry-box-body details pre { margin-top: 4px; color: #c98a3e; font-size: 11px; }
   .box-error .entry-box-header { background: #290a0a; color: var(--accent2); }
+  .box-settle .entry-box-header { background: #1a1500; color: #e2a93b; }
+  .box-settle .entry-box-body { color: #e2a93b; font-size: 12px; }
   .box-error .entry-box-body { color: var(--accent2); }
 
   .entry-system {
@@ -446,6 +453,9 @@ function handleEvent(evt) {
     }
     addBox('memory', '🧠 Memory Update', display);
   }
+  else if (t === 'ocr_flush') {
+    renderOcrFlush(evt);
+  }
   else if (t === 'llm_text') {
     addBox('output', '💬 Output', evt.content || '');
   }
@@ -464,6 +474,28 @@ function handleEvent(evt) {
   }
   else if (t === 'button_sequence') {
     // Skip — already shown via llm_output action
+  }
+  else if (t === 'screen_settling') {
+    addBox('settle', '⏱ Screen Settling', '0.0s');
+    // Find the body element we just created and start a live timer
+    const boxes = (currentTurnBody || chatScroll).querySelectorAll('.box-settle .entry-box-body');
+    const bodyEl = boxes[boxes.length - 1];
+    if (bodyEl) {
+      const start = Date.now();
+      bodyEl._interval = setInterval(() => {
+        bodyEl.textContent = ((Date.now() - start) / 1000).toFixed(1) + 's';
+      }, 100);
+    }
+  }
+  else if (t === 'screen_settled') {
+    const boxes = (currentTurnBody || chatScroll).querySelectorAll('.box-settle .entry-box-body');
+    const bodyEl = boxes[boxes.length - 1];
+    if (bodyEl && bodyEl._interval) {
+      clearInterval(bodyEl._interval);
+    }
+    if (bodyEl) {
+      bodyEl.textContent = 'Settled in ' + (evt.duration || 0) + 's';
+    }
   }
   else if (t === 'output_retry') {
     addBox('error', '🔄 Output Retry', evt.content || 'Validation failed — retrying.');
@@ -642,6 +674,49 @@ function addBox(variant, title, content, markdown) {
     body.innerHTML = renderMarkdownLight(content);
   } else {
     body.textContent = content;
+  }
+
+  box.appendChild(header);
+  box.appendChild(body);
+  target.appendChild(box);
+  autoScroll();
+}
+
+function renderOcrFlush(evt) {
+  const n = evt.n_captures || 0;
+  const dur = evt.duration || 0;
+  const cleaned = evt.cleaned || '';
+  const raw = evt.raw || {};
+  const cost = evt.cost_usd || 0;
+  if (n === 0 && !cleaned) return;  // nothing to show
+
+  const target = currentTurnBody || chatScroll;
+  const box = document.createElement('div');
+  box.className = 'entry-box box-ocr';
+
+  const header = document.createElement('div');
+  header.className = 'entry-box-header';
+  const costStr = cost > 0 ? ' | $' + cost.toFixed(5) : '';
+  header.textContent = '📝 OCR (' + n + ' captures, ' + dur + 's' + costStr + ')';
+
+  const body = document.createElement('div');
+  body.className = 'entry-box-body';
+
+  const cleanedPre = document.createElement('pre');
+  cleanedPre.textContent = cleaned || '(empty)';
+  cleanedPre.style.whiteSpace = 'pre-wrap';
+  cleanedPre.style.margin = '0';
+  body.appendChild(cleanedPre);
+
+  if (Object.keys(raw).length > 0) {
+    const details = document.createElement('details');
+    const sum = document.createElement('summary');
+    sum.textContent = 'Raw buffer (' + Object.keys(raw).length + ')';
+    details.appendChild(sum);
+    const pre = document.createElement('pre');
+    pre.textContent = JSON.stringify(raw, null, 2);
+    details.appendChild(pre);
+    body.appendChild(details);
   }
 
   box.appendChild(header);

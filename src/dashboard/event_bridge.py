@@ -34,6 +34,8 @@ class EventBridge:
             self._stats["cost"] += event.get("cost_usd", 0)
             self._stats["input_tokens"] += event.get("request_tokens", 0)
             self._stats["output_tokens"] += event.get("response_tokens", 0)
+        elif etype == "ocr_flush":
+            self._stats["cost"] += event.get("cost_usd", 0)
 
     def get_events_since(self, cursor: int) -> tuple[list[dict], int]:
         """Return all events since cursor position, and the new cursor.

@@ -84,6 +84,8 @@ def group_events_by_turn(events: list[dict]) -> list[dict]:
                 current_turn["user_message"] = event.get("message", "")
             elif event["type"] == "turn_usage":
                 current_turn["usage"] = event
+            elif event["type"] == "ocr_flush":
+                current_turn["ocr"] = event
 
     if current_turn:
         turns.append(current_turn)
@@ -373,6 +375,13 @@ def generate_html(run_dir: Path, events: list[dict], turns: list[dict]) -> str:
             cost_str = f" | ${cost:.4f}" if cost else ""
             usage_html = f'<div class="usage">{usage.get("request_tokens", "?")} in / {usage.get("response_tokens", "?")} out{cost_str}</div>'
 
+        # Extract screen settle duration from events
+        settle_html = ""
+        for evt in turn.get("events", []):
+            if evt.get("type") == "screen_settled":
+                dur = evt.get("duration", 0) or evt.get("data", {}).get("duration", 0)
+                settle_html = f'<span class="settle-time">⏱ {dur}s</span>'
+
         # Raw events (collapsed)
         raw_events_json = json.dumps(turn["events"], indent=2, default=str)
 
@@ -382,6 +391,7 @@ def generate_html(run_dir: Path, events: list[dict], turns: list[dict]) -> str:
                 <span class="turn-number">Turn {turn_num}</span>
                 <span class="turn-action"><code>{_escape(action)}</code></span>
                 <span class="turn-summary">{_escape(exp.get('i_did', '')[:100])}</span>
+                {settle_html}
                 {usage_html}
             </div>
             <div class="turn-body">
@@ -398,6 +408,7 @@ def generate_html(run_dir: Path, events: list[dict], turns: list[dict]) -> str:
                         </div>
                     </div>
                 </div>
+                {_render_ocr_html(turn)}
                 {trace_html}
                 <details class="raw-events">
                     <summary>Raw Events ({len(turn['events'])})</summary>
@@ -417,7 +428,18 @@ def generate_html(run_dir: Path, events: list[dict], turns: list[dict]) -> str:
     # Cost summary
     cost_summary = ""
     if total_cost > 0:
-        cost_summary = f'<span><span class="label">Cost:</span> ${total_cost:.4f}</span>'
+        llm_cost = cost_info.get("llm_usd", 0)
+        vlm_cost = cost_info.get("vlm_usd", 0)
+        ocr_cost = cost_info.get("ocr_usd", 0)
+        breakdown_bits = []
+        if llm_cost:
+            breakdown_bits.append(f"LLM ${llm_cost:.4f}")
+        if vlm_cost:
+            breakdown_bits.append(f"VLM ${vlm_cost:.4f}")
+        if ocr_cost:
+            breakdown_bits.append(f"OCR ${ocr_cost:.5f}")
+        breakdown = f" ({' + '.join(breakdown_bits)})" if breakdown_bits else ""
+        cost_summary = f'<span><span class="label">Cost:</span> ${total_cost:.4f}{breakdown}</span>'
 
     duration_str = ""
     if duration:
@@ -534,6 +556,15 @@ def generate_html(run_dir: Path, events: list[dict], turns: list[dict]) -> str:
         .raw-events summary {{ cursor: pointer; color: #555; font-size: 11px; padding: 5px 0; }}
         .raw-events pre {{ background: #0a0a1a; padding: 10px; border-radius: 4px; font-size: 11px; max-height: 400px; overflow: auto; }}
 
+        /* OCR section */
+        .ocr-section {{ background: #2a1a05; border-left: 3px solid #ffb454; border-radius: 6px; padding: 10px 12px; margin: 8px 0; }}
+        .ocr-header {{ font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #ffb454; margin-bottom: 6px; font-weight: bold; }}
+        .ocr-cleaned {{ font-size: 12px; color: #ffb454; white-space: pre-wrap; word-break: break-word; font-family: 'SF Mono', monospace; }}
+        .ocr-raw {{ margin-top: 8px; }}
+        .ocr-raw summary {{ cursor: pointer; color: #c98a3e; font-size: 11px; }}
+        .ocr-raw pre {{ margin-top: 4px; font-size: 11px; color: #c98a3e; background: #1a1202; padding: 8px; border-radius: 4px; max-height: 300px; overflow-y: auto; }}
+
+        .settle-time {{ font-size: 11px; color: #e2a93b; margin-left: 8px; white-space: nowrap; }}
         .usage {{ font-size: 11px; color: #666; margin-left: auto; white-space: nowrap; }}
 
         code {{ font-family: 'SF Mono', 'Fira Code', monospace; }}
@@ -602,6 +633,46 @@ def _render_memory_update_html(exp: dict) -> str:
     except (json.JSONDecodeError, TypeError):
         mem_display = str(mem_raw)
     return f'<div class="exp-row"><strong>Memory:</strong> <pre style="display:inline-block;margin:4px 0;background:#1a2e1a;padding:6px 10px;border-radius:4px;font-size:12px;color:#7ddf64;">{_escape(mem_display)}</pre></div>'
+
+
+def _render_ocr_html(turn: dict) -> str:
+    """Render the OCR flush event for this turn, if present."""
+    ocr = turn.get("ocr")
+    if not ocr:
+        return ""
+    n = ocr.get("n_captures", 0)
+    dur = ocr.get("duration", 0)
+    cleaned = ocr.get("cleaned", "") or ""
+    raw = ocr.get("raw", {}) or {}
+    cost = ocr.get("cost_usd", 0) or 0
+    in_tok = ocr.get("input_tokens", 0) or 0
+    out_tok = ocr.get("output_tokens", 0) or 0
+    if n == 0 and not cleaned:
+        return ""
+
+    raw_json = json.dumps(raw, indent=2, ensure_ascii=False)
+    cleaned_html = f'<pre class="ocr-cleaned">{_escape(cleaned or "(empty)")}</pre>'
+    raw_html = f"""
+        <details class="ocr-raw">
+            <summary>Raw buffer ({len(raw)})</summary>
+            <pre>{_escape(raw_json[:8000])}</pre>
+        </details>
+    """ if raw else ""
+
+    meta_bits = [f"{n} captures", f"{dur}s"]
+    if cost > 0:
+        meta_bits.append(f"${cost:.5f}")
+    if in_tok or out_tok:
+        meta_bits.append(f"{in_tok}→{out_tok} tok")
+    meta = " | ".join(meta_bits)
+
+    return f"""
+        <div class="ocr-section">
+            <div class="ocr-header">📝 OCR ({meta})</div>
+            {cleaned_html}
+            {raw_html}
+        </div>
+    """
 
 
 def _format_action(action) -> str:

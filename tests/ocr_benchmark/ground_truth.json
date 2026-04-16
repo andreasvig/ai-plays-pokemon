@@ -1,0 +1,219 @@
+{
+  "dialogue_oak_unsafe_grid": {
+    "source": "local/runs/2026-04-11_21-16-29_phase5_test/screenshots/00002_turn_2.png",
+    "category": "dialogue",
+    "has_grid": true,
+    "expected_text": "OAK: It's unsafe!\nWild POKéMON live in tall grass!"
+  },
+  "dialogue_oak_unsafe_clean": {
+    "source": "local/runs/2026-04-11_21-16-29_phase5_test/screenshots/00002_turn_2.png",
+    "category": "dialogue",
+    "has_grid": false,
+    "expected_text": "OAK: It's unsafe!\nWild POKéMON live in tall grass!"
+  },
+  "dialogue_oak_oldage_grid": {
+    "source": "local/runs/2026-04-11_14-15-58_phase5_test/screenshots/00006_turn_6.png",
+    "category": "dialogue",
+    "has_grid": true,
+    "expected_text": "But now, in my old age, I have\nonly these three left."
+  },
+  "dialogue_oak_oldage_clean": {
+    "source": "local/runs/2026-04-11_14-15-58_phase5_test/screenshots/00006_turn_6.png",
+    "category": "dialogue",
+    "has_grid": false,
+    "expected_text": "But now, in my old age, I have\nonly these three left."
+  },
+  "dialogue_oak_pokeballs_grid": {
+    "source": "local/runs/2026-04-10_20-34-20_phase5_test/screenshots/00016_turn_16.png",
+    "category": "dialogue",
+    "has_grid": true,
+    "expected_text": "Inside those three POKé BALLS are\nPOKéMON."
+  },
+  "dialogue_oak_pokeballs_clean": {
+    "source": "local/runs/2026-04-10_20-34-20_phase5_test/screenshots/00016_turn_16.png",
+    "category": "dialogue",
+    "has_grid": false,
+    "expected_text": "Inside those three POKé BALLS are\nPOKéMON."
+  },
+  "dialogue_oak_choose_grid": {
+    "source": "local/runs/2026-04-10_20-34-20_phase5_test/screenshots/00015_turn_15.png",
+    "category": "dialogue",
+    "has_grid": true,
+    "expected_text": "Which one will you choose for\nyourself?"
+  },
+  "dialogue_oak_choose_clean": {
+    "source": "local/runs/2026-04-10_20-34-20_phase5_test/screenshots/00015_turn_15.png",
+    "category": "dialogue",
+    "has_grid": false,
+    "expected_text": "Which one will you choose for\nyourself?"
+  },
+  "dialogue_oak_haha_grid": {
+    "source": "local/runs/2026-04-11_21-16-29_phase5_test/screenshots/00004_turn_4.png",
+    "category": "dialogue",
+    "has_grid": true,
+    "expected_text": "Haha!"
+  },
+  "dialogue_oak_haha_clean": {
+    "source": "local/runs/2026-04-11_21-16-29_phase5_test/screenshots/00004_turn_4.png",
+    "category": "dialogue",
+    "has_grid": false,
+    "expected_text": "Haha!"
+  },
+  "dialogue_green_waiting_grid": {
+    "source": "local/runs/2026-04-11_21-16-29_phase5_test/screenshots/00003_turn_3.png",
+    "category": "dialogue",
+    "has_grid": true,
+    "expected_text": "GREEN: Gramps!\nI'm fed up with waiting!"
+  },
+  "dialogue_green_waiting_clean": {
+    "source": "local/runs/2026-04-11_21-16-29_phase5_test/screenshots/00003_turn_3.png",
+    "category": "dialogue",
+    "has_grid": false,
+    "expected_text": "GREEN: Gramps!\nI'm fed up with waiting!"
+  },
+  "dialogue_green_nofair_grid": {
+    "source": "local/runs/2026-04-11_21-16-29_phase5_test/screenshots/00005_turn_5.png",
+    "category": "dialogue",
+    "has_grid": true,
+    "expected_text": "GREEN: Hey! Gramps! No fair!\nWhat about me?"
+  },
+  "dialogue_green_nofair_clean": {
+    "source": "local/runs/2026-04-11_21-16-29_phase5_test/screenshots/00005_turn_5.png",
+    "category": "dialogue",
+    "has_grid": false,
+    "expected_text": "GREEN: Hey! Gramps! No fair!\nWhat about me?"
+  },
+  "overworld_bedroom_grid": {
+    "source": "local/runs/2026-04-10_20-34-20_phase5_test/screenshots/00001_turn_1.png",
+    "category": "overworld",
+    "has_grid": true,
+    "expected_text": ""
+  },
+  "overworld_bedroom_clean": {
+    "source": "local/runs/2026-04-10_20-34-20_phase5_test/screenshots/00001_turn_1.png",
+    "category": "overworld",
+    "has_grid": false,
+    "expected_text": ""
+  },
+  "overworld_viridian_grid": {
+    "source": "local/runs/2026-04-10_20-34-20_phase5_test/screenshots/00010_turn_10.png",
+    "category": "overworld",
+    "has_grid": true,
+    "expected_text": ""
+  },
+  "overworld_viridian_clean": {
+    "source": "local/runs/2026-04-10_20-34-20_phase5_test/screenshots/00010_turn_10.png",
+    "category": "overworld",
+    "has_grid": false,
+    "expected_text": ""
+  },
+  "overworld_mart_inside_grid": {
+    "source": "local/runs/2026-04-10_20-34-20_phase5_test/screenshots/00012_turn_12.png",
+    "category": "overworld",
+    "has_grid": true,
+    "expected_text": ""
+  },
+  "overworld_mart_inside_clean": {
+    "source": "local/runs/2026-04-10_20-34-20_phase5_test/screenshots/00012_turn_12.png",
+    "category": "overworld",
+    "has_grid": false,
+    "expected_text": ""
+  },
+  "overworld_lab_edge_grid": {
+    "source": "local/runs/2026-04-10_20-34-20_phase5_test/screenshots/00005_turn_5.png",
+    "category": "overworld",
+    "has_grid": true,
+    "expected_text": ""
+  },
+  "overworld_lab_edge_clean": {
+    "source": "local/runs/2026-04-10_20-34-20_phase5_test/screenshots/00005_turn_5.png",
+    "category": "overworld",
+    "has_grid": false,
+    "expected_text": ""
+  },
+
+  "battle_firered_first": {
+    "source": "bulbapedia/FireRed_First_Battle.png",
+    "category": "battle",
+    "has_grid": false,
+    "expected_text": "SQUIRTLE\nLv5\nCHARMANDER\nLv5\n20/20\nWhat will\nCHARMANDER do?\nFIGHT\nBAG\nPOKéMON\nRUN"
+  },
+  "battle_frlg_rival1": {
+    "source": "bulbapedia/FRLG_Rival_Battle_1.png",
+    "category": "battle",
+    "has_grid": false,
+    "expected_text": "RIVAL Gary\nwould like to battle!"
+  },
+  "battle_emerald_double": {
+    "source": "bulbapedia/Emerald_Double_Battle.png",
+    "category": "battle",
+    "has_grid": false,
+    "expected_text": "SOLROCK\nLv52\nPUPITAR\nLv44\nAGGRON\nLv51\nSMEARGLE\nLv44\nSMEARGLE used\nGRASSWHISTLE!"
+  },
+  "menu_frlg_party": {
+    "source": "bulbapedia/FRLG_Party.png",
+    "category": "menu",
+    "has_grid": false,
+    "expected_text": "PIKACHU\nLv58\nKOFFING\nDUNSPARCE\nLv20\nNINETALES\nLv25\nGOLEM\nCHARIZARD\nChoose a POKéMON.\nCANCEL"
+  },
+  "menu_frlg_bag": {
+    "source": "bulbapedia/FRLGBag.png",
+    "category": "menu",
+    "has_grid": false,
+    "expected_text": "POKé BALLS\nPOKé BALL\nx 14\nCANCEL\nA BALL thrown to catch a wild\nPOKéMON. It is designed in a\ncapsule style."
+  },
+  "summary_fr_moves": {
+    "source": "bulbapedia/FR_summary_3.png",
+    "category": "summary",
+    "has_grid": false,
+    "expected_text": "KNOWN MOVES\nPAGE\nDETAIL\nLv5\nBULBA\nNORMAL\nTACKLE\nPP30/35\nNORMAL\nGROWL\nPP40/40\nPP\nPP"
+  },
+  "summary_frlg_stats": {
+    "source": "bulbapedia/FRLG_status_screen.png",
+    "category": "summary",
+    "has_grid": false,
+    "expected_text": "POKéMON SKILLS\nPAGE\nLv55\nMatthew\nHP\n172/172\nATTACK\nDEFENSE\nSP.ATK\nSP.DEF\nSPEED\nEXP. POINTS\n163761\nNEXT LV.\n5398\nABILITY\nSTURDY\nNegates 1-hit KO attacks."
+  },
+  "summary_fr_info": {
+    "source": "bulbapedia/FR_summary_1.png",
+    "category": "summary",
+    "has_grid": false,
+    "expected_text": "POKéMON INFO\nPAGE\nCANCEL\nLv5\nBULBA\nNo.\n001\nNAME\nBULBASAUR\nTYPE\nGRASS\nPOISON\nOT\nLEAF\nIDNo.\n12089\nTRAINER MEMO\nITEM\nNONE\nTIMID nature.\nMet in PALLET TOWN at Lv 5."
+  },
+  "summary_emerald_moves": {
+    "source": "bulbapedia/Emerald_summary_3.png",
+    "category": "summary",
+    "has_grid": false,
+    "expected_text": "BATTLE MOVES\nINFO\nNo.007\nMAY\nKIP\n/MUDKIP\nLv5\nMOVES\nNORMAL\nTACKLE\nPP33/35\nNORMAL\nGROWL\nPP40/40\nDESCRIPTION"
+  },
+  "summary_emerald_stats": {
+    "source": "bulbapedia/E_status_screen.png",
+    "category": "summary",
+    "has_grid": false,
+    "expected_text": "POKéMON SKILLS\nNo.151\nITEM\nNONE\nRIBBON\nNONE\nSTATS\nHP\n114/114\nSP.ATK\n72\nATTACK\n70\nSP.DEF\n69\nDEFENSE\n77\nSPEED\n70\nMEW\n/MEW\nLv32\nEXP.POINTS\n27414\nNEXT LV.\n2535"
+  },
+  "pokedex_frlg_entry": {
+    "source": "bulbapedia/Pokedex_entry_FRLG.png",
+    "category": "pokedex",
+    "has_grid": false,
+    "expected_text": "POKéMON LIST\nNo025 PIKACHU\nMOUSE POKéMON\nHT\n1'04\"\nWT\n13.2 lbs.\nIt has small electric sacs on both its\ncheeks. If threatened, it looses electric\ncharges from the sacs.\nNEW DATA\nCANCEL"
+  },
+  "pokedex_frlg_list": {
+    "source": "bulbapedia/Pokedex_FRLG_list.png",
+    "category": "pokedex",
+    "has_grid": false,
+    "expected_text": "POKéMON LIST\nNo017\nPIDGEOTTO\nNORMAL\nFLYING\nNo018\nPIDGEOT\nNORMAL\nFLYING\nNo019\nRATTATA\nNORMAL\nNo020\nRATICATE\nNORMAL\nNo021\nSPEAROW\nNORMAL\nFLYING\nNo022\nFEAROW\nNORMAL\nFLYING\nNo023\nEKANS\nNo024\nARBOK\nNo025\nPIKACHU\nELECTR\nPICK\nOK\nCANCEL"
+  },
+  "pokedex_rs_entry": {
+    "source": "bulbapedia/Pokedex_entry_RS.png",
+    "category": "pokedex",
+    "has_grid": false,
+    "expected_text": "PAGE\nAREA\nCRY\nSIZE\nCANCEL\nNo.156 PIKACHU\nMOUSE POKéMON\nHT\n1'04\"\nWT\n13.2 lbs.\nPAGE1\nThis POKéMON has electricity-storing\npouches on its cheeks. These appear to\nbecome electrically charged during the"
+  },
+  "naming_screen": {
+    "source": "bulbapedia/Nicknaming_III.png",
+    "category": "naming",
+    "has_grid": false,
+    "expected_text": "BEEDRILL's nickname?\nABC\nDEF\nGHI\nJKL\nMNO\nPQRS\nTUV\nWXYZ\nMOVE\nOK\nBACK\nlower\nSELECT\nBACK\nBUTTON\nOK\nSTART"
+  }
+}

@@ -351,27 +351,42 @@ class TurnManager:
             self.turn_explanations.append(explanation)
             self.logger.log_turn_explanation(self.turn_number, explanation)
 
-            # Execute button presses and wait for screen to settle
+            # Execute button presses and wait for screen to settle.
+            # OCR captures are gated to this window only — no captures during
+            # LLM thinking or during the next turn's vision call.
             try:
                 action_display = "[" + ", ".join(result.inputs) + "]"
                 print(f"  [Turn {self.turn_number}] Executing {action_display}...")
+                if self.ocr and self.ocr.enabled:
+                    self.ocr.set_active(True)
                 self.emulator.press_button_list(result.inputs)
                 self.logger.log_button_sequence(str(result.inputs))
                 print(f"  [Turn {self.turn_number}] Waiting for screen to settle...")
-                self.emulator.wait_for_stable_screen()
+                self.logger.log_custom("screen_settling", {"turn": self.turn_number})
+                settle_duration = self.emulator.wait_for_stable_screen()
+                self.logger.log_custom("screen_settled", {"turn": self.turn_number, "duration": round(settle_duration, 1)})
+                print(f"  [Turn {self.turn_number}] Screen settled ({settle_duration:.1f}s)")
             except Exception as e:
                 print(f"  [Turn {self.turn_number}] Execution error: {e}")
                 self.logger.log_custom("action_error", {"error": str(e)})
                 # Reset facing — we don't know where the player ended up
                 self.emulator.facing = None
+            finally:
+                if self.ocr and self.ocr.enabled:
+                    self.ocr.set_active(False)
 
         # Add VLM cost to total
         vlm_cost = self.vision.total_cost_usd if self.vision else 0.0
         self.total_cost_usd += vlm_cost
 
+        ocr_cost = self.ocr.total_cost_usd if self.ocr else 0.0
+        llm_cost = self.total_cost_usd - vlm_cost - ocr_cost
         print(f"\n{'═'*60}")
         print(f"  Run complete: {self.turn_number} turns")
-        print(f"  Cost: ${self.total_cost_usd:.4f} (LLM: ${self.total_cost_usd - vlm_cost:.4f}, VLM: ${vlm_cost:.4f})")
+        print(
+            f"  Cost: ${self.total_cost_usd:.4f} "
+            f"(LLM: ${llm_cost:.4f}, VLM: ${vlm_cost:.4f}, OCR: ${ocr_cost:.5f})"
+        )
         print(f"  Tokens: {self.total_input_tokens} in / {self.total_output_tokens} out")
         print(f"{'═'*60}")
 
@@ -411,13 +426,49 @@ class TurnManager:
                     self.emulator.facing = direction.split()[-1]
                     break
 
-        # 3. Get OCR buffer
+        # 3. Flush OCR buffer (background captures since last turn) + LLM cleanup
         ocr_text = ""
-        if self.ocr:
-            ocr_buffer = self.ocr.get_buffer()
-            if ocr_buffer:
-                ocr_text = "\n".join(ocr_buffer)
-                self.ocr.clear_buffer()
+        ocr_raw: dict = {}
+        if self.ocr and self.ocr.enabled:
+            t_ocr = time.time()
+            ocr_text, ocr_raw, ocr_usage, ocr_stats = self.ocr.flush_and_cleanup()
+            cleanup_elapsed = time.time() - t_ocr
+            ocr_cost = ocr_usage.get("cost_usd", 0.0)
+            self.total_cost_usd += ocr_cost
+            self.logger.log_custom("ocr_flush", {
+                "turn": t,
+                "raw": ocr_raw,
+                "cleaned": ocr_text,
+                "n_captures": len(ocr_raw),
+                "duration": round(cleanup_elapsed, 2),  # cleanup call time (kept for back-compat)
+                "cleanup_s": round(cleanup_elapsed, 2),
+                "cost_usd": ocr_cost,
+                "input_tokens": ocr_usage.get("input_tokens", 0),
+                "output_tokens": ocr_usage.get("output_tokens", 0),
+                "model": self.ocr.cleanup_model,
+                "window_s": ocr_stats["window_s"],
+                "attempts": ocr_stats["attempts"],
+                "tesseract_runs": ocr_stats["tesseract_runs"],
+                "hash_dupes": ocr_stats["hash_dupes"],
+                "text_dupes": ocr_stats["text_dupes"],
+                "empty_ocr": ocr_stats["empty_ocr"],
+                "buffer_full": ocr_stats["buffer_full"],
+            })
+            if ocr_stats["attempts"] > 0 or ocr_raw:
+                print(
+                    f"  [Turn {t}] OCR: window={ocr_stats['window_s']:.1f}s "
+                    f"| {ocr_stats['attempts']} polls → "
+                    f"{ocr_stats['tesseract_runs']} tesseract "
+                    f"({ocr_stats['hash_dupes']} hash-dup) → "
+                    f"{len(ocr_raw)} kept "
+                    f"({ocr_stats['text_dupes']} text-dup, {ocr_stats['empty_ocr']} empty"
+                    + (f", {ocr_stats['buffer_full']} overflow" if ocr_stats['buffer_full'] else "")
+                    + ")"
+                )
+                print(
+                    f"  [Turn {t}] OCR cleanup: {cleanup_elapsed:.1f}s | ${ocr_cost:.5f} "
+                    f"| {ocr_usage.get('input_tokens', 0)}→{ocr_usage.get('output_tokens', 0)} tokens"
+                )
 
         # 4. Get current memory dictionary
         state_view = self.state.get_truncated_view()
@@ -663,9 +714,15 @@ class TurnManager:
                 # Direct multimodal — include the image as an ImageUrl part
                 image_url = ImageUrl(url=block["image_url"]["url"])
 
-        # OCR
+        # OCR (cleaned text captured between last turn and now)
         if ocr_text:
-            text_parts.append(f"\n## OCR Text\n{ocr_text}")
+            text_parts.append(
+                f"\n## Recent OCR Text\n"
+                f"Cleaned text captured from the screen between the last turn and now. "
+                f"May include scrolling dialogue, menu labels, and UI text. Use as ground-truth "
+                f"for exact character sequences; trust the screenshot for spatial layout.\n\n"
+                f"{ocr_text}"
+            )
 
         # Memory dictionary
         state_json = json.dumps(state_view, indent=2)
@@ -727,8 +784,14 @@ class TurnManager:
             },
             "cost": {
                 "total_usd": round(self.total_cost_usd, 6),
-                "llm_usd": round(self.total_cost_usd - (self.vision.total_cost_usd if self.vision else 0), 6),
+                "llm_usd": round(
+                    self.total_cost_usd
+                    - (self.vision.total_cost_usd if self.vision else 0)
+                    - (self.ocr.total_cost_usd if self.ocr else 0),
+                    6,
+                ),
                 "vlm_usd": round(self.vision.total_cost_usd if self.vision else 0, 6),
+                "ocr_usd": round(self.ocr.total_cost_usd if self.ocr else 0, 6),
                 "total_input_tokens": self.total_input_tokens,
                 "total_output_tokens": self.total_output_tokens,
                 "per_turn": self.turn_costs,

@@ -1,21 +1,90 @@
-"""OCR system that continuously captures and processes text from the game screen."""
+"""OCR system: background Tesseract capture + LLM cleanup.
 
-import hashlib
+Captures screenshots at a fixed interval in a background thread, runs Tesseract
+with confidence-based word filtering, and stores entries in a numbered buffer.
+At each turn boundary the main thread calls `flush_and_cleanup()` which sends
+the buffer to a cleanup LLM (Gemma 4 31B via OpenRouter) and returns the
+coherent cleaned text alongside the raw buffer for logging.
+"""
+
+import json
+import os
+import re
 import threading
 import time
 from collections import deque
 from typing import Any, Callable, Optional
 
+import httpx
 import pytesseract
-from PIL import Image, ImageEnhance, ImageFilter
+from PIL import Image, ImageEnhance
+
+
+DEFAULT_CLEANUP_SYSTEM_PROMPT = (
+    "You clean up noisy OCR output from Pokemon GBA screenshots. This is the accumulated OCR "
+    "buffer from multiple screen captures during a single game turn — so it may contain "
+    "repeated fragments, overlapping dialogue as it scrolls, and garbled pixel-art noise mixed "
+    "in with real text. "
+    "Your job: return the coherent in-game text (dialogue, menu labels, Pokemon names, stats, "
+    "HP, levels, moves, numbers) with the gibberish removed. "
+    "Fix obvious OCR misreads when confident (e.g. 'SMERRGEE' → 'SMEARGLE', 'unsate' → 'unsafe', "
+    "'POK&MON' → 'POKéMON', 'BRASSWHISTLE' → 'GRASSWHISTLE'). "
+    "Drop tokens that are clearly pixel-art noise: isolated symbols like '|', '—', random letter "
+    "salads like 'eS ES oe', short non-word fragments. "
+    "Preserve meaningful line breaks. Merge duplicate/overlapping captures into single coherent text. "
+    "Do NOT invent text that isn't supported by the OCR input."
+)
+
+DEFAULT_CLEANUP_USER_PROMPT = (
+    "Clean up this OCR buffer. Each key is a separate capture from the same "
+    "game turn; merge them into coherent text, drop gibberish, fix obvious "
+    "OCR misreads.\n\n{raw_json}"
+)
+
+
+def _hamming(a: int, b: int) -> int:
+    """Hamming distance between two integers (number of differing bits)."""
+    return bin(a ^ b).count("1")
+
+
+# Regex patterns that match pixel-art noise from GBA tile graphics.
+# These fire on individual lines AFTER the Tesseract confidence filter.
+_NOISE_PATTERNS = [
+    # Lines that are mostly 1-2 char tokens: "ie wir ote", "a a", "=| =|"
+    re.compile(r'^[\W\s]*(\S{1,2}[\s,;.|]+){2,}\S{0,2}[\W\s]*$'),
+    # Repeated short syllables: "ale ale ale", "oe oe oe", "tt ttt tt"
+    re.compile(r'^.*(\b\w{1,3}\b)(\s+\1){2,}.*$'),
+    # Purely symbols / punctuation / digits (no letters >2 chars)
+    re.compile(r'^[^a-zA-Z]*$'),
+    # Lines with ≤3 alphanumeric chars total
+    re.compile(r'^(?:[^a-zA-Z0-9]*[a-zA-Z0-9]){0,3}[^a-zA-Z0-9]*$'),
+    # Common tile-noise fragments
+    re.compile(r'^\s*(?:=f\}|=e\)|=\||—\||ao \|\||sree|Pao ese|int SEES)', re.IGNORECASE),
+]
+
+
+def _strip_noise_lines(text: str) -> str:
+    """Remove lines that match known pixel-art noise patterns.
+
+    Keeps lines that look like actual game text (dialogue, menu labels,
+    Pokemon names). Drops lines that are clearly garbled tile/sprite OCR.
+    """
+    if not text:
+        return ""
+    kept = []
+    for line in text.split("\n"):
+        line_s = line.strip()
+        if not line_s:
+            continue
+        if any(p.match(line_s) for p in _NOISE_PATTERNS):
+            continue
+        kept.append(line_s)
+    return "\n".join(kept)
 
 
 class OCRRunner:
-    """Background OCR process that captures text from periodic screenshots.
-
-    Runs in a background thread. Captures screenshots at a configurable interval,
-    deduplicates identical frames, preprocesses for OCR, runs OCR, and merges
-    scrolling text into a clean buffer.
+    """Background OCR: captures screenshots, runs Tesseract with confidence filter,
+    stores numbered buffer. Flush + LLM cleanup called at turn boundary.
     """
 
     def __init__(
@@ -23,27 +92,54 @@ class OCRRunner:
         config: dict[str, Any],
         screenshot_fn: Callable[[], Image.Image],
     ):
-        """
-        Args:
-            config: Full config dict
-            screenshot_fn: Function that returns a raw (unprocessed) screenshot
-        """
         ocr_config = config.get("ocr", {})
-        self.enabled = ocr_config.get("enabled", True)
-        self.capture_interval = ocr_config.get("capture_interval", 0.5)
-        self.buffer_size = ocr_config.get("log_buffer_size", 50)
-        self.dedup_window = ocr_config.get("dedup_window", 3)
-        self.backend = ocr_config.get("backend", "tesseract")
+        self.enabled = ocr_config.get("enabled", False)
+        self.capture_interval = ocr_config.get("capture_interval", 0.4)
+        self.confidence_threshold = ocr_config.get("confidence_threshold", 40)
+        self.dedup_window = ocr_config.get("dedup_window", 5)
+        self.max_buffer_size = ocr_config.get("max_buffer_size", 30)
+        self.cleanup_enabled = ocr_config.get("cleanup_enabled", True)
+        self.cleanup_model = ocr_config.get("cleanup_model", "google/gemma-4-31b-it")
+        # dHash dedup: a new capture is treated as a duplicate if its Hamming
+        # distance to any of the recent hashes is ≤ this value. 0 = exact,
+        # 64 = always-dup. ~5 catches animation flicker (cursor blink, sprite
+        # bob) on the same scene.
+        self.dedup_hamming_threshold = ocr_config.get("dedup_hamming_threshold", 5)
+        self.cleanup_system_prompt = ocr_config.get(
+            "cleanup_system_prompt", DEFAULT_CLEANUP_SYSTEM_PROMPT
+        )
+        self.cleanup_user_prompt = ocr_config.get(
+            "cleanup_user_prompt", DEFAULT_CLEANUP_USER_PROMPT
+        )
 
         self._screenshot_fn = screenshot_fn
-        self._buffer: deque[str] = deque(maxlen=self.buffer_size)
-        self._recent_hashes: deque[str] = deque(maxlen=self.dedup_window)
+        self._buffer: list[dict] = []  # [{"id": "ocr_1", "text": "...", "ts": float}]
+        self._counter = 0
+        self._recent_hashes: deque = deque(maxlen=self.dedup_window)
         self._thread: Optional[threading.Thread] = None
         self._running = False
+        self._active = False  # whether we should actually capture (gated by turn.py)
         self._lock = threading.Lock()
 
+        # Accumulated cleanup cost (USD) across all flushes
+        self.total_cost_usd = 0.0
+        self.total_input_tokens = 0
+        self.total_output_tokens = 0
+
+        # Per-window stats (reset on each flush). Track the current OCR capture
+        # window — from set_active(True) to flush_and_cleanup().
+        self._window_start_ts: Optional[float] = None
+        self._window_total_s = 0.0          # accumulated active seconds since last flush
+        self._stats_attempts = 0            # poll attempts (screenshot_fn calls)
+        self._stats_hash_dupes = 0          # skipped by dHash dedup
+        self._stats_text_dupes = 0          # skipped because text == last buffer entry
+        self._stats_empty_ocr = 0           # Tesseract returned nothing after conf filter
+        self._stats_tesseract_runs = 0      # actual Tesseract calls
+        self._stats_buffer_full = 0         # skipped due to buffer cap
+
+    # ── Public API ────────────────────────────────────────────────────
+
     def start(self) -> None:
-        """Start the background OCR thread."""
         if not self.enabled:
             return
         self._running = True
@@ -51,152 +147,283 @@ class OCRRunner:
         self._thread.start()
 
     def stop(self) -> None:
-        """Stop the background OCR thread."""
         self._running = False
+        self._active = False
         if self._thread:
             self._thread.join(timeout=5)
             self._thread = None
 
-    def get_buffer(self) -> list[str]:
-        """Get the current OCR text buffer (deduplicated, merged)."""
+    def set_active(self, active: bool) -> None:
+        """Toggle whether the background thread actually captures frames.
+
+        The thread keeps running either way — it just skips the capture step
+        when inactive. Used to scope captures to the button-execution + settle
+        window (where the screen actually changes).
+        """
+        now = time.time()
+        if active and not self._active:
+            self._window_start_ts = now
+            # Start each capture window fresh — stale hashes from the previous
+            # turn's settle would otherwise dedup the first frames of this window.
+            self._recent_hashes.clear()
+        elif not active and self._active and self._window_start_ts is not None:
+            self._window_total_s += now - self._window_start_ts
+            self._window_start_ts = None
+        self._active = active
+
+    def get_buffer(self) -> list[dict]:
+        """Return a copy of the current buffer (for logging/debugging)."""
         with self._lock:
             return list(self._buffer)
 
-    def clear_buffer(self) -> None:
-        """Clear the OCR buffer."""
+    def get_buffer_dict(self) -> dict:
+        """Return buffer as {ocr_1: "...", ocr_2: "..."}."""
+        with self._lock:
+            return {entry["id"]: entry["text"] for entry in self._buffer}
+
+    def clear(self) -> None:
+        """Clear buffer without running cleanup."""
         with self._lock:
             self._buffer.clear()
 
-    def process_single(self, image: Image.Image) -> Optional[str]:
-        """Run OCR on a single image. Useful for testing.
+    # Legacy alias used by older callers
+    clear_buffer = clear
 
-        Returns the extracted text, or None if the image is a duplicate.
+    def flush_and_cleanup(self) -> tuple:
+        """Flush buffer, run LLM cleanup, clear buffer.
+
+        Returns:
+            (cleaned_text, raw_buffer_dict, usage_info, stats)
+            - cleaned_text is empty if buffer was empty or cleanup failed
+            - raw_buffer_dict is always what was in the buffer (may be {})
+            - usage_info is a dict: cost_usd, input_tokens, output_tokens
+            - stats is a dict describing the OCR capture window since last flush
         """
-        # Check for duplicate
-        img_hash = self._image_hash(image)
-        if img_hash in self._recent_hashes:
-            return None
-        self._recent_hashes.append(img_hash)
+        # Snapshot + reset window stats
+        # If we're still active when flushed, count time up to now.
+        now = time.time()
+        window_s = self._window_total_s
+        if self._active and self._window_start_ts is not None:
+            window_s += now - self._window_start_ts
+            self._window_start_ts = now  # restart count from here
 
-        # Preprocess and OCR
-        processed = self._preprocess(image)
-        text = self._run_ocr(processed)
+        stats = {
+            "window_s": round(window_s, 2),
+            "attempts": self._stats_attempts,
+            "tesseract_runs": self._stats_tesseract_runs,
+            "hash_dupes": self._stats_hash_dupes,
+            "text_dupes": self._stats_text_dupes,
+            "empty_ocr": self._stats_empty_ocr,
+            "buffer_full": self._stats_buffer_full,
+        }
+        # Reset for next window
+        self._window_total_s = 0.0
+        self._stats_attempts = 0
+        self._stats_tesseract_runs = 0
+        self._stats_hash_dupes = 0
+        self._stats_text_dupes = 0
+        self._stats_empty_ocr = 0
+        self._stats_buffer_full = 0
 
-        if text:
-            self._add_to_buffer(text)
+        raw = self.get_buffer_dict()
+        self.clear()
 
-        return text
+        empty_usage = {"cost_usd": 0.0, "input_tokens": 0, "output_tokens": 0}
 
-    # --- Internal ---
+        if not raw:
+            return "", {}, empty_usage, stats
+
+        if not self.cleanup_enabled:
+            return "\n".join(raw.values()), raw, empty_usage, stats
+
+        try:
+            cleaned, usage = self._llm_cleanup(raw)
+            self.total_cost_usd += usage["cost_usd"]
+            self.total_input_tokens += usage["input_tokens"]
+            self.total_output_tokens += usage["output_tokens"]
+            return cleaned, raw, usage, stats
+        except Exception as e:
+            fallback = "\n".join(raw.values())
+            return f"[cleanup failed: {e}]\n{fallback}", raw, empty_usage, stats
+
+    # ── Background loop ───────────────────────────────────────────────
 
     def _run_loop(self) -> None:
-        """Main background loop: capture, dedup, OCR, merge."""
         while self._running:
-            try:
-                image = self._screenshot_fn()
-                self.process_single(image)
-            except Exception:
-                pass  # Don't crash the background thread
-
+            if self._active:
+                try:
+                    image = self._screenshot_fn()
+                    self._process_single(image)
+                except Exception:
+                    pass  # never crash the thread
             time.sleep(self.capture_interval)
 
-    def _image_hash(self, image: Image.Image) -> str:
-        """Compute a perceptual hash for deduplication.
+    def _process_single(self, image: Image.Image) -> None:
+        self._stats_attempts += 1
 
-        Resizes to 16x16 grayscale and hashes the pixels.
-        This is tolerant of minor rendering differences.
+        # Perceptual-hash dedup (dHash with Hamming tolerance).
+        img_hash = self._image_hash(image)
+        for prev in self._recent_hashes:
+            if _hamming(img_hash, prev) <= self.dedup_hamming_threshold:
+                self._stats_hash_dupes += 1
+                return
+        self._recent_hashes.append(img_hash)
+
+        # Preprocess + OCR with confidence filter + regex noise strip
+        processed = self._preprocess(image)
+        self._stats_tesseract_runs += 1
+        text = self._tesseract_confidence_filter(processed)
+        text = _strip_noise_lines(text)
+
+        if not text:
+            self._stats_empty_ocr += 1
+            return
+
+        # Skip if identical to last entry, cap buffer size
+        with self._lock:
+            if self._buffer and self._buffer[-1]["text"] == text:
+                self._stats_text_dupes += 1
+                return
+            if len(self._buffer) >= self.max_buffer_size:
+                self._stats_buffer_full += 1
+                return
+            self._counter += 1
+            self._buffer.append({
+                "id": f"ocr_{self._counter}",
+                "text": text,
+                "ts": time.time(),
+            })
+
+    # ── OCR pipeline ──────────────────────────────────────────────────
+
+    def _image_hash(self, image: Image.Image) -> int:
+        """High-resolution dHash (256-bit).
+
+        Resize to 17×16 grayscale, compare adjacent pixels per row →
+        16 bits × 16 rows = 256-bit hash. Higher resolution than the
+        standard 8×8 so text changes (which occupy a small screen region)
+        flip enough bits to exceed the dedup threshold, while pure
+        animation flicker (cursor blink, sprite bob) stays under it.
         """
-        small = image.resize((16, 16)).convert("L")
-        pixel_data = small.tobytes()
-        return hashlib.md5(pixel_data).hexdigest()
+        small = image.resize((17, 16)).convert("L")
+        pixels = list(small.getdata())
+        bits = 0
+        for row in range(16):
+            for col in range(16):
+                left = pixels[row * 17 + col]
+                right = pixels[row * 17 + col + 1]
+                bits = (bits << 1) | (1 if left > right else 0)
+        return bits
 
     def _preprocess(self, image: Image.Image) -> Image.Image:
-        """Preprocess an image for OCR: upscale, binarize, high contrast."""
-        # Upscale 4x
-        img = image.resize(
-            (image.width * 4, image.height * 4),
-            Image.NEAREST,
-        )
-
-        # Convert to grayscale
+        img = image.resize((image.width * 4, image.height * 4), Image.NEAREST)
         img = img.convert("L")
-
-        # Increase contrast
         img = ImageEnhance.Contrast(img).enhance(3.0)
-
-        # Binarize (threshold)
-        threshold = 128
-        img = img.point(lambda p: 255 if p > threshold else 0)
-
+        img = img.point(lambda p: 255 if p > 128 else 0)
         return img
 
-    def _run_ocr(self, image: Image.Image) -> str:
-        """Run OCR on a preprocessed image."""
-        if self.backend == "tesseract":
-            try:
-                text = pytesseract.image_to_string(
-                    image,
-                    config="--psm 6",  # Assume a single uniform block of text
-                )
-                return self._clean_text(text)
-            except Exception:
-                return ""
-        else:
-            # API backend - placeholder for future implementation
+    def _tesseract_confidence_filter(self, img: Image.Image) -> str:
+        """Run Tesseract image_to_data and keep only words with conf >= threshold."""
+        try:
+            data = pytesseract.image_to_data(
+                img, config="--psm 6", output_type=pytesseract.Output.DICT
+            )
+        except Exception:
             return ""
 
-    def _clean_text(self, text: str) -> str:
-        """Clean up raw OCR output."""
-        # Remove excessive whitespace
-        lines = [line.strip() for line in text.strip().split("\n")]
-        lines = [line for line in lines if line]
-        return "\n".join(lines)
+        lines: dict = {}
+        for i, word in enumerate(data["text"]):
+            word = word.strip()
+            if not word:
+                continue
+            try:
+                conf = int(data["conf"][i])
+            except (ValueError, TypeError):
+                continue
+            if conf < self.confidence_threshold:
+                continue
+            key = (data["block_num"][i], data["par_num"][i], data["line_num"][i])
+            lines.setdefault(key, []).append(word)
 
-    def _add_to_buffer(self, text: str) -> None:
-        """Add text to the buffer, merging with previous entries if overlapping."""
-        with self._lock:
-            if not self._buffer:
-                self._buffer.append(text)
-                return
+        output_lines = [" ".join(lines[k]) for k in sorted(lines.keys())]
+        return "\n".join(output_lines).strip()
 
-            last = self._buffer[-1]
-            merged = self._merge_overlapping(last, text)
+    # ── LLM cleanup ───────────────────────────────────────────────────
 
-            if merged and merged != last:
-                # Text was an extension of the previous entry
-                self._buffer[-1] = merged
-            elif text != last:
-                # New distinct text
-                self._buffer.append(text)
+    def _llm_cleanup(self, raw: dict) -> tuple:
+        """Send buffer dict to Gemma via OpenRouter.
 
-    def _merge_overlapping(self, prev: str, new: str) -> Optional[str]:
-        """Merge two text strings if the new one extends the previous one.
-
-        Detects scrolling text where capture 1 has "Welcome to t" and
-        capture 2 has "Welcome to the Pokemon Center".
-
-        Returns the merged string, or None if no overlap found.
+        Returns:
+            (cleaned_text, usage_dict) where usage_dict has
+            cost_usd, input_tokens, output_tokens.
         """
-        if not prev or not new:
-            return None
+        api_key = os.environ.get("OPENROUTER_API_KEY")
+        if not api_key:
+            try:
+                from dotenv import load_dotenv
+                load_dotenv()
+            except ImportError:
+                pass
+            api_key = os.environ.get("OPENROUTER_API_KEY")
+        if not api_key:
+            raise RuntimeError("OPENROUTER_API_KEY not set")
 
-        # Check if new text starts with a portion that matches the end of prev
-        # Try progressively shorter suffixes of prev
-        min_overlap = 5  # Minimum characters to consider an overlap
-        prev_flat = prev.replace("\n", " ")
-        new_flat = new.replace("\n", " ")
+        raw_json = json.dumps(raw, indent=2, ensure_ascii=False)
+        user_prompt = self.cleanup_user_prompt.format(raw_json=raw_json)
 
-        for i in range(min_overlap, len(prev_flat)):
-            suffix = prev_flat[i:]
-            if new_flat.startswith(suffix):
-                # Found overlap - new text extends prev
-                return prev_flat[:i] + new_flat
-            # Also check if prev ends with a prefix of new
-            if suffix == new_flat[:len(suffix)]:
-                return prev_flat[:i] + new_flat
+        response = httpx.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": self.cleanup_model,
+                "messages": [
+                    {"role": "system", "content": self.cleanup_system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "usage": {"include": True},
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "cleaned_ocr",
+                        "strict": True,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "cleaned_text": {
+                                    "type": "string",
+                                    "description": "Cleaned text with line breaks preserved.",
+                                },
+                            },
+                            "required": ["cleaned_text"],
+                            "additionalProperties": False,
+                        },
+                    },
+                },
+            },
+            timeout=30.0,
+        )
+        data = response.json()
+        if "error" in data:
+            err = data["error"]
+            msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+            raise RuntimeError(f"LLM error: {msg}")
 
-        # Check if new completely contains prev (prev is a substring)
-        if prev_flat in new_flat:
-            return new_flat
+        # Extract usage / cost
+        usage_block = data.get("usage") or {}
+        usage = {
+            "cost_usd": float(usage_block.get("cost", 0.0) or 0.0),
+            "input_tokens": int(usage_block.get("prompt_tokens", 0) or 0),
+            "output_tokens": int(usage_block.get("completion_tokens", 0) or 0),
+        }
 
-        return None
+        content = data["choices"][0]["message"].get("content", "")
+        if not content:
+            return "", usage
+        try:
+            parsed = json.loads(content)
+            return parsed.get("cleaned_text", "").strip(), usage
+        except json.JSONDecodeError:
+            return content.strip(), usage
