@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field
-from pydantic_ai import Agent, RunContext, Tool
+from pydantic_ai import Agent, NativeOutput, PromptedOutput, RunContext, Tool
 from pydantic_ai.models.openai import OpenAIModel
 
 Button = Literal["up", "down", "left", "right", "a", "b", "start", "select"]
@@ -102,14 +102,22 @@ def create_agent(config: dict[str, Any]) -> tuple[Agent, Any, list[str]]:
         provider="openrouter",
     )
 
-    # Build model settings with thinking/reasoning if configured
-    thinking_config = config.get("thinking")
-    model_settings = None
+    # Build model settings from resolved registry entry (if alias used) + legacy
+    # top-level `thinking` block. Registry entry wins when both are present.
+    resolved = config.get("_llm_resolved") or {}
+    thinking_config = resolved.get("reasoning") or config.get("thinking")
+
+    settings_kwargs: dict[str, Any] = {}
+    for key in ("temperature", "top_p", "max_tokens"):
+        if key in resolved:
+            settings_kwargs[key] = resolved[key]
     if thinking_config:
+        settings_kwargs["extra_body"] = {"reasoning": thinking_config}
+
+    model_settings = None
+    if settings_kwargs:
         from pydantic_ai.models.openai import OpenAIModelSettings
-        model_settings = OpenAIModelSettings(
-            extra_body={"reasoning": thinking_config},
-        )
+        model_settings = OpenAIModelSettings(**settings_kwargs)
 
     # Resolve system prompt with template substitution
     raw_prompt = config.get("system_prompt", "You are an AI agent playing a Pokemon game.")
@@ -131,13 +139,56 @@ def create_agent(config: dict[str, Any]) -> tuple[Agent, Any, list[str]]:
         if tool_config.get(name, True)
     ]
 
+    # Output mode: registry can override per-model. Default "tool" path uses
+    # tool_choice="required" — strongest schema enforcement, broadest support.
+    # "native_json" → response_format json_schema. Use for models whose
+    #   OpenRouter providers don't expose tool_choice (e.g. qwen/qwen3.6-plus).
+    # "prompted" → text + parse. Last-resort for models without either.
+    output_mode = (resolved.get("output_mode") or "tool").lower()
+    if output_mode == "native_json":
+        output_type = NativeOutput(GameAction)
+    elif output_mode == "prompted":
+        # Pydantic AI's default prompted template ("Don't include any text or
+        # Markdown fencing before or after") is too weak for some models — Qwen3.6-Plus
+        # consistently emitted ```json{...}``` despite it, and Pydantic AI's
+        # fence stripper is asymmetric (eats the leading `{` with the opening
+        # fence, leaves the trailing fence intact). This template gives explicit
+        # boundary chars + a concrete example, which models follow more reliably.
+        # NOTE: Pydantic AI calls .format(schema=...) on this template, so
+        # literal { and } in the body must be doubled to {{ and }} (except the
+        # real {schema} slot). Otherwise Python's format parser reads them as
+        # field markers and raises before the model ever sees the prompt.
+        prompted_template = (
+            "Always respond with a JSON object that's compatible with this schema:\n\n"
+            "{schema}\n\n"
+            "CRITICAL formatting rules:\n"
+            "- Your response MUST start with the literal character `{{` and end with `}}`.\n"
+            "- DO NOT prepend ```json, ```, or the word `json` before the JSON.\n"
+            "- DO NOT append ``` after the JSON.\n"
+            "- DO NOT include any prose, commentary, or whitespace outside the JSON.\n"
+            "- Output ONLY the raw JSON object.\n\n"
+            "Example of a correctly-formatted response (structure only, values are illustrative):\n"
+            "{{\"inputs\":[\"a\"],\"i_saw\":\"...\",\"i_did\":\"...\",\"i_expect\":\"...\",\"memory_updates\":\"none\"}}"
+        )
+        output_type = PromptedOutput(GameAction, template=prompted_template)
+    elif output_mode == "tool":
+        output_type = GameAction
+    else:
+        raise ValueError(
+            f"Unknown output_mode {output_mode!r} in registry. "
+            "Expected 'tool', 'native_json', or 'prompted'."
+        )
+
+    # retries=5 instead of the previous 3 — prompted-output models occasionally
+    # need extra rounds to nail the JSON shape, and the retry cost is cheap
+    # vs. losing the whole turn.
     agent = Agent(
         model=model,
         system_prompt=system_prompt,
         deps_type=AgentDeps,
-        output_type=GameAction,
+        output_type=output_type,
         tools=tools if tools else [],
-        retries=3,
+        retries=5,
     )
 
     # Fallback models (tried in order if primary fails)

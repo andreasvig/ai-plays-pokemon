@@ -14,6 +14,7 @@ import yaml
 from dotenv import load_dotenv
 
 CONFIGS_DIR = Path(__file__).parent.parent / "configs"
+MODELS_REGISTRY_PATH = CONFIGS_DIR / "models.yaml"
 
 
 def _parse_version(filename: str) -> Optional[Tuple[int, int]]:
@@ -22,6 +23,68 @@ def _parse_version(filename: str) -> Optional[Tuple[int, int]]:
     if m:
         return (int(m.group(1)), int(m.group(2)))
     return None
+
+
+def _load_models_registry() -> dict[str, Any]:
+    if not MODELS_REGISTRY_PATH.exists():
+        return {}
+    with open(MODELS_REGISTRY_PATH) as f:
+        return yaml.safe_load(f) or {}
+
+
+def _is_raw_model_id(name: str) -> bool:
+    # OpenRouter IDs always contain a provider/model slash.
+    return "/" in name
+
+
+def _resolve_llm_alias(config: dict[str, Any], registry: dict[str, Any]) -> None:
+    """Resolve config['llm_model'] against the registry, in place.
+
+    If the value is a raw OpenRouter ID (contains '/'), leave it alone.
+    Otherwise look it up, expand into llm_model + thinking + llm_fallback_models,
+    and stash the original alias + full resolved entry for logging.
+    """
+    name = config.get("llm_model", "")
+    if not name or _is_raw_model_id(name):
+        return
+
+    entry = registry.get(name)
+    if entry is None:
+        known = ", ".join(sorted(registry)) or "(registry empty)"
+        raise ValueError(
+            f"Unknown llm_model alias: {name!r}. Known aliases: {known}. "
+            f"Either add it to {MODELS_REGISTRY_PATH.name} or use a raw 'provider/model' id."
+        )
+
+    openrouter_id = entry.get("openrouter_id")
+    if not openrouter_id:
+        raise ValueError(
+            f"Registry entry {name!r} is missing required field 'openrouter_id'"
+        )
+
+    config["_llm_alias"] = name
+    config["_llm_resolved"] = entry
+    config["llm_model"] = openrouter_id
+
+    # Registry is the source of truth for thinking when using an alias.
+    if "reasoning" in entry:
+        config["thinking"] = entry["reasoning"]
+
+    # Fallbacks: only apply registry default if the main config didn't set its own.
+    if not config.get("llm_fallback_models"):
+        fallbacks = entry.get("fallbacks", []) or []
+        resolved_fallbacks = []
+        for fb in fallbacks:
+            if _is_raw_model_id(fb):
+                resolved_fallbacks.append(fb)
+            else:
+                fb_entry = registry.get(fb)
+                if fb_entry is None or not fb_entry.get("openrouter_id"):
+                    raise ValueError(
+                        f"Fallback alias {fb!r} (from {name!r}) not found in registry"
+                    )
+                resolved_fallbacks.append(fb_entry["openrouter_id"])
+        config["llm_fallback_models"] = resolved_fallbacks
 
 
 def find_latest_config() -> Path:
@@ -67,6 +130,10 @@ def load_config(path: Optional[str] = None) -> dict[str, Any]:
 
     # Track which config file was loaded
     config["_config_path"] = str(config_path)
+
+    # Resolve llm_model alias against the registry (no-op if already a raw id)
+    registry = _load_models_registry()
+    _resolve_llm_alias(config, registry)
 
     _validate_config(config)
     return config

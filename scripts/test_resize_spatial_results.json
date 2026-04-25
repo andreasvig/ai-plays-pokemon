@@ -1,0 +1,46 @@
+[
+  {
+    "label": "240x160_native",
+    "status": 200,
+    "image_bytes": 5126,
+    "prompt_tokens": 1318,
+    "completion_tokens": 26,
+    "cost_usd": 0.000737,
+    "reply": "console:(0,1) bed:(-3,0) stairs:(2,3) bookshelf:(-1,4)",
+    "width": 240,
+    "height": 160
+  },
+  {
+    "label": "480x320_2x",
+    "status": 200,
+    "image_bytes": 8805,
+    "prompt_tokens": 1318,
+    "completion_tokens": 26,
+    "cost_usd": 0.000737,
+    "reply": "console:(0,1) bed:(-3,0) stairs:(2,3) bookshelf:(-1,4)",
+    "width": 480,
+    "height": 320
+  },
+  {
+    "label": "720x480_current",
+    "status": 200,
+    "image_bytes": 10729,
+    "prompt_tokens": 1318,
+    "completion_tokens": 26,
+    "cost_usd": 0.000737,
+    "reply": "console:(0,1) bed:(-3,0) stairs:(2,3) bookshelf:(-1,4)",
+    "width": 720,
+    "height": 480
+  },
+  {
+    "label": "1440x960_6x",
+    "status": 200,
+    "image_bytes": 16885,
+    "prompt_tokens": 1318,
+    "completion_tokens": 26,
+    "cost_usd": 0.000737,
+    "reply": "console:(0,1) bed:(-3,0) stairs:(2,3) bookshelf:(-1,4)",
+    "width": 1440,
+    "height": 960
+  }
+]

@@ -1,0 +1,323 @@
+# ============================================================================
+# Model Registry
+# ============================================================================
+# Central registry for LLM aliases. Each entry defines the OpenRouter model ID
+# plus any per-model settings (reasoning, sampling, fallbacks) and observed
+# empirical performance data from actual runs.
+#
+# Usage in config-X.Y.yaml:
+#     llm_model: "gemini-3-flash(high)"   # alias — resolved from this file
+# or
+#     llm_model: "google/gemini-3-flash-preview"   # raw OpenRouter ID — bypasses registry
+#
+# Scope: LLM only. vlm_model and ocr.cleanup_model still read raw IDs directly.
+#
+# Entry schema (all fields optional except openrouter_id):
+#     openrouter_id:  exact slug (verify on openrouter.ai)
+#     reasoning:      OpenRouter reasoning param. Shape varies by model family:
+#                       - Effort-tiered (OpenAI, Gemini 3, Grok): {effort: "high"|"medium"|"low"|"minimal"}
+#                       - Binary-thinking (MiMo V2.5, Gemma 4): {enabled: true|false}
+#                       Omit entirely to leave reasoning unset (model's default wins).
+#     temperature:    float, OpenAI-compatible sampling temperature
+#     top_p:          float, nucleus sampling cutoff
+#     max_tokens:     int, completion token budget
+#     fallbacks:      list of alias names to try if primary fails
+#     output_mode:    Pydantic AI structured-output strategy. Optional, defaults
+#                     to "tool" (tool_choice="required" — strongest schema
+#                     enforcement, broadest support). Override to "native_json"
+#                     for models whose OpenRouter providers don't expose
+#                     tool_choice but do support response_format json_schema
+#                     (e.g. qwen/qwen3.6-plus). "prompted" is text+parse
+#                     last-resort for models without either.
+#     observed:       empirical performance from actual runs
+#                       avg_turn_cost_usd: float (total run cost / turns)
+#                       avg_turn_latency_s: float (wall-clock seconds per turn)
+#                       sample_turns:      int (0 = untested)
+#                       last_updated:      YYYY-MM-DD
+# ============================================================================
+
+# --- Google Gemini 3 family (native effort tiers: high/medium/low/minimal) ---
+# OpenRouter maps reasoning.effort directly to Google's thinkingLevel.
+# No sampling overrides — let Gemini use its own tuned defaults.
+"gemini-3-flash(high)":
+  # $0.50/$3.00 per M, 1M context.
+  openrouter_id: "google/gemini-3-flash-preview"
+  reasoning:
+    effort: "high"
+  observed:
+    avg_turn_cost_usd: 0.0090
+    avg_turn_latency_s: 27.0
+    sample_turns: 20
+    last_updated: 2026-04-24
+
+"gemini-3-flash(medium)":
+  openrouter_id: "google/gemini-3-flash-preview"
+  reasoning:
+    effort: "medium"
+  observed:
+    sample_turns: 0
+
+"gemini-3-flash(low)":
+  # Observed (2026-04-25, 10T verification run after the prompted-output
+  # architecture work). Cheapest + fastest of any Flash variant: $0.0031/turn,
+  # 3.7s/turn LLM latency, zero retries. 10T sample is small — latency may
+  # vary in scenes with battles/dialogue. Used to verify tool-mode path
+  # still works after registry-driven output_mode + robust JSON extractor
+  # changes; passed cleanly with no regressions.
+  openrouter_id: "google/gemini-3-flash-preview"
+  reasoning:
+    effort: "low"
+  observed:
+    avg_turn_cost_usd: 0.0031
+    avg_turn_latency_s: 3.7
+    sample_turns: 10
+    last_updated: 2026-04-25
+
+"gemini-3-flash(minimal)":
+  # Observed behaviour (2026-04-24, 20T): reached Oak's Lab + identified starter
+  # layout by turn 14, then oscillated near the door turns 15-20. Decent agent
+  # capability, cheaper+faster than (high) but less deliberate on edge cases.
+  openrouter_id: "google/gemini-3-flash-preview"
+  reasoning:
+    effort: "minimal"
+  observed:
+    avg_turn_cost_usd: 0.0038
+    avg_turn_latency_s: 13.8
+    sample_turns: 20
+    last_updated: 2026-04-24
+
+"gemini-3.1-flash-lite(high)":
+  # Cheap-at-scale reasoning model: AA Intelligence 34, 320 tok/s, 1M context,
+  # $0.25/$1.50 per M. Still a thinking model despite the "Lite" name.
+  # Observed behaviour (2026-04-24, 20T): stuck in bedroom by turn 14,
+  # explicitly self-reported "Stuck in 2F bedroom, unable to trigger stair
+  # transition." Spatial reasoning too weak for this task at AA Intelligence 34.
+  openrouter_id: "google/gemini-3.1-flash-lite-preview"
+  reasoning:
+    effort: "high"
+  observed:
+    avg_turn_cost_usd: 0.0035
+    avg_turn_latency_s: 11.7
+    sample_turns: 20
+    last_updated: 2026-04-24
+
+"gemini-3.1-flash-lite(medium)":
+  openrouter_id: "google/gemini-3.1-flash-lite-preview"
+  reasoning:
+    effort: "medium"
+  observed:
+    sample_turns: 0
+
+"gemini-3.1-flash-lite(low)":
+  openrouter_id: "google/gemini-3.1-flash-lite-preview"
+  reasoning:
+    effort: "low"
+  observed:
+    sample_turns: 0
+
+"gemini-3.1-flash-lite(minimal)":
+  openrouter_id: "google/gemini-3.1-flash-lite-preview"
+  reasoning:
+    effort: "minimal"
+  observed:
+    sample_turns: 0
+
+"gemini-3.1-pro(high)":
+  # Frontier tier (AA Intelligence ~57, same cluster as Opus 4.7 / GPT-5.4).
+  # $2.00/$12.00 per M, 1M context.
+  openrouter_id: "google/gemini-3.1-pro-preview"
+  reasoning:
+    effort: "high"
+  observed:
+    sample_turns: 0
+
+"gemini-3.1-pro(medium)":
+  openrouter_id: "google/gemini-3.1-pro-preview"
+  reasoning:
+    effort: "medium"
+  observed:
+    sample_turns: 0
+
+"gemini-3.1-pro(low)":
+  openrouter_id: "google/gemini-3.1-pro-preview"
+  reasoning:
+    effort: "low"
+  observed:
+    sample_turns: 0
+
+"gemini-3.1-pro(minimal)":
+  openrouter_id: "google/gemini-3.1-pro-preview"
+  reasoning:
+    effort: "minimal"
+  observed:
+    avg_turn_cost_usd: 0.0145
+    avg_turn_latency_s: 18.1
+    sample_turns: 10
+    last_updated: 2026-04-24
+
+# --- Xiaomi MiMo V2.5 family ---
+# Closed dense reasoning models, 1M context. Binary thinking toggle only —
+# no effort tiers exist in Xiaomi's native API (confirmed from
+# platform.xiaomimimo.com docs, 2026-04-24). thinking defaults to enabled
+# server-side; setting it explicitly makes the behaviour obvious in logs.
+#
+# Sampling: temperature 0.3 + top_p 0.95 is Xiaomi's own "Function Call"
+# recommendation for mimo-v2-flash. Our agent produces structured
+# Pydantic-validated GameAction output, which is the same shape, so we
+# apply the low-temp Function Call profile rather than the v2.5 blanket
+# general-purpose recommendation (1.0 / 0.95).
+"mimo-v2.5(thinking)":
+  # ~1T total params, AA Intelligence ~54, $0.40/$2.00 per M.
+  openrouter_id: "xiaomi/mimo-v2.5"
+  reasoning:
+    enabled: true
+  temperature: 0.3
+  top_p: 0.95
+  observed:
+    avg_turn_cost_usd: 0.0035
+    avg_turn_latency_s: 58.6
+    sample_turns: 3
+    last_updated: 2026-04-24
+
+# mimo-v2.5(non-thinking) sample is from a 10-turn run aborted at turn 8.
+# Quality was observably poor on spatial tasks: every turn emitted a single
+# direction at max input length with no directional combination or correction.
+# The numbers below are honest but the agent was not functional.
+"mimo-v2.5(non-thinking)":
+  openrouter_id: "xiaomi/mimo-v2.5"
+  reasoning:
+    enabled: false
+  temperature: 0.3
+  top_p: 0.95
+  observed:
+    avg_turn_cost_usd: 0.0011
+    avg_turn_latency_s: 11.9
+    sample_turns: 8
+    last_updated: 2026-04-24
+
+# mimo-v2.5-pro is TEXT-ONLY on OpenRouter — no endpoints support image
+# input (confirmed 2026-04-24 via 404 "No endpoints found that support
+# image input"). Incompatible with our default vision_mode: direct_multimodal
+# which sends screenshots as ImageUrl. To use Pro in this project, switch
+# the config to vision_mode: separate_vlm (vision model captions screens
+# to text first). Leaving both entries in the registry so the cost/intel
+# numbers stay documented, but don't expect them to work in config 2.2+
+# without a vision-mode change.
+"mimo-v2.5-pro(thinking)":
+  # Flagship tier, $1.00/$3.00 per M (~2.5× mimo-v2.5 base). TEXT-ONLY.
+  openrouter_id: "xiaomi/mimo-v2.5-pro"
+  reasoning:
+    enabled: true
+  temperature: 0.3
+  top_p: 0.95
+  observed:
+    sample_turns: 0
+    incompatible: "text-only — no image input (OpenRouter 404 on vision_mode: direct_multimodal)"
+
+"mimo-v2.5-pro(non-thinking)":
+  # TEXT-ONLY, same caveat as thinking variant.
+  openrouter_id: "xiaomi/mimo-v2.5-pro"
+  reasoning:
+    enabled: false
+  temperature: 0.3
+  top_p: 0.95
+  observed:
+    sample_turns: 0
+    incompatible: "text-only — no image input (OpenRouter 404 on vision_mode: direct_multimodal)"
+
+# --- Google Gemma 4 31B IT ---
+# Open-weights dense reasoning model, AA Intelligence 39, 262k context,
+# $0.13/$0.38 per M (cheapest reasoning entry). Binary thinking toggle
+# only — no effort tiers in Gemma 4's native chat template (confirmed
+# from ai.google.dev/gemma/docs/capabilities/thinking, 2026-04-24).
+# Full agent kit on OpenRouter: tools, tool_choice, structured_outputs,
+# response_format all supported.
+#
+# Caveat: Google docs warn that reasoning_content must be preserved
+# across multi-turn tool calls — Pydantic AI does this by default via
+# message history, but worth knowing if validation retries misbehave.
+"gemma-4-31b(thinking)":
+  openrouter_id: "google/gemma-4-31b-it"
+  reasoning:
+    enabled: true
+  temperature: 0.3
+  top_p: 0.95
+  observed:
+    avg_turn_cost_usd: 0.0007
+    avg_turn_latency_s: 89.9
+    sample_turns: 3
+    last_updated: 2026-04-24
+
+"gemma-4-31b(non-thinking)":
+  openrouter_id: "google/gemma-4-31b-it"
+  reasoning:
+    enabled: false
+  temperature: 0.3
+  top_p: 0.95
+  observed:
+    sample_turns: 0
+
+# --- Alibaba Qwen3.6-Plus ---
+# Hybrid linear-attention + sparse MoE. AA Intelligence 50, 1M context,
+# $0.325/$1.95 per M on OpenRouter (cheaper than AA's listed $0.50/$3.00).
+# Text + image + video input (AA confirms multimodal — safe for our default
+# vision_mode: direct_multimodal, unlike MiMo V2.5 Pro).
+#
+# Thinking controls: native API is BINARY (enable_thinking boolean) plus
+# optional thinking_budget integer. No native effort tiers. OpenRouter accepts
+# reasoning.effort and normalizes to thinking_budget under the hood, but we
+# stick with the binary convention for parity with MiMo V2.5 / Gemma 4.
+#
+# Cost caveat: AA flags this model as "very verbose" — 100M output tokens
+# during their eval vs 35M median for peers. On an agent loop that already
+# produces long structured outputs, this will inflate turn cost beyond what
+# the $/M pricing suggests. Watch avg_turn_cost_usd closely after first run.
+#
+# Sampling: Qwen's general-purpose recs are 0.6/0.95 (thinking) and 0.7/0.8
+# (non-thinking). We use 0.3/0.95 to match the structured-output / function-
+# call profile used elsewhere in this registry (MiMo, Gemma). Reconsider if
+# early runs feel too deterministic or miss good actions.
+# Qwen3.6-Plus needs output_mode: "prompted". Two layers of "no":
+#   1. OpenRouter providers fronting qwen/qwen3.6-plus don't support
+#      tool_choice (verified 2026-04-25, 404 "No endpoints found that
+#      support the provided 'tool_choice' value") — rules out output_type=GameAction.
+#   2. Pydantic AI's model profile for this model doesn't declare
+#      supports_json_schema_output: true, so NativeOutput(GameAction) is
+#      rejected client-side ("Native structured output is not supported by
+#      the model"). Could be patched via custom ModelProfile but that's
+#      brittle to maintain per-model.
+# PromptedOutput injects the schema into the system prompt and parses the
+# model's JSON text client-side — works for any model. Reasoning models
+# like Qwen3.6-Plus (AA 50) are reliable at producing well-formed JSON
+# under PromptedOutput. See src/agent/agent.py output_mode branching.
+"qwen3.6-plus(thinking)":
+  # Observed behaviour (2026-04-25, partial 15T run aborted at turn 14): cheaper
+  # per-turn than Gemini 3 Flash high ($0.0069 vs $0.0090) and similar latency
+  # (28.2s vs 27.0s) — verbosity warning didn't materialise as expected. BUT:
+  # 5 of 15 turns (33%) hit at least one PromptedOutput retry due to model
+  # emitting truncated/missing-prefix JSON despite our robust extractor. Each
+  # retry adds ~30% turn cost. Effective cost is closer to ~$0.009/turn once
+  # retries are factored in. Spatial reasoning was weak — agent stayed stuck
+  # in/near the bedroom across 14 turns, similar failure mode to Flash Lite high.
+  openrouter_id: "qwen/qwen3.6-plus"
+  reasoning:
+    enabled: true
+  output_mode: "prompted"
+  temperature: 0.3
+  top_p: 0.95
+  observed:
+    avg_turn_cost_usd: 0.0069
+    avg_turn_latency_s: 28.2
+    sample_turns: 15
+    last_updated: 2026-04-25
+    notes: "33% retry rate from prompted-output JSON quirks. Spatial reasoning weak — got stuck in bedroom like Flash Lite high. Aborted at turn 14."
+
+"qwen3.6-plus(non-thinking)":
+  openrouter_id: "qwen/qwen3.6-plus"
+  reasoning:
+    enabled: false
+  output_mode: "prompted"
+  temperature: 0.3
+  top_p: 0.95
+  observed:
+    sample_turns: 0

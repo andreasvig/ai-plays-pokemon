@@ -1,5 +1,42 @@
 # Changelog
 
+## 2026-04-25 — Session 8: Model Registry, Output-Mode Fallbacks, OpenRouter Research
+
+### Models Registry (`configs/models.yaml`)
+- New alias layer: configs reference short names (`gemini-3-flash(low)`, `qwen3.6-plus`) instead of raw `provider/model` strings
+- Each entry holds: `openrouter_id`, optional `reasoning`, optional `output_mode`, optional `fallbacks` (chained alias resolution)
+- `src/config.py` resolves the alias at load: rewrites `llm_model` to the raw id, expands `thinking`, expands fallbacks; raw ids still pass through untouched
+- Original alias preserved in `_llm_alias` and surfaced in run summaries
+
+### Output-Mode Fallback (`tool` / `native_json` / `prompted`)
+- Some OpenRouter providers don't expose `tool_choice="required"` — the previous default broke for those models
+- Registry entry can now declare `output_mode: native_json` (uses Pydantic AI's `NativeOutput` → `response_format: json_schema`) or `output_mode: prompted` (text + parse) per model
+- Default remains `tool` — strongest schema enforcement, broadest support
+- Retries bumped 3 → 5 (prompted mode occasionally needs extra rounds to nail JSON shape)
+
+### Robust Prompted-Mode Template
+- Pydantic AI's default prompted template was too weak for Qwen3.6-Plus — the model kept emitting ` ```json{...}``` ` despite "no fences" instructions
+- Pydantic AI's built-in fence stripper is asymmetric: eats the leading `{` with the opening fence, leaves the trailing fence in place — produces unparseable output
+- Custom template: explicit `{{` / `}}` boundary chars, concrete example, escaped braces (Python `.format(schema=...)` substitution requires it)
+- New `_robust_strip_markdown_fences` helper in `src/core/patches.py` for symmetric stripping when the model still wraps
+
+### Prompted-Mode Display Parity
+- In tool mode the GameAction arrives as a `final_result` tool call; in prompted mode it arrives as a `TextPart`
+- New `_try_parse_game_action` in `src/agent/turn.py` recognizes prompted JSON TextParts and re-routes them to the same trace shape
+- Dashboard, terminal display, `events.jsonl` (`llm_output` + `memory_update_output`) now render identically across both modes
+
+### OpenRouter Image-Input Research
+- `scripts/test_media_resolution.py` — 9-probe test confirming Gemini's `media_resolution` parameter is silently dropped by OpenRouter (every shape tested returned `prompt_tokens=1102`)
+- `scripts/test_resize_spatial.py` — 4 image resolutions (240×160 → 1440×960) of the same Pokemon screenshot all return `prompt_tokens=1318` and byte-identical answers at temperature=0
+- `scripts/test_resize_nocache.py` — temperature=0.7 control rules out caching as the explanation
+- Findings captured at `agent_brain/references/openrouter.md` in the Marvin vault: passthrough whitelist, silent-drops list, image-input behavior, when to bypass for direct provider APIs
+
+### config-2.2.yaml
+- Built around the OCR cleanup pipeline from Session 7 (background Tesseract → Gemma 4 26B cleanup → injected as "Recent OCR Text")
+- Latest snapshot of the prompt + memory schema before the v3 schema overhaul
+
+---
+
 ## 2026-04-10 — Session 5b: Button Timing, Screen Stability, Prompt Refinements
 
 ### Button Timing: A/B Dialogue Gap

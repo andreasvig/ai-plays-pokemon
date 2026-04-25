@@ -77,7 +77,18 @@ def _serialize_messages(messages) -> list[dict]:
             _extract_openrouter_reasoning(msg, trace)
             for part in msg.parts:
                 if isinstance(part, TextPart):
-                    trace.append({"role": "assistant", "content": part.content})
+                    # Prompted-output mode emits the GameAction JSON as a TextPart
+                    # rather than a final_result tool call. Re-route to the same
+                    # trace shape so terminal display formats it identically.
+                    parsed_action = _try_parse_game_action(part.content)
+                    if parsed_action is not None:
+                        trace.append({
+                            "role": "tool_call",
+                            "tool_name": "final_result",
+                            "args": parsed_action,
+                        })
+                    else:
+                        trace.append({"role": "assistant", "content": part.content})
                 elif isinstance(part, ThinkingPart):
                     trace.append({"role": "thinking", "content": part.content})
                 elif isinstance(part, ToolCallPart):
@@ -138,6 +149,31 @@ def _try_parse(s) -> dict:
         return result if isinstance(result, dict) else {}
     except (json.JSONDecodeError, TypeError):
         return {}
+
+
+_GAME_ACTION_KEYS = {"inputs", "i_saw", "i_did", "i_expect", "memory_updates"}
+
+
+def _try_parse_game_action(text) -> Optional[dict]:
+    """If `text` parses to a JSON object with GameAction's full key set, return
+    it. Used to recognize prompted-output TextParts as the same structured
+    final_result that tool-mode emits — so dashboard + terminal display the
+    parsed fields (Output / Saw / Did / Expect / Memory) instead of one raw
+    JSON blob."""
+    if not isinstance(text, str) or not text.strip():
+        return None
+    try:
+        from src.core.patches import _robust_strip_markdown_fences
+        cleaned = _robust_strip_markdown_fences(text)
+    except Exception:
+        cleaned = text
+    try:
+        parsed = json.loads(cleaned)
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return None
+    if isinstance(parsed, dict) and _GAME_ACTION_KEYS.issubset(parsed.keys()):
+        return parsed
+    return None
 
 
 def _truncate(text: str, max_len: int = 120) -> str:
@@ -664,11 +700,29 @@ class TurnManager:
                     "agent_id": deps.agent_id,
                 })
             elif isinstance(part, TextPart) and part.content:
-                self.logger.log_custom("llm_text", {
-                    "content": part.content,
-                    "turn": deps.turn_number,
-                    "agent_id": deps.agent_id,
-                })
+                # In prompted-output mode the GameAction JSON arrives as a
+                # TextPart. Emit the same llm_output + memory_update_output
+                # events tool-mode emits, so the dashboard renders identical
+                # labeled fields. Fall back to llm_text for genuine prose.
+                parsed_action = _try_parse_game_action(part.content)
+                if parsed_action is not None:
+                    self.logger.log_custom("llm_output", {
+                        "args": json.dumps(parsed_action),
+                        "turn": deps.turn_number,
+                        "agent_id": deps.agent_id,
+                    })
+                    mem_raw = parsed_action.get("memory_updates", "")
+                    self.logger.log_custom("memory_update_output", {
+                        "content": mem_raw if mem_raw else "(no changes)",
+                        "turn": deps.turn_number,
+                        "agent_id": deps.agent_id,
+                    })
+                else:
+                    self.logger.log_custom("llm_text", {
+                        "content": part.content,
+                        "turn": deps.turn_number,
+                        "agent_id": deps.agent_id,
+                    })
             elif isinstance(part, ToolCallPart):
                 tool_name = part.tool_name
                 args = part.args
@@ -769,6 +823,7 @@ class TurnManager:
 
         summary = {
             "session": {
+                "llm_alias": self.config.get("_llm_alias"),
                 "llm_model": self.config.get("llm_model", ""),
                 "vlm_model": self.config.get("vlm_model", ""),
                 "vision_mode": self.config.get("vision_mode", ""),

@@ -136,7 +136,9 @@ def main():
 
     print(f"\nRunning {args.turns} turns...")
     print(f"Task: {config.get('task', {}).get('goal', 'Play the game')}")
-    print(f"LLM: {config['llm_model']}")
+    llm_alias = config.get("_llm_alias")
+    llm_label = f"{llm_alias} → {config['llm_model']}" if llm_alias else config['llm_model']
+    print(f"LLM: {llm_label}")
     print(f"VLM: {config['vlm_model']}")
     print(f"Run log: {logger.run_dir}\n")
 
