@@ -151,15 +151,15 @@ def _try_parse(s) -> dict:
         return {}
 
 
-_GAME_ACTION_KEYS = {"inputs", "i_saw", "i_did", "i_expect", "memory_updates"}
+_GAME_ACTION_KEYS = {"inputs", "reasoning", "last_turn_succeeded", "memory_updates"}
 
 
 def _try_parse_game_action(text) -> Optional[dict]:
     """If `text` parses to a JSON object with GameAction's full key set, return
     it. Used to recognize prompted-output TextParts as the same structured
     final_result that tool-mode emits — so dashboard + terminal display the
-    parsed fields (Output / Saw / Did / Expect / Memory) instead of one raw
-    JSON blob."""
+    parsed fields (Output / Reasoning / Last turn ok? / Memory) instead of one
+    raw JSON blob."""
     if not isinstance(text, str) or not text.strip():
         return None
     try:
@@ -223,14 +223,18 @@ def _print_trace_summary(turn_num: int, trace: list[dict]) -> None:
                 action = parsed.get("inputs", "?")
                 if isinstance(action, list):
                     action = "[" + ", ".join(str(a) for a in action) + "]"
-                i_saw = parsed.get("i_saw", "")
-                i_did = parsed.get("i_did", "")
-                i_expect = parsed.get("i_expect", "")
+                reasoning = parsed.get("reasoning", "")
+                succeeded = parsed.get("last_turn_succeeded")
+                if succeeded is True:
+                    succeeded_str = "true"
+                elif succeeded is False:
+                    succeeded_str = "false"
+                else:
+                    succeeded_str = "null"
                 memory = parsed.get("memory_updates", "")
                 print(f"{tag('Output')} {action}")
-                print(f"{tag('Saw')} {_truncate(i_saw, 100)}")
-                print(f"{tag('Did')} {_truncate(i_did, 100)}")
-                print(f"{tag('Expect')} {_truncate(i_expect, 100)}")
+                print(f"{tag('Last turn ok?')} {succeeded_str}")
+                print(f"{tag('Reasoning')} {_truncate(reasoning, 200)}")
                 print(f"{tag('Memory')} {_truncate(str(memory), 200) if memory else '(none)'}")
             else:
                 if isinstance(args, dict):
@@ -291,6 +295,7 @@ class TurnManager:
         self.ocr: Optional[OCRRunner] = None
         self.agent, self.model_settings, self.fallback_models = create_agent(config)
         self.max_steps_per_turn = config.get("max_steps_per_turn", 10)
+        self.max_turns_before_trim = config.get("max_turns_before_trim")
 
         # Turn history
         self.turn_explanations: list[dict] = []
@@ -377,10 +382,9 @@ class TurnManager:
 
             # Log the turn explanation
             explanation = {
-                "i_saw": result.i_saw,
-                "i_did": result.i_did,
-                "i_expect": result.i_expect,
                 "action": result.inputs,
+                "reasoning": result.reasoning,
+                "last_turn_succeeded": result.last_turn_succeeded,
                 "memory_updates": updates,
                 "memory_updates_raw": result.memory_updates,
             }
@@ -783,16 +787,49 @@ class TurnManager:
         text_parts.append(f"\n## Memory\n```json\n{state_json}\n```")
 
         # Turn history
+        # Each turn k's `did this turn succeed?` is the value the FOLLOWING
+        # turn (k+1) wrote into its `last_turn_succeeded` field. The most
+        # recent prior turn has no follower yet, so its grade is left blank
+        # for the current turn to fill in via `last_turn_succeeded`.
         if self.turn_explanations:
             history = "\n## Previous Turns"
-            for i, exp in enumerate(self.turn_explanations, 1):
-                action = exp['action']
+            n_total = len(self.turn_explanations)
+            trim = self.max_turns_before_trim
+            if trim is not None and n_total > trim:
+                start = n_total - trim
+                history += (
+                    f"\n\n_(Earlier turns have been truncated. "
+                    f"Showing the last {trim} of {n_total} turns.)_"
+                )
+            else:
+                start = 0
+            visible = self.turn_explanations[start:]
+            n_visible = len(visible)
+            for j, exp in enumerate(visible):
+                turn_num = start + j + 1
+                action = exp.get('action', [])
                 if isinstance(action, list):
-                    action = "[" + ", ".join(action) + "]"
-                history += f"\n### Turn {i} — {action}"
-                history += f"\n- **I saw:** {exp['i_saw']}"
-                history += f"\n- **I did:** {exp['i_did']}"
-                history += f"\n- **I expected:** {exp['i_expect']}"
+                    action_str = ", ".join(action)
+                else:
+                    action_str = str(action)
+                reasoning = exp.get('reasoning', '')
+                next_idx = j + 1
+                if next_idx < n_visible:
+                    grade = visible[next_idx].get('last_turn_succeeded')
+                    if grade is True:
+                        grade_str = "true"
+                    elif grade is False:
+                        grade_str = "false"
+                    elif grade is None:
+                        grade_str = "null"
+                    else:
+                        grade_str = "(missing)"
+                else:
+                    grade_str = "<for you to decide this turn>"
+                history += f"\n\n### Turn {turn_num}"
+                history += f"\n- actions: {action_str}"
+                history += f"\n- reasoning: {reasoning}"
+                history += f"\n- did this turn succeed?: {grade_str}"
             text_parts.append(history)
 
         # Task (tasks.json overrides config task)
@@ -855,9 +892,8 @@ class TurnManager:
                 {
                     "turn": i + 1,
                     "action": exp.get("action", ""),
-                    "i_saw": exp.get("i_saw", ""),
-                    "i_did": exp.get("i_did", ""),
-                    "i_expect": exp.get("i_expect", ""),
+                    "reasoning": exp.get("reasoning", ""),
+                    "last_turn_succeeded": exp.get("last_turn_succeeded"),
                 }
                 for i, exp in enumerate(self.turn_explanations)
             ],

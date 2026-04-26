@@ -1,5 +1,48 @@
 # Changelog
 
+## 2026-04-25 — Session 9: GameAction Schema Overhaul (config 3.0)
+
+### New Output Schema: `reasoning` + `last_turn_succeeded`
+- Replaces the old three-field `i_saw / i_did / i_expect` shape with one free-form `reasoning` prose field plus a `last_turn_succeeded: bool | None` grade
+- `reasoning` ends with a one-sentence prediction the next turn grades against; no enforced internal structure (observe / plan / predict in any order)
+- `last_turn_succeeded`: strict definition — `true` only if the current screen matches what last turn predicted; `false` otherwise (including vague predictions); `null` only on the first turn of a task
+- Forces the "evaluate last action" step that the old prompt asked for but had no output slot for
+- `i_did` past-tense fiction problem solved — the schema no longer asks the agent to describe an action that hasn't fired yet
+- Pydantic `Field` descriptions kept sparse (one-line "what is this field"); behavioral rules live in the system prompt where iteration is fast
+
+### Harness updates (`src/agent/turn.py`)
+- `_GAME_ACTION_KEYS` rewritten for the new field set
+- Previous-turns block formatter rewritten: each prior turn renders as `actions: ... / reasoning: ... / did this turn succeed?: ...`. Grade for turn k comes from turn (k+1)'s `last_turn_succeeded`. The most-recent prior turn shows `<for you to decide this turn>` — that's the value the agent fills into `last_turn_succeeded` this turn
+- Terminal trace summary, `turn_explanations` shape, and `_write_run_summary` all updated to the new fields
+
+### Context Trimming (`max_turns_before_trim` wired up)
+- The config knob existed in 2.x configs but was dead code — never read by `src/`
+- Now plumbed through `TurnManager` and applied in `_build_turn_message`: when set, only the most recent N turns render in the Previous Turns block; older turns are dropped with an italic "(Earlier turns have been truncated. Showing the last N of M turns.)" notice
+- Turn numbering still reflects actual turn numbers; grade-threading still works since each visible turn's follower (except the most recent) is also visible
+- `null` disables trimming (matches the convention from configs 1.0/1.1)
+- config-3.0 uses `max_turns_before_trim: 10`
+
+### Dashboard + Report Parity (`src/dashboard/static/index.html`, `src/cli/report.py`)
+- Live and replay rendering updated for the new schema (3 spots in dashboard, 3 spots in report)
+- Grade label inline: ✅ succeeded / ❌ failed / ➖ n/a (first turn)
+- `reasoning` rendered as a single block instead of the three sub-blocks
+
+### Encrypted Reasoning at Low Effort (Gemini 3 family)
+- During smoke testing, discovered Gemini 3 Flash at `effort: low` + `tool_choice: required` returns reasoning content as an encrypted `thought signature` blob (`reasoning.encrypted`, `format: google-gemini-v1`), with `reasoning = None` plaintext
+- At `effort: high`, plaintext markdown reasoning headers come through normally (10/10 turns in verification run)
+- The encryption is Google's mechanism for preserving reasoning state across multi-turn tool calls — useful to the model, opaque to us
+- Captured in detail at `agent_brain/references/openrouter.md` in the Marvin vault
+
+### config-3.0.yaml
+- New file. System prompt rewritten around the new schema: Reasoning Guidance + Last Turn Succeeded sections, "Calibrate ambition to recent success" replacing the old static "be ambitious" rule, OCR Text and Previous Turns descriptions tightened
+- Currently uses `gemini-3-flash(high)` alias
+
+### Model Registry Updates (`configs/models.yaml`)
+- `gemini-3-flash(high)`: refreshed observed numbers post-schema-overhaul. New sample: 20T across two runs (10T no-trim + 10T trim=5). Cost dropped $0.0090 → $0.0053/turn (~41% cheaper) and latency dropped 27.0s → 9.9s/turn (~63% faster) — the leaner output schema cut output tokens substantially
+- `gemini-3.1-pro(low)`: first sample, 50T full run. $0.0158/turn, 11.4s/turn, 25/50 self-graded successes. Trajectory: bedroom → 1F → outside → Oak's Lab → got Squirtle → won rival battle (Squirtle Lv6) → back in Pallet Town overworld by T46. Slow start (7 consecutive bedroom failures T2-T10) — same encrypted-reasoning failure mode seen with Flash Lite high and Qwen3.6-Plus
+
+---
+
 ## 2026-04-25 — Session 8: Model Registry, Output-Mode Fallbacks, OpenRouter Research
 
 ### Models Registry (`configs/models.yaml`)

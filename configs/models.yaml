@@ -41,14 +41,20 @@
 # No sampling overrides — let Gemini use its own tuned defaults.
 "gemini-3-flash(high)":
   # $0.50/$3.00 per M, 1M context.
+  # Numbers below are post-config-3.0 (reasoning + last_turn_succeeded schema,
+  # 2026-04-25). The leaner schema cut per-turn cost ~40% vs the old
+  # i_saw/i_did/i_expect baseline (which was $0.0090/27s @ 20T on 2026-04-24).
+  # Sample = 20T across two runs: 10T no-trim ($0.0049/9.1s) + 10T trim=5
+  # ($0.0056/10.7s). Plaintext reasoning visible at this effort tier (vs
+  # encrypted blob at low effort under tool_choice — see openrouter.md).
   openrouter_id: "google/gemini-3-flash-preview"
   reasoning:
     effort: "high"
   observed:
-    avg_turn_cost_usd: 0.0090
-    avg_turn_latency_s: 27.0
+    avg_turn_cost_usd: 0.0053
+    avg_turn_latency_s: 9.9
     sample_turns: 20
-    last_updated: 2026-04-24
+    last_updated: 2026-04-25
 
 "gemini-3-flash(medium)":
   openrouter_id: "google/gemini-3-flash-preview"
@@ -139,11 +145,21 @@
     sample_turns: 0
 
 "gemini-3.1-pro(low)":
+  # Observed (2026-04-25, 50T full run on config-3.0 schema): made it through
+  # bedroom → 1F → Pallet Town → Oak's Lab → got Squirtle starter → won the
+  # rival battle (Squirtle leveled to 6) → back in Pallet Town overworld by
+  # T46. 25/50 self-graded successes. Slow start (7 consecutive fails T2-T10
+  # in the bedroom — same encrypted-reasoning-at-low-effort failure mode seen
+  # with Flash Lite high and Qwen3.6-Plus). Per-turn cost ~3× Flash high but
+  # made it deeper into the game than any prior 10T run.
   openrouter_id: "google/gemini-3.1-pro-preview"
   reasoning:
     effort: "low"
   observed:
-    sample_turns: 0
+    avg_turn_cost_usd: 0.0158
+    avg_turn_latency_s: 11.4
+    sample_turns: 50
+    last_updated: 2026-04-25
 
 "gemini-3.1-pro(minimal)":
   openrouter_id: "google/gemini-3.1-pro-preview"

@@ -433,10 +433,12 @@ function handleEvent(evt) {
     if (typeof args === 'string') { try { args = JSON.parse(args); } catch(e) { console.error('llm_output parse fail', e); } }
     if (typeof args === 'object') {
       let lines = [];
-      if (args.i_saw) lines.push('👁 ' + args.i_saw);
-      if (args.i_did) lines.push('📝 ' + args.i_did);
-      if (args.i_expect) lines.push('🔮 ' + args.i_expect);
-      if (lines.length) addBox('output', '💬 Output', lines.join('\n'));
+      const grade = args.last_turn_succeeded;
+      if (grade === true) lines.push('✅ Last turn: succeeded');
+      else if (grade === false) lines.push('❌ Last turn: failed');
+      else if (grade === null) lines.push('➖ Last turn: n/a (first turn)');
+      if (args.reasoning) lines.push('🧠 ' + args.reasoning);
+      if (lines.length) addBox('output', '💬 Output', lines.join('\n\n'));
       if (args.inputs) {
         const inputs = Array.isArray(args.inputs) ? JSON.stringify(args.inputs) : args.inputs;
         addBox('action', '🎮 Action', inputs);
@@ -608,10 +610,12 @@ function renderTurnTrace(evt) {
         if (typeof fargs === 'string') { try { fargs = JSON.parse(fargs); } catch(e) {} }
         if (typeof fargs === 'object') {
           let lines = [];
-          if (fargs.i_saw) lines.push('👁 ' + fargs.i_saw);
-          if (fargs.i_did) lines.push('📝 ' + fargs.i_did);
-          if (fargs.i_expect) lines.push('🔮 ' + fargs.i_expect);
-          if (lines.length) addBoxTo(turnBody, 'output', '💬 Output', lines.join('\n'));
+          const fGrade = fargs.last_turn_succeeded;
+          if (fGrade === true) lines.push('✅ Last turn: succeeded');
+          else if (fGrade === false) lines.push('❌ Last turn: failed');
+          else if (fGrade === null) lines.push('➖ Last turn: n/a (first turn)');
+          if (fargs.reasoning) lines.push('🧠 ' + fargs.reasoning);
+          if (lines.length) addBoxTo(turnBody, 'output', '💬 Output', lines.join('\n\n'));
           if (fargs.inputs) {
             const inputs = Array.isArray(fargs.inputs) ? JSON.stringify(fargs.inputs) : fargs.inputs;
             addBoxTo(turnBody, 'action', '🎮 Action', inputs);
@@ -648,7 +652,7 @@ function renderTurnExplanation(evt) {
   const exp = evt.explanation || {};
   const summary = document.getElementById('turnSummary' + evt.turn);
   if (summary) {
-    summary.textContent = truncate(exp.i_did || '', 60);
+    summary.textContent = truncate(exp.reasoning || '', 60);
   }
 }
 

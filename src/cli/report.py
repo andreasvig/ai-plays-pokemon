@@ -257,7 +257,7 @@ def _render_trace_html(trace: list[dict]) -> str:
             if step["thinking"]:
                 inner += f'<div class="step-thinking"><div class="thinking-label">Thinking</div><pre>{_escape(step["thinking"][:5000])}</pre></div>'
 
-            if isinstance(parsed, dict) and ("i_did" in parsed or "i_expect" in parsed):
+            if isinstance(parsed, dict) and ("reasoning" in parsed or "last_turn_succeeded" in parsed):
                 memory_html = ""
                 mem_raw = parsed.get('memory_updates', '')
                 if mem_raw and str(mem_raw).strip().lower() != 'none':
@@ -268,10 +268,18 @@ def _render_trace_html(trace: list[dict]) -> str:
                     except (json.JSONDecodeError, TypeError):
                         mem_display = str(mem_raw)
                     memory_html = f'<div class="decision-row"><strong>Memory Update:</strong> <pre style="display:inline-block;margin:4px 0;background:#1a2e1a;padding:4px 8px;border-radius:4px;font-size:12px;">{_escape(mem_display)}</pre></div>'
+                grade = parsed.get('last_turn_succeeded')
+                if grade is True:
+                    grade_label = "✅ succeeded"
+                elif grade is False:
+                    grade_label = "❌ failed"
+                elif grade is None:
+                    grade_label = "➖ n/a (first turn)"
+                else:
+                    grade_label = "(missing)"
                 inner += f"""<div class="step-decision">
-                    <div class="decision-row"><strong>I saw:</strong> {_escape(parsed.get('i_saw', ''))}</div>
-                    <div class="decision-row"><strong>I did:</strong> {_escape(parsed.get('i_did', ''))}</div>
-                    <div class="decision-row"><strong>I expect:</strong> {_escape(parsed.get('i_expect', ''))}</div>
+                    <div class="decision-row"><strong>Last turn:</strong> {grade_label}</div>
+                    <div class="decision-row"><strong>Reasoning:</strong> {_escape(parsed.get('reasoning', ''))}</div>
                     <div class="decision-row"><strong>Action:</strong> <code>{_escape(_format_action(parsed.get('inputs', '')))}</code></div>
                     {memory_html}
                 </div>"""
@@ -382,6 +390,17 @@ def generate_html(run_dir: Path, events: list[dict], turns: list[dict]) -> str:
                 dur = evt.get("duration", 0) or evt.get("data", {}).get("duration", 0)
                 settle_html = f'<span class="settle-time">⏱ {dur}s</span>'
 
+        # Last-turn-succeeded label (rendered inside the explanation block)
+        _grade = exp.get('last_turn_succeeded')
+        if _grade is True:
+            grade_label = "✅ succeeded"
+        elif _grade is False:
+            grade_label = "❌ failed"
+        elif _grade is None:
+            grade_label = "➖ n/a (first turn)"
+        else:
+            grade_label = "(missing)"
+
         # Raw events (collapsed)
         raw_events_json = json.dumps(turn["events"], indent=2, default=str)
 
@@ -390,7 +409,7 @@ def generate_html(run_dir: Path, events: list[dict], turns: list[dict]) -> str:
             <div class="turn-header" onclick="this.parentElement.classList.toggle('collapsed')">
                 <span class="turn-number">Turn {turn_num}</span>
                 <span class="turn-action"><code>{_escape(action)}</code></span>
-                <span class="turn-summary">{_escape(exp.get('i_did', '')[:100])}</span>
+                <span class="turn-summary">{_escape(exp.get('reasoning', '')[:100])}</span>
                 {settle_html}
                 {usage_html}
             </div>
@@ -401,9 +420,8 @@ def generate_html(run_dir: Path, events: list[dict], turns: list[dict]) -> str:
                     </div>
                     <div class="turn-right">
                         <div class="explanation">
-                            <div class="exp-row"><strong>I saw:</strong> {_escape(exp.get('i_saw', ''))}</div>
-                            <div class="exp-row"><strong>I did:</strong> {_escape(exp.get('i_did', ''))}</div>
-                            <div class="exp-row"><strong>I expect:</strong> {_escape(exp.get('i_expect', ''))}</div>
+                            <div class="exp-row"><strong>Last turn:</strong> {grade_label}</div>
+                            <div class="exp-row"><strong>Reasoning:</strong> {_escape(exp.get('reasoning', ''))}</div>
                             {_render_memory_update_html(exp)}
                         </div>
                     </div>
