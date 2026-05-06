@@ -31,7 +31,7 @@
 - During smoke testing, discovered Gemini 3 Flash at `effort: low` + `tool_choice: required` returns reasoning content as an encrypted `thought signature` blob (`reasoning.encrypted`, `format: google-gemini-v1`), with `reasoning = None` plaintext
 - At `effort: high`, plaintext markdown reasoning headers come through normally (10/10 turns in verification run)
 - The encryption is Google's mechanism for preserving reasoning state across multi-turn tool calls — useful to the model, opaque to us
-- Captured in detail at `agent_brain/references/openrouter.md` in the Marvin vault
+- Captured in detail in private notes
 
 ### config-3.0.yaml
 - New file. System prompt rewritten around the new schema: Reasoning Guidance + Last Turn Succeeded sections, "Calibrate ambition to recent success" replacing the old static "be ambitious" rule, OCR Text and Previous Turns descriptions tightened
@@ -72,7 +72,7 @@
 - `scripts/test_media_resolution.py` — 9-probe test confirming Gemini's `media_resolution` parameter is silently dropped by OpenRouter (every shape tested returned `prompt_tokens=1102`)
 - `scripts/test_resize_spatial.py` — 4 image resolutions (240×160 → 1440×960) of the same Pokemon screenshot all return `prompt_tokens=1318` and byte-identical answers at temperature=0
 - `scripts/test_resize_nocache.py` — temperature=0.7 control rules out caching as the explanation
-- Findings captured at `agent_brain/references/openrouter.md` in the Marvin vault: passthrough whitelist, silent-drops list, image-input behavior, when to bypass for direct provider APIs
+- Findings captured in private notes: passthrough whitelist, silent-drops list, image-input behavior, when to bypass for direct provider APIs
 
 ### config-2.2.yaml
 - Built around the OCR cleanup pipeline from Session 7 (background Tesseract → Gemma 4 26B cleanup → injected as "Recent OCR Text")
