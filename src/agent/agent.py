@@ -97,8 +97,20 @@ def create_agent(config: dict[str, Any]) -> tuple[Agent, Any, list[str]]:
     for key in ("temperature", "top_p", "max_tokens"):
         if key in resolved:
             settings_kwargs[key] = resolved[key]
-    if thinking_config:
-        settings_kwargs["extra_body"] = {"reasoning": thinking_config}
+
+    # extra_body bundles OpenRouter-specific routing controls. Two passthrough
+    # fields are merged here: `reasoning` (effort/binary toggle) and `provider`
+    # (per-model OpenRouter provider routing — sort: "throughput" | "price" |
+    # "latency", order: [...], ignore: [...]). Only relevant for multi-provider
+    # models; for single-provider ones (xAI, Xiaomi) it's a no-op.
+    provider_routing = resolved.get("provider")
+    if thinking_config or provider_routing:
+        extra_body: dict[str, Any] = {}
+        if thinking_config:
+            extra_body["reasoning"] = thinking_config
+        if provider_routing:
+            extra_body["provider"] = provider_routing
+        settings_kwargs["extra_body"] = extra_body
 
     model_settings = None
     if settings_kwargs:

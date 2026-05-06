@@ -22,6 +22,17 @@
 #     top_p:          float, nucleus sampling cutoff
 #     max_tokens:     int, completion token budget
 #     fallbacks:      list of alias names to try if primary fails
+#     provider:       OpenRouter provider-routing block, passed through verbatim
+#                     into the request's extra_body.provider. Use this to override
+#                     OpenRouter's default price-balanced routing. Common shapes:
+#                       {sort: "throughput"}    # fastest provider first
+#                       {sort: "price"}         # cheapest first (default-ish)
+#                       {sort: "latency"}       # lowest TTFT first
+#                       {order: ["xai", ...]}   # explicit allowlist+order
+#                       {ignore: ["fireworks"]} # blocklist slow providers
+#                     Only meaningful for multi-provider models (open-weights
+#                     like qwen/*, gemma/*, deepseek/*). No-op for single-
+#                     provider models (xAI, Xiaomi, Google Gemini).
 #     output_mode:    Pydantic AI structured-output strategy. Optional, defaults
 #                     to "tool" (tool_choice="required" — strongest schema
 #                     enforcement, broadest support). Override to "native_json"
@@ -138,11 +149,36 @@
     sample_turns: 0
 
 "gemini-3.1-pro(medium)":
+  # Observed (2026-05-01, 20T run on config-3.0): **best in registry on
+  # actual game progress.** Final state.json: in Oak's Lab, Pallet Town,
+  # with Charmander as starter, with `pallet_town` mapped. The agent
+  # actually left the house, walked to Oak, and got the starter — none
+  # of the other 2026-05-01 runs cleared step 1 of the task.
+  #
+  # Self-grade rate (9/20 = 45%) is misleadingly low compared to
+  # GPT-5.5(medium)'s 70% — the difference is that Pro made ambitious
+  # predictions ("I'll be in Oak's Lab") and sometimes missed, vs
+  # GPT-5.5 making conservative predictions and trivially matching.
+  # Game state is the real benchmark (see project memory:
+  # feedback_pokemon-success-metric).
+  #
+  # Cost ($0.0191/turn) is 21% higher than (low)'s $0.0158, latency
+  # 11.0s (matches low's 11.4s), output 755 tokens/turn (vs 553 on
+  # GPT-5.5 medium — Pro reasons more verbosely). Total run: $0.38 / 20T.
+  #
+  # Recommended next: 50T run to see how far Pro(medium) progresses
+  # past Oak's lab. (low)'s 50T sample reached "back in Pallet Town
+  # overworld by T46 with Squirtle leveled to 6" — medium should do
+  # at least as well.
   openrouter_id: "google/gemini-3.1-pro-preview"
   reasoning:
     effort: "medium"
   observed:
-    sample_turns: 0
+    avg_turn_cost_usd: 0.0191
+    avg_turn_latency_s: 11.0
+    sample_turns: 20
+    last_updated: 2026-05-01
+    notes: "Reached Oak's Lab + got Charmander starter at T20. Best in-game progress of any 2026-05-01 run. Lower self-grade rate (45%) than GPT-5.5(medium)'s 70% but actually played the game while GPT-5.5 stayed in the house."
 
 "gemini-3.1-pro(low)":
   # Observed (2026-04-25, 50T full run on config-3.0 schema): made it through
@@ -335,5 +371,160 @@
   output_mode: "prompted"
   temperature: 0.3
   top_p: 0.95
+  observed:
+    sample_turns: 0
+
+# --- xAI Grok 4.3 ---
+# Always-on reasoning — no effort tiers, no binary toggle. OpenRouter docs:
+# "Reasoning is always active and cannot be disabled or configured by effort
+# level." Third reasoning shape in this registry alongside effort-tiered
+# (Gemini 3, OpenAI) and binary (MiMo, Gemma, Qwen). Multimodal (text+image),
+# 1M context, $1.25/$2.50 per M. Tiered pricing above 200k total tokens.
+#
+# Observed (2026-05-01, partial 36T run on config-3.0, aborted at T36): bad
+# fit for this task. Stuck in 1F Player's House for the entire run — got out
+# of the bedroom but never made it to Pallet Town overworld. 3/35 grade=true
+# (8.3%) vs Gemini 3 Pro low's 25/50 (50%) on the identical task. Cost-per-
+# turn ($0.0162) is comparable to Pro low ($0.0158), but per-turn latency
+# (71.7s, range 24-250s, p99 outliers) is 6× worse than Pro low (11.4s).
+# Output tokens averaged 3815/turn — roughly 2× the other registry entries
+# at this scene complexity, consistent with the always-on reasoning producing
+# verbose traces. No retries observed (validation worked first-try most turns,
+# one retry at T17). Per-turn cost-per-success is ~$0.19 here vs Pro low's
+# ~$0.032 — ~6× worse on this task.
+#
+# Why so bad: spatial reasoning failure mode, similar to Flash Lite (high)
+# and Qwen3.6-Plus — agent identifies the door, plans a sweep, presses
+# directional inputs, but never lands on the door tile. Grok's reasoning
+# trace shows it knows what it's trying to do; the bottleneck is screen-
+# state grounding, not task planning. Worth retrying once direct_multimodal
+# vision improves or with a snapshot that starts in Pallet Town overworld
+# (skip the 1F navigation entirely).
+#
+# No reasoning block below — omitted per the schema convention so neither
+# effort nor enabled is sent to OpenRouter.
+"grok-4.3":
+  openrouter_id: "x-ai/grok-4.3"
+  observed:
+    avg_turn_cost_usd: 0.0162
+    avg_turn_latency_s: 71.7
+    sample_turns: 35
+    last_updated: 2026-05-01
+    notes: "3/35 grade=true (8.3%). Stuck in 1F Player's House — never reached overworld. ~6× slower per turn than Pro low at similar cost. Latency variance huge (24s–250s)."
+
+# --- OpenAI GPT-5 family ---
+# Effort-tiered reasoning matching Gemini 3's shape: xhigh / high / medium /
+# low / minimal (per OpenRouter docs, "Reasoning Effort Values"). xhigh
+# allocates ~95% of max_tokens to reasoning, low ~20%, minimal ~10%.
+# Multimodal (text+image input). Frontier-tier pricing on GPT-5.5
+# ($5/$30 per M) — 3× Gemini 3.1 Pro on input, 2.5× on output. Nano is
+# the cheap-at-scale entry ($0.20/$1.25 per M, similar tier to Grok 4 Fast).
+"gpt-5.5(low)":
+  # Frontier tier, 1.05M context (922K input / 128K output).
+  # Low-effort variant: ~20% of max_tokens for reasoning.
+  #
+  # Observed (2026-05-01, 20T run on config-3.0): fastest model in the
+  # registry — 4.9s/turn (range 3.8–6.1, very tight variance) vs Pro low's
+  # 11.4s and Grok 4.3's 71.7s. Cost ($0.0190/turn) is comparable to
+  # everything else despite frontier pricing, because output tokens are
+  # very low (193/turn — 10-20× less verbose than other reasoning models).
+  # That's the low-effort tier doing what it says on the tin: ~20% of
+  # max_tokens for reasoning, and the prose output stays terse.
+  #
+  # Success: 2/20 (10%), same bedroom-stuck failure mode as Flash Lite
+  # high / Qwen3.6-Plus / Grok 4.3. Low effort isn't enough reasoning
+  # budget for the spatial grounding bottleneck. (medium) is the natural
+  # next probe — same speed/cost neighborhood plus ~50% reasoning budget.
+  openrouter_id: "openai/gpt-5.5"
+  reasoning:
+    effort: "low"
+  observed:
+    avg_turn_cost_usd: 0.0190
+    avg_turn_latency_s: 4.9
+    sample_turns: 20
+    last_updated: 2026-05-01
+    notes: "2/20 grade=true (10%). Fastest in registry (4.9s/turn, 2-15× faster than peers). Very terse outputs (193 output tokens/turn). Bedroom-stuck — low effort underpowered for spatial grounding."
+
+"gpt-5.5(medium)":
+  # Same model, ~50% of max_tokens for reasoning.
+  #
+  # Observed (2026-05-01, 20T run on config-3.0): **gamed the
+  # last_turn_succeeded metric — does NOT actually play the game well.**
+  # Final state.json: still in 2F Player's House (went *up* the stairs
+  # instead of down), no Pokemon, no badges, no map memory written.
+  # 14/20 grade=true (70%) is misleading — the model gets a high self-
+  # grade by predicting conservatively ("I'll still be in this room")
+  # and trivially matching the screen. Compare: Gemini 3.1 Pro (medium)
+  # had 45% grade rate on the same task but reached Oak's Lab and got
+  # Charmander as starter.
+  #
+  # Cost-per-turn $0.0298 (~2× Pro low's $0.0158), latency 13.9s, output
+  # 553 tokens/turn — terse reasoning, not enough exploration.
+  #
+  # Verdict: do not use grade rate to compare models in this project.
+  # Real benchmark is in-game state at end of run (see project memory:
+  # feedback_pokemon-success-metric).
+  openrouter_id: "openai/gpt-5.5"
+  reasoning:
+    effort: "medium"
+  observed:
+    avg_turn_cost_usd: 0.0298
+    avg_turn_latency_s: 13.9
+    sample_turns: 20
+    last_updated: 2026-05-01
+    notes: "Stuck on 2F Player's House at run end (went UP instead of DOWN). High grade rate (70%) was self-grade gaming, not progress. Worse than Gemini Pro (medium) on actual game state."
+
+# --- Moonshot AI Kimi K2.6 ---
+# Multimodal flagship from Moonshot, 262K context, $0.74/$3.49 per M (mid-tier
+# — between MiMo V2.5 and Qwen3.6-Plus). Binary thinking toggle, no effort
+# tiers — Kimi falls in the same family as MiMo / Gemma / Qwen on OpenRouter
+# (effort-tier docs explicitly list only OpenAI + Grok as effort-tiered;
+# everyone else is binary or max_tokens-based).
+#
+# Image input: marketed as "multimodal" / "visual coding capability" by
+# Moonshot. Not 100% confirmed safe with our default vision_mode:
+# direct_multimodal yet — if it 404s like mimo-v2.5-pro did, fall back to
+# vision_mode: separate_vlm.
+#
+# Sampling: 0.3 / 0.95, matching the function-call profile used elsewhere
+# in this registry for reasoning models with structured-output schemas.
+"kimi-k2.6(thinking)":
+  # Observed (2026-05-01, aborted after 2T due to extreme latency): T1 took
+  # 134.5s, T2 took 110.3s — slowest model in the registry by a wide margin
+  # (worse than Grok 4.3's 71s avg). Cost is cheap ($0.012/turn, 3K input,
+  # 2K output) and multimodal works (T1 graded null normally, no 404), but
+  # the wall-clock cost makes 20T+ runs impractical at ~35-45min. Throughput
+  # sort (provider.sort: "throughput") did NOT help — likely because all
+  # Kimi K2.6 providers on OpenRouter are slow, not because the routing
+  # field was ignored (config.py confirmed it resolved correctly). If you
+  # need Kimi for this project, expect long wait times regardless of sort.
+  openrouter_id: "moonshotai/kimi-k2.6"
+  reasoning:
+    enabled: true
+  temperature: 0.3
+  top_p: 0.95
+  observed:
+    sample_turns: 0
+    notes: "Aborted across 3 attempts. With provider.sort=throughput: T1-T3 latencies 47s/224s/458s and 134s/110s (T1-T2). With default routing: 60s/214s/182s. Pattern is identical regardless of sort — reasoning length grows when prior turns exist (T1 ~700-900 output tokens, T2-T3 3000-9000+). Latency tracks output tokens, so routing can't fix it. Conclusion: Kimi K2.6 not viable for this project's loop until reasoning verbosity is bounded."
+
+"kimi-k2.6(non-thinking)":
+  openrouter_id: "moonshotai/kimi-k2.6"
+  reasoning:
+    enabled: false
+  temperature: 0.3
+  top_p: 0.95
+  observed:
+    sample_turns: 0
+
+"gpt-5.4-nano(xhigh)":
+  # Cheap-at-scale OpenAI nano. 400K context (smaller than the rest of the
+  # registry), $0.20/$1.25 per M. xhigh effort = ~95% of max_tokens for
+  # reasoning — pushing a small model to its reasoning ceiling. Interesting
+  # comparison point for "do small reasoning models with max effort beat
+  # large models with low effort?". If it works, it's the cheapest entry
+  # in the registry for this task; if it doesn't, the ceiling is too low.
+  openrouter_id: "openai/gpt-5.4-nano"
+  reasoning:
+    effort: "xhigh"
   observed:
     sample_turns: 0

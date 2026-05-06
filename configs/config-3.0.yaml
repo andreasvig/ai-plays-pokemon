@@ -24,7 +24,7 @@ task:
 
 # --- Model Configuration ---
 # Alias resolved from configs/models.yaml. Raw "provider/model" IDs also work.
-llm_model: "gemini-3.1-pro(low)"
+llm_model: "kimi-k2.6(thinking)"
 llm_fallback_models: []
 
 # Direct multimodal: LLM receives raw screenshots, no separate VLM

@@ -129,7 +129,7 @@ def start_dashboard(
     logger,
     state_manager,
     config: dict[str, Any],
-    port: int = 3000,
+    port: int = 3420,
 ) -> None:
     """Start the live dashboard server in a background thread.
 
