@@ -86,8 +86,9 @@ def main():
     emu = EmulatorClient(config)
     emu.start_server()
 
-    # Launch mGBA (caffeinate prevents macOS App Nap when backgrounded)
-    mgba_cmd = [mgba_path, rom_path]
+    # Launch mGBA muted (-C mute=1 is a per-launch override; doesn't touch ~/.config/mGBA/config.ini).
+    # caffeinate prevents macOS App Nap when backgrounded.
+    mgba_cmd = [mgba_path, "-C", "mute=1", rom_path]
     if sys.platform == "darwin":
         mgba_cmd = ["caffeinate", "-i"] + mgba_cmd
 

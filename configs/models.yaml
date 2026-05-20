@@ -524,6 +524,7 @@
   openrouter_id: "openai/gpt-5.5"
   reasoning:
     effort: "low"
+    summary: "auto"  # surface reasoning summary text reliably (OpenAI returns it intermittently without this)
   observed:
     avg_turn_cost_usd: 0.0190
     avg_turn_latency_s: 4.9
@@ -553,12 +554,13 @@
   openrouter_id: "openai/gpt-5.5"
   reasoning:
     effort: "medium"
+    summary: "auto"  # surface reasoning summary text reliably (OpenAI returns it intermittently without this)
   observed:
-    avg_turn_cost_usd: 0.0298
-    avg_turn_latency_s: 13.9
+    avg_turn_cost_usd: 0.0315
+    avg_turn_latency_s: 15.5
     sample_turns: 20
-    last_updated: 2026-05-01
-    notes: "Stuck on 2F Player's House at run end (went UP instead of DOWN). High grade rate (70%) was self-grade gaming, not progress. Worse than Gemini Pro (medium) on actual game state."
+    last_updated: 2026-05-20
+    notes: "config-3.5 20T (upscale=3): reached Oak's lab but did NOT pick up the starter. Big jump from 2026-05-01 baseline (stuck in 2F bedroom) — attributable to `historic_images_count=1`, `summary: auto`, and updated prompt, NOT the model itself. Sibling A/B run config-3.6 (upscale=6) reached Oak's lab AND picked up Squirtle for +47% input tokens / +29% USD per turn — directional win for higher upscale at n=1, worth replicating."
 
 # --- Moonshot AI Kimi K2.6 ---
 # Multimodal flagship from Moonshot, 262K context, $0.74/$3.49 per M (mid-tier
@@ -612,6 +614,7 @@
   openrouter_id: "openai/gpt-5.4-nano"
   reasoning:
     effort: "xhigh"
+    summary: "auto"  # surface reasoning summary text reliably (OpenAI returns it intermittently without this)
   observed:
     sample_turns: 0
 

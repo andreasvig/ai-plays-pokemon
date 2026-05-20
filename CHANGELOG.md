@@ -1,5 +1,65 @@
 # Changelog
 
+## 2026-05-20 — Upscale-factor A/B on GPT-5.5(medium) (configs 3.5 / 3.6)
+
+### Experiment
+Probe of whether GPT-class models benefit from feeding screenshots at higher
+upscale. Two configs, identical except `screenshot.upscale_factor`:
+
+- `config-3.5.yaml` — upscale=3 (720×480, current production default)
+- `config-3.6.yaml` — upscale=6 (1440×960, 4× more pixels)
+
+Same model (`gpt-5.5(medium)`), same prompt, same `historic_images_count=1`,
+same snapshot (`bedroom_start`), 20 turns each. Run dirs:
+`local/runs/2026-05-20_16-35-00_phase5_test` (3.5) and
+`local/runs/2026-05-20_16-43-03_phase5_test` (3.6).
+
+### In-game progress (n=1 each, treat directionally)
+- **upscale=3** ended in Professor Oak's lab, **no starter received**
+- **upscale=6** ended in Professor Oak's lab, **Squirtle received** + rival Green noted
+
+Both runs are a large jump from the prior gpt-5.5(medium) baseline (config-3.0,
+stuck in 2F bedroom) — but that lift is attributable to other unrelated changes
+since (`historic_images_count=1`, `summary: auto`, prompt updates), not upscale.
+The clean A/B signal is the starter-received delta.
+
+### Input-token and cost impact
+
+| metric | upscale=3 | upscale=6 | Δ |
+|---|---:|---:|---:|
+| total input tokens (20T) | 101,546 | 148,950 | **+46.7%** |
+| avg input tokens / turn | 5,077 | 7,447 | +2,370 |
+| avg output tokens / turn | 539 | 481 | -11% |
+| LLM total cost | $0.630 | $0.815 | **+29%** |
+| avg LLM latency / turn | 15.5s | 14.4s | -7% |
+
+The image alone goes from 720×480 to 1440×960 (4× pixels) but GPT-5.5's token
+accounting on `detail: high` images only roughly doubles per image — combined
+with the two images per turn (`historic_images_count=1`), this works out to
++2.4k input tokens/turn. Output tokens actually *dropped* at upscale=6, so the
+USD delta (+29%) is smaller than the input-token delta (+47%).
+
+### Side finding: OpenAI `reasoning.summary: "auto"`
+Without it, only 3/10 turns had visible reasoning summary text in
+`llm_thinking` events even though every turn was billed for ~700-2600 hidden
+reasoning tokens. With it, visible-summary turns jumped to 11/20. Added to all
+three OpenAI entries in `configs/models.yaml`. Underlying thinking was on
+either way — just the summary text from OpenAI is intermittent unless asked.
+
+### Caveats
+- n=1 per side. Run-to-run variance for this agent is high (emulator timing,
+  model nondeterminism). The starter-received win could flip on a re-run.
+- Comparison script: `scripts/compare_upscale_runs.py <run_dir_3> <run_dir_6>`
+- Worth replicating 3×20T per upscale before treating as ground truth.
+
+### Files
+- `configs/config-3.5.yaml` — new
+- `configs/config-3.6.yaml` — new
+- `configs/models.yaml` — `summary: "auto"` added to all openai entries; `gpt-5.5(medium)` observed numbers refreshed
+- `scripts/compare_upscale_runs.py` — new
+
+---
+
 ## 2026-04-25 — Session 9: GameAction Schema Overhaul (config 3.0)
 
 ### New Output Schema: `reasoning` + `last_turn_succeeded`

@@ -55,8 +55,10 @@ def main():
     emu = EmulatorClient(config)
     emu.start_server()
 
-    # Wrap with caffeinate to prevent macOS App Nap when mGBA loses focus
-    mgba_cmd = [mgba_path, rom_path]
+    # -C mute=1 silences GBA audio for the run (key confirmed in mGBA binary strings;
+    # -C is the documented per-launch config override, doesn't touch ~/.config/mGBA/config.ini).
+    # Wrap with caffeinate to prevent macOS App Nap when mGBA loses focus.
+    mgba_cmd = [mgba_path, "-C", "mute=1", rom_path]
     if sys.platform == "darwin":
         mgba_cmd = ["caffeinate", "-i"] + mgba_cmd
 
