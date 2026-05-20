@@ -162,6 +162,41 @@ def _validate_config(config: dict[str, Any]) -> None:
     if config["vision_mode"] == "separate_vlm" and not config.get("vlm_model"):
         raise ValueError("vlm_model is required when vision_mode is 'separate_vlm'")
 
+    # task_override_snapshot: when true, ignore the snapshot's tasks.json and
+    # use the config's `task:` field instead. Default false preserves the
+    # historical "snapshot wins" behavior. Useful when the snapshot was made
+    # with one goal in mind but you want to re-purpose the same world state
+    # for a different goal — without this flag the user-message goal silently
+    # disagrees with the system prompt (which always uses config's task).
+    tos = config.get("task_override_snapshot", False)
+    if not isinstance(tos, bool):
+        raise ValueError(
+            f"task_override_snapshot must be a bool, got {tos!r}"
+        )
+
+    # historic_images_count: how many of the most recent visible turns should
+    # have their start-of-turn screenshot included inline alongside the current
+    # screenshot. 0 = text-only history (default).
+    hic = config.get("historic_images_count", 0)
+    if not isinstance(hic, int) or isinstance(hic, bool) or hic < 0:
+        raise ValueError(
+            f"historic_images_count must be a non-negative int, got {hic!r}"
+        )
+    if hic > 0:
+        if config["vision_mode"] != "direct_multimodal":
+            raise ValueError(
+                "historic_images_count > 0 requires vision_mode: direct_multimodal "
+                f"(got {config['vision_mode']!r}). In separate_vlm mode the LLM never "
+                "sees raw images, so historic screenshots cannot be included."
+            )
+        trim = config.get("max_turns_before_trim")
+        if trim is not None and hic > trim:
+            raise ValueError(
+                f"historic_images_count ({hic}) cannot exceed max_turns_before_trim "
+                f"({trim}). A historic image only makes sense for turns that are "
+                "still visible in the text history."
+            )
+
     emu = config.get("emulator", {})
     for key in ("host", "port", "rom_path"):
         if key not in emu:

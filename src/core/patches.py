@@ -187,7 +187,23 @@ def patch_openai_model_response():
         logger.warning(f"Failed to patch: {e}")
 
 
+def patch_openai_service_tier():
+    """OpenAI's ChatCompletion schema restricts service_tier to a fixed Literal
+    ('auto'|'default'|'flex'|'scale'|'priority'). OpenRouter sends 'standard'
+    for some providers, which fails validation before _process_response runs.
+    Loosen the field annotation to Optional[str] so any value passes."""
+    try:
+        from typing import Optional
+        from openai.types.chat import ChatCompletion
+        ChatCompletion.model_fields['service_tier'].annotation = Optional[str]
+        ChatCompletion.model_rebuild(force=True)
+        logger.debug("Patched ChatCompletion.service_tier to Optional[str]")
+    except Exception as e:
+        logger.warning(f"Failed to patch service_tier: {e}")
+
+
 def apply_patches():
     """Apply all monkey-patches."""
+    patch_openai_service_tier()
     patch_openai_model_response()
     patch_strip_markdown_fences()

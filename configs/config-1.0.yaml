@@ -10,6 +10,12 @@
 task:
   goal: "Beat the first gym leader Brock"
   description: "Explore Pallet Town, get a starter Pokemon from Professor Oak, train it, and defeat Brock at Pewter City Gym."
+# When true, ignore the snapshot's tasks.json and use the config's `task:` field
+# above instead. Default false preserves 'snapshot wins' behavior. Without this,
+# the user message's task can silently disagree with the system prompt (which
+# always uses config's task).
+task_override_snapshot: false
+
 
 # --- Model Configuration ---
 # Model agnostic - all models accessed via OpenRouter
@@ -48,6 +54,13 @@ max_turns_per_task: 50
 # (Optional) Maximum number of turn explanations kept before older ones are trimmed.
 # Set to null to disable trimming (relies on max_turns_per_task to cap context growth).
 max_turns_before_trim: null
+
+# How many of the most recent visible turns should also include the screenshot
+# the agent saw at the START of that turn (BEFORE its actions were pressed).
+# 0 = text-only history (default). K > 0 attaches that many historic screenshots
+# at the END of the user message, immediately before the current screenshot.
+# Requires vision_mode: direct_multimodal. Must be <= max_turns_before_trim.
+historic_images_count: 0
 
 # --- System Prompts ---
 

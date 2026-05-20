@@ -207,6 +207,92 @@
     sample_turns: 10
     last_updated: 2026-04-24
 
+# --- Google Gemini 3.5 Flash (added 2026-05-20) ---
+# Same effort-tier shape as the rest of the Gemini 3 family
+# (high/medium/low/minimal); medium is Google's documented default.
+# Pricing: $1.50/$9.00 per M — 3× the cost of gemini-3-flash ($0.50/$3.00)
+# and ~75% of gemini-3.1-pro ($2.00/$12.00). Sits between Flash and Pro on
+# cost; first runs will tell us where it sits on capability.
+# OpenRouter slug has no `-preview` suffix (unlike 3-flash / 3.1-pro).
+"gemini-3.5-flash(high)":
+  openrouter_id: "google/gemini-3.5-flash"
+  reasoning:
+    effort: "high"
+  observed:
+    sample_turns: 0
+
+"gemini-3.5-flash(medium)":
+  # Google's documented default thinking level for this model.
+  #
+  # Observed (2026-05-20, 50T run on config-3.2): **new best in registry on
+  # actual game progress.** Final state.json: on Route 1 with Bulbasaur
+  # lvl 6 (22/22 HP, moves: tackle/growl), mid-battle with a wild Rattata
+  # at T50. Cleared the full early-game arc — bedroom → 1F → Pallet Town
+  # → Oak's lab → starter (Bulbasaur) → leveled to 6 → exited north → Route 1.
+  # One step further than Pro(low)'s 50T run (which ended back in Pallet Town
+  # overworld at T46 with Squirtle lvl 6) and far past Pro(medium)'s 20T
+  # (only Oak's Lab + Charmander by T20).
+  #
+  # Cost $0.0129/turn — 32% cheaper than Pro(low)'s $0.0158, 18% cheaper
+  # than gemini-3-flash(low)'s comparable budget (when factoring frontier
+  # capability). Total run cost $0.65 / 50T / 13.8 min wall-clock.
+  # Latency 6.7s/turn — faster than both Pro tiers (~11s) and Grok 4.3
+  # (71s). 0 LLM retries across all 50 turns. 68% grade rate (34/15/1
+  # true/false/null) — high without the conservative-prediction self-grade-
+  # gaming that GPT-5.5(medium) showed. Output 586 tokens/turn (29307 total)
+  # — terse for a frontier reasoning model.
+  #
+  # Verdict: best capability-per-dollar entry in the registry for this
+  # task. Recommended default for new benchmark configs.
+  #
+  # Observed (2026-05-20, 50T run on config-3.4 — same model, K=1 historic
+  # image probe): mechanically works, qualitatively a wash. Same end-state
+  # as config-3.2 K=0 baseline (Route 1, Bulbasaur lvl 6, 22/22 HP). 33/16/1
+  # grades (66%) vs K=0's 34/15/1 (68%) — −1 grade = noise. Per-turn cost
+  # $0.0150 vs K=0's $0.0129 (+15.2%); per-turn input tokens 6503 vs K=0's
+  # 5114 (+27.2%, +1389/turn — matches the +1435 prediction from the 10T
+  # probe within noise). Output tokens went DOWN −2.1% — model reasoned
+  # slightly more concisely with the extra image.
+  #
+  # The notable finding: in 50 turns of reasoning + thinking text, the
+  # model wrote ZERO explicit references to the historic image ("Screenshot
+  # 1", "first screenshot", "previous screen", "before actions", "compared
+  # to", "two images" — all 0 hits). 17 "last turn" mentions all looked at
+  # text history, not the image. The 10T probe got exactly 1 explicit
+  # reference ("Screenshot 1, taken before the second turn") that didn't
+  # reproduce at 50T scale. Either the model uses the historic image
+  # purely implicitly via visual attention without verbalizing the
+  # comparison, or it largely ignores it.
+  #
+  # Verdict on K=1 for this model + task: paid the bill, didn't earn it
+  # back. Stick with K=0 as default for gemini-3.5-flash. K>0 may still
+  # be worth trying with models that have different multimodal architectures
+  # (Claude / GPT-5) where the joint-vision-transformer assumption doesn't
+  # hold and explicit image labeling may carry more weight.
+  openrouter_id: "google/gemini-3.5-flash"
+  reasoning:
+    effort: "medium"
+  observed:
+    avg_turn_cost_usd: 0.0129
+    avg_turn_latency_s: 6.7
+    sample_turns: 50
+    last_updated: 2026-05-20
+    notes: "Reached Route 1 + Bulbasaur lvl 6 mid-Rattata-battle at T50 — best in-registry progress on this task, beating Pro(low) 50T's 'back in Pallet Town at T46'. 68% grade rate, 0 retries. $0.65 / 13.8min for full 50T. Config-3.4 K=1 probe (same model, +1 historic image/turn): +15.2% cost, +27.2% input tokens, −2% grades (noise), 0 explicit historic-image references in reasoning across 50 turns — paid bill didn't earn it back."
+
+"gemini-3.5-flash(low)":
+  openrouter_id: "google/gemini-3.5-flash"
+  reasoning:
+    effort: "low"
+  observed:
+    sample_turns: 0
+
+"gemini-3.5-flash(minimal)":
+  openrouter_id: "google/gemini-3.5-flash"
+  reasoning:
+    effort: "minimal"
+  observed:
+    sample_turns: 0
+
 # --- Xiaomi MiMo V2.5 family ---
 # Closed dense reasoning models, 1M context. Binary thinking toggle only —
 # no effort tiers exist in Xiaomi's native API (confirmed from
@@ -526,5 +612,192 @@
   openrouter_id: "openai/gpt-5.4-nano"
   reasoning:
     effort: "xhigh"
+  observed:
+    sample_turns: 0
+
+# --- Perceptron Mk1 ---
+# Brand-new vision-language model from Perceptron, listed on OpenRouter
+# 2026-05-12. Marketed as "highest-quality VLM for video and embodied
+# reasoning" — explicitly aimed at the kind of perception-and-act loop this
+# project runs. Multimodal (text+image+video → text), $0.15/$1.50 per M
+# (cheapest multimodal entry in the registry alongside gpt-5.4-nano).
+#
+# CONTEXT CAVEAT: 32,768 tokens — by far the smallest in the registry
+# (others are 262K–1M). Message history + screenshots per turn may saturate
+# the window past ~20-30 turns. If 50T run hits truncation, may need
+# turn-history trim tuning in config.
+#
+# Single provider (Perceptron themselves) on OpenRouter — no provider
+# routing meaningful. OpenRouter endpoint reports `structured_outputs`
+# supported but NOT `tool_choice`. Tried output_mode: "native_json" first
+# (2026-05-13, T1 of 50T run) — rejected client-side by Pydantic AI:
+# "Native structured output is not supported by the model" (the model's
+# Pydantic AI profile doesn't declare `supports_json_schema_output: true`,
+# regardless of what OpenRouter advertises). Same wall as Qwen3.6-Plus.
+# Fell back to output_mode: "prompted" — schema-in-system-prompt + client-
+# side JSON parse, works for any model.
+#
+# Reasoning: BINARY toggle (enabled true/false), confirmed from Perceptron's
+# OpenRouter model card on 2026-05-13 ("Use the `reasoning` parameter in
+# your request to enable reasoning"). Same family as MiMo / Gemma / Qwen.
+# First probe (no reasoning param) showed the model emitting fast,
+# shallow outputs — Andreas flagged "model is not thinking at all" within
+# a few turns. Switching to enabled: true for the real benchmark.
+# Sampling: leaving unset (model's null defaults), matching Gemini family.
+"perceptron-mk1(thinking)":
+  # Observed (2026-05-13, 19T run on config-3.1, aborted at T19 by Andreas
+  # after stuck-on-1F was clear). Cheapest per-turn in the registry by a
+  # wide margin ($0.0024/turn — half of Gemini 3 Flash's $0.0053), with
+  # reasoning visibly active (~1.1K output tokens/turn, real prose).
+  #
+  # Failure mode: stuck on 1F Player's house the entire run — never reached
+  # the Pallet Town overworld. Same spatial-grounding bottleneck as Flash
+  # Lite (high), Grok 4.3, GPT-5.5 (medium): the model identifies the
+  # red front door, plans a sweep, presses directional inputs, but never
+  # lands on the door tile (T13-T18 oscillated near the door). Made it
+  # past the 2F→1F stair transition (T3-T4 grade=true) which is more than
+  # GPT-5.5(medium) managed — that one went *up* instead of down.
+  #
+  # Grades: 2/15/2 (true/false/null across 19T) = 10.5% — bottom-quartile
+  # alongside Grok 4.3's 8.3%. Per registry policy (see Pro(medium) note),
+  # actual game state is the real benchmark, and final state.json was just
+  # {"current_location": "1F, Player's house, Pallet Town"} — no party,
+  # no badges, no map memory.
+  #
+  # First call also revealed two integration gotchas, both fixed:
+  #   1. `output_mode: native_json` rejected by Pydantic AI ("Native
+  #      structured output is not supported by the model") — fell back
+  #      to "prompted" like Qwen3.6-Plus.
+  #   2. Reasoning shape was unknown on first probe; left unset, model
+  #      ran fast and shallow. Set `reasoning: { enabled: true }` after
+  #      checking the OpenRouter model card.
+  openrouter_id: "perceptron/perceptron-mk1"
+  reasoning:
+    enabled: true
+  output_mode: "prompted"
+  observed:
+    avg_turn_cost_usd: 0.0024
+    avg_turn_latency_s: 33.9
+    sample_turns: 19
+    last_updated: 2026-05-13
+    notes: "Stuck on 1F Player's house — aborted at T19. 2/15/2 grade rate. Cheapest per-turn in registry but spatial-grounding-bound like Flash Lite (high) / Grok 4.3. Marketed for 'embodied reasoning' but didn't translate to FireRed navigation. Required output_mode: prompted (native_json rejected client-side) and reasoning: { enabled: true } (binary toggle, confirmed from OpenRouter model card)."
+
+"perceptron-mk1(non-thinking)":
+  openrouter_id: "perceptron/perceptron-mk1"
+  reasoning:
+    enabled: false
+  output_mode: "prompted"
+  observed:
+    sample_turns: 0
+
+# --- Anthropic Claude Haiku 4.5 (added 2026-05-20) ---
+# First Anthropic entry in this registry. Marketed as "near-frontier
+# intelligence at a fraction of the cost" — $1.00/$5.00 per M, 200K
+# context (smaller than Gemini's 1M but plenty for ~10K system prompt +
+# ~5K turn input), multimodal (text + image — required for our default
+# vision_mode: direct_multimodal).
+#
+# Reasoning shape: effort-tiered on OpenRouter (xhigh/high/medium/low/
+# minimal), same convention as the Gemini 3 family. Backed by
+# Anthropic's extended_thinking budget under the hood — OpenRouter
+# translates effort tier to max_tokens ratio: 0.95/0.8/0.5/0.2/0.1
+# of completion budget for xhigh/high/medium/low/minimal. To disable
+# thinking entirely, OpenRouter convention is `reasoning.effort: "none"`
+# (NOT the `enabled: false` shape used by MiMo/Gemma/Qwen/Perceptron).
+# Minimum thinking budget is 1024 tokens when extended thinking is on.
+#
+# Known agent-loop quirks (researched 2026-05-20, sources in CHANGELOG):
+#   1. **Repetitive-loop failure mode**: Haiku 4.5 can stall in an
+#      agent loop by re-calling the same tool/action even after the
+#      tool's output indicates the action already succeeded — model
+#      fails to update its plan from tool feedback. Risk for this
+#      project: our turn loop calls a structured-output tool every
+#      turn (GameAction). If Haiku misreads "screen settled, next turn"
+#      feedback, it may re-emit identical button sequences. Watch for
+#      this in the first 10-20T; abort and try a higher effort tier
+#      or stricter prompt if the agent gets stuck pressing the same
+#      input repeatedly without progress.
+#   2. **Last-turn-only thinking blocks**: All Haiku models through
+#      4.5 only preserve thinking blocks from the LAST turn (vs Sonnet
+#      and Opus which preserve all prior thinking). Affects multi-step
+#      reasoning continuity — earlier turns' "why I chose this plan"
+#      reasoning evaporates from context. Less of a concern for us
+#      since our `previous turns` section carries reasoning prose
+#      forward explicitly, but worth knowing.
+#   3. **"Stubborn" in long sessions**: anecdotal reports of less
+#      responsive behavior and shorter-than-expected outputs as the
+#      session grows. For a 50T+ run this is worth monitoring.
+#   4. **Prompt size limits**: real-world MCP setups can blow Haiku's
+#      effective prompt limit (200K hard cap but practical limits lower
+#      with heavy tool surface area). NOT a concern for this project —
+#      single output schema, ~10K system prompt.
+#
+# Sampling: leaving unset (Anthropic's tuned defaults), matching the
+# Gemini family convention.
+#
+# output_mode REQUIREMENT: must be "prompted" for all Haiku entries.
+# Anthropic explicitly rejects extended thinking when tool_choice forces
+# tool use ("Thinking may not be enabled when tool_choice forces tool
+# use" — Pydantic AI issues #2425, #3092). The project's default
+# output_mode "tool" sets tool_choice="required" for schema enforcement,
+# which silently strips reasoning on OpenRouter routes to Anthropic
+# (verified 2026-05-20 — 10T probe completed at $0.108 with zero
+# thinking tokens billed and zero [Thinking] lines in the output).
+# "prompted" bypasses tool_choice entirely (schema in system prompt +
+# client-side JSON parse), same workaround already used for Qwen3.6-Plus
+# and Perceptron Mk1. Native JSON (response_format json_schema) would
+# also work in principle but Pydantic AI rejects it client-side without
+# a model-profile declaration of supports_json_schema_output.
+"claude-haiku-4.5(high)":
+  openrouter_id: "anthropic/claude-haiku-4.5"
+  reasoning:
+    effort: "high"
+  output_mode: "prompted"
+  observed:
+    sample_turns: 0
+
+"claude-haiku-4.5(medium)":
+  # Observed (2026-05-20, 10T probe on config-3.3): thinking confirmed
+  # active (10 [Thinking] lines, 5038 output tokens/turn — 6.1× the
+  # tool-mode run that silently stripped reasoning). 0 retries on
+  # prompted-output JSON (cleaner than Qwen3.6-Plus's 33% retry rate).
+  #
+  # Failure mode: stuck on 2F Player's house the entire 10T probe — same
+  # spatial-grounding bottleneck as Flash Lite (high) / Grok 4.3 / GPT-5.5
+  # (medium) / Perceptron Mk1. Agent self-aware about being stuck (T10
+  # memory: "Attempting down 4 + right 4 to enter stairwell. Previous turn
+  # left character 1-2 tiles left of stairwell entrance.") — knew what
+  # to do, couldn't land the tile.
+  #
+  # Grades: 0/9/1 (true/false/null). Cost $0.0303/turn, latency 43.0s/turn,
+  # $0.30 / 10T / 7.2 min. Per-turn cost similar to Pro(medium)'s $0.0298
+  # but with 4× latency — extended thinking is expensive at medium effort
+  # on Haiku. Worth probing (high) before giving up on Haiku for this task,
+  # OR dropping to (low) to see if a cheaper Haiku tier matches Flash 3.5
+  # without the cost overhead.
+  openrouter_id: "anthropic/claude-haiku-4.5"
+  reasoning:
+    effort: "medium"
+  output_mode: "prompted"
+  observed:
+    avg_turn_cost_usd: 0.0303
+    avg_turn_latency_s: 43.0
+    sample_turns: 10
+    last_updated: 2026-05-20
+    notes: "Stuck on 2F Player's house — never reached 1F. 0/9/1 grades. Thinking confirmed active (5038 output tokens/turn, 6.1× the broken tool-mode run). 0 prompted-output retries (cleanest JSON of any prompted-mode model in registry). Same spatial-grounding failure mode as Flash Lite high / Grok 4.3 / GPT-5.5 medium / Perceptron Mk1. config-3.3."
+
+"claude-haiku-4.5(low)":
+  openrouter_id: "anthropic/claude-haiku-4.5"
+  reasoning:
+    effort: "low"
+  output_mode: "prompted"
+  observed:
+    sample_turns: 0
+
+"claude-haiku-4.5(minimal)":
+  openrouter_id: "anthropic/claude-haiku-4.5"
+  reasoning:
+    effort: "minimal"
+  output_mode: "prompted"
   observed:
     sample_turns: 0

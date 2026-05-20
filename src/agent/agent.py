@@ -117,13 +117,36 @@ def create_agent(config: dict[str, Any]) -> tuple[Agent, Any, list[str]]:
         from pydantic_ai.models.openai import OpenAIModelSettings
         model_settings = OpenAIModelSettings(**settings_kwargs)
 
-    # Resolve system prompt with template substitution
+    # Resolve system prompt with template substitution.
+    # {{previous_turns_description}} switches wording based on
+    # historic_images_count so the model knows whether to expect historic
+    # screenshots interleaved with the text history.
+    K = config.get("historic_images_count", 0)
+    if K > 0:
+        previous_turns_description = (
+            "A summary of your recent turns. Each turn shows its `actions`, `reasoning`, "
+            "and a `did this turn succeed?` line. The screenshot the agent saw at the "
+            f"START of each of the last {K} turn(s) — BEFORE the actions listed below "
+            "it were pressed — is included as a labeled image at the END of the user "
+            "message. Use those historic screenshots to verify what actually happened "
+            "on screen, compare against your prior reasoning, and ground predictions "
+            "about position and screen-state changes."
+        )
+    else:
+        previous_turns_description = (
+            "A summary of your recent turns. Each turn shows its `actions`, `reasoning`, "
+            "and a `did this turn succeed?` line. Use this history to avoid repeating "
+            "failed approaches, track progress, and estimate how ambitious of a plan "
+            "you can try to execute based on earlier turns' successes/failures."
+        )
+
     raw_prompt = config.get("system_prompt", "You are an AI agent playing a Pokemon game.")
     system_prompt = fill_prompt(
         raw_prompt,
         game_name="Pokemon FireRed",
         button_list=", ".join(config.get("valid_inputs", [])),
         current_task=config.get("task", {}).get("goal", "Play the game."),
+        previous_turns_description=previous_turns_description,
     )
 
     # Build tool list based on config toggles

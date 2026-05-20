@@ -21,10 +21,16 @@
 task:
   goal: "Beat the first gym leader Brock"
   description: "Explore Pallet Town, get a starter Pokemon from Professor Oak, train it, and defeat Brock at Pewter City Gym."
+# When true, ignore the snapshot's tasks.json and use the config's `task:` field
+# above instead. Default false preserves 'snapshot wins' behavior. Without this,
+# the user message's task can silently disagree with the system prompt (which
+# always uses config's task).
+task_override_snapshot: false
+
 
 # --- Model Configuration ---
 # Alias resolved from configs/models.yaml. Raw "provider/model" IDs also work.
-llm_model: "kimi-k2.6(thinking)"
+llm_model: "gemini-3.1-pro(low)"
 llm_fallback_models: []
 
 # Direct multimodal: LLM receives raw screenshots, no separate VLM
@@ -42,6 +48,13 @@ max_turns_per_task: 50
 # Older turns are dropped with a "(Earlier turns have been truncated.)" notice.
 # Set to null to disable trimming.
 max_turns_before_trim: 10
+
+# How many of the most recent visible turns should also include the screenshot
+# the agent saw at the START of that turn (BEFORE its actions were pressed).
+# 0 = text-only history (default). K > 0 attaches that many historic screenshots
+# at the END of the user message, immediately before the current screenshot.
+# Requires vision_mode: direct_multimodal. Must be <= max_turns_before_trim.
+historic_images_count: 0
 
 # --- System Prompts ---
 
@@ -72,7 +85,7 @@ system_prompt: |
   A transcript of text that appeared on screen between the last turn and now (dialogue, menus, names, numbers) — useful for exact strings the current screenshot may have missed.
 
   ## Previous Turns
-  A summary of your recent turns. Each turn shows its `actions`, `reasoning`, and a `did this turn succeed?` line. Use this history to avoid repeating failed approaches, track progress, and estimate how ambitious of a plan you can try to execute based on earlier turns' successes/failures.
+  {{previous_turns_description}}
 
 
   # High-Level Turn Strategy

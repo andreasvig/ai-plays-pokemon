@@ -20,6 +20,12 @@
 task:
   goal: "Beat the first gym leader Brock"
   description: "Explore Pallet Town, get a starter Pokemon from Professor Oak, train it, and defeat Brock at Pewter City Gym."
+# When true, ignore the snapshot's tasks.json and use the config's `task:` field
+# above instead. Default false preserves 'snapshot wins' behavior. Without this,
+# the user message's task can silently disagree with the system prompt (which
+# always uses config's task).
+task_override_snapshot: false
+
 
 # --- Model Configuration ---
 llm_model: "google/gemini-3-flash-preview"
@@ -40,6 +46,13 @@ max_turns_per_task: 50
 
 # --- Context Management ---
 max_turns_before_trim: 50
+
+# How many of the most recent visible turns should also include the screenshot
+# the agent saw at the START of that turn (BEFORE its actions were pressed).
+# 0 = text-only history (default). K > 0 attaches that many historic screenshots
+# at the END of the user message, immediately before the current screenshot.
+# Requires vision_mode: direct_multimodal. Must be <= max_turns_before_trim.
+historic_images_count: 0
 
 # --- System Prompts ---
 
@@ -70,7 +83,7 @@ system_prompt: |
   A cleaned transcript of text captured from the screen between the last turn and now, assembled from background OCR snapshots and cleaned by a small LLM. Includes dialogue that scrolled by, menu labels, Pokemon names, HP numbers, and other on-screen text. Treat this as ground-truth for exact character sequences — especially useful when the current screenshot catches a dialogue mid-scroll or when text is hard to read. Trust the screenshot for spatial layout and the current game state; trust the OCR text for exact strings. This section may be absent if nothing was captured or if cleanup failed.
 
   ## Previous Turns
-  A summary of your recent turns showing what you saw, thought, and did. Use this to avoid repeating failed actions and to track progress.
+  {{previous_turns_description}}
 
 
   # High-Level Turn Strategy

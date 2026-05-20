@@ -132,6 +132,10 @@ class VisionPipeline:
 
         return response.choices[0].message.content or ""
 
+    def image_to_data_url(self, image: Image.Image) -> str:
+        """Convert a PIL Image to a data: URL suitable for ImageUrl content parts."""
+        return f"data:image/png;base64,{self._image_to_base64(image)}"
+
     def _image_to_base64(self, image: Image.Image) -> str:
         """Convert a PIL Image to base64-encoded PNG string."""
         buffer = io.BytesIO()

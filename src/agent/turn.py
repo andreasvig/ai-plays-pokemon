@@ -296,9 +296,15 @@ class TurnManager:
         self.agent, self.model_settings, self.fallback_models = create_agent(config)
         self.max_steps_per_turn = config.get("max_steps_per_turn", 10)
         self.max_turns_before_trim = config.get("max_turns_before_trim")
+        self.historic_images_count = config.get("historic_images_count", 0)
+        self.task_override_snapshot = config.get("task_override_snapshot", False)
 
         # Turn history
         self.turn_explanations: list[dict] = []
+        # Ring buffer of (turn_number, PIL.Image) for the last K screenshots —
+        # only populated when historic_images_count > 0. Bounded by K so memory
+        # stays flat regardless of run length.
+        self.turn_screenshots: list[tuple[int, Image.Image]] = []
         self.turn_number = 0
 
         # Tasks (loaded from run folder)
@@ -328,11 +334,31 @@ class TurnManager:
         self.logger = logger
         self.ocr = ocr
 
-        # Load tasks from run folder if present
+        # Load tasks from run folder if present — UNLESS the config has
+        # task_override_snapshot=true, in which case we ignore the snapshot's
+        # task and let the user-message build fall through to config["task"]
+        # (which matches what the system prompt already uses).
         tasks_path = logger.run_dir / "tasks.json"
-        if tasks_path.exists():
+        if tasks_path.exists() and not self.task_override_snapshot:
             with open(tasks_path) as f:
                 self.tasks = json.load(f)
+            snap_goal = (self.tasks or {}).get("goal", "?")
+            print(f"  Task source: SNAPSHOT — goal: {snap_goal!r}")
+        else:
+            cfg_goal = (self.config.get("task") or {}).get("goal", "?")
+            if tasks_path.exists() and self.task_override_snapshot:
+                snap_goal = "?"
+                try:
+                    with open(tasks_path) as f:
+                        snap_goal = json.load(f).get("goal", "?")
+                except Exception:
+                    pass
+                print(
+                    f"  Task source: CONFIG (override active) — goal: {cfg_goal!r} "
+                    f"(snapshot goal {snap_goal!r} ignored)"
+                )
+            else:
+                print(f"  Task source: CONFIG — goal: {cfg_goal!r}")
 
     def run_loop(self, max_turns: Optional[int] = None) -> None:
         """Run the turn loop synchronously."""
@@ -514,9 +540,19 @@ class TurnManager:
         state_view = self.state.get_truncated_view()
 
         # 5. Build the user message
+        # At this point self.turn_screenshots contains the last K *prior* turns'
+        # screenshots — current turn t is intentionally NOT in the buffer yet,
+        # since it's already passed in separately as the "current screen".
         user_message = self._build_turn_message(
-            vision_content, ocr_text, state_view
+            vision_content, ocr_text, state_view, screenshot,
         )
+
+        # Now that the message is built, stash this turn's screenshot for the
+        # NEXT turn's historic-image block. Capped at K so memory stays flat.
+        if self.historic_images_count > 0:
+            self.turn_screenshots.append((t, screenshot))
+            if len(self.turn_screenshots) > self.historic_images_count:
+                self.turn_screenshots = self.turn_screenshots[-self.historic_images_count:]
 
         # Log the text portion of the user message
         if isinstance(user_message, str):
@@ -755,22 +791,60 @@ class TurnManager:
         vision_content: list[dict],
         ocr_text: str,
         state_view: dict,
+        current_screenshot: Image.Image,
     ):
         """Build the user message for a turn.
 
-        Returns str for text-only (separate_vlm) or list[UserContent] for
-        direct_multimodal (includes ImageUrl alongside text).
-        """
-        text_parts = []
-        image_url: Optional[ImageUrl] = None
+        Layout follows OpenRouter's "text first, then images" recommendation:
+        all explanatory text is concatenated into one block, then any images
+        are appended at the end with explicit per-image labels immediately
+        preceding each one. The current-turn screenshot is ALWAYS last so it
+        sits closest to the model's decision point.
 
-        # Vision content
+        Returns:
+        - str for separate_vlm mode (LLM never sees raw images).
+        - list[UserContent] for direct_multimodal — always at least
+          [text, label, current_image]. With historic_images_count = K and
+          enough prior turns, becomes
+          [text, hist_label_1, hist_img_1, ..., hist_label_K, hist_img_K,
+           current_label, current_image].
+        """
+        text_parts: list[str] = []
+        current_image_url: Optional[str] = None
+
+        # Vision content. In direct_multimodal mode this yields a "[Game Screen]"
+        # text marker plus a data URL — we strip the marker (the explicit labels
+        # below carry the role information) and keep the URL for the image-tail.
         for block in vision_content:
             if block["type"] == "text":
-                text_parts.append(block["text"])
+                # Skip the bare "[Game Screen]" placeholder — replaced by the
+                # explicit current-screen label appended at the end.
+                if block["text"].strip() != "[Game Screen]":
+                    text_parts.append(block["text"])
             elif block["type"] == "image_url":
-                # Direct multimodal — include the image as an ImageUrl part
-                image_url = ImageUrl(url=block["image_url"]["url"])
+                current_image_url = block["image_url"]["url"]
+
+        # Heads-up about the image tail. Only emitted in direct_multimodal mode
+        # so the model knows what to expect at the end of the message.
+        if current_image_url is not None:
+            n_historic = len(self.turn_screenshots) if self.historic_images_count > 0 else 0
+            n_total_images = n_historic + 1
+            if n_historic > 0:
+                text_parts.append(
+                    f"\n## Screens\n"
+                    f"This message ends with {n_total_images} screenshots in chronological order. "
+                    f"The first {n_historic} are historic — the screen the agent saw at the START "
+                    f"of each of the last {n_historic} turn(s), BEFORE pressing the actions listed "
+                    f"under '## Previous Turns'. The LAST screenshot is the CURRENT turn — that "
+                    f"is what you must reason about and act on now. Each image is preceded by an "
+                    f"explicit label."
+                )
+            else:
+                text_parts.append(
+                    "\n## Screen\n"
+                    "The current-turn screenshot is shown at the end of this message — that is "
+                    "what you must reason about and act on."
+                )
 
         # OCR (cleaned text captured between last turn and now)
         if ocr_text:
@@ -786,11 +860,15 @@ class TurnManager:
         state_json = json.dumps(state_view, indent=2)
         text_parts.append(f"\n## Memory\n```json\n{state_json}\n```")
 
-        # Turn history
-        # Each turn k's `did this turn succeed?` is the value the FOLLOWING
-        # turn (k+1) wrote into its `last_turn_succeeded` field. The most
-        # recent prior turn has no follower yet, so its grade is left blank
+        # Turn history. Each turn k's `did this turn succeed?` is the value the
+        # FOLLOWING turn (k+1) wrote into its `last_turn_succeeded` field. The
+        # most recent prior turn has no follower yet, so its grade is left blank
         # for the current turn to fill in via `last_turn_succeeded`.
+        # Turns whose screenshot is also included in the image tail get a
+        # cross-reference line so the model can bind text history ↔ image.
+        historic_turn_nums = {
+            turn_num for (turn_num, _) in self.turn_screenshots
+        } if self.historic_images_count > 0 else set()
         if self.turn_explanations:
             history = "\n## Previous Turns"
             n_total = len(self.turn_explanations)
@@ -830,6 +908,12 @@ class TurnManager:
                 history += f"\n- actions: {action_str}"
                 history += f"\n- reasoning: {reasoning}"
                 history += f"\n- did this turn succeed?: {grade_str}"
+                if turn_num in historic_turn_nums:
+                    history += (
+                        f"\n- (screenshot from the START of turn {turn_num}, "
+                        f"BEFORE these actions were pressed, is included in the image tail "
+                        f"below — compare to the CURRENT screen image)"
+                    )
             text_parts.append(history)
 
         # Task (tasks.json overrides config task)
@@ -843,16 +927,47 @@ class TurnManager:
             task_text += f"\n{desc}"
         text_parts.append(f"\n## Current Task\n{task_text}")
 
-        text_parts.append("\nOutput your action (inputs) and update memory_updates with any new information.")
+        text_parts.append(
+            "\nOutput your action (inputs) and update memory_updates with any new information."
+        )
 
         combined_text = "\n".join(text_parts)
 
-        if image_url is not None:
-            # Direct multimodal: return list with image + text
-            return [image_url, combined_text]
-        else:
-            # Separate VLM: return plain string
+        # Separate VLM: no images, just return the text.
+        if current_image_url is None:
             return combined_text
+
+        # Direct multimodal: text first, then image tail.
+        # Historic images go oldest → newest, then the current screenshot last.
+        parts: list[UserContent] = [combined_text]
+        n_total_images = len(self.turn_screenshots) + 1
+        idx = 0
+        for hist_turn_num, hist_image in self.turn_screenshots:
+            idx += 1
+            actions_str = self._lookup_actions(hist_turn_num)
+            parts.append(
+                f"=== SCREENSHOT {idx} of {n_total_images} — Turn {hist_turn_num} "
+                f"(BEFORE actions). This is what the agent saw at the START of "
+                f"turn {hist_turn_num}, before pressing [{actions_str}]. ==="
+            )
+            parts.append(ImageUrl(url=self.vision.image_to_data_url(hist_image)))
+        idx += 1
+        parts.append(
+            f"=== SCREENSHOT {idx} of {n_total_images} — CURRENT (Turn {self.turn_number}). "
+            f"This is what you see NOW. Decide your next action based on THIS screen. ==="
+        )
+        parts.append(ImageUrl(url=current_image_url))
+        return parts
+
+    def _lookup_actions(self, turn_num: int) -> str:
+        """Return the comma-joined action list for a past turn, or '?' if unknown."""
+        idx = turn_num - 1
+        if 0 <= idx < len(self.turn_explanations):
+            action = self.turn_explanations[idx].get("action", [])
+            if isinstance(action, list):
+                return ", ".join(action)
+            return str(action)
+        return "?"
 
     def _write_run_summary(self) -> None:
         """Write a structured run_summary.json to the run folder."""
