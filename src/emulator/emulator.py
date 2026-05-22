@@ -78,7 +78,8 @@ class EmulatorClient:
             self._server = None
             raise ConnectionError(
                 f"No connection from mGBA within {timeout}s. "
-                "Load lua/socketserver.lua in mGBA via Tools > Scripting."
+                "Load the per-run socketserver.lua (printed above) in mGBA "
+                "via Tools > Scripting > File > Load script…"
             )
 
         # Wait for HELLO from Lua

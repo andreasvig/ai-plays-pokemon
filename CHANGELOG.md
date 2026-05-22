@@ -1,5 +1,303 @@
 # Changelog
 
+## 2026-05-22 — Sequential orchestrator + dashboard `/current` URL
+
+### What
+Replaced the parallel-mGBA system (`scripts/run_multi.py`, slots 2/3/4,
+`socketserver-{2,3,4}.lua`) with a sequential orchestrator that runs N
+configs back-to-back against a single warm mGBA + Lua connection. The
+user loads `socketserver-1.lua` once after the first config's Scripting
+window appears; every subsequent config runs against that same
+connection with a snapshot reload between runs.
+
+Parallel was dropped because macOS AppleScript focus dedup defeated
+AXRaise for the 2nd+ mGBA process (Scripting window never opened ~50%
+of the time), and the dashboard's per-process port-3420 singleton
+silently lost its bind on slot 2. Sequential sidesteps all of it: one
+mGBA, one Lua connection, one dashboard.
+
+### Pieces
+- **`tests/test_sequential.py`** (new) — CLI orchestrator. Takes
+  `--configs path1 path2 … --turns N`. Single prepare + connect, then
+  loops `run_single_loop` per config. Each run gets its own RunLogger,
+  EventBridge, ScreenStreamer, dashboard registration, report.html.
+- **`tests/test_phase5.py`** (rewritten) — building blocks exposed as
+  importable functions: `run_prepare_phase`, `run_connect_phase`,
+  `run_single_loop`, `cleanup_handle`. CLI surface preserved for
+  single-config runs (`--slot` dropped).
+- **`src/cli/slots.py`** (collapsed) — single `_SLOT` for slot 1
+  (port 8888, `lua/socketserver-1.lua`, `/tmp/mgba_stream_1.png`).
+  `get_slot(2|3|4)` rejects with explanatory error.
+- **Dashboard `/current`** — stable URL that follows the
+  latest-registered run. `_render_run_html()` injects
+  `RUN_PREFIX_OVERRIDE` (so inner WS/API calls hit the latest run's
+  prefix) and `IS_CURRENT_VIEW` (so WebSocket close code 1008 triggers
+  `location.reload()` instead of the default 2s reconnect).
+- **Deleted**: `scripts/run_multi.py`, `lua/socketserver-{2,3,4}.lua`.
+
+### Bug fixes during validation
+1. **WS handlers ignored unregister.** `ws_events` and `ws_screen`
+   only looked up the session at connect-time; once running, they
+   never re-checked the registry. When run 1 unregistered, both WS
+   loops kept streaming run 1's last state forever — the page never
+   got the 1008 close that triggers `/current` reload. Fixed: each
+   iteration polls `_REGISTRY.get(run_id)`; if `None`, close with 1008.
+2. **`config["paths"]["stream"]` only stamped on configs[0].**
+   `run_prepare_phase` set `paths["stream"] = "/tmp/mgba_stream_1.png"`
+   on the first config dict. Subsequent runs got their own deep-copied
+   config without that field, so `start_dashboard`'s fallback resolved
+   `stream_path` to `<run_dir>/mgba_stream.png` — a path Lua never
+   writes to. Result: run 2's screen pane showed a broken-image icon.
+   Fixed: `run_single_loop` re-stamps `paths.{stream,screenshot,lua}`
+   + `emulator.port` from `handle["slot_cfg"]` on every call.
+
+### Validation
+- 2×10 turn run (gemini-3.5-flash medium + gemini-3.1-pro low):
+  both completed cleanly; run 2 reached Pallet Town.
+- 2×3 turn run after both fixes: dashboard `/current` page reloaded
+  cleanly across the run-1→run-2 transition, run 2's GBA screen
+  loaded frames immediately.
+
+### OpenRouter provider-routing notes (`configs/models.yaml`)
+Documented three routing quirks hit while debugging earlier provider
+errors: (1) OpenRouter wraps upstream 5xx in HTTP 200 + `{"error": …}`
+body, surfacing as pydantic-ai `'NoneType' object is not subscriptable`;
+(2) multimodal capability filtering auto-narrows providers when image
+input is present; (3) DeepInfra's `-turbo` variants of Gemma are
+text-only and 405 on image input. `gemma-4-31b(thinking)` and
+`gemma-4-26b-a4b(thinking)` entries left with NO `provider` block —
+let OpenRouter default-route and rely on capability filtering.
+
+### Files
+- `tests/test_sequential.py` (new), `tests/test_phase5.py`
+- `src/cli/slots.py` (new), `src/cli/launch.py`
+- `src/dashboard/server.py`, `src/dashboard/static/index.html`,
+  `src/dashboard/__init__.py`
+- `src/emulator/emulator.py`
+- `configs/models.yaml`
+- `configs/config-3.11.yaml` (Gemma 4 31B thinking, new)
+- `configs/config-3.12.yaml` (Gemma 4 26B-a4b thinking, new)
+- `lua/socketserver-1.lua` (rename from `socketserver.lua`)
+
+---
+
+## 2026-05-21 — Claude Opus 4.7 (xhigh) 20T probe (config 3.10) — clamp confirmed
+
+### What
+Follow-up to the Opus 4.7 (medium) 10T standout. Probed whether the
+`xhigh` effort tier behaves differently on Opus 4.7. Pre-experiment
+hypothesis (from docs research, same day): xhigh likely clamps to high
+because Anthropic's native API for Opus 4.7 uses `thinking: {type:
+"adaptive", effort: "low"|"medium"|"high"}` only — no native xhigh.
+OpenRouter's docs explicitly state effort tiers map "to the nearest
+supported level" on backends that don't support all five.
+
+Config-3.10 = clone of 3.9 with model swap only (medium → xhigh).
+20 turns from `bedroom_start`.
+
+### Result: clamp confirmed (or adaptive thinking ignores the hint)
+
+| metric              | (medium) 10T | (xhigh) 20T | Δ        |
+|---------------------|-------------:|------------:|---------:|
+| Cost / turn         | $0.0523      | $0.0551     | +5%      |
+| Latency / turn      | 8.3s         | 8.7s        | +5%      |
+| Output tokens / turn| ~300         | ~319        | +6%      |
+| Grade rate (true)   | 78%          | 84%         | +6pp     |
+| End state           | Pallet Town  | Oak's Lab   | +1 scene |
+
+All numeric deltas are within run-to-run noise. The deeper end state is
+better attributed to 2× turn budget than to the effort tier. Two
+consistent explanations, indistinguishable from this single A/B:
+
+1. **OpenRouter clamps xhigh→high** before forwarding to Anthropic (per
+   their "nearest supported level" doc).
+2. **Adaptive thinking picks its own budget** regardless of the hint —
+   Opus 4.7's `thinking.type: "adaptive"` is dynamic by design.
+
+Either way, **don't expect xhigh to materially outperform medium on
+Opus 4.7.** Prefer `(medium)` for cost; the 5% xhigh premium buys ~noise.
+
+### Latency
+Median ~7s, p99 = T17 outlier at 30.9s / 1415 output tokens / $0.085 —
+one extended-thinking spike, otherwise the band stayed at 5-10s/turn.
+Total run: $1.10 / 20T / ~4 min wall clock.
+
+### Files
+- `configs/models.yaml` — `claude-opus-4.7(xhigh)` entry added with full
+  observed numbers + clamp-vs-adaptive discussion
+- `configs/config-3.10.yaml` — new (clone of 3.9, model swap only)
+- `local/runs/2026-05-21_09-45-11_phase5_test` — full 20T run dir
+
+### Failure mode encountered (worth recording)
+First launch attempt failed at the config loader (`ValueError: Unknown
+llm_model alias`) because the registry only had Opus 4.7 entries for
+high/medium/low/minimal — xhigh was the documented-but-not-registered
+gap. Lesson: when adding a new model family, include all five effort
+tiers if the family supports them, even if the immediate run only
+uses one. Two-minute fix; retry succeeded.
+
+---
+
+## 2026-05-21 — Claude Opus 4.7 (medium) 10T probe (config 3.9) — registry standout
+
+### What
+First Opus entry in the registry. `anthropic/claude-opus-4.7` on config-3.9
+(clone of 3.8 — upscale=6, K=1, `bedroom_start`, model swap only). Same
+Anthropic-family constraint as Haiku 4.5 / Sonnet 4.6 (`output_mode:
+"prompted"` required; tool_choice="required" silently strips extended
+thinking on Anthropic routes via OpenRouter).
+
+### Result: first non-Gemini model to clear the spatial-grounding wall
+
+End state: **Pallet Town** (out of the house!) with map memory written:
+"Small town. Player's house at north-west. Professor Oak's lab to the
+south-east. Exit to Route 1 at north."
+
+This is the only Anthropic model — and the only non-Gemini model — to
+have ever exited the player's house in this project. Same config and
+snapshot as Sonnet 4.6 (medium), which was stuck in 2F bedroom for all
+10T two hours earlier.
+
+### Numbers vs Sonnet 4.6 (medium) baseline
+
+| metric | Opus 4.7 (medium) | Sonnet 4.6 (medium) |
+|---|---:|---:|
+| End state | Pallet Town | 2F bedroom |
+| Grade rate | 14/18 true (78%) | 0/18 (0%) |
+| Latency / turn | 8.3s | 47.7s |
+| Cost / turn | $0.0523 | $0.0557 |
+| Output tokens / turn | ~300 | ~2338 |
+| Total / 10T | $0.523 | $0.557 |
+
+The output-tokens delta is the headline finding: **Opus reasoned ~8× more
+compactly than Sonnet on the same task with the same prompt**. That's
+what kept per-turn cost slightly *below* Sonnet despite Opus's higher
+rate card ($5/$25 per M vs Sonnet's $3/$15). The "expensive frontier
+model" framing didn't materialise — Opus is the best capability-per-
+dollar Anthropic entry on this task by every metric.
+
+### Where it sits in the registry
+
+| model (medium effort) | end state at 10T | $/turn |
+|---|---|---:|
+| **claude-opus-4.7** | **Pallet Town + map memory** | **$0.052** |
+| gemini-3.5-flash | (not measured at 10T; 50T → Route 1 + Bulbasaur lvl 6) | $0.013 |
+| gpt-5.5 | 2F bedroom (config-3.0 baseline) / Oak's lab (upscale=6 A/B) | $0.030 |
+| claude-sonnet-4.6 | 2F bedroom | $0.056 |
+| claude-haiku-4.5 | 2F bedroom (T10 probe) | $0.030 |
+| grok-4.3 | 1F house (T36 abort) | $0.016 |
+| grok-build-0.1 | 2F bedroom (T4 abort) | $0.018 |
+| perceptron-mk1 | 1F house (T19 abort) | $0.002 |
+
+Recommended next: 50T run on config-3.9 to see how far Opus goes past
+Pallet Town. Gemini 3.5 Flash (medium) reached Route 1 + Bulbasaur lvl 6
+by T50 (current registry leader on raw progress) — Opus at 10T already
+matches the early arc; the 50T question is whether it scales further or
+plateaus around the starter pickup.
+
+### Files
+- `configs/models.yaml` — Opus 4.7 entries added (high/medium/low/minimal),
+  medium populated with full observation block
+- `configs/config-3.9.yaml` — new (clone of 3.8, model swap only)
+- `local/runs/2026-05-21_09-25-29_phase5_test` — full 10T run dir
+
+---
+
+## 2026-05-21 — Claude Sonnet 4.6 (medium) 10T probe (config 3.8)
+
+### What
+First Anthropic Sonnet entry in the registry. `anthropic/claude-sonnet-4.6`
+on config-3.8 (clone of 3.6 — upscale=6, K=1, `bedroom_start`, model swap
+only). Same Anthropic-family constraint as Haiku 4.5 (`output_mode:
+"prompted"` required; tool_choice=required silently strips extended
+thinking).
+
+### Result
+**Same spatial-grounding failure as the bedroom-stuck cluster, but
+qualitatively the highest-trust entry in that cluster.**
+
+End state: 2F bedroom for all 10 turns — never went down the stairs.
+Failure family includes Grok 4.3, Flash Lite (high), Qwen3.6-Plus,
+Perceptron Mk1, Haiku 4.5 (medium), Grok Build 0.1 (medium).
+
+What set Sonnet apart inside that family:
+1. **Honest self-grading**: 0/18 true (0%). Never gamed `last_turn_succeeded`.
+   Grok Build 0.1 falsely claimed true at T4; GPT-5.5 (medium) on
+   config-3.0 had 70% grade rate while stuck in the bedroom. Sonnet
+   correctly graded every stuck turn as false.
+2. **Explicit stuck-state diagnosis at T10**: "Screenshots have been
+   identical for 9+ turns despite many varied button presses including
+   all directions. This almost certainly means something is blocking
+   input — possibly a hidden dialogue/event." Tried `[b, b, b, a, up,
+   up, up, right, right]` to recover. No prior model has surfaced the
+   stuck state explicitly in prose.
+3. **5× faster per turn than Grok Build 0.1 (medium)**: 47.7s/turn vs
+   118.6s/turn on the same task.
+
+### Cost
+Total $0.5565 / 10T = **$0.0557/turn** — most expensive registry entry
+by ~2× (Haiku 4.5 medium $0.0303, GPT-5.5 medium $0.0298). T9 alone
+burned $0.15 with 8362 output tokens (extended-thinking spiral, 160s
+latency). 50T extrapolation: ~$2.80.
+
+### Verdict
+Same bedroom-stuck capability tier as peers, but Sonnet's reasoning
+quality + grading honesty make it the most trustworthy debug subject
+if/when we break the spatial-grounding bottleneck (higher upscale,
+better tile-coordinate prompting, vision_mode tweak). Not recommended
+at current cost without that fix.
+
+### Files
+- `configs/models.yaml` — Sonnet 4.6 entries added (high/medium/low/minimal),
+  medium populated with observed numbers + notes
+- `configs/config-3.8.yaml` — new (clone of 3.6, model swap only)
+- `local/runs/2026-05-21_09-11-23_phase5_test` — full 10T run dir
+
+---
+
+## 2026-05-21 — Grok Build 0.1 (medium) probe (config 3.7) — aborted at T4
+
+### What
+First probe of `x-ai/grok-build-0.1`, xAI's "fast agentic-coding" Grok variant
+(256K ctx, $1/$2 per M, multimodal, single provider xAI). Reasoning shape
+confirmed effort-tiered via direct OpenRouter probe (all four tiers
+high/medium/low/minimal accepted, summary text returned natively without
+needing `summary: "auto"`). Added `grok-build-0.1(medium)` to `models.yaml`
+and `config-3.7.yaml` (clone of 3.6 with model swap only — upscale=6, K=1,
+`bedroom_start` snapshot).
+
+### Why aborted
+Two failure modes in 4 turns:
+
+1. **Latency monotonic degradation**: 78s → 83s → 147s → 165s. Reasoning
+   length scaled with message history; extrapolating, 50T would have taken
+   >2 hours wall clock. Same family as Grok 4.3 (71s/turn) and Kimi K2.6
+   (110-225s/turn).
+2. **Spatial grounding fail + gamed self-grade**: stuck in 2F bedroom for
+   all 4 turns. T4 self-reported `last_turn_succeeded: true` while still
+   in the bedroom — the same "conservative prediction trivially matched"
+   failure mode GPT-5.5(medium) showed on config-3.0. Same root cause as
+   Grok 4.3 / Flash Lite (high) / Qwen3.6-Plus / Perceptron Mk1 / Haiku
+   4.5 (medium).
+
+Cost was in line with expectations ($0.0184/turn avg, ~$0.92/50T extrapolated)
+but irrelevant given the capability + latency fail.
+
+### Files
+- `configs/models.yaml` — `grok-build-0.1(medium)` entry added with full
+  context (reasoning shape, registry placement) + 4T observed numbers and
+  abort notes
+- `configs/config-3.7.yaml` — new (clone of 3.6, model swap only)
+- `local/runs/2026-05-21_08-48-00_phase5_test` — 4-turn run kept for reference
+
+### Open
+- Whether `(low)` or `(minimal)` effort tiers fare better — Grok 4.3's
+  always-on reasoning was the bottleneck and a lower effort tier on
+  Build 0.1 may cut latency. Not pursued: capability fail at medium
+  already puts this in the bottom tier alongside Grok 4.3 / Haiku 4.5.
+
+---
+
 ## 2026-05-20 — Upscale-factor A/B on GPT-5.5(medium) (configs 3.5 / 3.6)
 
 ### Experiment

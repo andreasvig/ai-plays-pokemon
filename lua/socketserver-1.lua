@@ -1,6 +1,6 @@
--- mGBA Socket Client for AI Plays Pokemon
--- Connects to the Python harness TCP server and processes commands each frame.
--- Protocol: newline-delimited commands and responses.
+-- mGBA Socket Client for AI Plays Pokemon — slot 1
+-- Static file. Load via mGBA Tools > Scripting > File > Load recent script.
+-- PORT=8888, stream=/tmp/mgba_stream_1.png, screenshot=/tmp/mgba_screenshot_1.png
 --
 -- IMPORTANT: emu functions (addKey, clearKey, runFrame, screenshot, etc.)
 -- can only be called from the frame callback context, not from socket handlers.
@@ -41,7 +41,7 @@ local press_key = nil
 local press_frames_remaining = 0
 
 -- Live stream: auto-capture screenshot for dashboard (separate from agent's CAP)
-local stream_path = "/tmp/mgba_stream.png"
+local stream_path = "/tmp/mgba_stream_1.png"
 local stream_interval = 4  -- every 4 frames ≈ 15fps at 60fps
 local stream_counter = 0
 
@@ -60,7 +60,7 @@ local function execute_command(cmd)
     cmd = cmd:match("^%s*(.-)%s*$")
 
     if cmd == "CAP" then
-        local tmp_path = "/tmp/mgba_screenshot.png"
+        local tmp_path = "/tmp/mgba_screenshot_1.png"
         emu:screenshot(tmp_path)
         respond("SCREENSHOT:" .. tmp_path)
 

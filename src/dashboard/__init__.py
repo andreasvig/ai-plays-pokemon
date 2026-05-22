@@ -1,3 +1,15 @@
-from src.dashboard.server import start_dashboard
+from src.dashboard.server import (
+    RunRegistry,
+    RunSession,
+    get_registry,
+    start_dashboard,
+    unregister_run,
+)
 
-__all__ = ["start_dashboard"]
+__all__ = [
+    "RunRegistry",
+    "RunSession",
+    "get_registry",
+    "start_dashboard",
+    "unregister_run",
+]

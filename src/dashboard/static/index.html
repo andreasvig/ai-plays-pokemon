@@ -311,6 +311,13 @@
 </div>
 
 <script>
+// --- Run prefix (dynamic routing) ---
+// Pages live at /runs/{run_id}; api + ws routes are scoped under that prefix.
+// When served from /current, the server injects RUN_PREFIX_OVERRIDE so the
+// inner calls still target /runs/<latest_id> while the URL bar stays /current.
+// Strip a trailing slash so we end up with e.g. "/runs/abc".
+const RUN_PREFIX = window.RUN_PREFIX_OVERRIDE || location.pathname.replace(/\/$/, '');
+
 // --- State ---
 const state = {
   currentTurn: 0,
@@ -339,19 +346,20 @@ function autoScroll() {
 }
 
 // --- Fetch initial config ---
-fetch('/api/config').then(r => r.json()).then(cfg => {
+fetch(`${RUN_PREFIX}/api/config`).then(r => r.json()).then(cfg => {
   document.getElementById('taskLabel').textContent = 'Task: ' + (cfg.task || '—');
   document.getElementById('footerModel').textContent =
     'LLM: ' + (cfg.llm_model || '—') + ' | VLM: ' + (cfg.vlm_model || '—');
+  if (cfg.label) document.title = cfg.label + ' — AI Plays Pokemon';
 }).catch(() => {});
 
-fetch('/api/state').then(r => r.json()).then(data => {
+fetch(`${RUN_PREFIX}/api/state`).then(r => r.json()).then(data => {
   renderStateTree(data);
 }).catch(() => {});
 
 // --- Screen WebSocket ---
 function connectScreen() {
-  const ws = new WebSocket(`ws://${location.host}/ws/screen`);
+  const ws = new WebSocket(`ws://${location.host}${RUN_PREFIX}/ws/screen`);
   ws.binaryType = 'arraybuffer';
 
   ws.onopen = () => {
@@ -367,10 +375,17 @@ function connectScreen() {
     prevObjectURL = url;
   };
 
-  ws.onclose = () => {
+  ws.onclose = (e) => {
     state.screenConnected = false;
     updateStatus();
-    setTimeout(connectScreen, 2000);
+    // Server sends 1008 only when the session is gone (run ended).
+    // On /current view, reload so the server can pick the new latest run.
+    // Elsewhere, keep reconnecting in case the WebSocket dropped transiently.
+    if (e.code === 1008 && window.IS_CURRENT_VIEW) {
+      location.reload();
+    } else {
+      setTimeout(connectScreen, 2000);
+    }
   };
 
   ws.onerror = () => ws.close();
@@ -378,7 +393,7 @@ function connectScreen() {
 
 // --- Events WebSocket ---
 function connectEvents() {
-  const ws = new WebSocket(`ws://${location.host}/ws/events`);
+  const ws = new WebSocket(`ws://${location.host}${RUN_PREFIX}/ws/events`);
 
   ws.onopen = () => {
     state.eventsConnected = true;
@@ -392,10 +407,14 @@ function connectEvents() {
     else if (msg.type === 'stats') updateStats(msg.data);
   };
 
-  ws.onclose = () => {
+  ws.onclose = (e) => {
     state.eventsConnected = false;
     updateStatus();
-    setTimeout(connectEvents, 2000);
+    if (e.code === 1008 && window.IS_CURRENT_VIEW) {
+      location.reload();
+    } else {
+      setTimeout(connectEvents, 2000);
+    }
   };
 
   ws.onerror = () => ws.close();

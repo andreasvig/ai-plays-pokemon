@@ -1,11 +1,12 @@
-"""Launch script for AI Plays Pokemon.
+"""Launch mGBA + Python TCP server for ad-hoc / snapshot work.
 
-Starts the Python TCP server, launches mGBA, and opens the Scripting window.
-The user must load the Lua script manually (one click from recent scripts).
+For agent runs, use tests/test_phase5.py (one config) or
+tests/test_sequential.py (N configs sharing one mGBA + Lua connection).
 
 Usage:
-    python launch.py                  # Normal launch
-    python launch.py --snapshot PATH  # Launch from a snapshot
+    python launch.py
+    python launch.py --snapshot PATH
+    python launch.py --config configs/config-3.5.yaml
 """
 
 import argparse
@@ -17,12 +18,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+from src.cli.slots import get_slot
 from src.config import load_config
 from src.emulator import EmulatorClient
 
 
 def find_mgba() -> str:
-    """Find the mGBA executable."""
     candidates = [
         "mgba-qt",
         "mgba",
@@ -44,20 +45,22 @@ def find_mgba() -> str:
     )
 
 
-def open_scripting_window():
-    """Open mGBA's Scripting window via AppleScript (macOS)."""
+def open_scripting_window_for_pid(pid: int) -> None:
+    """Open the Scripting window in the mGBA instance with the given Unix PID."""
     if sys.platform != "darwin":
         return
-    try:
-        subprocess.run(['osascript', '-e', '''
-            tell application "System Events"
-                tell process "mGBA"
-                    set frontmost to true
-                    delay 0.3
-                    click menu item "Scripting..." of menu "Tools" of menu bar 1
-                end tell
+    script = f'''
+        tell application "System Events"
+            set targetProc to first process whose unix id is {pid}
+            tell targetProc
+                set frontmost to true
+                delay 0.3
+                click menu item "Scripting..." of menu "Tools" of menu bar 1
             end tell
-        '''], capture_output=True, timeout=10)
+        end tell
+    '''
+    try:
+        subprocess.run(['osascript', '-e', script], capture_output=True, timeout=10)
     except Exception:
         pass
 
@@ -77,42 +80,53 @@ def main():
         print(f"ERROR: ROM not found at {rom_path}")
         sys.exit(1)
 
-    lua_script = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "lua", "socketserver.lua")
-    )
+    slot_cfg = get_slot()
+    config["emulator"]["port"] = slot_cfg["port"]
+
+    # Ephemeral work dir for per-launch save paths.
+    timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
+    work_dir = Path("local/launch") / timestamp
+    saves_dir = work_dir / "saves"
+    saves_dir.mkdir(parents=True, exist_ok=True)
+
     mgba_path = find_mgba()
 
-    # Start TCP server first
     emu = EmulatorClient(config)
     emu.start_server()
 
-    # Launch mGBA muted (-C mute=1 is a per-launch override; doesn't touch ~/.config/mGBA/config.ini).
-    # caffeinate prevents macOS App Nap when backgrounded.
-    mgba_cmd = [mgba_path, "-C", "mute=1", rom_path]
-    if sys.platform == "darwin":
-        mgba_cmd = ["caffeinate", "-i"] + mgba_cmd
-
+    mgba_cmd = [
+        mgba_path,
+        "-C", "mute=1",
+        "-C", f"savegamePath={saves_dir}",
+        "-C", f"savestatePath={saves_dir}",
+        rom_path,
+    ]
     mgba_proc = subprocess.Popen(
         mgba_cmd,
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     print(f"mGBA started (PID: {mgba_proc.pid})")
 
-    # Open the scripting window automatically
-    time.sleep(2)
-    open_scripting_window()
+    caffeinate_proc = None
+    if sys.platform == "darwin":
+        caffeinate_proc = subprocess.Popen(
+            ["caffeinate", "-i", "-w", str(mgba_proc.pid)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
 
-    print(f"\n{'='*50}")
-    print("Load the Lua script in mGBA Scripting window:")
-    print(f"  File > Load script... > socketserver.lua")
-    print(f"  (should be in recent scripts)")
-    print(f"{'='*50}\n")
+    time.sleep(2)
+    open_scripting_window_for_pid(mgba_proc.pid)
+
+    print(f"\n{'='*60}")
+    print(f"  In the Scripting window: File > Load recent script")
+    print(f"  Pick:  socketserver-1.lua")
+    print(f"  Path:  {slot_cfg['lua_path']}")
+    print(f"{'='*60}\n")
 
     try:
-        emu.wait_for_connection(timeout=120.0)
+        emu.wait_for_connection(timeout=300.0)
         print("=== Connected! ===\n")
 
-        # Load snapshot if requested
         snapshot_path = args.snapshot or config.get("load_snapshot")
         if snapshot_path:
             state_file = os.path.join(snapshot_path, "emulator.state")
@@ -141,6 +155,8 @@ def main():
             mgba_proc.terminate()
             mgba_proc.wait(timeout=5)
             print("mGBA closed.")
+        if caffeinate_proc is not None and caffeinate_proc.poll() is None:
+            caffeinate_proc.terminate()
 
 
 if __name__ == "__main__":
