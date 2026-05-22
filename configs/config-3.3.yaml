@@ -28,10 +28,8 @@ task:
 task_override_snapshot: false
 
 
-# --- Model Configuration ---
-# Alias resolved from configs/models.yaml. Raw "provider/model" IDs also work.
-llm_model: "claude-haiku-4.5(medium)"
-llm_fallback_models: []
+# --- Vision Configuration ---
+# Model selection is a CLI flag (--model "<alias>"); see configs/models.yaml.
 
 # Direct multimodal: LLM receives raw screenshots, no separate VLM
 vision_mode: "direct_multimodal"

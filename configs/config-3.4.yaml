@@ -26,10 +26,8 @@ task:
 task_override_snapshot: true
 
 
-# --- Model Configuration ---
-# Alias resolved from configs/models.yaml. Raw "provider/model" IDs also work.
-llm_model: "gemini-3.5-flash(medium)"
-llm_fallback_models: []
+# --- Vision Configuration ---
+# Model selection is a CLI flag (--model "<alias>"); see configs/models.yaml.
 
 # Direct multimodal: LLM receives raw screenshots, no separate VLM
 vision_mode: "direct_multimodal"

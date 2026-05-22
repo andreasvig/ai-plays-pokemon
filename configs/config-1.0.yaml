@@ -17,17 +17,15 @@ task:
 task_override_snapshot: false
 
 
-# --- Model Configuration ---
+# --- Vision Configuration ---
 # Model agnostic - all models accessed via OpenRouter
 # API key loaded from .env file (OPENROUTER_API_KEY)
 # openrouter_api_key: loaded from environment
 
 # The reasoning/decision-making LLM (primary model)
-llm_model: "google/gemini-3-flash-preview"
 
 # Fallback models: tried in order if the primary model fails.
 # Set to empty list to disable fallback.
-llm_fallback_models: []
 #  - "google/gemini-2.5-flash"
 
 # Thinking/reasoning configuration (passed to OpenRouter)

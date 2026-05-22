@@ -1,5 +1,76 @@
 # Changelog
 
+## 2026-05-22 — Model selection moved from config files to CLI flag
+
+### What
+`llm_model` (and `llm_fallback_models`) is no longer a config-file field.
+Model choice is a required CLI flag on the agent entry points:
+
+```bash
+# Single run
+./venv/bin/python tests/test_phase5.py --config configs/config-3.9.yaml \
+    --model "gemini-3.5-flash(medium)" --turns 50
+
+# Sequential, fan-out (1 config × N models, same baseline)
+./venv/bin/python tests/test_sequential.py --config configs/config-3.9.yaml \
+    --models "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" --turns 50
+
+# Sequential, paired (N configs × N models, 1:1)
+./venv/bin/python tests/test_sequential.py \
+    --configs configs/config-3.5.yaml configs/config-3.6.yaml \
+    --models "gpt-5.5(medium)" "claude-opus-4.7(medium)" --turns 50
+```
+
+The flag values are aliases from `configs/models.yaml` — the registry
+stays the single source of truth for per-model settings (reasoning,
+temperature, provider routing, `output_mode`). The CLI alias is injected
+into the config dict in `load_config()`, then `_resolve_llm_alias()`
+expands it into the full settings block exactly as before.
+
+### Why
+The 18 existing `config-3.X.yaml` files differed mostly by the
+`llm_model:` line — true behavioral knobs (`upscale_factor`,
+`historic_images_count`, `vision_mode`, prompt) varied across ~3 files.
+The rest were model bookkeeping that duplicated `models.yaml`. Moving
+model choice to the CLI makes configs answer one question — "what
+experimental setup did this run use" — and lets the same config run
+against any model without copy-paste.
+
+### Pieces
+- **`src/config.py`** — `load_config(path, *, llm_alias=None)` injects
+  the CLI alias into `config["llm_model"]` before registry resolution.
+  Rejects YAML files that still carry `llm_model` or
+  `llm_fallback_models` with a clear "use --model on CLI" error. Alias
+  is optional at the `load_config` level so non-agent callers
+  (`snapshot.py`, `test_emulator.py`) keep working — the CLI layer
+  enforces the requirement for agent runs.
+- **`tests/test_phase5.py`** — `--model "<alias>"` required. Run dir
+  slug becomes `phase5_test__<model-slug>` for distinguishability.
+- **`tests/test_sequential.py`** — `--models A B C` required. Two
+  semantics via a mutually-exclusive group: `--config X --models A B`
+  fans out (1 baseline × N models = N runs), `--configs X Y --models
+  A B` pairs 1:1 (mismatched lengths → error). Cartesian (M×N) not
+  supported — use a shell `for` loop. Per-run `run_label = "<stem> ·
+  <alias>"` so the dashboard `/current` page shows which model is
+  driving the current run.
+- **`src/cli/report.py`** — report HTML LLM field prefers the alias
+  over the raw OpenRouter id.
+- **`configs/config-*.yaml`** — `llm_model:` and
+  `llm_fallback_models:` stripped from all 18 files. "Model
+  Configuration" section header renamed to "Vision Configuration"
+  (vision_mode + vlm_model still live there). Rich prose comments
+  about specific models intentionally left in place as historical
+  notes — configs are now generic templates that can run against any
+  model.
+
+### Verification
+3T sequential smoke: `--config configs/config-3.9.yaml --models
+"gemini-3.5-flash(medium)" "claude-opus-4.7(medium)"`. Both runs
+completed, dashboard `/current` page reloaded cleanly at the model
+transition, run dirs distinguishable as
+`<ts>_config-3.9__gemini-3-5-flash-medium/` and
+`<ts>_config-3.9__claude-opus-4-7-medium/`.
+
 ## 2026-05-22 — Sequential orchestrator + dashboard `/current` URL
 
 ### What

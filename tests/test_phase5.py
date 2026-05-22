@@ -3,8 +3,12 @@
 Launches mGBA, loads a snapshot, and runs the agent for N turns.
 
 Usage:
-    python tests/test_phase5.py [--turns N] [--snapshot PATH] [--config PATH]
+    python tests/test_phase5.py --model "<alias>" [--turns N] [--snapshot PATH] [--config PATH]
     python tests/test_phase5.py --kill-existing   # pkill mgba before launching
+
+The --model flag is required. Aliases come from configs/models.yaml (e.g.
+"gemini-3.5-flash(medium)", "claude-opus-4.7(medium)"). A raw OpenRouter id
+("provider/model") also works and bypasses the registry.
 
 For multiple configs sharing one mGBA + Lua connection, see
 tests/test_sequential.py — same underlying helpers, loops the
@@ -30,6 +34,12 @@ from src.config import load_config
 from src.core import RunLogger, StateManager
 from src.emulator import EmulatorClient, VisionPipeline, OCRRunner
 from src.agent import TurnManager
+
+
+def _slug(s: str) -> str:
+    """Filesystem-safe slug for model aliases like 'gemini-3.5-flash(medium)'."""
+    import re
+    return re.sub(r"[^a-zA-Z0-9]+", "-", s).strip("-").lower()
 
 
 def position_mgba_window_for_pid(pid: int, x: int, y: int) -> None:
@@ -321,6 +331,9 @@ def cleanup_handle(handle: dict) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description="Phase 5: Single-config agent run")
+    parser.add_argument("--model", type=str, required=True,
+                        help='Model alias from configs/models.yaml (e.g. "gemini-3.5-flash(medium)") '
+                             'or a raw "provider/model" OpenRouter id.')
     parser.add_argument("--turns", type=int, default=5, help="Number of turns to run")
     parser.add_argument("--snapshot", type=str, default="local/snapshots/bedroom_start",
                         help="Snapshot to load")
@@ -338,9 +351,9 @@ def main():
         print(f"  ⚠ snapshot not found: {args.snapshot} (continuing without)")
         args.snapshot = None
 
-    config = load_config(args.config)
+    config = load_config(args.config, llm_alias=args.model)
     print(f"Using config: {config.get('_config_path', 'unknown')}")
-    config["run_name"] = "phase5_test"
+    config["run_name"] = f"phase5_test__{_slug(args.model)}"
 
     rom_path = config["emulator"]["rom_path"]
     if not os.path.exists(rom_path):

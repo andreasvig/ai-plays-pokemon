@@ -593,7 +593,7 @@ def generate_html(run_dir: Path, events: list[dict], turns: list[dict]) -> str:
     <h1>Run Report</h1>
     <div class="meta">
         <span><span class="label">Run:</span> {run_name}</span>
-        <span><span class="label">LLM:</span> {config.get('llm_model', '?')}</span>
+        <span><span class="label">LLM:</span> {config.get('_llm_alias') or config.get('llm_model', '?')}</span>
         <span><span class="label">VLM:</span> {config.get('vlm_model', '?')}</span>
         <span><span class="label">Turns:</span> {len(turns)}</span>
         <span><span class="label">Events:</span> {len(events)}</span>

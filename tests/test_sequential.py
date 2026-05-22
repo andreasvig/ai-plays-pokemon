@@ -21,12 +21,25 @@ Behaviour:
     cleans up (logger closed, report generated).
 
 Usage:
+    # Paired 1:1 — N configs × N models (same length)
     python tests/test_sequential.py \\
         --configs configs/config-3.11.yaml configs/config-3.12.yaml \\
+        --models "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" \\
         --turns 50
 
-    python tests/test_sequential.py --configs configs/config-3.5.yaml --turns 20
-        (equivalent to test_phase5.py with one config)
+    # Fan-out — 1 config × N models (same baseline, different models)
+    python tests/test_sequential.py \\
+        --config configs/config-3.9.yaml \\
+        --models "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" \\
+        --turns 50
+
+    # Single — 1 config × 1 model (equivalent to test_phase5.py)
+    python tests/test_sequential.py --config configs/config-3.5.yaml \\
+        --models "gpt-5.5(medium)" --turns 20
+
+Model aliases come from configs/models.yaml; raw "provider/model" ids also
+work. Cartesian (N configs × M models, M≠N) is intentionally NOT supported
+— use a shell `for` loop if you need it.
 """
 
 import argparse
@@ -47,23 +60,42 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.config import load_config
 
 
-def prepare_config(path: str) -> dict:
-    """Load a config, deep-copy it, tag run_name + run_label from the filename."""
-    config = load_config(path)
+def _slug(s: str) -> str:
+    """Filesystem-safe slug for model aliases like 'gemini-3.5-flash(medium)'."""
+    import re
+    return re.sub(r"[^a-zA-Z0-9]+", "-", s).strip("-").lower()
+
+
+def prepare_config(path: str, model_alias: str) -> dict:
+    """Load a config + bind it to a model alias.
+
+    The model alias drives registry resolution (reasoning/temperature/provider/
+    output_mode from configs/models.yaml). run_name combines the config stem
+    with the model alias so multi-model sequences produce distinguishable
+    run dirs and dashboard labels.
+    """
+    config = load_config(path, llm_alias=model_alias)
     config = copy.deepcopy(config)
     stem = Path(path).stem
-    if not config.get("run_name"):
-        config["run_name"] = stem
-    config.setdefault("run_label", config.get("_llm_alias") or stem)
+    slug = _slug(model_alias)
+    config["run_name"] = f"{stem}__{slug}"
+    config["run_label"] = f"{stem} · {model_alias}"
     return config
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Sequential agent runs over N configs.")
-    parser.add_argument("--configs", nargs="+", required=True,
-                        help="Config files (run sequentially in the given order).")
+    parser = argparse.ArgumentParser(description="Sequential agent runs over N (config, model) pairs.")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--configs", nargs="+",
+                       help="N config files (paired 1:1 with --models — same length required).")
+    group.add_argument("--config", type=str,
+                       help="One config file (fan-out: N runs share this baseline, one per --models entry).")
+    parser.add_argument("--models", nargs="+", required=True,
+                        help='Model aliases from configs/models.yaml (e.g. "gemini-3.5-flash(medium)") '
+                             'or raw "provider/model" OpenRouter ids. Paired 1:1 with --configs, OR '
+                             'fanned-out across the single --config.')
     parser.add_argument("--turns", type=int, default=50,
-                        help="Turns per run (applied to every config).")
+                        help="Turns per run (applied to every (config, model) pair).")
     parser.add_argument("--snapshot", type=str,
                         default="local/snapshots/bedroom_start",
                         help="Snapshot reloaded before each run's turn loop.")
@@ -81,9 +113,23 @@ def main():
         print(f"  ⚠ snapshot not found: {args.snapshot} (continuing without)")
         args.snapshot = None
 
-    configs = [prepare_config(p) for p in args.configs]
+    # Resolve (config, model) pairs. Fan-out: 1 config × N models. Paired 1:1
+    # otherwise — mismatched lengths are an error (Cartesian isn't supported,
+    # use a shell loop if you need it).
+    if args.config is not None:
+        pairs = [(args.config, m) for m in args.models]
+    else:
+        if len(args.configs) != len(args.models):
+            print(
+                f"ERROR: --configs (N={len(args.configs)}) and --models (N={len(args.models)}) "
+                "must have the same length for 1:1 pairing. Use --config (singular) for fan-out."
+            )
+            sys.exit(1)
+        pairs = list(zip(args.configs, args.models))
+
+    configs = [prepare_config(path, model) for path, model in pairs]
     if not configs:
-        print("At least one --configs path required.")
+        print("At least one (config, model) pair required.")
         sys.exit(1)
 
     rom_path = configs[0]["emulator"]["rom_path"]

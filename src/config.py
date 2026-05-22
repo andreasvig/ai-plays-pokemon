@@ -105,12 +105,22 @@ def find_latest_config() -> Path:
     return configs[-1][1]
 
 
-def load_config(path: Optional[str] = None) -> dict[str, Any]:
+def load_config(
+    path: Optional[str] = None,
+    *,
+    llm_alias: Optional[str] = None,
+) -> dict[str, Any]:
     """Load config from YAML file and .env, return as dict.
+
+    Model choice lives on the CLI, not in the config file. Caller must pass
+    `llm_alias` (a name from configs/models.yaml, or a raw 'provider/model' id).
+    Config files that still carry `llm_model` or `llm_fallback_models` are
+    rejected — the registry entry settings get pulled in from models.yaml.
 
     Args:
         path: Explicit config file path. If None, auto-picks the latest
               config-X.Y.yaml from the configs/ directory.
+        llm_alias: Required. The model alias (or raw provider/model id) to use.
     """
     load_dotenv()
 
@@ -125,30 +135,56 @@ def load_config(path: Optional[str] = None) -> dict[str, Any]:
     with open(config_path) as f:
         config = yaml.safe_load(f)
 
+    # Model choice is a CLI flag, not a config field. Reject configs that
+    # still carry it so old habits surface as a clear error instead of
+    # silently shadowing whatever the CLI passed.
+    forbidden = [k for k in ("llm_model", "llm_fallback_models") if k in config]
+    if forbidden:
+        raise ValueError(
+            f"Config {config_path.name} contains forbidden key(s): {forbidden}. "
+            "Model selection moved to the CLI — pass --model \"<alias>\" "
+            "(or --models for sequential runs) instead. Strip these fields "
+            "from the YAML."
+        )
+
+    # llm_alias is optional at load_config level so emulator/snapshot tools
+    # that never touch the agent can load configs too. Agent entry points
+    # (test_phase5.py, test_sequential.py) make --model required at the CLI
+    # layer. When alias is absent, skip the registry resolve — _validate_config
+    # will then enforce that llm_model is present for any path that needs it.
+    if llm_alias:
+        config["llm_model"] = llm_alias
+
     # Inject API key from environment
     config["openrouter_api_key"] = os.environ.get("OPENROUTER_API_KEY", "")
 
     # Track which config file was loaded
     config["_config_path"] = str(config_path)
 
-    # Resolve llm_model alias against the registry (no-op if already a raw id)
-    registry = _load_models_registry()
-    _resolve_llm_alias(config, registry)
+    if llm_alias:
+        registry = _load_models_registry()
+        _resolve_llm_alias(config, registry)
 
-    _validate_config(config)
+    _validate_config(config, require_llm_model=bool(llm_alias))
     return config
 
 
-def _validate_config(config: dict[str, Any]) -> None:
-    """Validate required config fields exist."""
+def _validate_config(config: dict[str, Any], *, require_llm_model: bool = True) -> None:
+    """Validate required config fields exist.
+
+    `require_llm_model` is False for non-agent callers (snapshot/emulator
+    tools) that load configs purely for the emulator block. Agent paths
+    always pass it as True via load_config(llm_alias=...).
+    """
     required = [
         "task",
-        "llm_model",
         "vision_mode",
         "emulator",
         "valid_inputs",
         "state_file",
     ]
+    if require_llm_model:
+        required.append("llm_model")
     for key in required:
         if key not in config:
             raise ValueError(f"Missing required config key: {key}")

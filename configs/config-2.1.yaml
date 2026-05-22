@@ -27,9 +27,7 @@ task:
 task_override_snapshot: false
 
 
-# --- Model Configuration ---
-llm_model: "google/gemini-3-flash-preview"
-llm_fallback_models: []
+# --- Vision Configuration ---
 
 thinking:
   effort: "high"
