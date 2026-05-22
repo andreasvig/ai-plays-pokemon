@@ -134,6 +134,54 @@ def _extract_cost_from_messages(messages) -> float:
     return total_cost
 
 
+def _extract_provider_from_messages(messages) -> str:
+    """Pull the OpenRouter provider name from response metadata.
+
+    OpenRouter stamps `provider` (e.g. "DeepInfra", "Novita") into the
+    response body when provider routing is active. Used for debugging
+    which backend the router actually picked — especially when
+    sort:"throughput" produces flaky results from one specific provider.
+
+    The exact key location varies by pydantic-ai version: tried
+    msg.provider_details["provider"], msg.vendor_details["provider"],
+    msg.model_name. Falls back to scanning provider_details for any
+    string field with a known provider name.
+    """
+    _KNOWN_PROVIDERS = {
+        "deepinfra", "chutes", "ambient", "siliconflow", "novita",
+        "parasail", "venice", "together", "dekallm", "nextbit",
+        "cloudflare", "google-vertex", "openai", "anthropic", "google",
+    }
+
+    for msg in messages or []:
+        if not isinstance(msg, ModelResponse):
+            continue
+        try:
+            pd = getattr(msg, "provider_details", None) or {}
+            # Direct key lookups
+            for key in ("provider", "x-or-provider", "provider_name"):
+                v = pd.get(key)
+                if v:
+                    return str(v)
+            # Scan dict for known provider strings
+            for v in pd.values():
+                if isinstance(v, str) and v.lower() in _KNOWN_PROVIDERS:
+                    return v
+            # Try vendor_details (newer pydantic-ai)
+            vd = getattr(msg, "vendor_details", None) or {}
+            for key in ("provider", "x-or-provider"):
+                v = vd.get(key)
+                if v:
+                    return str(v)
+            # Last resort: model_name often encodes provider via OpenRouter
+            mn = getattr(msg, "model_name", "")
+            if mn:
+                return str(mn)
+        except Exception:
+            pass
+    return ""
+
+
 def _should_retry_without_thinking(error: Exception) -> bool:
     """Check if an error suggests the model doesn't support thinking params."""
     error_str = str(error).lower()
@@ -614,7 +662,9 @@ class TurnManager:
                 })
 
             duration = round(time.time() - turn_start, 1)
-            print(f"  [Turn {t}] Done ({duration}s | ${turn_cost:.4f}{tokens_str})")
+            provider = _extract_provider_from_messages(messages)
+            prov_str = f" | provider={provider}" if provider else ""
+            print(f"  [Turn {t}] Done ({duration}s | ${turn_cost:.4f}{tokens_str}{prov_str})")
 
             self.turn_costs.append({
                 "turn": t,
@@ -638,10 +688,13 @@ class TurnManager:
                     "error": str(e),
                 })
 
-            print(f"  [Turn {t}] ERROR: {e}")
+            provider = _extract_provider_from_messages(messages)
+            prov_str = f" | provider={provider}" if provider else ""
+            print(f"  [Turn {t}] ERROR{prov_str}: {e}")
             self.logger.log_custom("agent_error", {
                 "error": str(e),
                 "turn": t,
+                "provider": provider,
             })
             return None
 

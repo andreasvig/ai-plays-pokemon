@@ -1,5 +1,59 @@
 # Changelog
 
+## 2026-05-22 — gemma-4-31b throughput-sort + provider diagnostic
+
+### What
+- `gemma-4-31b(thinking)` now sets `provider: {sort: "throughput"}` —
+  verified by 24 direct-API probes (`scripts/probe_throughput.py`) and
+  a 3T agent run that all completed cleanly.
+- `src/agent/turn.py` Done + ERROR lines now print
+  `provider=<name>` so future flaky-provider debugging has a name to
+  blocklist without re-running probes.
+
+### Why
+The 2026-04-24 default routing on Gemma 4 31B averaged 89.9s/turn —
+unusable. The earlier 2026-05-22 throughput attempt failed because one
+provider was returning `finish_reason: null` and crashed pydantic-ai
+validation. Today's re-probe shows that failure mode no longer
+reproduces — throughput-sort now lands on {Ambient, Novita, Together,
+Chutes} and every endpoint returns a valid response shape.
+
+### Pieces
+- **`configs/models.yaml`** — `gemma-4-31b(thinking)` gets
+  `provider: {sort: "throughput"}` + a long comment block with the
+  empirical per-provider latencies from the probe.
+- **`scripts/probe_throughput.py`** (new) — 30-line script that calls
+  OpenRouter directly with `provider.sort=throughput` and dumps
+  `{provider, finish_reason, latency, tokens}` per call. Reusable for
+  diagnosing any model with provider-routing issues. Skips providers
+  via `PROBE_IGNORE=Together,Chutes` env var. Run as
+  `OPENROUTER_API_KEY=... ./venv/bin/python scripts/probe_throughput.py 16`.
+- **`src/agent/turn.py`** —
+  `_extract_provider_from_messages(messages)` returns the OpenRouter
+  provider name (or pydantic-ai's `model_name` as a last-resort
+  fallback). The Done and ERROR lines now print it, so multi-turn
+  variance attributable to provider-shuffling shows up in the log
+  directly.
+
+### Verification + caveat
+- 24/24 direct probes clean. Per-provider average latency on a 288-token
+  request: **Novita 4.8s, Ambient 5.1s, Together 16.8s, Chutes 22.4s**.
+- 3T agent run with full payload (3800-tok input, 400-1300 out): T1=26.7s
+  (fast provider), T2=114.8s, T3=150.1s. Average 97.2s/turn — slightly
+  worse than 2026-04-24's 89.9s default-routing because the slow tail
+  (Chutes/Together) drags the average. Best case is 3× better than the
+  baseline.
+- The `provider=<name>` diagnostic currently falls back to pydantic-ai's
+  `model_name` (e.g. `google/gemma-4-31b-it-20260402`) instead of the
+  actual OpenRouter provider (Ambient/Novita/...) because
+  `msg.provider_details` doesn't expose `provider` in this pydantic-ai
+  version. To get the true name today, use the probe script.
+
+### If avg latency matters more than crash-fix
+Set `provider.order: ["Novita", "Ambient"]` in the registry entry
+alongside `sort: "throughput"` — should pin to the fast pair and only
+fall back to other throughput-sorted providers if both are down.
+
 ## 2026-05-22 — Model selection moved from config files to CLI flag
 
 ### What

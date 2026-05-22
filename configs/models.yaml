@@ -396,21 +396,36 @@
     enabled: true
   temperature: 0.3
   top_p: 0.95
-  # No `provider` block on purpose. The agent sends multimodal calls
-  # (vision_mode: direct_multimodal), so OpenRouter auto-narrows to
-  # providers that accept image input. Pinning broke this twice on
-  # 2026-05-22:
-  #   - throughput-sort routed to a provider returning `finish_reason: null`
-  #     (pydantic-ai validator: `Input should be 'stop'|'length'|...`)
-  #   - `only: [deepinfra]` returned 405 — DeepInfra serves a text-only
-  #     `-turbo` variant of this model.
-  # Letting OpenRouter default-route restores the 2026-04-24 working profile.
+  # provider.sort: "throughput" — verified 2026-05-22 via scripts/probe_throughput.py
+  # (24 direct OpenRouter calls, all succeeded). Throughput-sort lands on
+  # {Ambient, Novita, Together, Chutes} for multimodal requests. OpenRouter
+  # auto-narrows to image-capable providers before applying the sort. The
+  # prior 2026-05-22 attempt that crashed with `finish_reason: null` is no
+  # longer reproducible — either the offending provider was demoted from
+  # the pool or the upstream bug was fixed.
+  #
+  # Latency picture is wider than the probe suggests though. Probe (small
+  # 288-token request) average per provider:
+  #   - Novita:    ~4.8s    (fastest)
+  #   - Ambient:   ~5.1s
+  #   - Together:  ~16.8s
+  #   - Chutes:    ~22.4s
+  # In the real agent loop (3800-tok input, 400-1300 tok output) the slow
+  # providers blow up: 3T agent verification 2026-05-22 ran
+  # 26.7s/114.8s/150.1s (avg 97.2s) — best case is 3× better than default
+  # routing's 89.9s but the slow tail makes avg comparable. Tightening to
+  # provider.order=[Novita, Ambient] would pin to the fast pair; accepted
+  # the variance for now since the goal was "fix the crash", not "minimize
+  # latency". Revisit if a long benchmark needs predictable throughput.
+  provider:
+    sort: "throughput"
   output_mode: "prompted"
   observed:
-    avg_turn_cost_usd: 0.0007
-    avg_turn_latency_s: 89.9
+    avg_turn_cost_usd: 0.0015
+    avg_turn_latency_s: 97.2
     sample_turns: 3
-    last_updated: 2026-04-24
+    last_updated: 2026-05-22
+    notes: "Throughput-sort verified 2026-05-22 (24 probe calls + 3T agent run, all clean). Latency variance 26-150s/turn — best case 3× better than 2026-04-24 default-routing's 89.9s, but worst case (Chutes/Together) drags the average back to par. T1 picked fast provider (26.7s/384 out tokens), T2-T3 picked slow providers (114s/150s @ 1343/1228 out tokens). Provider name surfaces in turn output via pydantic-ai model_name fallback (e.g. 'google/gemma-4-31b-it-20260402') — the actual OpenRouter provider isn't directly exposed through msg.provider_details."
 
 "gemma-4-31b(non-thinking)":
   openrouter_id: "google/gemma-4-31b-it"
