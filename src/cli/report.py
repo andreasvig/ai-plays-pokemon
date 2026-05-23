@@ -1,10 +1,11 @@
 """Report generator: creates an interactive HTML report from a run folder.
 
 Usage:
-    python report.py local/runs/2026-04-06_21-34-37_phase5_test
-    python report.py  # auto-picks latest run
+    pokemon report local/runs/2026-04-06_21-34-37_<run>
+    pokemon report                 # auto-picks latest run
 """
 
+import argparse
 import base64
 import json
 import sys
@@ -701,12 +702,21 @@ def _format_action(action) -> str:
 
 
 def main():
+    parser = argparse.ArgumentParser(
+        prog="pokemon report",
+        description="Regenerate the standalone HTML report for a run directory.",
+    )
+    parser.add_argument(
+        "run_dir", nargs="?", default=None,
+        help="Run directory (e.g. local/runs/2026-04-06_…). Default: latest run.",
+    )
+    args = parser.parse_args()
+
     runs_dir = Path("local/runs")
 
-    if len(sys.argv) > 1:
-        run_dir = Path(sys.argv[1])
+    if args.run_dir:
+        run_dir = Path(args.run_dir)
     else:
-        # Pick latest run
         if not runs_dir.exists():
             print("No runs directory found.")
             sys.exit(1)

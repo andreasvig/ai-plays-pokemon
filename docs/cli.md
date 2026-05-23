@@ -1,211 +1,158 @@
 # CLI Reference
 
-All commands should be run from the project root with the venv activated:
+All commands are dispatched through the `pokemon` console script. Install it once with `pip install -e .` (from the project root, with the venv active) and the entry point is available for the rest of the venv's life.
+
 ```
-cd "Desktop/Code/AI plays pokemon"
+cd /path/to/ai-plays-pokemon
 source venv/bin/activate
+pip install -e .       # one-time
+pokemon --help
+```
+
+Top-level subcommands:
+
+| Subcommand          | Purpose                                                         |
+|---------------------|-----------------------------------------------------------------|
+| `pokemon run`       | Launch mGBA + Lua and run the agent for one or more pairs.      |
+| `pokemon launch`    | Launch mGBA + Lua and idle (no agent — manual play / debug).    |
+| `pokemon report`    | Regenerate the standalone HTML report for a run directory.      |
+| `pokemon snapshot`  | Save / load / list game snapshots.                              |
+
+Every subcommand has its own `--help`.
+
+---
+
+## `pokemon run` — Run the agent
+
+Launches mGBA, opens its Scripting window (so you can `File > Load recent script` once), waits for the Lua client to connect, then runs the agent for `--turns` turns per `(config, model)` pair. Multiple pairs reuse the same mGBA + Lua connection.
+
+```bash
+# Single run — latest config, one model, default 10 turns
+pokemon run --model "gemini-3.5-flash(medium)"
+
+# Specific config + 50 turns
+pokemon run --config configs/config-3.12.yaml --model "claude-opus-4.7(medium)" --turns 50
+
+# Fan-out: one config across N models
+pokemon run --config configs/config-3.12.yaml \
+            --model "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" --turns 50
+
+# Paired 1:1: N configs × N models
+pokemon run --config configs/config-3.11.yaml configs/config-3.12.yaml \
+            --model "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" --turns 50
+
+# Custom snapshot
+pokemon run --model "gemini-3.5-flash(medium)" --snapshot local/snapshots/has_starter
+
+# Kill any leftover mGBA before starting
+pokemon run --model "gemini-3.5-flash(medium)" --kill-existing
+```
+
+### Pairing rules between `--config` and `--model`
+
+| `--config` count | `--model` count | Behaviour                                |
+|------------------|-----------------|------------------------------------------|
+| 0 (omitted)      | N               | All N models use the latest config.      |
+| 1                | 1               | Single run.                              |
+| 1                | N               | Fan-out — one config across N models.    |
+| N                | 1               | Fan-out — one model across N configs.    |
+| N                | N (same N)      | Paired 1:1.                              |
+| N                | M (≠N, both >1) | **Error** — Cartesian not supported.     |
+
+Aliases come from `configs/models.yaml`. Raw `"provider/model"` OpenRouter ids also work and bypass the registry.
+
+### Flags
+
+| Flag                  | Default                          | Notes                                         |
+|-----------------------|----------------------------------|-----------------------------------------------|
+| `--config PATH ...`   | latest in `configs/`             | One or more config files.                     |
+| `--model ALIAS ...`   | (required)                       | One or more model aliases or raw ids.         |
+| `--turns N`           | `10`                             | Turns per run, applied to every pair.         |
+| `--snapshot PATH`     | `local/snapshots/bedroom_start`  | Reloaded before each run's turn loop.         |
+| `--connect-timeout S` | `300.0`                          | Seconds to wait for the initial Lua connect.  |
+| `--kill-existing`     | off                              | `pkill -f mgba` before launching.             |
+
+Run output lands in `local/runs/<timestamp>_<config-stem>__<model-slug>/` (gitignored): `events.jsonl`, `state.json`, `tasks.json`, screenshots, and a `report.html` generated at end-of-run.
+
+The dashboard auto-opens at <http://localhost:3420/> for the first run; subsequent runs in a sequence register silently — switch tabs from the dashboard index.
+
+---
+
+## `pokemon launch` — Manual mGBA + Lua session
+
+Launches mGBA, starts the TCP server, opens the Scripting window, and idles after the Lua client connects. No agent — useful for manual play, debugging the connection, or building snapshots interactively.
+
+```bash
+pokemon launch
+pokemon launch --snapshot local/snapshots/bedroom_start
+pokemon launch --config configs/config-3.12.yaml
+```
+
+Press `Ctrl+C` to shut mGBA down cleanly.
+
+---
+
+## `pokemon snapshot` — Manage snapshots
+
+Each snapshot captures the full emulator state + agent memory so a run can resume from any point.
+
+```bash
+# Save: launches mGBA, you play to the point you want, press Enter to capture
+pokemon snapshot save pallet_town_outside
+pokemon snapshot save has_starter -d "Just received Charmander from Oak"
+
+# List
+pokemon snapshot list
+
+# Load: launches mGBA and restores the snapshot for manual play
+pokemon snapshot load local/snapshots/bedroom_start
 ```
 
 ---
 
-## src/cli/launch.py - Start the harness
+## `pokemon report` — Regenerate run report
 
-Launches mGBA with the ROM, starts the Python TCP server, and opens the Scripting window. You load the Lua script manually (one click from recent scripts).
+Reports are auto-generated at the end of every `pokemon run`. Use this to regenerate after editing the report template, or to build a report for an interrupted run.
 
 ```bash
-# Normal launch (starts from game boot)
-python src/cli/launch.py
-
-# Launch from a snapshot
-python src/cli/launch.py --snapshot local/snapshots/bedroom_start
-
-# Use a different config file
-python src/cli/launch.py --config my_config.yaml
+pokemon report                                 # latest run
+pokemon report local/runs/2026-04-06_22-25-08_phase5_test
 ```
 
-After mGBA opens:
-1. The Scripting window opens automatically
-2. Load `socketserver.lua` (should be in recent scripts)
-3. The harness connects and you're ready
-
-Press `Ctrl+C` to stop (closes mGBA automatically).
+The report auto-opens in the default browser on macOS.
 
 ---
 
-## tests/test_phase5.py - Run the AI agent
+## Test scripts (not part of the CLI)
 
-Launches mGBA, loads a snapshot, and runs the agent for N turns. The main way to test the AI playing.
+The `tests/` directory still holds connection-test scripts that don't go through the `pokemon` command:
 
 ```bash
-# Run 5 turns from bedroom snapshot (default)
-python tests/test_phase5.py
-
-# Run 10 turns
-python tests/test_phase5.py --turns 10
-
-# Run from a different snapshot
-python tests/test_phase5.py --turns 5 --snapshot local/snapshots/has_starter
+python tests/test_emulator.py     # exercise screenshot, buttons, save/load state
 ```
 
-State file is created inside the run folder (`state.json`) so each run is self-contained.
-
-After mGBA opens, load the Lua script. The agent will start playing.
-Run logs are saved to `local/runs/` with timestamps.
-A `run_summary.json` is written at the end with cost, tokens, and per-turn summaries.
+These are kept as bare scripts because they exist to validate the harness itself, not to run the agent.
 
 ---
 
-## src/cli/snapshot.py - Manage snapshots
+## Workflow examples
 
-Save, load, and list game snapshots. Each snapshot captures the full emulator state + agent memory so you can resume from any point.
-
-### Save a snapshot
-
-Launches mGBA so you can play to a desired point, then saves when you press Enter.
-
+### Build a chain of checkpoint snapshots
 ```bash
-# Save with a name
-python src/cli/snapshot.py save "pallet_town_outside"
-
-# Save with a name and description
-python src/cli/snapshot.py save "has_starter" -d "Just received Charmander from Oak"
+pokemon snapshot save outside_house -d "Just walked outside for the first time"
+pokemon snapshot load local/snapshots/outside_house
+# ...play in mGBA to the next checkpoint...
+pokemon snapshot save has_starter -d "Received starter Pokemon from Oak"
 ```
 
-### List all snapshots
-
+### Compare two models on the same snapshot
 ```bash
-python src/cli/snapshot.py list
+pokemon run --config configs/config-3.12.yaml \
+            --model "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" \
+            --snapshot local/snapshots/has_starter --turns 50
 ```
 
-### Load a snapshot
-
-Launches mGBA and restores the snapshot so you can play from that point.
-
+### Generate a report for a specific run
 ```bash
-python src/cli/snapshot.py load local/snapshots/bedroom_start
-python src/cli/snapshot.py load local/snapshots/has_starter
-```
-
----
-
-## src/cli/report.py - Generate HTML report
-
-Creates an interactive HTML report from a run folder. Shows screenshots, agent thinking, tool calls, and decisions per turn.
-
-```bash
-# Generate report from latest run
-python src/cli/report.py
-
-# Generate report from a specific run
-python src/cli/report.py local/runs/2026-04-06_22-25-08_phase5_test
-```
-
-The report auto-opens in your browser.
-
----
-
-## tests/test_emulator.py - Test emulator connection
-
-Runs through all emulator functions (screenshot, buttons, sequences, save/load state). Useful for verifying the setup works.
-
-```bash
-python tests/test_emulator.py
-```
-
-Then load the Lua script in mGBA when prompted.
-
----
-
-## Available Snapshots
-
-| Name | Description | Created |
-|------|-------------|---------|
-| `bedroom_start` | Standing in bedroom with menu open, character named "AI" | 2026-04-06 |
-
-To use a snapshot with the harness:
-```bash
-python src/cli/launch.py --snapshot local/snapshots/bedroom_start
-```
-
----
-
-## Project Structure
-
-```
-.
-├── config.yaml              # All configuration
-├── .env                     # API keys (not in git)
-├── requirements.txt         # Python dependencies
-│
-├── src/
-│   ├── config.py            # Config loader
-│   ├── cli/                 # CLI entry points
-│   │   ├── launch.py        # Start mGBA + harness
-│   │   ├── report.py        # Generate HTML report
-│   │   └── snapshot.py      # Manage snapshots
-│   ├── agent/               # Agent logic
-│   │   ├── agent.py         # Pydantic AI agent + tools
-│   │   ├── turn.py          # Turn loop orchestrator
-│   │   └── tools.py         # Tool schema definitions
-│   ├── emulator/            # Emulator + perception
-│   │   ├── emulator.py      # mGBA TCP connection
-│   │   ├── vision.py        # VLM pipeline
-│   │   └── ocr.py           # Background OCR
-│   └── core/                # Core infrastructure
-│       ├── logger.py        # Run event logging
-│       ├── state.py         # Agent state file system
-│       ├── snapshots.py     # Snapshot save/load
-│       ├── patches.py       # Pydantic AI monkey-patches
-│       └── prompts.py       # Prompt template substitution
-│
-├── lua/                     # mGBA Lua scripts
-│   └── socketserver.lua
-│
-├── local/                   # Runtime data (not in git)
-│   ├── runs/                # Run logs + reports
-│   └── snapshots/           # Game state snapshots
-│
-├── tests/                   # Phase evaluation scripts
-│
-├── docs/                    # Documentation
-│   ├── cli.md               # This file
-│   ├── build_plan.md        # Phase-by-phase build plan
-│   ├── initial_ideas.md     # Original design document
-│   └── analysis/            # Research on other projects
-│
-└── roms/                    # Game ROMs (not in git)
-```
-
----
-
-## Workflow Examples
-
-### Create a series of checkpoint snapshots
-```bash
-# Start fresh, play to outside house, save
-python src/cli/snapshot.py save "outside_house" -d "Just walked outside for the first time"
-
-# Load that, play to getting starter, save
-python src/cli/snapshot.py load local/snapshots/outside_house
-# ... play in mGBA ...
-python src/cli/snapshot.py save "has_starter" -d "Received starter Pokemon from Oak"
-```
-
-### Test the AI from a specific point
-```bash
-python tests/test_phase5.py --turns 10 --snapshot local/snapshots/has_starter
-```
-
-### View run results
-```bash
-# Generate report from latest run
-python src/cli/report.py
-
-# Each run folder contains:
-# - state.json (agent's live state file during the run)
-# - run_summary.json (structured: cost, tokens, per-turn summaries)
-# - events.jsonl (raw event stream)
-# - config.json (config snapshot)
-# - screenshots/ (per-turn screenshots)
-# - report.html (generated report)
+pokemon report local/runs/2026-04-06_22-25-08_config-3-12__claude-opus-4-7-medium
 ```

@@ -148,10 +148,10 @@ def load_config(
         )
 
     # llm_alias is optional at load_config level so emulator/snapshot tools
-    # that never touch the agent can load configs too. Agent entry points
-    # (test_phase5.py, test_sequential.py) make --model required at the CLI
-    # layer. When alias is absent, skip the registry resolve — _validate_config
-    # will then enforce that llm_model is present for any path that needs it.
+    # that never touch the agent can load configs too. The agent entry point
+    # (pokemon run) makes --model required at the CLI layer. When alias is
+    # absent, skip the registry resolve — _validate_config will then enforce
+    # that llm_model is present for any path that needs it.
     if llm_alias:
         config["llm_model"] = llm_alias
 

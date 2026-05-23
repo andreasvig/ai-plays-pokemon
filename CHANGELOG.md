@@ -1,5 +1,52 @@
 # Changelog
 
+## 2026-05-23 — `pokemon` console CLI replaces `tests/test_phase5.py`
+
+### What
+- New top-level `pokemon` console script with subcommands `run`,
+  `launch`, `report`, `snapshot`. Replaces the awkward
+  `python tests/test_phase5.py …` invocation.
+- `pokemon run` is the unified single+sequential entry point. Pairing
+  rules between `--config` and `--model`: 1×1 single, 1×N / N×1 fan-out,
+  N×N paired 1:1, N×M (N≠M, both >1) rejected.
+- `tests/test_phase5.py` and `tests/test_sequential.py` deleted —
+  helpers lifted into `src/cli/runner.py`. `tests/` is back to holding
+  only harness validation scripts (`test_emulator.py`, `test_phase3.py`,
+  `test_phase4.py`).
+
+### Why
+The agent entry point lived under `tests/test_phase5.py` as a relic of
+the phase-by-phase build. After phase 5 shipped, it stopped being a
+test and became the way to run the project — but the name, location,
+and import path (`sys.path.insert(0, …)`) all still read like a scratch
+test. New contributors and future-Andreas alike had to be told
+"that's actually the main entrypoint, ignore the name." This refactor
+makes the invocation match what it is: a CLI.
+
+### Pieces
+- **`pyproject.toml`** (new) — minimal setuptools project declaration.
+  Dependencies mirror `requirements.txt`. `[project.scripts]` wires
+  `pokemon = "src.cli.main:main"`. Setup adds one step: `pip install -e .`.
+- **`src/cli/main.py`** (new) — top-level dispatcher. Reads
+  `sys.argv[1]`, rewrites `sys.argv` so each subcommand's existing
+  `main()` sees its own argparse program name + flags, then delegates
+  via lazy `import_module`. Heavy pydantic-ai imports stay lazy.
+- **`src/cli/runner.py`** (new) — the lifted launcher helpers from
+  `tests/test_phase5.py` (`run_prepare_phase`, `run_connect_phase`,
+  `run_single_loop`, `cleanup_handle`, `prepare_config`, AppleScript
+  helpers) plus a unified `main()` with the pairing matrix above.
+- **`src/cli/launch.py`, `src/cli/report.py`, `src/cli/snapshot.py`** —
+  untouched at the function level; `main.py` just routes to them.
+- **`README.md`, `docs/cli.md`** — rewritten "Running it" /
+  "CLI Reference" sections against the new commands.
+- **`src/config.py`, `src/cli/launch.py`** — comment + docstring
+  references to the old test paths updated to `pokemon run`.
+
+### Verification
+`pokemon --help` and `pokemon run --help` print expected subcommands
+and flags. `python -m src.cli.main run --help` works as a fallback for
+anyone who hasn't run `pip install -e .` yet.
+
 ## 2026-05-22 — gemma-4-31b throughput-sort + provider diagnostic
 
 ### What

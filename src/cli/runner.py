@@ -1,22 +1,20 @@
-"""Phase 5 evaluation: Single-agent turn loop.
+"""Agent runner: launch mGBA, connect Lua, loop the agent for one or more (config, model) pairs.
 
-Launches mGBA, loads a snapshot, and runs the agent for N turns.
+Single (config, model) pair → one run.
+Multiple pairs → sequential runs sharing one mGBA + Lua connection.
 
-Usage:
-    python tests/test_phase5.py --model "<alias>" [--turns N] [--snapshot PATH] [--config PATH]
-    python tests/test_phase5.py --kill-existing   # pkill mgba before launching
-
-The --model flag is required. Aliases come from configs/models.yaml (e.g.
-"gemini-3.5-flash(medium)", "claude-opus-4.7(medium)"). A raw OpenRouter id
-("provider/model") also works and bypasses the registry.
-
-For multiple configs sharing one mGBA + Lua connection, see
-tests/test_sequential.py — same underlying helpers, loops the
-single_run step over a list of configs.
+Pairing rules between --config and --model:
+  - 1 × 1            → single run
+  - 1 × N            → fan-out (one config, N models)
+  - N × 1            → fan-out (N configs, one model)
+  - N × N (same N)   → paired 1:1
+  - N × M (N≠M, >1)  → error (Cartesian not supported; use a shell loop)
 """
 
 import argparse
+import copy
 import os
+import re
 import subprocess
 import sys
 import time
@@ -27,7 +25,6 @@ warnings.filterwarnings("ignore", message=".*additionalProperties.*")
 warnings.filterwarnings("ignore", module="pydantic_ai")
 
 sys.stdout.reconfigure(line_buffering=True)
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.cli.slots import get_slot
 from src.config import load_config
@@ -38,7 +35,6 @@ from src.agent import TurnManager
 
 def _slug(s: str) -> str:
     """Filesystem-safe slug for model aliases like 'gemini-3.5-flash(medium)'."""
-    import re
     return re.sub(r"[^a-zA-Z0-9]+", "-", s).strip("-").lower()
 
 
@@ -68,8 +64,6 @@ def open_scripting_window_for_pid(pid: int) -> bool:
     """Open the Scripting window in the target mGBA via AXRaise + menu click.
 
     Returns True iff a Scripting window was confirmed after the click.
-    Single-instance mGBA means AXRaise + menu click is straightforward;
-    the retry loop just absorbs slow window initialisation.
     """
     if sys.platform != "darwin":
         return True
@@ -110,15 +104,29 @@ def open_scripting_window_for_pid(pid: int) -> bool:
     return result.stdout.strip() == "ok"
 
 
+def prepare_config(path: str | None, model_alias: str) -> dict:
+    """Load a config + bind it to a model alias.
+
+    The model alias drives registry resolution (reasoning/temperature/provider/
+    output_mode from configs/models.yaml). run_name combines the config stem
+    with the model alias so multi-model sequences produce distinguishable
+    run dirs and dashboard labels.
+    """
+    config = load_config(path, llm_alias=model_alias)
+    config = copy.deepcopy(config)
+    actual_path = config.get("_config_path") or path or ""
+    stem = Path(actual_path).stem if actual_path else "default"
+    slug = _slug(model_alias)
+    config["run_name"] = f"{stem}__{slug}"
+    config["run_label"] = f"{stem} · {model_alias}"
+    return config
+
+
 def run_prepare_phase(config: dict, saves_dir: Path) -> dict:
     """One-time setup: TCP server, mGBA launch, AppleScript window positioning.
 
     Returns a handle dict for downstream phases: emu, mgba_proc,
-    caffeinate_proc, slot_cfg. The handle is reusable across multiple
-    `run_single_loop` calls (sequential mode).
-
-    `saves_dir` is where mGBA writes battery saves + savestates. Must
-    exist before this call.
+    caffeinate_proc, slot_cfg. Reusable across multiple `run_single_loop` calls.
     """
     slot_cfg = get_slot(1)
     config["emulator"]["port"] = slot_cfg["port"]
@@ -187,10 +195,6 @@ def run_single_loop(
     and dashboard session for THIS run. Reloads the snapshot to reset
     game state. Generates report HTML at the end. Returns run_dir.
 
-    The handle's emu/mgba/caffeinate stay live across calls — callers
-    can invoke this repeatedly for sequential multi-config runs, then
-    call `cleanup_handle` once at the end.
-
     Raises KeyboardInterrupt after cleanup if the user interrupted, so
     sequential orchestrators can abort the remainder.
     """
@@ -248,13 +252,9 @@ def run_single_loop(
         ocr_runner = OCRRunner(config, screenshot_fn=_ocr_screenshot)
         ocr_runner.start()
 
-    # Fresh dashboard session: new EventBridge (empty event buffer) +
-    # new ScreenStreamer. Previous run's live history is implicitly
-    # cleared by the unregister at the end of that run.
-    #
-    # open_browser=False on runs 2..N in sequential mode — avoids
-    # spawning a new tab per run. The user keeps the dashboard index
-    # (http://localhost:3420/) open as the live "active runs" board.
+    # Fresh dashboard session per run. open_browser=False on runs 2..N in
+    # sequential mode — user keeps the dashboard index (http://localhost:3420/)
+    # open as the live "active runs" board.
     from src.dashboard import start_dashboard, unregister_run
     session = start_dashboard(
         logger=logger, state_manager=state, config=config,
@@ -329,19 +329,78 @@ def cleanup_handle(handle: dict) -> None:
         caffeinate_proc.terminate()
 
 
+def _resolve_pairs(
+    configs: list[str | None], models: list[str],
+) -> list[tuple[str | None, str]]:
+    """Pair --config and --model into (config_path, model_alias) tuples.
+
+    Rules: 1×1 single; 1×N or N×1 fan-out; N×N paired 1:1; N×M (N≠M, both>1) error.
+    """
+    nc, nm = len(configs), len(models)
+    if nc == 1 and nm == 1:
+        return [(configs[0], models[0])]
+    if nc == 1:
+        return [(configs[0], m) for m in models]
+    if nm == 1:
+        return [(c, models[0]) for c in configs]
+    if nc == nm:
+        return list(zip(configs, models))
+    sys.exit(
+        f"ERROR: --config ({nc}) × --model ({nm}) must be 1×1, 1×N, N×1, or N×N. "
+        "Cartesian N×M (N≠M, both >1) is not supported — use a shell loop."
+    )
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Phase 5: Single-config agent run")
-    parser.add_argument("--model", type=str, required=True,
-                        help='Model alias from configs/models.yaml (e.g. "gemini-3.5-flash(medium)") '
-                             'or a raw "provider/model" OpenRouter id.')
-    parser.add_argument("--turns", type=int, default=5, help="Number of turns to run")
-    parser.add_argument("--snapshot", type=str, default="local/snapshots/bedroom_start",
-                        help="Snapshot to load")
-    parser.add_argument("--config", type=str, default=None,
-                        help="Config file path (default: latest from configs/)")
-    parser.add_argument("--kill-existing", action="store_true",
-                        help="pkill any existing mGBA before launching.")
+    parser = argparse.ArgumentParser(
+        prog="pokemon run",
+        description="Run the agent for one or more (config, model) pairs against mGBA.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""\
+Examples:
+  # Single run with the latest config
+  pokemon run --model "gemini-3.5-flash(medium)" --turns 50
+
+  # Single run, specific config
+  pokemon run --config configs/config-3.12.yaml --model "claude-opus-4.7(medium)"
+
+  # Fan-out: one config across N models
+  pokemon run --config configs/config-3.12.yaml \\
+              --model "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" --turns 50
+
+  # Paired 1:1: N configs × N models
+  pokemon run --config configs/config-3.11.yaml configs/config-3.12.yaml \\
+              --model "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" --turns 50
+""",
+    )
+    parser.add_argument(
+        "--config", nargs="+", default=[None],
+        help="One or more config files. Default: latest config in configs/.",
+    )
+    parser.add_argument(
+        "--model", nargs="+", required=True,
+        help='One or more model aliases (e.g. "gemini-3.5-flash(medium)") or raw '
+             '"provider/model" OpenRouter ids.',
+    )
+    parser.add_argument(
+        "--turns", type=int, default=10,
+        help="Turns per run (applied to every pair). Default: 10.",
+    )
+    parser.add_argument(
+        "--snapshot", default="local/snapshots/bedroom_start",
+        help="Snapshot reloaded before each run's turn loop.",
+    )
+    parser.add_argument(
+        "--connect-timeout", type=float, default=300.0,
+        help="Timeout (seconds) for the initial Lua connection. Default: 300.",
+    )
+    parser.add_argument(
+        "--kill-existing", action="store_true",
+        help="pkill any existing mGBA before launching.",
+    )
     args = parser.parse_args()
+
+    pairs = _resolve_pairs(args.config, args.model)
 
     if args.kill_existing:
         subprocess.run(["pkill", "-f", "mgba"], capture_output=True)
@@ -351,30 +410,55 @@ def main():
         print(f"  ⚠ snapshot not found: {args.snapshot} (continuing without)")
         args.snapshot = None
 
-    config = load_config(args.config, llm_alias=args.model)
-    print(f"Using config: {config.get('_config_path', 'unknown')}")
-    config["run_name"] = f"phase5_test__{_slug(args.model)}"
+    prepared = [prepare_config(c, m) for c, m in pairs]
 
-    rom_path = config["emulator"]["rom_path"]
+    rom_path = prepared[0]["emulator"]["rom_path"]
     if not os.path.exists(rom_path):
-        print(f"ERROR: ROM not found at {rom_path}")
-        sys.exit(1)
+        sys.exit(f"ERROR: ROM not found at {rom_path}")
 
-    # mGBA needs a savegamePath/savestatePath, but the agent never
-    # uses in-game saves (snapshot reloads handle state). Use a shared
-    # session-scoped saves dir so the per-run dirs stay clean.
     ts = time.strftime("%Y-%m-%d_%H-%M-%S")
     saves_dir = Path(f"local/runs/_session_{ts}/saves")
     saves_dir.mkdir(parents=True, exist_ok=True)
 
-    handle = run_prepare_phase(config, saves_dir)
+    multi = len(prepared) > 1
+    if multi:
+        print(f"\n=== Sequential run: {len(prepared)} (config × model) pairs × {args.turns} turns ===")
+        for i, c in enumerate(prepared, 1):
+            label = c.get("_llm_alias") or c["llm_model"]
+            print(f"  {i}. {c.get('_config_path', '?')}  →  {label}")
+        print("Dashboard index: http://localhost:3420/   (each run gets its own tab)\n")
+    else:
+        cfg = prepared[0]
+        print(f"Using config: {cfg.get('_config_path', 'unknown')}")
+
+    handle = run_prepare_phase(prepared[0], saves_dir)
     try:
-        run_connect_phase(handle)
-        run_single_loop(handle, config, turns=args.turns, snapshot=args.snapshot)
+        run_connect_phase(handle, timeout=args.connect_timeout)
+    except Exception as e:
+        print(f"Initial Lua connect failed: {e}")
+        cleanup_handle(handle)
+        sys.exit(1)
+
+    completed = 0
+    try:
+        for i, cfg in enumerate(prepared, 1):
+            if multi:
+                label = cfg.get("_llm_alias") or cfg["llm_model"]
+                print(f"\n{'=' * 60}")
+                print(f"  RUN {i}/{len(prepared)}  —  {label}")
+                print(f"{'=' * 60}")
+            run_single_loop(
+                handle, cfg, turns=args.turns, snapshot=args.snapshot,
+                open_browser=(i == 1),
+            )
+            completed += 1
     except KeyboardInterrupt:
-        pass
+        print("\nInterrupted — aborting remaining runs.")
     finally:
         cleanup_handle(handle)
+
+    if multi:
+        print(f"\n=== Done. {completed}/{len(prepared)} runs completed. mGBA shut down. ===")
 
 
 if __name__ == "__main__":

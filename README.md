@@ -47,9 +47,12 @@ src/
 │   ├── server.py            # FastAPI + WebSocket live view
 │   └── static/index.html    # Vanilla-JS dashboard
 └── cli/
-    ├── launch.py            # Interactive mGBA launcher
-    ├── report.py            # Post-run HTML report generator
-    └── snapshot.py          # Snapshot save/load CLI
+    ├── main.py              # `pokemon` console-script dispatcher
+    ├── runner.py            # `pokemon run` — single or sequential agent runs
+    ├── launch.py            # `pokemon launch` — manual mGBA + Lua session
+    ├── report.py            # `pokemon report` — post-run HTML report generator
+    ├── snapshot.py          # `pokemon snapshot` — snapshot save/load/list
+    └── slots.py             # Per-slot mGBA + TCP port assignment
 ```
 
 **LLM access:** all model calls go through [OpenRouter](https://openrouter.ai), so any frontier model (Gemini, Claude, GPT, Kimi, DeepSeek, Qwen, etc.) can be swapped in via config without code changes. Built with [Pydantic AI](https://github.com/pydantic/pydantic-ai).
@@ -111,6 +114,9 @@ python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
+# Install the `pokemon` CLI (editable install — picks up local edits)
+pip install -e .
+
 # API key
 cp .env.example .env
 # Edit .env and add your OPENROUTER_API_KEY
@@ -131,12 +137,22 @@ Pick `lua/socketserver.lua` from this repo. mGBA now listens on TCP `127.0.0.1:8
 ### 2. Launch the agent
 
 ```bash
-# Auto-picks the latest config (configs/config-3.0.yaml as of writing)
-python tests/test_phase5.py --turns 10
+# Single run — latest config, one model, default 10 turns
+pokemon run --model "gemini-3.5-flash(medium)"
 
-# Or pin a specific config
-python tests/test_phase5.py --turns 10 --config configs/config-2.2.yaml
+# Pin a specific config + number of turns
+pokemon run --config configs/config-3.12.yaml --model "claude-opus-4.7(medium)" --turns 50
+
+# Fan-out: one config across N models, sequential, sharing one mGBA
+pokemon run --config configs/config-3.12.yaml \
+            --model "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" --turns 50
+
+# Paired 1:1: N configs × N models
+pokemon run --config configs/config-3.11.yaml configs/config-3.12.yaml \
+            --model "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" --turns 50
 ```
+
+`pokemon run --help` lists every flag. Model aliases come from `configs/models.yaml`; raw `"provider/model"` ids also work and bypass the registry.
 
 The agent will start sending button inputs to mGBA. Run output (events, screenshots, reports) lands in `local/runs/<timestamp>/` (gitignored).
 
@@ -152,8 +168,11 @@ You'll see the live game frame, every turn's reasoning, button inputs, OCR captu
 
 ### 4. Generate a post-run report
 
+A report is auto-generated at the end of each run. To regenerate manually:
+
 ```bash
-python -m src.cli.report local/runs/<run_folder>
+pokemon report                              # latest run
+pokemon report local/runs/<run_folder>      # specific run
 ```
 
 Produces a standalone HTML report with full turn-by-turn breakdown.

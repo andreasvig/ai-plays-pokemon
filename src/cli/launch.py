@@ -1,12 +1,11 @@
 """Launch mGBA + Python TCP server for ad-hoc / snapshot work.
 
-For agent runs, use tests/test_phase5.py (one config) or
-tests/test_sequential.py (N configs sharing one mGBA + Lua connection).
+For agent runs, use `pokemon run` (which handles single + sequential pairs).
 
 Usage:
-    python launch.py
-    python launch.py --snapshot PATH
-    python launch.py --config configs/config-3.5.yaml
+    pokemon launch
+    pokemon launch --snapshot PATH
+    pokemon launch --config configs/config-3.5.yaml
 """
 
 import argparse
