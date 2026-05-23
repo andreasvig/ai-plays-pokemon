@@ -34,6 +34,25 @@ _THINKING_ERROR_MARKERS = (
     "reasoning", "thinking", "not supported", "unsupported parameter",
 )
 
+# Per-attempt timeouts for the LLM call: two short retries then one patient one.
+# Throughput-sort re-rolls the provider on each call, so a timeout often lands
+# on a faster backend the next attempt.
+_LLM_CALL_TIMEOUTS_S = (60.0, 60.0, 180.0)
+
+# Transient errors that justify retrying the SAME model. The NoneType subscript
+# is the OpenRouter "HTTP 200 with error body" wrapped-5xx case — pydantic-ai
+# chokes on the missing `choices[0]`. See reference_openrouter-200-error-body-bug.
+_TRANSIENT_ERROR_PATTERNS = (
+    "'NoneType' object is not subscriptable",
+)
+
+
+def _is_transient_llm_error(exc: BaseException) -> bool:
+    if isinstance(exc, asyncio.TimeoutError):
+        return True
+    msg = str(exc)
+    return any(p in msg for p in _TRANSIENT_ERROR_PATTERNS)
+
 
 def _serialize_messages(messages) -> list[dict]:
     """Convert Pydantic AI messages to serializable dicts for logging."""
@@ -724,6 +743,11 @@ class TurnManager:
     ) -> tuple:
         """Run the agent, trying fallback models if the primary fails.
 
+        For each model in the chain, retries up to len(_LLM_CALL_TIMEOUTS_S)
+        times on transient errors (per-attempt timeout exceeded OR known
+        wrapped-5xx pattern). Non-transient errors skip the remaining
+        attempts for that model and fall through to the next model.
+
         Populates out_messages with the captured message history.
         Returns (result, model_id_used).
         """
@@ -734,34 +758,81 @@ class TurnManager:
         primary_model_id = self.config.get("llm_model", "")
         model_chain = [primary_model_id] + list(self.fallback_models)
 
-        last_error = None
+        last_error: BaseException = RuntimeError("no model attempts made")
+        max_attempts = len(_LLM_CALL_TIMEOUTS_S)
+        t = deps.turn_number
 
         for model_id in model_chain:
-            model = OpenAIModel(model_id, provider="openrouter")
+            for attempt_idx, timeout_s in enumerate(_LLM_CALL_TIMEOUTS_S):
+                attempt_num = attempt_idx + 1
+                model = OpenAIModel(model_id, provider="openrouter")
+                try:
+                    result, captured = await asyncio.wait_for(
+                        self._run_agent_iter(
+                            user_message, deps, model, usage_limits, self.model_settings
+                        ),
+                        timeout=timeout_s,
+                    )
+                    out_messages.extend(captured)
+                    return result, model_id
 
-            try:
-                result, captured = await self._run_agent_iter(
-                    user_message, deps, model, usage_limits, self.model_settings
-                )
-                out_messages.extend(captured)
-                return result, model_id
+                except (asyncio.TimeoutError, Exception) as exc:
+                    last_error = exc
+                    is_transient = _is_transient_llm_error(exc)
+                    err_label = (
+                        f"timeout after {timeout_s:.0f}s"
+                        if isinstance(exc, asyncio.TimeoutError)
+                        else f"{type(exc).__name__}: {exc}"
+                    )
+                    print(
+                        f"  [Turn {t}] LLM attempt {attempt_num}/{max_attempts} "
+                        f"({model_id}, timeout={timeout_s:.0f}s) failed: {err_label}"
+                    )
 
-            except Exception as exc:
-                last_error = exc
-                logger.warning(f"Model {model_id} failed: {exc}")
-
-                if self.model_settings and _should_retry_without_thinking(exc):
                     try:
-                        logger.info(f"Retrying {model_id} without thinking params")
-                        result, captured = await self._run_agent_iter(
-                            user_message, deps, model, usage_limits
-                        )
-                        out_messages.extend(captured)
-                        return result, model_id
-                    except Exception as exc2:
-                        last_error = exc2
-                        logger.warning(f"Model {model_id} failed without thinking: {exc2}")
+                        self.logger.log_custom("agent_retry", {
+                            "turn": t,
+                            "model": model_id,
+                            "attempt": attempt_num,
+                            "max_attempts": max_attempts,
+                            "timeout_s": timeout_s,
+                            "error_type": type(exc).__name__,
+                            "error": str(exc)[:300],
+                            "retryable": is_transient,
+                        })
+                    except Exception:
+                        pass
 
+                    if is_transient and attempt_num < max_attempts:
+                        # Throughput-sort will re-roll the provider on the next call.
+                        continue
+
+                    # Non-transient OR out of attempts: try the thinking-strip
+                    # workaround once, then move to the next model in the chain.
+                    if self.model_settings and _should_retry_without_thinking(exc):
+                        try:
+                            logger.info(f"Retrying {model_id} without thinking params")
+                            result, captured = await asyncio.wait_for(
+                                self._run_agent_iter(
+                                    user_message, deps, model, usage_limits
+                                ),
+                                timeout=_LLM_CALL_TIMEOUTS_S[-1],
+                            )
+                            out_messages.extend(captured)
+                            return result, model_id
+                        except Exception as exc2:
+                            last_error = exc2
+                            logger.warning(f"Model {model_id} failed without thinking: {exc2}")
+                    break  # move to next model in chain
+
+        # Bare TimeoutError() stringifies to "" — substitute a readable message
+        # so the outer error log doesn't print "[Turn N] ERROR: " with nothing.
+        if isinstance(last_error, asyncio.TimeoutError) and not str(last_error):
+            raise TimeoutError(
+                f"all {max_attempts} attempts timed out "
+                f"across {len(model_chain)} model(s) "
+                f"(timeouts: {[int(s) for s in _LLM_CALL_TIMEOUTS_S]}s)"
+            ) from last_error
         raise last_error
 
     def _emit_retry_events(self, node, deps: AgentDeps) -> None:

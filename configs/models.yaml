@@ -287,11 +287,25 @@
     sample_turns: 0
 
 "gemini-3.5-flash(minimal)":
+  # Observed (2026-05-22, 20T run on config-3.9): cost $0.0125/turn — only
+  # ~3% cheaper than medium's $0.0129/turn. The cost is dominated by input
+  # tokens (~6700/turn: system prompt + screenshot + history); reasoning
+  # output is a small slice of the bill, so dropping effort from medium to
+  # minimal barely moves total spend. There's no cost-saving reason to pick
+  # minimal over medium on Gemini 3.5 Flash for this multimodal-agent shape.
+  # Latency 11.1s median (slightly slower than medium's 6.7s — small-sample
+  # provider-routing noise). 0 LLM retries / 0 errors. 42% LLM self-grade
+  # true-rate. Game progress not recorded in this entry (config-3.9, 20T
+  # didn't reach Brock; full path is a stress-test, not a horizon comparison).
   openrouter_id: "google/gemini-3.5-flash"
   reasoning:
     effort: "minimal"
   observed:
-    sample_turns: 0
+    avg_turn_cost_usd: 0.0125
+    avg_turn_latency_s: 11.1
+    sample_turns: 20
+    last_updated: 2026-05-22
+    notes: "20T clean run, 0 retries. Cost near-identical to medium (3% cheaper) because input tokens dominate the bill — no cost-saving rationale to pick minimal over medium for multimodal-agent workloads. Latency 11.1s median / 23.0s max — slightly slower than medium's 6.7s but small sample. 42% grade rate."
 
 # --- Xiaomi MiMo V2.5 family ---
 # Closed dense reasoning models, 1M context. Binary thinking toggle only —
@@ -421,11 +435,11 @@
     sort: "throughput"
   output_mode: "prompted"
   observed:
-    avg_turn_cost_usd: 0.0015
-    avg_turn_latency_s: 97.2
-    sample_turns: 3
+    avg_turn_cost_usd: 0.0013
+    avg_turn_latency_s: 74.9
+    sample_turns: 46
     last_updated: 2026-05-22
-    notes: "Throughput-sort verified 2026-05-22 (24 probe calls + 3T agent run, all clean). Latency variance 26-150s/turn — best case 3× better than 2026-04-24 default-routing's 89.9s, but worst case (Chutes/Together) drags the average back to par. T1 picked fast provider (26.7s/384 out tokens), T2-T3 picked slow providers (114s/150s @ 1343/1228 out tokens). Provider name surfaces in turn output via pydantic-ai model_name fallback (e.g. 'google/gemma-4-31b-it-20260402') — the actual OpenRouter provider isn't directly exposed through msg.provider_details."
+    notes: "50T attempt 2026-05-22 PRE-retry-fix: 46/50 turns then crashed at T47 with NoneType subscript (wrapped-5xx). Cost $0.0584 / 46 turns / $0.0013/turn — cheapest model in the registry by 10×. Turn-to-turn wall: median 55.6s, mean 74.9s, range 8.9-220.9s. 49% LLM self-grade true-rate (22/23/1). Game progress: got Bulbasaur lvl 5, exited bedroom + lab, dialogue-looped by Oak's wild-Pokemon warning, never exited Pallet Town. Slow-tail providers (Chutes/Together) drag mean up; T19=220.9s, T46=208.4s. The retry-with-timeout layer in src/agent/turn.py (60s/60s/180s) was added after this run to survive the wrapped-5xx case — would have recovered T47. Provider name surfaces in turn output via pydantic-ai model_name fallback ('google/gemma-4-31b-it-20260402') — actual OpenRouter provider not exposed via msg.provider_details."
 
 "gemma-4-31b(non-thinking)":
   openrouter_id: "google/gemma-4-31b-it"
@@ -470,9 +484,20 @@
   # with image input): dekallm, siliconflow, parasail, novita, nextbit,
   # google-vertex, venice. Cloudflare is text-only for this model and gets
   # filtered out automatically when images are present.
+  #
+  # **Verdict: unusable on default throughput-sort (2026-05-22).** 50T attempt
+  # aborted at T4 — every turn (T1, T2, T3) needed retry on attempt 1 (60s
+  # timeout); T4 burned all 3 attempts (60+60+180=300s) and gave up. Typical
+  # response time for this model in the multimodal throughput pool is >60s,
+  # so the retry layer protects against crashes but can't substitute for the
+  # model genuinely being slow. If revisiting: try (a) `enabled: false` to
+  # see if thinking is the bottleneck, (b) `provider.order: [Novita, ...]` to
+  # constrain to known-fast providers, or (c) accept the 300s/turn worst-case.
   output_mode: "prompted"
   observed:
-    sample_turns: 0
+    sample_turns: 3
+    last_updated: 2026-05-22
+    notes: "Aborted T4 of 50T run 2026-05-22 (config-3.9, retry-with-timeout enabled). T1-T3 each needed 1 retry (60s timeout on attempt 1, succeeded on attempt 2 via re-rolled provider); T4 timed out attempt 1 (60s) + attempt 2 (60s) + attempt 3 (180s) and fatally failed. T1=69s, T2=99s, T3=112s wall (including retry overhead). 100% of attempted turns needed retry — model is too slow on whatever providers throughput-sort routes to."
 
 "gemma-4-26b-a4b(non-thinking)":
   openrouter_id: "google/gemma-4-26b-a4b-it"

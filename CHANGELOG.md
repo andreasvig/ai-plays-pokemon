@@ -1,5 +1,59 @@
 # Changelog
 
+## 2026-05-23 — LLM retry-with-timeout + gemma 46T / gemini-minimal observations
+
+### What
+- `src/agent/turn.py` now wraps each LLM call in a 3-attempt
+  retry-with-timeout loop: per-attempt timeouts `(60s, 60s, 180s)`,
+  total budget 300s per model before falling through to the next
+  entry in the fallback chain. Retries on `asyncio.TimeoutError`
+  and on the known OpenRouter wrapped-5xx pattern
+  (`'NoneType' object is not subscriptable`).
+- Two model-registry observations updated from longer empirical
+  runs (20T and 46T).
+
+### Why
+The 2026-05-22 gemma-4-31b(thinking) throughput-sort run was sampled
+at 3T. A follow-up 50T attempt crashed at T47 with the wrapped-5xx
+NoneType subscript bug — pydantic-ai chokes when OpenRouter returns
+HTTP 200 with an error body. Without a retry layer, every per-turn
+transient hiccup is fatal to a multi-hour run. The new layer
+recovers from both the wrapped-5xx case and the slow-provider
+timeouts that throughput-sort occasionally lands on.
+
+### Pieces
+- **`src/agent/turn.py`** — `_LLM_CALL_TIMEOUTS_S = (60, 60, 180)`,
+  `_TRANSIENT_ERROR_PATTERNS`, `_is_transient_llm_error()`. The
+  fallback loop is now per-(model × attempt): transient errors retry
+  the same model up to 3 times before falling through; non-transient
+  errors skip remaining attempts and fall through immediately.
+  Cancellation safety relies on `asyncio.wait_for` sequential
+  cancellation (see reference_asyncio-wait-for-sequential-cancellation).
+- **`configs/models.yaml`** —
+  - `gemini-3.5-flash(minimal)`: 20T sample, $0.0125/turn, 11.1s
+    median latency, 42% LLM self-grade true-rate. Cost is dominated
+    by input tokens (system prompt + screenshot + history), so
+    dropping effort from medium to minimal only saves 3% — no
+    cost-saving rationale for this multimodal-agent shape.
+  - `gemma-4-31b(thinking)`: 46/50T sample, $0.0013/turn (cheapest
+    in registry by 10×), 74.9s mean / 55.6s median turn wall.
+    Crashed at T47 on the wrapped-5xx bug now handled by the
+    retry layer. 49% LLM self-grade true-rate. Game progress:
+    Bulbasaur lv5, exited bedroom + lab, dialogue-looped by Oak's
+    wild-Pokemon warning, never exited Pallet Town.
+  - One model gets a "Verdict: unusable on default throughput-sort"
+    block — its 50T attempt aborted at T4 after burning the full
+    300s retry budget on every attempt (response time exceeds 60s
+    on the multimodal throughput pool, so the retry layer protects
+    against crashes but can't substitute for the model being
+    genuinely slow).
+
+### Verification
+3T agent runs (gemini-3.5-flash medium and low) completed cleanly
+with the new retry path in place. 46T gemma run pre-retry-layer
+gave the empirical data above; the retry layer's behaviour on the
+transient case is covered by the existing turn-level error tests.
+
 ## 2026-05-23 — `pokemon` console CLI replaces `tests/test_phase5.py`
 
 ### What
