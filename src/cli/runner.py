@@ -13,8 +13,10 @@ Pairing rules between --config and --model:
 
 import argparse
 import copy
+import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -215,6 +217,17 @@ def run_single_loop(
     run_dir = Path(logger.run_dir)
     print(f"Run log: {run_dir}")
 
+    # Continuation mode: copy prior run artifacts BEFORE the new logger writes
+    # more events, and seed the screenshot id so new captures extend the
+    # sequence instead of starting at 1 (would collide with copied files).
+    continued_from = config.get("_continued_from")
+    if continued_from:
+        source_run = Path(continued_from)
+        _copy_prior_run_artifacts(source_run, run_dir)
+        logger.seed_screenshot_id()
+        prior_turn = config.get("_continued_from_turn", "?")
+        print(f"Continued from: {source_run} (savepoint turn {prior_turn})")
+
     if snapshot and os.path.exists(snapshot):
         state_file = os.path.join(snapshot, "emulator.state")
         if os.path.exists(state_file):
@@ -276,10 +289,14 @@ def run_single_loop(
     except KeyboardInterrupt:
         print("\nInterrupted by user.")
         user_interrupted = True
+        if turn_mgr.savepoint_on_crash:
+            turn_mgr.save_savepoint("crash")
     except Exception as e:
         print(f"\nError: {e}")
         import traceback
         traceback.print_exc()
+        if turn_mgr.savepoint_on_crash:
+            turn_mgr.save_savepoint("crash")
     finally:
         if ocr_runner:
             ocr_runner.stop()
@@ -329,6 +346,103 @@ def cleanup_handle(handle: dict) -> None:
         caffeinate_proc.terminate()
 
 
+def _find_latest_savepoint(run_dir: Path) -> tuple[Path, int]:
+    """Find the highest-numbered savepoint in <run_dir>/savepoints/.
+
+    Returns (savepoint_dir, turn_number). Raises FileNotFoundError if no
+    savepoint exists or the run dir is missing.
+    """
+    sp_root = run_dir / "savepoints"
+    if not sp_root.is_dir():
+        raise FileNotFoundError(
+            f"No savepoints/ dir in {run_dir}. Was the source run configured "
+            "with savepoints.every_n_turns > 0 or savepoints.at_end: true?"
+        )
+    candidates: list[tuple[int, Path]] = []
+    for entry in sp_root.iterdir():
+        if not entry.is_dir():
+            continue
+        m = re.match(r"turn_(\d+)$", entry.name)
+        if m:
+            candidates.append((int(m.group(1)), entry))
+    if not candidates:
+        raise FileNotFoundError(f"No turn_<N>/ savepoints found in {sp_root}")
+    candidates.sort(key=lambda x: x[0])
+    return candidates[-1][1], candidates[-1][0]
+
+
+def continue_from_run(source_run_dir: str) -> tuple[dict, Path]:
+    """Set up a continuation of a prior run.
+
+    - Locates the latest savepoint inside <source_run_dir>/savepoints/.
+    - Reads the source run's config.json to recover model alias + all settings.
+    - Creates a new run dir at local/runs/<ts>_<run_name>_continued_from_turn_<N>/
+      and copies events.jsonl + screenshots/ + ocr/ + terminal.log over verbatim.
+    - Returns (continuation_config, savepoint_dir). The caller feeds these
+      into run_single_loop; the agent's turn counter and history start fresh.
+    """
+    source = Path(source_run_dir).resolve()
+    if not source.is_dir():
+        sys.exit(f"ERROR: --continue path is not a directory: {source}")
+
+    savepoint_dir, sp_turn = _find_latest_savepoint(source)
+
+    config_path = source / "config.json"
+    if not config_path.exists():
+        sys.exit(f"ERROR: source run has no config.json: {config_path}")
+    with open(config_path) as f:
+        cfg = json.load(f)
+
+    # load_config normally calls load_dotenv() to populate OPENROUTER_API_KEY
+    # in os.environ — pydantic-ai's OpenRouter provider reads it from env when
+    # no api_key arg is passed. We bypass load_config in the continue path,
+    # so do the same step here.
+    from dotenv import load_dotenv
+    load_dotenv()
+    cfg["openrouter_api_key"] = os.environ.get("OPENROUTER_API_KEY", "")
+
+    base_name = cfg.get("run_name") or source.name.split("_", 2)[-1]
+    cfg["run_name"] = f"{base_name}_continued_from_turn_{sp_turn}"
+    label = cfg.get("run_label") or base_name
+    cfg["run_label"] = f"{label} · continued from turn {sp_turn}"
+    cfg["_continued_from"] = str(source)
+    cfg["_continued_from_turn"] = sp_turn
+
+    return cfg, savepoint_dir
+
+
+def _copy_prior_run_artifacts(source_run_dir: Path, new_run_dir: Path) -> None:
+    """Copy events.jsonl, screenshots/, ocr/, terminal.log from source to new run.
+
+    Called AFTER RunLogger has created the new run dir (so it doesn't clobber
+    the new events file header). The new events.jsonl gets the prior one's
+    contents prepended, then the new logger continues appending.
+    """
+    src_events = source_run_dir / "events.jsonl"
+    dst_events = new_run_dir / "events.jsonl"
+    if src_events.exists():
+        # Logger has already written run_start to dst_events. Prepend prior
+        # content so chronology stays intact.
+        prior = src_events.read_text()
+        new_header = dst_events.read_text() if dst_events.exists() else ""
+        dst_events.write_text(prior + new_header)
+
+    for sub in ("screenshots", "ocr"):
+        src_sub = source_run_dir / sub
+        dst_sub = new_run_dir / sub
+        if src_sub.is_dir():
+            dst_sub.mkdir(exist_ok=True)
+            for entry in src_sub.iterdir():
+                shutil.copy2(entry, dst_sub / entry.name)
+
+    src_term = source_run_dir / "terminal.log"
+    dst_term = new_run_dir / "terminal.log"
+    if src_term.exists():
+        prior_text = src_term.read_text()
+        existing = dst_term.read_text() if dst_term.exists() else ""
+        dst_term.write_text(prior_text + existing)
+
+
 def _resolve_pairs(
     configs: list[str | None], models: list[str],
 ) -> list[tuple[str | None, str]]:
@@ -371,6 +485,9 @@ Examples:
   # Paired 1:1: N configs × N models
   pokemon run --config configs/config-3.11.yaml configs/config-3.12.yaml \\
               --model "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" --turns 50
+
+  # Continue a prior run from its latest savepoint (fresh turn counter)
+  pokemon run --continue local/runs/2026-05-26_..._config-3.12__claude-opus-4-7 --turns 30
 """,
     )
     parser.add_argument(
@@ -378,9 +495,15 @@ Examples:
         help="One or more config files. Default: latest config in configs/.",
     )
     parser.add_argument(
-        "--model", nargs="+", required=True,
+        "--model", nargs="+", default=None,
         help='One or more model aliases (e.g. "gemini-3.5-flash(medium)") or raw '
-             '"provider/model" OpenRouter ids.',
+             '"provider/model" OpenRouter ids. Required unless --continue is set.',
+    )
+    parser.add_argument(
+        "--continue", dest="continue_from", default=None,
+        help="Path to a prior run dir. Continues from its latest savepoint with "
+             "a fresh turn counter. Single-run only (no sequential). Ignores "
+             "--config, --model, --snapshot — those are read from the source run.",
     )
     parser.add_argument(
         "--turns", type=int, default=10,
@@ -400,7 +523,21 @@ Examples:
     )
     args = parser.parse_args()
 
-    pairs = _resolve_pairs(args.config, args.model)
+    if args.continue_from:
+        if args.model or args.config != [None]:
+            sys.exit(
+                "ERROR: --continue is exclusive with --config/--model. "
+                "The source run's config and model are reused automatically."
+            )
+        cfg, savepoint_dir = continue_from_run(args.continue_from)
+        prepared = [cfg]
+        # The savepoint dir is what run_single_loop's --snapshot path expects.
+        args.snapshot = str(savepoint_dir)
+    else:
+        if not args.model:
+            sys.exit("ERROR: --model is required (unless --continue is set).")
+        pairs = _resolve_pairs(args.config, args.model)
+        prepared = [prepare_config(c, m) for c, m in pairs]
 
     if args.kill_existing:
         subprocess.run(["pkill", "-f", "mgba"], capture_output=True)
@@ -409,8 +546,6 @@ Examples:
     if args.snapshot and not os.path.exists(args.snapshot):
         print(f"  ⚠ snapshot not found: {args.snapshot} (continuing without)")
         args.snapshot = None
-
-    prepared = [prepare_config(c, m) for c, m in pairs]
 
     rom_path = prepared[0]["emulator"]["rom_path"]
     if not os.path.exists(rom_path):

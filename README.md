@@ -150,9 +150,14 @@ pokemon run --config configs/config-3.12.yaml \
 # Paired 1:1: N configs × N models
 pokemon run --config configs/config-3.11.yaml configs/config-3.12.yaml \
             --model "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" --turns 50
+
+# Continue a prior run from its latest savepoint (fresh turn counter + history)
+pokemon run --continue local/runs/2026-05-26_..._config-3.12__claude-opus-4-7 --turns 30
 ```
 
 `pokemon run --help` lists every flag. Model aliases come from `configs/models.yaml`; raw `"provider/model"` ids also work and bypass the registry.
+
+Periodic in-run checkpoints are controlled by a `savepoints:` block in the config (`every_n_turns`, `at_end`, `on_crash`). See `docs/cli.md` for the full shape and the resume semantics — most importantly, **continued runs start with empty agent history**; the only memory carry-over is whatever the agent wrote into `state.json`.
 
 The agent will start sending button inputs to mGBA. Run output (events, screenshots, reports) lands in `local/runs/<timestamp>/` (gitignored).
 

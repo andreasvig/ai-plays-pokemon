@@ -26,6 +26,7 @@ from pydantic_ai.models.openai import OpenAIModel
 from src.agent.agent import AgentDeps, GameAction, create_agent
 from src.emulator import EmulatorClient, VisionPipeline, OCRRunner
 from src.core import RunLogger, StateManager
+from src.core.snapshots import SnapshotManager
 
 logger = logging.getLogger(__name__)
 
@@ -386,6 +387,13 @@ class TurnManager:
         # Run timing
         self._run_start_time: Optional[float] = None
 
+        # Savepoint config (validated in src/config.py)
+        sp = config.get("savepoints") or {}
+        self.savepoint_every_n_turns: int = sp.get("every_n_turns", 0)
+        self.savepoint_at_end: bool = sp.get("at_end", False)
+        self.savepoint_on_crash: bool = sp.get("on_crash", False)
+        self._snapshot_mgr: Optional[SnapshotManager] = None
+
     def setup(
         self,
         emulator: EmulatorClient,
@@ -400,6 +408,19 @@ class TurnManager:
         self.vision = vision
         self.logger = logger
         self.ocr = ocr
+
+        # SnapshotManager needs state_file path + emulator handle. We point it
+        # at the run's state.json so save_run_savepoint copies the live agent
+        # memory, not the global state_file from config.
+        sp_enabled = (
+            self.savepoint_every_n_turns > 0
+            or self.savepoint_at_end
+            or self.savepoint_on_crash
+        )
+        if sp_enabled:
+            sp_config = dict(self.config)
+            sp_config["state_file"] = str(logger.run_dir / "state.json")
+            self._snapshot_mgr = SnapshotManager(sp_config, emulator)
 
         # Load tasks from run folder if present — UNLESS the config has
         # task_override_snapshot=true, in which case we ignore the snapshot's
@@ -426,6 +447,32 @@ class TurnManager:
                 )
             else:
                 print(f"  Task source: CONFIG — goal: {cfg_goal!r}")
+
+    def save_savepoint(self, kind: str) -> Optional[str]:
+        """Write a savepoint for the current turn. Returns the path on success.
+
+        Best-effort: failures are logged but do not raise. Safe to call from
+        crash handlers in the caller.
+        """
+        if self._snapshot_mgr is None or self.turn_number <= 0:
+            return None
+        try:
+            path = self._snapshot_mgr.save_run_savepoint(
+                run_dir=self.logger.run_dir,
+                turn=self.turn_number,
+                kind=kind,
+            )
+            self.logger.log_custom("savepoint_saved", {
+                "turn": self.turn_number, "kind": kind, "path": str(path),
+            })
+            print(f"  [Turn {self.turn_number}] Savepoint ({kind}): {path}")
+            return str(path)
+        except Exception as e:
+            self.logger.log_custom("savepoint_error", {
+                "turn": self.turn_number, "kind": kind, "error": str(e),
+            })
+            print(f"  [Turn {self.turn_number}] Savepoint ({kind}) FAILED: {e}")
+            return None
 
     def run_loop(self, max_turns: Optional[int] = None) -> None:
         """Run the turn loop synchronously."""
@@ -507,6 +554,17 @@ class TurnManager:
             finally:
                 if self.ocr and self.ocr.enabled:
                     self.ocr.set_active(False)
+
+            # Periodic savepoint — at the very end of the iteration so the
+            # emulator state is post-settle, not mid-button-press.
+            if (
+                self.savepoint_every_n_turns > 0
+                and self.turn_number % self.savepoint_every_n_turns == 0
+            ):
+                self.save_savepoint("periodic")
+
+        if self.savepoint_at_end:
+            self.save_savepoint("end")
 
         # Add VLM cost to total
         vlm_cost = self.vision.total_cost_usd if self.vision else 0.0

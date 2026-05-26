@@ -80,6 +80,48 @@ class SnapshotManager:
 
         return snapshot_path
 
+    def save_run_savepoint(
+        self,
+        run_dir: Path,
+        turn: int,
+        kind: str = "periodic",
+    ) -> Path:
+        """Save a run-scoped savepoint to <run_dir>/savepoints/turn_<N>/.
+
+        Unlike save_snapshot, this writes inside the run dir (not the global
+        snapshots/ pool) and uses a deterministic per-turn directory. If the
+        target dir already exists (e.g. running `every_n_turns=5` twice with
+        the same turn counter), it's overwritten.
+        """
+        savepoints_root = run_dir / "savepoints"
+        savepoints_root.mkdir(parents=True, exist_ok=True)
+        target = savepoints_root / f"turn_{turn}"
+        if target.exists():
+            shutil.rmtree(target)
+        target.mkdir(parents=True)
+
+        self.emulator.save_state(str(target / "emulator.state"))
+
+        if self.state_file.exists():
+            shutil.copy2(self.state_file, target / "state.json")
+
+        tasks_src = self.state_file.parent / "tasks.json"
+        if tasks_src.exists():
+            shutil.copy2(tasks_src, target / "tasks.json")
+
+        metadata = {
+            "name": f"{run_dir.name}_turn_{turn}",
+            "turn": turn,
+            "kind": kind,
+            "source_run": str(run_dir),
+            "timestamp": time.time(),
+            "timestamp_human": time.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        with open(target / "metadata.json", "w") as f:
+            json.dump(metadata, f, indent=2)
+
+        return target
+
     def load_snapshot(self, snapshot_path: str) -> dict:
         """Load a snapshot, restoring emulator and agent state.
 

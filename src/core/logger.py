@@ -108,6 +108,25 @@ class RunLogger:
         """Register a callback that receives every event dict after it's logged."""
         self._listeners.append(callback)
 
+    def seed_screenshot_id(self, start: Optional[int] = None) -> None:
+        """Seed the screenshot id counter so new screenshots don't collide.
+
+        If `start` is None, scan screenshots_dir for the highest existing
+        NNNNN_*.png index and set the counter to that. Used by --continue
+        so the copied prior screenshots keep their IDs and new ones extend
+        the sequence.
+        """
+        if start is not None:
+            self._screenshot_id = start
+            return
+        max_id = 0
+        if self.screenshots_dir.exists():
+            for entry in self.screenshots_dir.iterdir():
+                m = entry.name.split("_", 1)[0]
+                if m.isdigit():
+                    max_id = max(max_id, int(m))
+        self._screenshot_id = max_id
+
     def close(self) -> None:
         """Close the log file."""
         self._log_event("run_end", {})

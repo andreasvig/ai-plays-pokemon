@@ -46,6 +46,9 @@ pokemon run --model "gemini-3.5-flash(medium)" --snapshot local/snapshots/has_st
 
 # Kill any leftover mGBA before starting
 pokemon run --model "gemini-3.5-flash(medium)" --kill-existing
+
+# Continue a prior run from its latest savepoint (fresh turn counter)
+pokemon run --continue local/runs/2026-05-26_..._config-3.12__claude-opus-4-7 --turns 30
 ```
 
 ### Pairing rules between `--config` and `--model`
@@ -71,8 +74,23 @@ Aliases come from `configs/models.yaml`. Raw `"provider/model"` OpenRouter ids a
 | `--snapshot PATH`     | `local/snapshots/bedroom_start`  | Reloaded before each run's turn loop.         |
 | `--connect-timeout S` | `300.0`                          | Seconds to wait for the initial Lua connect.  |
 | `--kill-existing`     | off                              | `pkill -f mgba` before launching.             |
+| `--continue PATH`     | off                              | Resume from the source run's latest savepoint. Single-run only. Mutex with `--config` / `--model`. |
 
 Run output lands in `local/runs/<timestamp>_<config-stem>__<model-slug>/` (gitignored): `events.jsonl`, `state.json`, `tasks.json`, screenshots, and a `report.html` generated at end-of-run.
+
+### Savepoints
+
+When the config carries a `savepoints:` block, a run periodically writes mid-flight checkpoints into `<run_dir>/savepoints/turn_<N>/`. Each savepoint is a standard snapshot folder (emulator.state + state.json + tasks.json + metadata.json) and can be loaded by `pokemon run --continue` to resume.
+
+```yaml
+# In configs/config-X.Y.yaml
+savepoints:
+  every_n_turns: 5   # 0 = disabled
+  at_end: true       # save once the run finishes cleanly
+  on_crash: true     # best-effort save on KeyboardInterrupt or exception
+```
+
+`pokemon run --continue <run_dir>` finds the highest `turn_<N>/` in that run's `savepoints/`, copies events.jsonl + screenshots + ocr + terminal.log into a new `<ts>_<run_name>_continued_from_turn_<N>/` run dir, then resumes the agent from there. **The agent's turn counter and text history start fresh** — the only narrative continuity is whatever the agent wrote into `state.json` during the original run. Cost counters also reset; the new run reports only its own spend. For a full cumulative view, read both run dirs' `run_summary.json`.
 
 The dashboard auto-opens at <http://localhost:3420/> for the first run; subsequent runs in a sequence register silently — switch tabs from the dashboard index.
 

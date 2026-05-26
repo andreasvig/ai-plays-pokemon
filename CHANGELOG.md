@@ -1,5 +1,54 @@
 # Changelog
 
+## 2026-05-26 — In-run savepoints + `pokemon run --continue`
+
+### What
+- New `savepoints:` config block: `every_n_turns` (periodic), `at_end`
+  (on clean exit), `on_crash` (best-effort save in the `except` paths
+  of `run_single_loop`). Validated in `src/config.py`.
+- `SnapshotManager.save_run_savepoint(run_dir, turn, kind)` writes
+  the standard snapshot trio (emulator.state + state.json + tasks.json
+  + metadata.json with `turn` and `kind`) to
+  `<run_dir>/savepoints/turn_<N>/`.
+- `TurnManager` instantiates a savepoint-scoped `SnapshotManager` in
+  `setup()` and exposes `save_savepoint(kind)`. The end-of-iteration
+  hook in the turn loop calls it when `turn_number % every_n_turns == 0`;
+  the at_end hook fires after the loop exits.
+- `pokemon run --continue <run_dir>`: locates the highest `turn_<N>/`
+  savepoint in that run, reuses its config + model alias, copies the
+  source run's events.jsonl + screenshots/ + ocr/ + terminal.log into
+  a new `<ts>_<run_name>_continued_from_turn_<N>/` run dir, then
+  resumes the agent loop from the savepoint's game state.
+- `RunLogger.seed_screenshot_id()` scans the (copied) screenshots dir
+  on continuation and seeds `_screenshot_id` so new captures extend the
+  sequence instead of colliding with copied IDs.
+
+### Why
+Long runs were one-shot — a crash at turn 47 of a 50T run threw away
+~45 minutes of game progress. The CLI's `--snapshot` flag only loaded
+hand-curated named snapshots; there was no way to "continue this run."
+Savepoints give you a deterministic per-turn checkpoint scheme without
+having to manually `pokemon snapshot save` between turns. On-crash save
+covers the most-valuable scenario for free.
+
+### Resume semantics (intentional carve-outs)
+- **Fresh turn counter and empty text history on continuation.** The
+  resumed agent's `turn_number` starts at 1; `turn_explanations` and
+  `turn_screenshots` start empty. The only narrative carry-over is
+  whatever the agent wrote into `state.json` during the original run.
+  This is a deliberate simplification — reconstructing in-prompt history
+  from `events.jsonl` was the alternative, rejected for being a sharper
+  break in agent behavior than a clean reset.
+- **Cost counters reset on continuation.** The new run's `run_summary.json`
+  reports only post-resume spend. For cumulative cost across an
+  original + continued run, sum both runs' summaries.
+- **`--turns N` is additive on continuation.** "Run N more turns from
+  the savepoint," not "continue toward an absolute target of N."
+- **Single-run only.** `--continue` is mutex with `--config` and `--model`
+  (those come from the source run) and not supported in sequential
+  multi-pair mode. If you want a bigger run, give the original `--turns`
+  a higher number.
+
 ## 2026-05-23 — LLM retry-with-timeout + gemma 46T / gemini-minimal observations
 
 ### What

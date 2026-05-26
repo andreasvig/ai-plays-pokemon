@@ -233,6 +233,20 @@ def _validate_config(config: dict[str, Any], *, require_llm_model: bool = True) 
                 "still visible in the text history."
             )
 
+    sp = config.get("savepoints")
+    if sp is not None:
+        if not isinstance(sp, dict):
+            raise ValueError(f"savepoints must be a dict, got {type(sp).__name__}")
+        every = sp.get("every_n_turns", 0)
+        if not isinstance(every, int) or isinstance(every, bool) or every < 0:
+            raise ValueError(
+                f"savepoints.every_n_turns must be a non-negative int, got {every!r}"
+            )
+        for key in ("at_end", "on_crash"):
+            val = sp.get(key, False)
+            if not isinstance(val, bool):
+                raise ValueError(f"savepoints.{key} must be a bool, got {val!r}")
+
     emu = config.get("emulator", {})
     for key in ("host", "port", "rom_path"):
         if key not in emu:
