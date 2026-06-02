@@ -355,6 +355,24 @@ class TurnManager:
         self.config = config
         self.max_turns = config.get("max_turns_per_task", 50)
 
+        # TaskMaster gate. When enabled the Player prompt gains a current-task +
+        # task-progress block each turn and the budget validator (attached in
+        # create_agent) is fed the per-task turn count via AgentDeps. When
+        # disabled, every Player-facing behavior below is bypassed and the
+        # legacy single-agent path is unchanged.
+        self.task_master_enabled = bool(
+            config.get("task_master", {}).get("enabled", False)
+        )
+        # How many turns the Player has spent on the CURRENT task (1-based, set
+        # at the top of each turn). Run-loop integration (Phase B4) resets this
+        # to 0 on each TaskMaster handoff; until then it tracks the global turn.
+        self.current_task_turn = 0
+        # The current task the Player is executing, as a dict with at least a
+        # `title`/`goal`; `description` and `success_criteria` optional. Populated
+        # by the run loop (B4) on each TaskMaster invocation. Falls back to the
+        # config task for cold-start / pre-B4 wiring.
+        self.current_task: Optional[dict] = None
+
         # These get set during setup
         self.emulator: Optional[EmulatorClient] = None
         self.state: Optional[StateManager] = None
@@ -594,6 +612,13 @@ class TurnManager:
         t = self.turn_number
         self.logger.log_turn_start(t)
 
+        # Per-task turn counter feeds the budget validator. The run loop (Phase
+        # B4) resets self.current_task_turn to 0 on each TaskMaster handoff; here
+        # we just advance it one per turn. Only meaningful when TaskMaster is
+        # enabled — left untouched/ignored on the legacy path.
+        if self.task_master_enabled:
+            self.current_task_turn += 1
+
         # 1. Capture screenshot
         print(f"  [Turn {t}] Capturing screenshot...")
         screenshot = self.emulator.capture_screenshot(preprocess=True)
@@ -690,7 +715,10 @@ class TurnManager:
             "message": log_msg,
         })
 
-        # 6. Build deps
+        # 6. Build deps. When TaskMaster is enabled, also pass the per-task turn
+        # count + budget so the output validator can force a handoff at the
+        # boundary. Left at their AgentDeps defaults (0/0 → validator no-op) on
+        # the legacy path.
         deps = AgentDeps(
             emulator=self.emulator,
             state=self.state,
@@ -699,6 +727,8 @@ class TurnManager:
             ocr=self.ocr,
             current_screenshot=screenshot,
             turn_number=t,
+            current_task_turn=self.current_task_turn if self.task_master_enabled else 0,
+            max_turns_per_task=self.max_turns if self.task_master_enabled else 0,
         )
 
         # 7. Run the agent
@@ -1098,20 +1128,32 @@ class TurnManager:
                     )
             text_parts.append(history)
 
-        # Task (tasks.json overrides config task)
-        task = self.tasks or self.config.get("task", {})
-        if isinstance(task, str):
-            task = {"goal": task}
-        goal = task.get("goal", "Play the game.")
-        desc = task.get("description", "")
-        task_text = f"**Goal:** {goal}"
-        if desc:
-            task_text += f"\n{desc}"
-        text_parts.append(f"\n## Current Task\n{task_text}")
+        if self.task_master_enabled:
+            # TaskMaster owns the current task. Render its title + description +
+            # success_criteria, plus a per-turn progress line, and tell the
+            # Player it can hand control back. Falls back to the config task for
+            # cold-start / pre-B4 wiring when self.current_task isn't set yet.
+            self._append_taskmaster_task_block(text_parts)
+            text_parts.append(
+                "\nOutput your action (inputs) and update memory_updates with any new information. "
+                "If the current task is complete, impossible, or you're out of useful moves, "
+                "set `return_to_taskmaster` instead to hand control back to TaskMaster."
+            )
+        else:
+            # Task (tasks.json overrides config task)
+            task = self.tasks or self.config.get("task", {})
+            if isinstance(task, str):
+                task = {"goal": task}
+            goal = task.get("goal", "Play the game.")
+            desc = task.get("description", "")
+            task_text = f"**Goal:** {goal}"
+            if desc:
+                task_text += f"\n{desc}"
+            text_parts.append(f"\n## Current Task\n{task_text}")
 
-        text_parts.append(
-            "\nOutput your action (inputs) and update memory_updates with any new information."
-        )
+            text_parts.append(
+                "\nOutput your action (inputs) and update memory_updates with any new information."
+            )
 
         combined_text = "\n".join(text_parts)
 
@@ -1140,6 +1182,42 @@ class TurnManager:
         )
         parts.append(ImageUrl(url=current_image_url))
         return parts
+
+    def _append_taskmaster_task_block(self, text_parts: list[str]) -> None:
+        """Render the TaskMaster-owned current-task block + progress line.
+
+        Only called when TaskMaster is enabled. Reads `self.current_task` (set by
+        the run loop on each TaskMaster handoff) for the task's title /
+        description / success_criteria, falling back to the config task for
+        cold-start / pre-B4 wiring. Appends a `task_progress: "turn N / M on
+        current task"` line so the Player can self-eject before the budget
+        validator forces it.
+        """
+        task = self.current_task
+        if not task:
+            # Cold-start fallback: reuse the config/snapshot task shape.
+            task = self.tasks or self.config.get("task", {})
+            if isinstance(task, str):
+                task = {"goal": task}
+        task = task or {}
+
+        # Title accepts either `title` (TaskMaster shape) or `goal` (config shape).
+        title = task.get("title") or task.get("goal") or "Play the game."
+        desc = task.get("description", "")
+        criteria = task.get("success_criteria", "")
+
+        task_text = f"**Task:** {title}"
+        if desc:
+            task_text += f"\n{desc}"
+        if criteria:
+            task_text += f"\n\n**Success criteria:** {criteria}"
+
+        # Progress line: turn N / M on the CURRENT task (not the global run).
+        used = self.current_task_turn
+        budget = self.max_turns
+        task_text += f"\n\n_task_progress: turn {used} / {budget} on current task_"
+
+        text_parts.append(f"\n## Current Task\n{task_text}")
 
     def _lookup_actions(self, turn_num: int) -> str:
         """Return the comma-joined action list for a past turn, or '?' if unknown."""

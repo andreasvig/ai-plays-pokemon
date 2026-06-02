@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field
-from pydantic_ai import Agent, NativeOutput, PromptedOutput, RunContext, Tool
+from pydantic_ai import Agent, ModelRetry, NativeOutput, PromptedOutput, RunContext, Tool
 from pydantic_ai.models.openai import OpenAIModel
 
 Button = Literal["up", "down", "left", "right", "a", "b", "start", "select"]
@@ -19,8 +19,39 @@ from src.core import RunLogger, StateManager
 
 # --- Output models ---
 
+class ReturnToTaskMaster(BaseModel):
+    """Hand control back to TaskMaster with the Player's self-assessment.
+
+    Only emitted when the TaskMaster meta-agent is enabled. Set on `GameAction`
+    instead of `inputs` when the current task is done (or impossible) and the
+    Player wants the next task. This block is fed to TaskMaster verbatim.
+    """
+    self_assessment: Literal["succeeded", "failed", "partial", "other"] = Field(
+        description="Your own grade of how the current task went — TaskMaster makes the final call and may disagree.",
+    )
+    task_summary: str = Field(
+        description="A short factual summary of what you actually did and the resulting game state, for TaskMaster to evaluate.",
+    )
+    notes: str = Field(
+        description="Anything else TaskMaster should know (blockers hit, things learned, suggestions for the next task); \"\" if nothing.",
+    )
+
+
 class GameAction(BaseModel):
-    """Output: button presses, reasoning, success grade, memory updates."""
+    """Output: button presses, reasoning, success grade, memory updates.
+
+    The optional `return_to_taskmaster` field is the discriminator between the
+    two Player modes: when it is None (the default) this is a normal
+    interact-with-game turn driven by `inputs`; when it is set the Player is
+    handing control back to TaskMaster and `inputs` is ignored. A single schema
+    (no true union) keeps prompted-output models reliable.
+
+    `return_to_taskmaster` is only surfaced to the model when TaskMaster is
+    enabled — `create_agent` then uses this class as the output type. When
+    TaskMaster is disabled the model-facing output type is `_LegacyGameAction`
+    (the four base fields, no TM field), so the legacy single-agent schema and
+    behavior are byte-for-byte unchanged.
+    """
     inputs: list[Button] = Field(
         description="Button presses to send to the game. Aim for 4-8 for predictable actions (walking, dialogue). Use fewer (1-5) when the outcome is uncertain (entering a new room, using a move in battle).",
     )
@@ -45,6 +76,33 @@ class GameAction(BaseModel):
             "Write \"none\" only if absolutely nothing changed this turn."
         ),
     )
+    return_to_taskmaster: Optional[ReturnToTaskMaster] = Field(
+        default=None,
+        description=(
+            "Set this ONLY to hand control back to TaskMaster — when the current task is complete, "
+            "impossible, or you're out of useful moves. Leave it null for a normal game turn. "
+            "When set, your self-assessment is passed to TaskMaster, which decides the next task."
+        ),
+    )
+
+
+# Model-facing schema for the legacy (TaskMaster-disabled) path. Mirrors
+# GameAction's four base fields EXACTLY and omits `return_to_taskmaster`, so the
+# JSON schema the model sees in the single-agent path is identical to before
+# TaskMaster existed. Built by subclassing-then-removing rather than re-declaring
+# the fields, so the descriptions never drift from GameAction. The schema title
+# is pinned to "GameAction" so the tool/schema name on the wire is unchanged too.
+class _LegacyGameAction(GameAction):
+    """Output: button presses, reasoning, success grade, memory updates."""
+    # NOTE: docstring above is pinned to GameAction's original (pre-TaskMaster)
+    # wording on purpose — it becomes the schema `description` the model sees in
+    # the TM-disabled path, so that schema stays byte-for-byte unchanged.
+    model_config = {"title": "GameAction"}
+
+
+# Drop the TM-only field from the legacy model so it never reaches the model.
+del _LegacyGameAction.model_fields["return_to_taskmaster"]
+_LegacyGameAction.model_rebuild(force=True)
 
 
 # --- Agent dependencies (passed to tools via RunContext) ---
@@ -63,6 +121,14 @@ class AgentDeps:
     current_screenshot: Any = None  # PIL Image
     turn_number: int = 0
     agent_id: str = "agent_0"
+
+    # TaskMaster budget context (only meaningful when TaskMaster is enabled).
+    # `current_task_turn` is how many turns the Player has spent on the CURRENT
+    # task (1-based); `max_turns_per_task` is the per-task budget. The output
+    # validator uses these to force a handoff at the budget boundary. Left at
+    # their defaults (and unused) in the legacy single-agent path.
+    current_task_turn: int = 0
+    max_turns_per_task: int = 0
 
 
 
@@ -160,6 +226,14 @@ def create_agent(config: dict[str, Any]) -> tuple[Agent, Any, list[str]]:
         if tool_config.get(name, True)
     ]
 
+    # TaskMaster gate: when enabled, the Player output schema gains the optional
+    # `return_to_taskmaster` discriminator field (GameAction) and a budget-aware
+    # output validator is attached. When disabled, the model-facing schema is
+    # `_LegacyGameAction` — byte-for-byte the pre-TaskMaster GameAction — and no
+    # validator is attached, so the legacy single-agent path is unchanged.
+    tm_enabled = bool(config.get("task_master", {}).get("enabled", False))
+    OutputModel = GameAction if tm_enabled else _LegacyGameAction
+
     # Output mode: registry can override per-model. Default "tool" path uses
     # tool_choice="required" — strongest schema enforcement, broadest support.
     # "native_json" → response_format json_schema. Use for models whose
@@ -167,7 +241,7 @@ def create_agent(config: dict[str, Any]) -> tuple[Agent, Any, list[str]]:
     # "prompted" → text + parse. Last-resort for models without either.
     output_mode = (resolved.get("output_mode") or "tool").lower()
     if output_mode == "native_json":
-        output_type = NativeOutput(GameAction)
+        output_type = NativeOutput(OutputModel)
     elif output_mode == "prompted":
         # Pydantic AI's default prompted template ("Don't include any text or
         # Markdown fencing before or after") is too weak for some models — Qwen3.6-Plus
@@ -191,9 +265,19 @@ def create_agent(config: dict[str, Any]) -> tuple[Agent, Any, list[str]]:
             "Example of a correctly-formatted response (structure only, values are illustrative):\n"
             "{{\"inputs\":[\"a\"],\"reasoning\":\"...\",\"last_turn_succeeded\":null,\"memory_updates\":\"none\"}}"
         )
-        output_type = PromptedOutput(GameAction, template=prompted_template)
+        # When TaskMaster is enabled, show a second example covering the handoff
+        # variant so prompted-mode models know the optional discriminator field
+        # exists and what shape it takes. The legacy example above is unchanged.
+        if tm_enabled:
+            prompted_template += (
+                "\nExample of a hand-back-to-TaskMaster response (the current task is done — "
+                "leave `inputs` empty and set `return_to_taskmaster`):\n"
+                "{{\"inputs\":[],\"reasoning\":\"...\",\"last_turn_succeeded\":true,\"memory_updates\":\"none\","
+                "\"return_to_taskmaster\":{{\"self_assessment\":\"succeeded\",\"task_summary\":\"...\",\"notes\":\"\"}}}}"
+            )
+        output_type = PromptedOutput(OutputModel, template=prompted_template)
     elif output_mode == "tool":
-        output_type = GameAction
+        output_type = OutputModel
     else:
         raise ValueError(
             f"Unknown output_mode {output_mode!r} in registry. "
@@ -203,7 +287,13 @@ def create_agent(config: dict[str, Any]) -> tuple[Agent, Any, list[str]]:
     # retries=5 instead of the previous 3 — prompted-output models occasionally
     # need extra rounds to nail the JSON shape, and the retry cost is cheap
     # vs. losing the whole turn.
-    agent = Agent(
+    #
+    # When TaskMaster is enabled we also give the OUTPUT validator its own retry
+    # budget (output_retries=3) so the budget-boundary rejection below gets up to
+    # three in-conversation retries to coax a handoff out of the model, per the
+    # "ModelRetry over silent-sanitize" rule. When disabled this stays None and
+    # the agent's behavior is identical to before.
+    agent_kwargs: dict[str, Any] = dict(
         model=model,
         system_prompt=system_prompt,
         deps_type=AgentDeps,
@@ -211,6 +301,37 @@ def create_agent(config: dict[str, Any]) -> tuple[Agent, Any, list[str]]:
         tools=tools if tools else [],
         retries=5,
     )
+    if tm_enabled:
+        agent_kwargs["output_retries"] = 3
+    agent = Agent(**agent_kwargs)
+
+    # Budget-boundary output validator. Only attached when TaskMaster is enabled,
+    # so the legacy single-agent path has no validator at all. When the Player has
+    # used its full per-task turn budget, the ONLY acceptable output is a handoff
+    # (`return_to_taskmaster` set) — an interact-with-game output is rejected with
+    # an in-conversation ModelRetry rather than silently sanitized. The validator
+    # reads the current-task turn count + budget off RunContext deps, which
+    # turn.py refreshes each turn.
+    if tm_enabled:
+        @agent.output_validator
+        def _enforce_budget_handoff(
+            ctx: RunContext[AgentDeps], output: GameAction
+        ) -> GameAction:
+            budget = ctx.deps.max_turns_per_task
+            used = ctx.deps.current_task_turn
+            if (
+                budget > 0
+                and used >= budget
+                and getattr(output, "return_to_taskmaster", None) is None
+            ):
+                raise ModelRetry(
+                    f"You have used the full per-task turn budget "
+                    f"({used}/{budget} turns on this task). You must hand control "
+                    f"back to TaskMaster now: set `return_to_taskmaster` with your "
+                    f"self_assessment, a task_summary, and notes. An interact-with-game "
+                    f"output (button presses) is not allowed at the budget boundary."
+                )
+            return output
 
     # Fallback models (tried in order if primary fails)
     fallback_models = config.get("llm_fallback_models", []) or []
