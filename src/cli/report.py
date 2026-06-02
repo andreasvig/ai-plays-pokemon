@@ -59,6 +59,7 @@ def group_events_by_turn(events: list[dict]) -> list[dict]:
             current_turn = {
                 "turn": event.get("turn", len(turns) + 1),
                 "agent_id": event.get("agent_id", ""),
+                "task_index": event.get("task_index"),
                 "events": [],
                 "screenshot": None,
                 "explanation": None,
@@ -92,6 +93,93 @@ def group_events_by_turn(events: list[dict]) -> list[dict]:
         turns.append(current_turn)
 
     return turns
+
+
+def group_turns_by_task(turns: list[dict], events: list[dict]) -> list[dict]:
+    """Group per-turn dicts into TaskMaster task groups.
+
+    Walks events for ``task_started`` / ``task_master_trace`` / ``task_completed``
+    to build one group per task, then buckets ``turns`` by their ``task_index``.
+    ``task_completed{N}`` stamps the rating backward onto the already-built group N
+    (Decision 2 — grade stamps backward).
+
+    Returns a list of groups, each:
+        {
+            "task_index": int,
+            "title": str,
+            "description": str,
+            "success_criteria": str,
+            "rating": dict | None,        # {status, reasoning} or None if still current
+            "master_trace": list[dict],
+            "master_model": str,
+            "master_cost": float,
+            "turns": [turn dict, ...],
+        }
+    """
+    groups: dict[int, dict] = {}
+    order: list[int] = []
+
+    for event in events:
+        etype = event.get("type")
+        if etype == "task_started":
+            idx = event.get("task_index")
+            if idx is None:
+                continue
+            if idx not in groups:
+                order.append(idx)
+            g = groups.setdefault(idx, _empty_task_group(idx))
+            g["title"] = event.get("title", "") or g["title"]
+            g["description"] = event.get("description", "") or g["description"]
+            g["success_criteria"] = event.get("success_criteria", "") or g["success_criteria"]
+        elif etype == "task_master_trace":
+            idx = event.get("task_index")
+            if idx is None:
+                continue
+            if idx not in groups:
+                order.append(idx)
+            g = groups.setdefault(idx, _empty_task_group(idx))
+            g["master_trace"] = event.get("messages", [])
+            g["master_model"] = event.get("model_used", "")
+            g["master_cost"] = event.get("cost_usd", 0) or 0
+        elif etype == "task_completed":
+            idx = event.get("task_index")
+            if idx is None:
+                continue
+            # Stamp backward onto the rated task (may already exist; create if not).
+            if idx not in groups:
+                order.append(idx)
+            g = groups.setdefault(idx, _empty_task_group(idx))
+            g["rating"] = event.get("rating") or g["rating"]
+
+    # Bucket turns into their task group by task_index.
+    for turn in turns:
+        idx = turn.get("task_index")
+        if idx is None:
+            # No task_index on this turn — attach to the most recent known group
+            # if one exists, else skip (legacy path won't call this function).
+            idx = order[-1] if order else None
+            if idx is None:
+                continue
+        if idx not in groups:
+            order.append(idx)
+            groups[idx] = _empty_task_group(idx)
+        groups[idx]["turns"].append(turn)
+
+    return [groups[idx] for idx in order]
+
+
+def _empty_task_group(idx: int) -> dict:
+    return {
+        "task_index": idx,
+        "title": "",
+        "description": "",
+        "success_criteria": "",
+        "rating": None,
+        "master_trace": [],
+        "master_model": "",
+        "master_cost": 0,
+        "turns": [],
+    }
 
 
 def _group_trace_into_steps(trace: list[dict]) -> dict:
@@ -315,6 +403,207 @@ def _render_trace_html(trace: list[dict]) -> str:
     return "\n".join(parts)
 
 
+# Badge pill metadata, keyed by task_completed rating status. ``None`` → current
+# task (no rating yet). Colors mirror Decision 7 / Phase 2 design tokens.
+_TASK_BADGES = {
+    "succeeded": ("✅", "succeeded", "badge-succeeded"),
+    "failed": ("❌", "failed", "badge-failed"),
+    "partial": ("🟡", "partial", "badge-partial"),
+    "other": ("➖", "other", "badge-other"),
+}
+
+
+def _task_badge_html(rating: dict | None) -> str:
+    """Render the grade badge pill for a task group header."""
+    if not rating:
+        return '<span class="task-badge badge-current">⏳ current</span>'
+    status = (rating.get("status") or "").lower()
+    icon, label, cls = _TASK_BADGES.get(status, ("➖", status or "?", "badge-other"))
+    return f'<span class="task-badge {cls}">{icon} {_escape(label)}</span>'
+
+
+def _render_turn_card_html(turn: dict, label: str, run_dir: Path) -> str:
+    """Render a single player turn card. ``label`` is the displayed turn number
+    (``Turn 5`` flat, or ``Turn 2.3`` nested under a task)."""
+    turn_num = turn["turn"]
+    exp = turn.get("explanation") or {}
+    action = _format_action(turn.get("action", "?"))
+
+    # Screenshot
+    screenshot_html = ""
+    if turn["screenshot"]:
+        b64 = image_to_base64(turn["screenshot"], run_dir)
+        if b64:
+            screenshot_html = f'<img src="{b64}" class="screenshot" />'
+        else:
+            screenshot_html = '<span class="no-screenshot">Screenshot not found</span>'
+
+    # Structured trace
+    trace_html = ""
+    trace = turn.get("trace", [])
+    if trace:
+        trace_content = _render_trace_html(trace)
+        n_tools = sum(1 for s in _group_trace_into_steps(trace)["steps"] if s["type"] == "tool_call")
+        trace_html = f"""
+        <div class="trace-section">
+            <div class="trace-header">Trace ({n_tools} tool call{'s' if n_tools != 1 else ''})</div>
+            <div class="trace-container">{trace_content}</div>
+        </div>"""
+
+    # Usage info
+    usage_html = ""
+    usage = turn.get("usage", {})
+    if usage:
+        cost = usage.get("cost_usd")
+        cost_str = f" | ${cost:.4f}" if cost else ""
+        usage_html = f'<div class="usage">{usage.get("request_tokens", "?")} in / {usage.get("response_tokens", "?")} out{cost_str}</div>'
+
+    # Extract screen settle duration from events
+    settle_html = ""
+    for evt in turn.get("events", []):
+        if evt.get("type") == "screen_settled":
+            dur = evt.get("duration", 0) or evt.get("data", {}).get("duration", 0)
+            settle_html = f'<span class="settle-time">⏱ {dur}s</span>'
+
+    # Last-turn-succeeded label (rendered inside the explanation block)
+    _grade = exp.get('last_turn_succeeded')
+    if _grade is True:
+        grade_label = "✅ succeeded"
+    elif _grade is False:
+        grade_label = "❌ failed"
+    elif _grade is None:
+        grade_label = "➖ n/a (first turn)"
+    else:
+        grade_label = "(missing)"
+
+    # Raw events (collapsed)
+    raw_events_json = json.dumps(turn["events"], indent=2, default=str)
+
+    return f"""
+    <div class="turn" id="turn-{turn_num}">
+        <div class="turn-header" onclick="this.parentElement.classList.toggle('collapsed')">
+            <span class="turn-number">{_escape(label)}</span>
+            <span class="turn-action"><code>{_escape(action)}</code></span>
+            <span class="turn-summary">{_escape(exp.get('reasoning', '')[:100])}</span>
+            {settle_html}
+            {usage_html}
+        </div>
+        <div class="turn-body">
+            <div class="turn-columns">
+                <div class="turn-left">
+                    {screenshot_html}
+                </div>
+                <div class="turn-right">
+                    <div class="explanation">
+                        <div class="exp-row"><strong>Last turn:</strong> {grade_label}</div>
+                        <div class="exp-row"><strong>Reasoning:</strong> {_escape(exp.get('reasoning', ''))}</div>
+                        {_render_memory_update_html(exp)}
+                    </div>
+                </div>
+            </div>
+            {_render_ocr_html(turn)}
+            {trace_html}
+            <details class="raw-events">
+                <summary>Raw Events ({len(turn['events'])})</summary>
+                <pre>{_escape(raw_events_json[:10000])}</pre>
+            </details>
+        </div>
+    </div>
+    """
+
+
+def _render_master_block_html(group: dict) -> str:
+    """Render the TaskMaster detail block: a verdict row (badge + rating
+    reasoning + success_criteria) followed by the master agent's trace."""
+    rating = group.get("rating")
+    badge = _task_badge_html(rating)
+
+    verdict_rows = f'<div class="decision-row"><strong>Verdict:</strong> {badge}</div>'
+    if rating and rating.get("reasoning"):
+        verdict_rows += (
+            f'<div class="decision-row"><strong>Rating reasoning:</strong> '
+            f'{_escape(rating.get("reasoning", ""))}</div>'
+        )
+    elif not rating:
+        verdict_rows += (
+            '<div class="decision-row"><strong>Rating reasoning:</strong> '
+            '<span style="color:#888;">(task still in progress)</span></div>'
+        )
+    if group.get("success_criteria"):
+        verdict_rows += (
+            f'<div class="decision-row"><strong>Success criteria:</strong> '
+            f'{_escape(group.get("success_criteria", ""))}</div>'
+        )
+
+    trace = group.get("master_trace") or []
+    trace_html = ""
+    if trace:
+        trace_content = _render_trace_html(trace)
+        n_tools = sum(1 for s in _group_trace_into_steps(trace)["steps"] if s["type"] == "tool_call")
+        trace_html = f"""
+        <div class="trace-section">
+            <div class="trace-header">TaskMaster trace ({n_tools} tool call{'s' if n_tools != 1 else ''})</div>
+            <div class="trace-container">{trace_content}</div>
+        </div>"""
+
+    return f"""
+    <div class="master-block">
+        <div class="master-label">TaskMaster</div>
+        <div class="master-verdict">{verdict_rows}</div>
+        {trace_html}
+    </div>
+    """
+
+
+def _render_task_group_html(group: dict, run_dir: Path) -> str:
+    """Render one collapsible task group: an always-visible header (task label,
+    title, grade badge, turn count, cost, and the full description) plus a body
+    (master detail block + nested player turn cards). Renders collapsed."""
+    idx = group["task_index"]
+    title = group.get("title", "")
+    description = group.get("description", "")
+    n_turns = len(group["turns"])
+
+    # Task cost = sum of player-turn costs + master cost.
+    player_cost = 0.0
+    for turn in group["turns"]:
+        usage = turn.get("usage") or {}
+        c = usage.get("cost_usd")
+        if c:
+            player_cost += c
+    task_cost = player_cost + (group.get("master_cost") or 0)
+
+    badge = _task_badge_html(group.get("rating"))
+
+    # Nested player turn cards, relabeled Turn N.M (M = position within group).
+    turns_inner = "\n".join(
+        _render_turn_card_html(turn, f"Turn {idx}.{m}", run_dir)
+        for m, turn in enumerate(group["turns"], start=1)
+    )
+
+    return f"""
+    <div class="task-group collapsed" data-task="{idx}">
+        <div class="task-header" onclick="this.parentElement.classList.toggle('collapsed')">
+            <div class="task-header-main">
+                <span class="task-arrow">▶</span>
+                <span class="task-number">Task {idx} (Master)</span>
+                <span class="task-title">{_escape(title)}</span>
+                {badge}
+                <span class="task-count">{n_turns} turn{'s' if n_turns != 1 else ''}</span>
+                <span class="task-cost">${task_cost:.4f}</span>
+            </div>
+            <div class="task-description">{_escape(description)}</div>
+        </div>
+        <div class="task-body">
+            {_render_master_block_html(group)}
+            <div class="task-turns">
+                {turns_inner}
+            </div>
+        </div>
+    </div>
+    """
+
+
 def generate_html(run_dir: Path, events: list[dict], turns: list[dict]) -> str:
     """Generate the full HTML report."""
     config = {}
@@ -348,94 +637,21 @@ def generate_html(run_dir: Path, events: list[dict], turns: list[dict]) -> str:
             <div class="task-goal">{_escape(task)}</div>
         </div>"""
 
-    # --- Build turn HTML ---
-    turns_html = ""
-    for turn in turns:
-        turn_num = turn["turn"]
-        exp = turn.get("explanation") or {}
-        action = _format_action(turn.get("action", "?"))
+    # --- Build turn / task-group HTML ---
+    # Detect TaskMaster runs: if any task_started event exists, render the
+    # two-level task tree. Otherwise fall back to the flat turn list (legacy).
+    has_tasks = any(e.get("type") == "task_started" for e in events)
 
-        # Screenshot
-        screenshot_html = ""
-        if turn["screenshot"]:
-            b64 = image_to_base64(turn["screenshot"], run_dir)
-            if b64:
-                screenshot_html = f'<img src="{b64}" class="screenshot" />'
-            else:
-                screenshot_html = '<span class="no-screenshot">Screenshot not found</span>'
-
-        # Structured trace
-        trace_html = ""
-        trace = turn.get("trace", [])
-        if trace:
-            trace_content = _render_trace_html(trace)
-            n_tools = sum(1 for s in _group_trace_into_steps(trace)["steps"] if s["type"] == "tool_call")
-            trace_html = f"""
-            <div class="trace-section">
-                <div class="trace-header">Trace ({n_tools} tool call{'s' if n_tools != 1 else ''})</div>
-                <div class="trace-container">{trace_content}</div>
-            </div>"""
-
-        # Usage info
-        usage_html = ""
-        usage = turn.get("usage", {})
-        if usage:
-            cost = usage.get("cost_usd")
-            cost_str = f" | ${cost:.4f}" if cost else ""
-            usage_html = f'<div class="usage">{usage.get("request_tokens", "?")} in / {usage.get("response_tokens", "?")} out{cost_str}</div>'
-
-        # Extract screen settle duration from events
-        settle_html = ""
-        for evt in turn.get("events", []):
-            if evt.get("type") == "screen_settled":
-                dur = evt.get("duration", 0) or evt.get("data", {}).get("duration", 0)
-                settle_html = f'<span class="settle-time">⏱ {dur}s</span>'
-
-        # Last-turn-succeeded label (rendered inside the explanation block)
-        _grade = exp.get('last_turn_succeeded')
-        if _grade is True:
-            grade_label = "✅ succeeded"
-        elif _grade is False:
-            grade_label = "❌ failed"
-        elif _grade is None:
-            grade_label = "➖ n/a (first turn)"
-        else:
-            grade_label = "(missing)"
-
-        # Raw events (collapsed)
-        raw_events_json = json.dumps(turn["events"], indent=2, default=str)
-
-        turns_html += f"""
-        <div class="turn" id="turn-{turn_num}">
-            <div class="turn-header" onclick="this.parentElement.classList.toggle('collapsed')">
-                <span class="turn-number">Turn {turn_num}</span>
-                <span class="turn-action"><code>{_escape(action)}</code></span>
-                <span class="turn-summary">{_escape(exp.get('reasoning', '')[:100])}</span>
-                {settle_html}
-                {usage_html}
-            </div>
-            <div class="turn-body">
-                <div class="turn-columns">
-                    <div class="turn-left">
-                        {screenshot_html}
-                    </div>
-                    <div class="turn-right">
-                        <div class="explanation">
-                            <div class="exp-row"><strong>Last turn:</strong> {grade_label}</div>
-                            <div class="exp-row"><strong>Reasoning:</strong> {_escape(exp.get('reasoning', ''))}</div>
-                            {_render_memory_update_html(exp)}
-                        </div>
-                    </div>
-                </div>
-                {_render_ocr_html(turn)}
-                {trace_html}
-                <details class="raw-events">
-                    <summary>Raw Events ({len(turn['events'])})</summary>
-                    <pre>{_escape(raw_events_json[:10000])}</pre>
-                </details>
-            </div>
-        </div>
-        """
+    if has_tasks:
+        task_groups = group_turns_by_task(turns, events)
+        turns_html = "\n".join(
+            _render_task_group_html(group, run_dir) for group in task_groups
+        )
+    else:
+        turns_html = "\n".join(
+            _render_turn_card_html(turn, f"Turn {turn['turn']}", run_dir)
+            for turn in turns
+        )
 
     # Event type summary
     type_counts = {}
@@ -485,6 +701,43 @@ def generate_html(run_dir: Path, events: list[dict], turns: list[dict]) -> str:
         .task-subgoals {{ margin-top: 12px; padding-left: 0; list-style: none; }}
         .task-subgoals li {{ padding: 4px 0 4px 20px; position: relative; color: #bbb; font-size: 14px; }}
         .task-subgoals li::before {{ content: ''; position: absolute; left: 0; top: 11px; width: 12px; height: 12px; border-radius: 3px; border: 2px solid #53d8fb; }}
+
+        /* ── TaskMaster two-level tree (Decision 7 design tokens) ──
+           amber/gold master accent #ffce54 · current grey #999 · green #7ddf64
+           failed/player-red #e94560 · partial amber #ffce54 · player guide #2a3a5a */
+        .task-group {{ background: #16213e; border-radius: 8px; margin-bottom: 16px; overflow: hidden; border-left: 4px solid #ffce54; }}
+        .task-header {{ padding: 12px 16px; cursor: pointer; background: #2b2614; }}
+        .task-header:hover {{ background: #342d18; }}
+        .task-header-main {{ display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }}
+        .task-arrow {{ color: #ffce54; font-size: 11px; transition: transform 0.15s; display: inline-block; }}
+        .task-group:not(.collapsed) .task-arrow {{ transform: rotate(90deg); }}
+        .task-number {{ font-weight: bold; color: #ffce54; white-space: nowrap; }}
+        .task-title {{ font-weight: bold; color: #fff; }}
+        .task-count {{ color: #aaa; font-size: 13px; white-space: nowrap; }}
+        .task-cost {{ color: #aaa; font-size: 13px; white-space: nowrap; margin-left: auto; }}
+        .task-description {{ color: #bbb; font-size: 13px; margin-top: 6px; line-height: 1.5; white-space: normal; word-break: break-word; }}
+
+        /* Grade badge pills */
+        .task-badge {{ font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: 999px; white-space: nowrap; color: #16213e; }}
+        .badge-succeeded {{ background: #7ddf64; }}
+        .badge-failed {{ background: #e94560; color: #fff; }}
+        .badge-partial {{ background: #ffce54; }}
+        .badge-current {{ background: #999; color: #16213e; }}
+        .badge-other {{ background: #555; color: #ddd; }}
+
+        .task-group.collapsed .task-body {{ display: none; }}
+        .task-body {{ padding: 14px 16px; }}
+
+        /* Master detail block — distinct amber strategy layer */
+        .master-block {{ background: #211d0f; border-left: 3px solid #ffce54; border-radius: 6px; padding: 12px 14px; margin-bottom: 12px; }}
+        .master-label {{ font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #ffce54; font-weight: 700; margin-bottom: 8px; }}
+        .master-verdict {{ line-height: 1.7; margin-bottom: 8px; }}
+        .master-verdict .decision-row {{ margin-bottom: 4px; }}
+        .master-verdict .decision-row strong {{ color: #ffce54; }}
+
+        /* Nested player turns — indented under the task with a guide line */
+        .task-turns {{ margin-left: 24px; border-left: 2px solid #2a3a5a; padding-left: 12px; }}
+        .task-turns .turn {{ margin-bottom: 10px; }}
 
         /* Turn cards */
         .turn {{ background: #16213e; border-radius: 8px; margin-bottom: 12px; overflow: hidden; border-left: 4px solid #e94560; }}
