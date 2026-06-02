@@ -89,20 +89,23 @@ class _StubState:
 
 
 class StubTaskMasterRunner:
-    """Scripted TaskMaster — pops a queued invocation each ``invoke`` call.
+    """Scripted TaskMaster — pops a queued invocation each ``invoke_async`` call.
 
-    Same one-method surface (``invoke(TaskMasterInput) -> TaskMasterInvocation``)
-    as the real ``TaskMasterRunner``, so it drops into the seam without touching
-    the loop. Records the inputs it was handed so the test can assert the
-    rolling-window assembly.
+    Same one-method surface (``async invoke_async(TaskMasterInput, *,
+    is_cold_start) -> TaskMasterInvocation``) as the real ``TaskMasterRunner``, so
+    it drops into the seam without touching the loop. Records the inputs + the
+    cold-start flag it was handed so the test can assert the rolling-window
+    assembly and the cold-start vs boundary distinction.
     """
 
     def __init__(self, invocations):
         self._queue = list(invocations)
         self.inputs_seen = []
+        self.cold_start_flags = []
 
-    def invoke(self, inp):
+    async def invoke_async(self, inp, *, is_cold_start=False):
         self.inputs_seen.append(inp)
+        self.cold_start_flags.append(is_cold_start)
         assert self._queue, "StubTaskMasterRunner ran out of scripted invocations"
         return self._queue.pop(0)
 
@@ -380,6 +383,10 @@ def test_rolling_window_and_evidence_fed_to_taskmaster():
     mgr.run_loop(max_turns=3)
     logger.close()
 
+    # The first invocation is flagged cold-start, the boundary is not — this is
+    # what drives the rating-required output validator (Decision 11).
+    assert tm_runner.cold_start_flags == [True, False], tm_runner.cold_start_flags
+
     # Cold-start input: empty rolling window.
     cold = tm_runner.inputs_seen[0]
     assert cold.prior_task_outputs == []
@@ -430,9 +437,60 @@ def test_legacy_tm_disabled_emits_no_task_events():
     assert mgr.emulator.presses == [["a"], ["a"]]
 
 
+def test_real_runner_async_path_no_nested_asyncio():
+    """Regression: drive the loop through the REAL TaskMasterRunner.
+
+    The other tests inject a stub runner, so they never exercise
+    ``TaskMasterRunner.invoke_async`` itself. This builds the real runner (only
+    its pydantic-ai agent's ``run`` is monkeypatched to avoid a network call) and
+    drives the real run loop, so ``invoke_async`` is awaited under the live event
+    loop started by ``run_loop`` → ``asyncio.run``. If anyone reintroduces a
+    nested ``asyncio.run`` inside the invocation path, this raises
+    ``RuntimeError: asyncio.run() cannot be called from a running event loop``.
+    """
+    from src.agent.turn import TaskMasterRunner
+
+    tmp = Path(tempfile.mkdtemp())
+    cfg = _base_config(tmp, enabled=True, max_turns_per_task=2)
+
+    runner = TaskMasterRunner(cfg)  # constructs the real agent (no API call yet)
+
+    class _FakeResult:
+        def __init__(self, output):
+            self.output = output
+
+    calls = {"n": 0, "is_cold_start": []}
+
+    async def _fake_run(user_message, **kwargs):
+        calls["n"] += 1
+        n = calls["n"]
+        rating = None if n == 1 else Rating(status="succeeded", reasoning="ok")
+        out = TaskMasterOutput(
+            reasoning="strategy",
+            rating_of_previous_task=rating,
+            task=TaskSpec(title=f"task {n}", description="d", success_criteria="c"),
+        )
+        return _FakeResult(out)
+
+    runner._agent.run = _fake_run  # bypass the network; keep the real async path
+
+    player_actions = [_ga("m1"), _ga("m2")]  # budget 2 → one boundary handoff
+    mgr, logger = _make_mgr(cfg, player_actions, runner)
+    mgr.run_loop(max_turns=2)  # would raise RuntimeError if invoke nested asyncio.run
+    logger.close()
+
+    events = _read_events(logger.run_dir)
+    types = [e["type"] for e in events]
+    # Cold start (trace+started) advanced via the real awaited path, plus a boundary.
+    assert "task_started" in types and "task_master_trace" in types
+    assert mgr.current_task_index >= 2, mgr.current_task_index
+    assert calls["n"] >= 2  # real invoke_async actually ran twice
+
+
 if __name__ == "__main__":
     test_taskmaster_handoff_loop_order_and_shape()
     test_event_shapes_match_fixture()
     test_rolling_window_and_evidence_fed_to_taskmaster()
     test_legacy_tm_disabled_emits_no_task_events()
+    test_real_runner_async_path_no_nested_asyncio()
     print("TaskMaster loop: ALL TESTS PASSED")

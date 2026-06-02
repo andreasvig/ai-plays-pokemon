@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
-from pydantic_ai import Agent, NativeOutput, PromptedOutput, RunContext, Tool
+from pydantic_ai import Agent, ModelRetry, NativeOutput, PromptedOutput, RunContext, Tool
 from pydantic_ai.models.openai import OpenAIModel
 
 from src.agent.tools.page_visit import PageVisitor
@@ -69,7 +69,6 @@ class TaskMasterOutput(BaseModel):
 
     reasoning: str = Field(
         description="Your strategic thinking: progress toward the meta-goal and why this next task.",
-        max_length=5000,
     )
     rating_of_previous_task: Optional[Rating] = Field(
         default=None,
@@ -114,10 +113,13 @@ class TaskMasterDeps:
     """Per-invocation dependencies for TaskMaster tools.
 
     ``page_visitor`` is created fresh per invocation so its URL cache is scoped
-    to a single invocation (statelessness rule).
+    to a single invocation (statelessness rule). ``is_cold_start`` is True only on
+    the very first invocation (no previous task); the output validator uses it to
+    enforce that a rating is present on every later invocation (Decision 11).
     """
 
     page_visitor: PageVisitor
+    is_cold_start: bool = False
 
 
 # --- Dense system prompt ------------------------------------------------------
@@ -262,6 +264,26 @@ def create_task_master_agent(config: dict[str, Any]) -> tuple[Agent, Any]:
         tools=tools,
         retries=5,
     )
+
+    @agent.output_validator
+    def _require_rating_after_cold_start(
+        ctx: RunContext[TaskMasterDeps], output: TaskMasterOutput
+    ) -> TaskMasterOutput:
+        """Enforce Decision 11 in code, not just the prompt.
+
+        ``rating_of_previous_task`` is null ONLY on the cold-start invocation.
+        On every later invocation there is a previous task to judge, so a null
+        rating is rejected with an in-conversation ``ModelRetry`` (per the
+        "ModelRetry over silent-sanitize" rule) rather than silently leaving the
+        finished task unrated.
+        """
+        if not ctx.deps.is_cold_start and output.rating_of_previous_task is None:
+            raise ModelRetry(
+                "This is not the cold-start invocation: there is a previous task "
+                "to judge. You MUST set rating_of_previous_task (status + "
+                "reasoning); null is only allowed on the very first invocation."
+            )
+        return output
 
     return agent, model_settings
 

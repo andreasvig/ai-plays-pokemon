@@ -83,7 +83,10 @@ async def _main() -> int:
         print(render_input(COLD_START_INPUT))
         return 0
 
-    deps = TaskMasterDeps(page_visitor=PageVisitor())
+    # This probe feeds a COLD-START input (no previous task), so flag the deps
+    # accordingly — otherwise the rating-required output validator would reject
+    # the (correct) null rating and force the model to fabricate one.
+    deps = TaskMasterDeps(page_visitor=PageVisitor(), is_cold_start=True)
     user_message = render_input(COLD_START_INPUT)
 
     from pydantic_ai.usage import UsageLimits

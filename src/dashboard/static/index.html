@@ -526,6 +526,17 @@ function connectEvents() {
   ws.onopen = () => {
     state.eventsConnected = true;
     updateStatus();
+    // The server replays the FULL event backlog from cursor 0 on every (re)connect
+    // (see server.py ws_events). Reset the feed + grouping state so a transient
+    // reconnect rebuilds cleanly instead of appending a second copy of every task
+    // group / turn. On the first connect chatScroll is already empty (no-op).
+    chatScroll.innerHTML = '';
+    currentTaskGroup = null;
+    currentTaskBody = null;
+    currentTurnBlock = null;
+    currentTurnBody = null;
+    for (const k in pendingMasterTraces) delete pendingMasterTraces[k];
+    state.eventCount = 0;
   };
 
   ws.onmessage = (e) => {
@@ -681,13 +692,32 @@ const BADGE = {
 };
 
 function startNewTask(evt) {
+  const taskIndex = evt.task_index;
+
+  // Replay/reconnect-safe: if this task group already exists, re-enter it instead
+  // of creating a duplicate. Collapse the prior current group, re-open this one.
+  const existing = findTaskGroup(taskIndex);
+  if (existing) {
+    if (currentTaskGroup && currentTaskGroup !== existing) {
+      currentTaskGroup.classList.remove('open');
+    }
+    existing.classList.add('open');
+    currentTaskGroup = existing;
+    currentTaskBody = existing.querySelector('.task-turns');
+    const pendingReentry = pendingMasterTraces[taskIndex];
+    if (pendingReentry) {
+      delete pendingMasterTraces[taskIndex];
+      renderMasterTrace(pendingReentry);
+    }
+    autoScroll();
+    return;
+  }
+
   // Collapse the previous task group (Decision 6 — live view keeps only the
   // current task open; past tasks collapse to their always-visible header).
   if (currentTaskGroup) {
     currentTaskGroup.classList.remove('open');
   }
-
-  const taskIndex = evt.task_index;
 
   const group = document.createElement('div');
   group.className = 'task-group open';
@@ -860,14 +890,18 @@ function completeTask(evt) {
     badge.title = badgeInfo.label;
   }
 
-  // Inject the rating reasoning into the verdict row of the master block.
+  // Inject the rating into the verdict row of the master block. Always show the
+  // status line when a rating exists (matches the report, which always renders
+  // the verdict row); append the reasoning only when present.
   const verdict = group.querySelector('.master-verdict');
-  if (verdict && rating.reasoning) {
+  if (verdict) {
     verdict.style.display = '';
-    verdict.innerHTML =
-      '<strong style="color:' + badgeColor(status) + '">' +
-      badgeInfo.glyph + ' ' + capitalize(badgeInfo.label) + '</strong> — ' +
-      escapeHtml(rating.reasoning);
+    let html = '<strong style="color:' + badgeColor(status) + '">' +
+      badgeInfo.glyph + ' ' + capitalize(badgeInfo.label) + '</strong>';
+    if (rating.reasoning) {
+      html += ' — ' + escapeHtml(rating.reasoning);
+    }
+    verdict.innerHTML = html;
   }
   autoScroll();
 }
@@ -908,6 +942,18 @@ function escapeHtml(s) {
 }
 
 function startNewTurn(turnNum) {
+  // Replay/reconnect-safe: reuse an existing block for this global turn number
+  // instead of appending a duplicate (turn numbers are globally unique).
+  const dupe = chatScroll.querySelector('.turn-block[data-turn="' + turnNum + '"]');
+  if (dupe) {
+    if (currentTurnBlock && currentTurnBlock !== dupe) {
+      currentTurnBlock.classList.remove('active');
+    }
+    currentTurnBlock = dupe;
+    currentTurnBody = dupe.querySelector('.turn-body');
+    return;
+  }
+
   // Append into the current task body if grouped; else stream flat (legacy
   // path — runs that never emit task_started behave exactly as before).
   const target = currentTaskBody || chatScroll;

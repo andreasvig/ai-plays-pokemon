@@ -162,6 +162,26 @@ def _extract_cost_from_messages(messages) -> float:
     return total_cost
 
 
+def _screenshot_path_to_data_url(path: Optional[str]) -> Optional[str]:
+    """Resolve a screenshot REF (file path) to an inline base64 PNG data URL.
+
+    The run loop stores the previous task's first/last screen by REF (path) per
+    Decision 8; this materializes the inline image only at TaskMaster-invocation
+    time so the agent can actually look at the screen. Returns None when the path
+    is falsy or unreadable — the TaskMaster then rates from the text evidence.
+    """
+    if not path:
+        return None
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+    except OSError:
+        return None
+    import base64
+
+    return "data:image/png;base64," + base64.b64encode(data).decode("ascii")
+
+
 def _extract_provider_from_messages(messages) -> str:
     """Pull the OpenRouter provider name from response metadata.
 
@@ -356,8 +376,8 @@ class TaskMasterRunner:
     URL cache invocation-scoped (statelessness rule).
 
     The whole class is the injectable seam: ``TurnManager`` accepts a
-    ``task_master_runner`` and only ever calls ``.invoke(inp)``, so a test can
-    pass a stub with the same one-method surface.
+    ``task_master_runner`` and only ever awaits ``.invoke_async(inp)``, so a test
+    can pass a stub with the same one-method surface.
     """
 
     def __init__(self, config: dict[str, Any]):
@@ -370,18 +390,42 @@ class TaskMasterRunner:
             config.get("task_master_model") or config.get("llm_model") or ""
         )
 
-    def invoke(self, inp: TaskMasterInput) -> TaskMasterInvocation:
-        """Run the TaskMaster agent once on ``inp`` (synchronous wrapper)."""
-        return asyncio.run(self._invoke_async(inp))
+    async def invoke_async(
+        self, inp: TaskMasterInput, *, is_cold_start: bool = False
+    ) -> TaskMasterInvocation:
+        """Run the TaskMaster agent once on ``inp`` (awaited from the run loop).
 
-    async def _invoke_async(self, inp: TaskMasterInput) -> TaskMasterInvocation:
+        MUST be awaited directly from the already-running loop event loop — it
+        must NOT wrap the agent call in ``asyncio.run`` (that raises "cannot be
+        called from a running event loop" inside the live loop).
+
+        When the input carries data-URL screenshots (the first/last screen of the
+        previous task, resolved from refs by the run loop), they are attached as
+        image content parts — mirroring the Player's text-then-image layout — so
+        the TaskMaster can actually cross-check the success criteria against the
+        screen instead of seeing only a textual placeholder.
+        """
         from pydantic_ai import capture_run_messages
         from pydantic_ai.usage import UsageLimits
 
+        from src.agent.task_master import _looks_like_data_url
         from src.agent.tools.page_visit import PageVisitor
 
-        deps = TaskMasterDeps(page_visitor=PageVisitor())
-        user_message = render_task_master_input(inp)
+        deps = TaskMasterDeps(
+            page_visitor=PageVisitor(), is_cold_start=is_cold_start
+        )
+        text = render_task_master_input(inp)
+
+        content: list[Any] = [text]
+        for label, img in (
+            ("START of the previous task", inp.prev_first_image),
+            ("END of the previous task", inp.prev_last_image),
+        ):
+            if _looks_like_data_url(img):
+                content.append(f"=== Screenshot — {label} ===")
+                content.append(ImageUrl(url=img))
+        user_message: Any = content if len(content) > 1 else text
+
         usage_limits = UsageLimits(request_limit=self._request_limit)
 
         kwargs: dict[str, Any] = {}
@@ -477,7 +521,7 @@ class TurnManager:
         )
         # The injectable seam. Built lazily on the real path (so a TM-disabled
         # run never constructs the agent), or injected by tests as a stub with a
-        # matching `.invoke(TaskMasterInput) -> TaskMasterInvocation` surface.
+        # matching `async invoke_async(TaskMasterInput) -> TaskMasterInvocation`.
         self._task_master_runner = task_master_runner
 
         # These get set during setup
@@ -616,8 +660,8 @@ class TurnManager:
         """Lazily build the real TaskMasterRunner, or return the injected stub.
 
         Built lazily so a TM-disabled run never constructs the agent, and tests
-        can inject a stub with a matching ``.invoke(...) -> TaskMasterInvocation``
-        surface before the loop runs.
+        can inject a stub with a matching ``async invoke_async(...) ->
+        TaskMasterInvocation`` surface before the loop runs.
         """
         if self._task_master_runner is None:
             self._task_master_runner = TaskMasterRunner(self.config)
@@ -674,12 +718,12 @@ class TurnManager:
             meta_goal=self._meta_goal(),
             prior_task_outputs=self._prior_task_outputs(),
             prev_player_reasons=list(self._cur_task_player_reasons),
-            prev_first_image=self._cur_task_first_image,
-            prev_last_image=self._cur_task_last_image,
+            prev_first_image=_screenshot_path_to_data_url(self._cur_task_first_image),
+            prev_last_image=_screenshot_path_to_data_url(self._cur_task_last_image),
             prev_player_self_assessment=self_assessment,
         )
 
-    def _cold_start(self) -> None:
+    async def _cold_start(self) -> None:
         """First TaskMaster invocation: set task 1 (no rating).
 
         Emits, in order: ``task_master_trace{1}`` → ``task_started{1}``. No
@@ -687,7 +731,9 @@ class TurnManager:
         """
         print("  Cold start: invoking TaskMaster for the opening task...")
         runner = self._get_task_master_runner()
-        inv = runner.invoke(self._build_cold_start_input())
+        inv = await runner.invoke_async(
+            self._build_cold_start_input(), is_cold_start=True
+        )
         self.task_master_cost_usd += inv.cost_usd
         self.current_task_index = 1
         self.current_task_turn = 0
@@ -713,19 +759,25 @@ class TurnManager:
         self._cur_task_last_image = None
         print(f"  Task 1: {task.title!r}")
 
-    def _handle_handoff(self, result: GameAction, handoff: Optional[Any]) -> None:
+    async def _handle_handoff(
+        self, result: Optional[GameAction], handoff: Optional[Any]
+    ) -> None:
         """Boundary TaskMaster invocation: rate task N, set task N+1.
 
         Emits, in order: ``task_completed{N}`` → ``task_master_trace{N+1}`` →
         ``task_started{N+1}``. Appends the rating to task N's history record,
         resets the per-task turn counter, and advances current_task to N+1.
+        ``result`` is unused (the Player's action is discarded on a handoff turn)
+        and may be None when the run loop force-hands-off at the budget boundary.
         """
         n = self.current_task_index
         why = "handed back" if handoff is not None else "budget exhausted"
         print(f"  Handoff after task {n} ({why}): invoking TaskMaster...")
 
         runner = self._get_task_master_runner()
-        inv = runner.invoke(self._build_handoff_input(handoff))
+        inv = await runner.invoke_async(
+            self._build_handoff_input(handoff), is_cold_start=False
+        )
         self.task_master_cost_usd += inv.cost_usd
         out: TaskMasterOutput = inv.output
 
@@ -811,7 +863,7 @@ class TurnManager:
         # rate yet). Skipped when TaskMaster is disabled OR a continued run
         # already restored a current_task from task_master_state.json.
         if self.task_master_enabled and self.current_task is None:
-            self._cold_start()
+            await self._cold_start()
 
         for _ in range(limit):
             self.turn_number += 1
@@ -821,6 +873,20 @@ class TurnManager:
 
             result = await self._run_turn()
             if result is None:
+                # At the per-task budget boundary the handoff to TaskMaster is an
+                # invariant. If the Player produced no valid output there (e.g. a
+                # prompted model that won't emit the optional return_to_taskmaster
+                # discriminator even after retries), force the handoff in code
+                # rather than ending the whole run.
+                if (
+                    self.task_master_enabled
+                    and self.max_turns > 0
+                    and self.current_task_turn >= self.max_turns
+                ):
+                    print(f"  [Turn {self.turn_number}] No valid Player output at the "
+                          f"budget boundary; forcing handoff to TaskMaster.")
+                    await self._handle_handoff(None, None)
+                    continue
                 print(f"  [Turn {self.turn_number}] No result. Stopping.")
                 break
 
@@ -835,7 +901,12 @@ class TurnManager:
                     self.max_turns > 0 and self.current_task_turn >= self.max_turns
                 )
                 if handoff is not None or budget_hit:
-                    self._handle_handoff(result, handoff)
+                    # Feed the finishing turn's reasoning to TaskMaster as evidence
+                    # before the handoff (this turn is otherwise not added to the
+                    # per-task reason buffer, since we `continue` past it).
+                    if getattr(result, "reasoning", None):
+                        self._cur_task_player_reasons.append(result.reasoning)
+                    await self._handle_handoff(result, handoff)
                     continue
 
             # Apply memory updates from the agent's output (string → dict)

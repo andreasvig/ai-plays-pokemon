@@ -230,6 +230,18 @@ def _validate_config(config: dict[str, Any], *, require_llm_model: bool = True) 
             raise ValueError(
                 f"task_master.history_window_n must be an int, got {hwn!r}"
             )
+        # The per-task turn budget (reused top-level `max_turns_per_task`) is the
+        # backstop that guarantees control returns to TaskMaster. With TaskMaster
+        # enabled it must be a positive int — `0`/missing would disable both the
+        # output validator and the run-loop backstop, letting a Player that never
+        # volunteers a handoff run one unbounded task.
+        if enabled:
+            mtp = config.get("max_turns_per_task")
+            if not isinstance(mtp, int) or isinstance(mtp, bool) or mtp < 1:
+                raise ValueError(
+                    "max_turns_per_task must be a positive int when "
+                    f"task_master.enabled is true, got {mtp!r}"
+                )
 
     # historic_images_count: how many of the most recent visible turns should
     # have their start-of-turn screenshot included inline alongside the current
