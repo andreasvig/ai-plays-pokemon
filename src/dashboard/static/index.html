@@ -143,6 +143,124 @@
   .footer .connected { color: var(--green); }
   .footer .disconnected { color: var(--accent2); }
 
+  /* ============================================================
+     TaskMaster two-level tree — design tokens (keep in sync with
+     report.py <style>; Decision 7):
+       task accent / amber-gold : #ffce54
+       badge ✅ succeeded       : #7ddf64
+       badge ❌ failed          : #e94560
+       badge 🟡 partial         : #ffce54
+       badge ⏳ current/pending  : grey (#8b949e)
+       player turn guide line   : #2a3a5a, indent 24px
+     ============================================================ */
+  .task-group {
+    margin-bottom: 8px;
+    border: 1px solid var(--border);
+    border-left: 3px solid #ffce54;
+    border-radius: 4px;
+    background: var(--bg-panel);
+  }
+  .task-header {
+    padding: 8px 10px;
+    cursor: pointer;
+    user-select: none;
+    background: rgba(255, 206, 84, 0.08);
+    border-bottom: 1px solid transparent;
+  }
+  .task-header:hover { background: rgba(255, 206, 84, 0.14); }
+  .task-group.open .task-header { border-bottom-color: var(--border); }
+  .task-header-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+  }
+  .task-arrow {
+    font-size: 10px;
+    color: #ffce54;
+    transition: transform 0.15s;
+    width: 12px;
+    flex-shrink: 0;
+  }
+  .task-group.open .task-arrow { transform: rotate(90deg); }
+  .task-label { color: #ffce54; font-weight: bold; flex-shrink: 0; }
+  .task-title {
+    color: var(--text);
+    font-weight: bold;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .task-count { color: var(--text-dim); font-size: 11px; flex-shrink: 0; }
+  .task-cost { color: var(--yellow); font-size: 11px; flex-shrink: 0; }
+  .task-badge {
+    flex-shrink: 0;
+    font-size: 11px;
+    font-weight: bold;
+    padding: 1px 7px;
+    border-radius: 10px;
+    border: 1px solid currentColor;
+  }
+  .task-badge.badge-succeeded { color: #7ddf64; }
+  .task-badge.badge-failed { color: #e94560; }
+  .task-badge.badge-partial { color: #ffce54; }
+  .task-badge.badge-other { color: #bc8cff; }
+  .task-badge.badge-pending { color: var(--text-dim); }
+  /* Description line: always visible even when collapsed (Decision 4) */
+  .task-desc {
+    margin-top: 4px;
+    padding-left: 20px;
+    color: var(--text-dim);
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .task-body {
+    display: none;
+    padding: 8px 10px;
+  }
+  .task-group.open .task-body { display: block; }
+  /* Master detail block — amber "strategy" layer, full width */
+  .master-block {
+    margin-bottom: 8px;
+    border: 1px solid var(--border);
+    border-left: 2px solid #ffce54;
+    border-radius: 4px;
+    background: var(--bg);
+    overflow: hidden;
+  }
+  .master-block-header {
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: rgba(255, 206, 84, 0.12);
+    color: #ffce54;
+    border-bottom: 1px solid var(--border);
+  }
+  .master-block-body { padding: 6px 10px; }
+  .master-verdict {
+    margin-bottom: 8px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    background: var(--bg-card);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .master-criteria {
+    margin-bottom: 8px;
+    color: var(--text-dim);
+    font-size: 11px;
+    line-height: 1.5;
+  }
+  /* Player turns nested under their task with a guide line */
+  .task-turns {
+    margin-left: 24px;
+    border-left: 2px solid #2a3a5a;
+    padding-left: 8px;
+  }
+
   /* Turn blocks */
   .turn-block {
     margin-bottom: 4px;
@@ -333,6 +451,16 @@ let currentTurnBlock = null;
 let currentTurnBody = null;
 let prevObjectURL = null;
 
+// --- TaskMaster two-level tree state ---
+// currentTaskGroup/Body point at the active .task-group; null in legacy
+// (no task_started) runs, in which case turns stream flat into chatScroll.
+// task_master_trace{N} arrives BEFORE task_started{N} (see plan event
+// contract), so traces that land before their group exists are buffered
+// here keyed by task_index and flushed when startNewTask creates the group.
+let currentTaskGroup = null;
+let currentTaskBody = null;
+const pendingMasterTraces = {};
+
 // --- Auto-scroll logic ---
 chatScroll.addEventListener('scroll', () => {
   const atBottom = chatScroll.scrollTop + chatScroll.clientHeight >= chatScroll.scrollHeight - 60;
@@ -429,6 +557,15 @@ function handleEvent(evt) {
 
   if (t === 'run_start') {
     addSystemEntry('Run started');
+  }
+  else if (t === 'task_started') {
+    startNewTask(evt);
+  }
+  else if (t === 'task_master_trace') {
+    renderMasterTrace(evt);
+  }
+  else if (t === 'task_completed') {
+    completeTask(evt);
   }
   else if (t === 'turn_start') {
     startNewTurn(evt.turn);
@@ -530,15 +667,269 @@ function handleEvent(evt) {
   // screenshot, state_change, ocr, etc. — silently ignore
 }
 
-function startNewTurn(turnNum) {
-  // Keep last 2 turns open — collapse any older ones
-  const blocks = chatScroll.querySelectorAll('.turn-block');
-  for (const b of blocks) {
-    const bTurn = parseInt(b.dataset.turn);
-    if (bTurn < turnNum - 1) {
-      b.classList.remove('active', 'open');
+// --- TaskMaster tree helpers ---
+
+function findTaskGroup(taskIndex) {
+  return chatScroll.querySelector('.task-group[data-task="' + taskIndex + '"]');
+}
+
+const BADGE = {
+  succeeded: { glyph: '✅', cls: 'badge-succeeded', label: 'succeeded' },
+  failed:    { glyph: '❌', cls: 'badge-failed',    label: 'failed' },
+  partial:   { glyph: '🟡', cls: 'badge-partial',   label: 'partial' },
+  other:     { glyph: '➖', cls: 'badge-other',      label: 'other' },
+};
+
+function startNewTask(evt) {
+  // Collapse the previous task group (Decision 6 — live view keeps only the
+  // current task open; past tasks collapse to their always-visible header).
+  if (currentTaskGroup) {
+    currentTaskGroup.classList.remove('open');
+  }
+
+  const taskIndex = evt.task_index;
+
+  const group = document.createElement('div');
+  group.className = 'task-group open';
+  group.dataset.task = taskIndex;
+
+  const header = document.createElement('div');
+  header.className = 'task-header';
+  const titleText = evt.title || '(untitled task)';
+  const descText = evt.description || '';
+  header.innerHTML = `
+    <div class="task-header-row">
+      <span class="task-arrow">▶</span>
+      <span class="task-label">Task ${taskIndex} (Master)</span>
+      <span class="task-title">${escapeHtml(titleText)}</span>
+      <span class="task-count">0 turns</span>
+      <span class="task-cost"></span>
+      <span class="task-badge badge-pending">⏳</span>
+    </div>
+    <div class="task-desc">${escapeHtml(descText)}</div>
+  `;
+  // Toggle the task group open/closed; per-turn cards keep their own toggle.
+  header.onclick = () => group.classList.toggle('open');
+
+  const body = document.createElement('div');
+  body.className = 'task-body';
+
+  // Nested player turns live in their own indented container with a guide line.
+  const turns = document.createElement('div');
+  turns.className = 'task-turns';
+
+  group.appendChild(header);
+  group.appendChild(body);
+  body.appendChild(turns);
+  chatScroll.appendChild(group);
+
+  // Stash success_criteria so completeTask / a flushed trace can surface it.
+  group.dataset.successCriteria = evt.success_criteria || '';
+
+  currentTaskGroup = group;
+  currentTaskBody = turns;
+
+  // Flush a master trace that arrived before this group existed.
+  const pending = pendingMasterTraces[taskIndex];
+  if (pending) {
+    delete pendingMasterTraces[taskIndex];
+    renderMasterTrace(pending);
+  }
+
+  autoScroll();
+}
+
+function renderMasterTrace(evt) {
+  const taskIndex = evt.task_index;
+  const group = findTaskGroup(taskIndex);
+
+  // The master trace for task N is emitted just before task_started{N}; if the
+  // group doesn't exist yet, buffer and let startNewTask flush it.
+  if (!group) {
+    pendingMasterTraces[taskIndex] = evt;
+    return;
+  }
+
+  const body = group.querySelector('.task-body');
+  if (!body) return;
+
+  // Replay-safe: don't double-render if a master block already exists.
+  if (body.querySelector('.master-block')) return;
+
+  const block = document.createElement('div');
+  block.className = 'master-block';
+
+  const header = document.createElement('div');
+  header.className = 'master-block-header';
+  const modelStr = evt.model_used ? ' · ' + evt.model_used : '';
+  const costStr = (evt.cost_usd != null) ? ' · $' + Number(evt.cost_usd).toFixed(4) : '';
+  header.textContent = '🧭 TaskMaster' + modelStr + costStr;
+
+  const mbody = document.createElement('div');
+  mbody.className = 'master-block-body';
+
+  // Verdict row (rating of the previous task) is injected later by
+  // completeTask; reserve a placeholder so it lands inside this block.
+  const verdict = document.createElement('div');
+  verdict.className = 'master-verdict';
+  verdict.style.display = 'none';
+  mbody.appendChild(verdict);
+
+  // Success criterion for THIS task lives in the expanded master block
+  // (Decision 4 keeps it off the collapsed header).
+  const crit = group.dataset.successCriteria || '';
+  if (crit) {
+    const critEl = document.createElement('div');
+    critEl.className = 'master-criteria';
+    critEl.textContent = '🎯 Success criterion: ' + crit;
+    mbody.appendChild(critEl);
+  }
+
+  // Reuse the same trace-replay rendering used by renderTurnTrace, but the
+  // master's final_result carries task fields (already on the header), so skip it.
+  const messages = evt.messages || [];
+  for (const msg of messages) {
+    const role = msg.role || msg.kind || '';
+    if (role === 'system') {
+      const det = document.createElement('details');
+      det.innerHTML = '<summary style="color:var(--text-dim);cursor:pointer;font-size:11px;">System Prompt</summary>';
+      const pre = document.createElement('pre');
+      pre.style.cssText = 'font-size:10px;color:var(--text-dim);white-space:pre-wrap;max-height:200px;overflow-y:auto;margin:4px 0;';
+      pre.textContent = truncate(msg.content || '', 2000);
+      det.appendChild(pre);
+      mbody.appendChild(det);
+    }
+    else if (role === 'user') {
+      const det = document.createElement('details');
+      det.innerHTML = '<summary style="color:var(--text-dim);cursor:pointer;font-size:11px;">Input (progress + screen)</summary>';
+      const pre = document.createElement('pre');
+      pre.style.cssText = 'font-size:10px;color:var(--text-dim);white-space:pre-wrap;max-height:200px;overflow-y:auto;margin:4px 0;';
+      pre.textContent = truncate(msg.content || '', 2000);
+      det.appendChild(pre);
+      mbody.appendChild(det);
+    }
+    else if (role === 'thinking') {
+      addBoxTo(mbody, 'thinking', '💭 Thinking', msg.content || '', true);
+    }
+    else if (role === 'tool_call') {
+      const name = msg.tool_name || '?';
+      if (name === 'final_result') continue;  // task fields already on header
+      let cargs = msg.args;
+      if (typeof cargs !== 'string') cargs = JSON.stringify(cargs, null, 2);
+      addBoxTo(mbody, 'tool', '🔧 ' + name, cargs || '');
+    }
+    else if (role === 'tool_result') {
+      const content = msg.content || '';
+      if (content === 'Final result processed.') continue;
+      if (content.startsWith('Tool not executed')) continue;
+      addBoxTo(mbody, 'tool', '↳ Response', content);
+    }
+    else if (role === 'retry') {
+      addBoxTo(mbody, 'error', '🔄 Retry', msg.content || 'Validation failed — retrying.');
     }
   }
+
+  block.appendChild(header);
+  block.appendChild(mbody);
+  // Master block goes ABOVE the player turns (Decision 1).
+  body.insertBefore(block, body.firstChild);
+
+  // Roll the master cost into the task-cost span.
+  if (evt.cost_usd != null) {
+    group.dataset.masterCost = String(evt.cost_usd);
+    updateTaskCost(group);
+  }
+
+  autoScroll();
+}
+
+function completeTask(evt) {
+  // Backward-stamp: task_completed{N} can arrive AFTER task N+1 already
+  // started, so always resolve the target group by index, never "current".
+  const group = findTaskGroup(evt.task_index);
+  if (!group) return;
+
+  const rating = evt.rating || {};
+  const status = rating.status || 'other';
+  const badgeInfo = BADGE[status] || BADGE.other;
+
+  const badge = group.querySelector('.task-badge');
+  if (badge) {
+    badge.className = 'task-badge ' + badgeInfo.cls;
+    badge.textContent = badgeInfo.glyph;
+    badge.title = badgeInfo.label;
+  }
+
+  // Inject the rating reasoning into the verdict row of the master block.
+  const verdict = group.querySelector('.master-verdict');
+  if (verdict && rating.reasoning) {
+    verdict.style.display = '';
+    verdict.innerHTML =
+      '<strong style="color:' + badgeColor(status) + '">' +
+      badgeInfo.glyph + ' ' + capitalize(badgeInfo.label) + '</strong> — ' +
+      escapeHtml(rating.reasoning);
+  }
+  autoScroll();
+}
+
+function badgeColor(status) {
+  if (status === 'succeeded') return '#7ddf64';
+  if (status === 'failed') return '#e94560';
+  if (status === 'partial') return '#ffce54';
+  return '#bc8cff';
+}
+
+function capitalize(s) {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+
+function updateTaskCount(group) {
+  const turns = group.querySelector('.task-turns');
+  const n = turns ? turns.querySelectorAll('.turn-block').length : 0;
+  const span = group.querySelector('.task-count');
+  if (span) span.textContent = n + (n === 1 ? ' turn' : ' turns');
+}
+
+function updateTaskCost(group) {
+  const turns = group.querySelector('.task-turns');
+  let total = parseFloat(group.dataset.masterCost || '0') || 0;
+  if (turns) {
+    for (const b of turns.querySelectorAll('.turn-block')) {
+      total += parseFloat(b.dataset.cost || '0') || 0;
+    }
+  }
+  const span = group.querySelector('.task-cost');
+  if (span) span.textContent = total > 0 ? '$' + total.toFixed(4) : '';
+}
+
+function escapeHtml(s) {
+  if (typeof s !== 'string') s = String(s == null ? '' : s);
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function startNewTurn(turnNum) {
+  // Append into the current task body if grouped; else stream flat (legacy
+  // path — runs that never emit task_started behave exactly as before).
+  const target = currentTaskBody || chatScroll;
+
+  // Within-task turn number M, derived by position in the current task body.
+  let label = 'Turn ' + turnNum;
+  if (currentTaskGroup) {
+    const within = target.querySelectorAll('.turn-block').length + 1;
+    label = 'Turn ' + currentTaskGroup.dataset.task + '.' + within;
+  } else {
+    // Legacy (no-task) path: preserve today's "keep last 2 turns open,
+    // collapse older" heuristic so non-TM runs render exactly as before.
+    // Grouped runs collapse at the task level instead (Decision 6).
+    const blocks = chatScroll.querySelectorAll('.turn-block');
+    for (const b of blocks) {
+      const bTurn = parseInt(b.dataset.turn);
+      if (bTurn < turnNum - 1) {
+        b.classList.remove('active', 'open');
+      }
+    }
+  }
+
   if (currentTurnBlock) {
     currentTurnBlock.classList.remove('active');
   }
@@ -553,7 +944,7 @@ function startNewTurn(turnNum) {
   header.className = 'turn-header';
   header.innerHTML = `
     <span class="turn-arrow">▶</span>
-    <span class="turn-label">Turn ${turnNum}</span>
+    <span class="turn-label">${label}</span>
     <span class="turn-summary" id="turnSummary${turnNum}"></span>
     <span class="turn-cost" id="turnCost${turnNum}"></span>
   `;
@@ -564,10 +955,14 @@ function startNewTurn(turnNum) {
 
   block.appendChild(header);
   block.appendChild(body);
-  chatScroll.appendChild(block);
+  target.appendChild(block);
 
   currentTurnBlock = block;
   currentTurnBody = body;
+
+  // Refresh the current task header's turn count.
+  if (currentTaskGroup) updateTaskCount(currentTaskGroup);
+
   autoScroll();
 }
 
@@ -676,9 +1071,18 @@ function renderTurnExplanation(evt) {
 }
 
 function renderTurnUsage(evt) {
-  const costEl = document.getElementById('turnCost' + (evt.turn || state.currentTurn));
+  const turnNum = evt.turn || state.currentTurn;
+  const cost = evt.cost_usd || 0;
+  const costEl = document.getElementById('turnCost' + turnNum);
   if (costEl) {
-    costEl.textContent = '$' + (evt.cost_usd || 0).toFixed(4);
+    costEl.textContent = '$' + cost.toFixed(4);
+  }
+  // Stash cost on the turn block + roll up into the owning task header.
+  const block = chatScroll.querySelector('.turn-block[data-turn="' + turnNum + '"]');
+  if (block) {
+    block.dataset.cost = String(cost);
+    const group = block.closest('.task-group');
+    if (group) updateTaskCost(group);
   }
 }
 
