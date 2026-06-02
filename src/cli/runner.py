@@ -106,16 +106,59 @@ def open_scripting_window_for_pid(pid: int) -> bool:
     return result.stdout.strip() == "ok"
 
 
-def prepare_config(path: str | None, model_alias: str) -> dict:
+def _resolve_task_master_model(config: dict, tm_model_alias: str | None) -> None:
+    """Resolve the --task-master-model alias into config, in place.
+
+    Mirrors the Player's `--model` resolution: the alias is looked up in
+    configs/models.yaml the same way and expanded into `task_master_model`
+    (the OpenRouter id) + `_task_master_llm_resolved` (the registry entry, which
+    carries reasoning/temperature/provider/output_mode). B2's
+    create_task_master_agent reads exactly those two keys.
+
+    When `tm_model_alias` is None the flag was omitted — leave both keys unset so
+    create_task_master_agent falls back to the Player's `llm_model` + `_llm_resolved`
+    (the documented default: "defaults to the Player's --model when omitted").
+    """
+    if not tm_model_alias:
+        return
+    from src.config import _load_models_registry, _is_raw_model_id
+
+    if _is_raw_model_id(tm_model_alias):
+        # Raw provider/model id — use verbatim, no registry entry to resolve.
+        config["task_master_model"] = tm_model_alias
+        config["_task_master_alias"] = tm_model_alias
+        return
+    registry = _load_models_registry()
+    entry = registry.get(tm_model_alias)
+    if entry is None or not entry.get("openrouter_id"):
+        known = ", ".join(sorted(registry)) or "(registry empty)"
+        sys.exit(
+            f"ERROR: --task-master-model alias {tm_model_alias!r} not found in "
+            f"models.yaml. Known aliases: {known}."
+        )
+    config["task_master_model"] = entry["openrouter_id"]
+    config["_task_master_llm_resolved"] = entry
+    config["_task_master_alias"] = tm_model_alias
+
+
+def prepare_config(
+    path: str | None,
+    model_alias: str,
+    tm_model_alias: str | None = None,
+) -> dict:
     """Load a config + bind it to a model alias.
 
     The model alias drives registry resolution (reasoning/temperature/provider/
     output_mode from configs/models.yaml). run_name combines the config stem
     with the model alias so multi-model sequences produce distinguishable
     run dirs and dashboard labels.
+
+    `tm_model_alias` (from --task-master-model) is resolved the same way for the
+    TaskMaster agent; when None it falls back to the Player's model.
     """
     config = load_config(path, llm_alias=model_alias)
     config = copy.deepcopy(config)
+    _resolve_task_master_model(config, tm_model_alias)
     actual_path = config.get("_config_path") or path or ""
     stem = Path(actual_path).stem if actual_path else "default"
     slug = _slug(model_alias)
@@ -276,6 +319,22 @@ def run_single_loop(
 
     turn_mgr = TurnManager(config)
     turn_mgr.setup(emu, state, vision, logger, ocr_runner)
+
+    # TaskMaster state restore (--continue path): when TaskMaster is enabled and
+    # the snapshot carries task_master_state.json, reload current_task +
+    # current_task_index + task_history so the resumed run keeps its task tree
+    # (and skips the cold-start). Legacy tasks.json restore (above) covers the
+    # TM-disabled path.
+    if turn_mgr.task_master_enabled and snapshot:
+        from src.core.snapshots import SnapshotManager as _SnapMgr
+        tm_state = _SnapMgr.load_task_master_state(snapshot)
+        if tm_state is not None:
+            turn_mgr.restore_task_master_state(tm_state)
+            print(
+                f"  TaskMaster state restored: task "
+                f"{tm_state.get('current_task_index')} "
+                f"({len(tm_state.get('task_history') or [])} prior in history)"
+            )
 
     print(f"Running {turns} turns...")
     print(f"Task: {config.get('task', {}).get('goal', 'Play the game')}")
@@ -500,6 +559,12 @@ Examples:
              '"provider/model" OpenRouter ids. Required unless --continue is set.',
     )
     parser.add_argument(
+        "--task-master-model", dest="task_master_model", default=None,
+        help='TaskMaster model alias (or raw "provider/model" id), resolved '
+             "through models.yaml the same way as --model. Defaults to the "
+             "Player's --model when omitted. Only used when task_master.enabled.",
+    )
+    parser.add_argument(
         "--continue", dest="continue_from", default=None,
         help="Path to a prior run dir. Continues from its latest savepoint with "
              "a fresh turn counter. Single-run only (no sequential). Ignores "
@@ -537,7 +602,10 @@ Examples:
         if not args.model:
             sys.exit("ERROR: --model is required (unless --continue is set).")
         pairs = _resolve_pairs(args.config, args.model)
-        prepared = [prepare_config(c, m) for c, m in pairs]
+        prepared = [
+            prepare_config(c, m, tm_model_alias=args.task_master_model)
+            for c, m in pairs
+        ]
 
     if args.kill_existing:
         subprocess.run(["pkill", "-f", "mgba"], capture_output=True)

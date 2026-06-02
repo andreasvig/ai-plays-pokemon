@@ -92,8 +92,76 @@ class RunLogger:
     def log_vlm_response(self, response: str, agent_id: str = "") -> None:
         self._log_event("vlm_response", {"response": response, "agent_id": agent_id})
 
-    def log_turn_start(self, turn_number: int, agent_id: str = "") -> None:
-        self._log_event("turn_start", {"turn": turn_number, "agent_id": agent_id})
+    def log_turn_start(
+        self,
+        turn_number: int,
+        agent_id: str = "",
+        task_index: Optional[int] = None,
+    ) -> None:
+        """Log the start of a player turn.
+
+        ``task_index`` is the only hard new field on player turns under the
+        TaskMaster contract (see local/plan-frontend-display.md "Event
+        contract"). It is the index of the task this turn runs under so the
+        frontend can bucket the turn into its task group. When TaskMaster is
+        disabled it is None and omitted entirely, so the legacy turn_start shape
+        is byte-for-byte unchanged.
+        """
+        data: dict[str, Any] = {"turn": turn_number, "agent_id": agent_id}
+        if task_index is not None:
+            data["task_index"] = task_index
+        self._log_event("turn_start", data)
+
+    # --- TaskMaster task-lifecycle events (gated on task_master.enabled) -------
+    # Shapes are locked by local/plan-frontend-display.md "Event contract"; the
+    # report (src/cli/report.py) + dashboard already consume these exact keys.
+
+    def log_task_started(
+        self,
+        task_index: int,
+        title: str,
+        description: str,
+        success_criteria: str,
+        global_turn: int,
+    ) -> None:
+        """Emit when a master call sets a new task (incl. the cold-start task 1)."""
+        self._log_event("task_started", {
+            "task_index": task_index,
+            "title": title,
+            "description": description,
+            "success_criteria": success_criteria,
+            "global_turn": global_turn,
+        })
+
+    def log_task_completed(self, task_index: int, rating: dict) -> None:
+        """Emit when a master call rates the just-finished task (#2 onward).
+
+        ``rating`` is ``{status, reasoning}`` — it stamps backward onto the
+        rated task_index in both frontend surfaces (Decision 2).
+        """
+        self._log_event("task_completed", {
+            "task_index": task_index,
+            "rating": rating,
+        })
+
+    def log_task_master_trace(
+        self,
+        task_index: int,
+        messages: list[dict],
+        model_used: str,
+        cost_usd: float,
+    ) -> None:
+        """Emit the TaskMaster agent's own trace (analogous to turn_trace).
+
+        ``messages`` is the same role-shape as turn_trace's messages
+        (system/user/thinking/tool_call/tool_result/final_result).
+        """
+        self._log_event("task_master_trace", {
+            "task_index": task_index,
+            "messages": messages,
+            "model_used": model_used,
+            "cost_usd": cost_usd,
+        })
 
     def log_turn_explanation(self, turn_number: int, explanation: dict, agent_id: str = "") -> None:
         self._log_event("turn_explanation", {"turn": turn_number, "explanation": explanation, "agent_id": agent_id})

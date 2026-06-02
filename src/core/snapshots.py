@@ -85,6 +85,7 @@ class SnapshotManager:
         run_dir: Path,
         turn: int,
         kind: str = "periodic",
+        task_master_state: Optional[dict] = None,
     ) -> Path:
         """Save a run-scoped savepoint to <run_dir>/savepoints/turn_<N>/.
 
@@ -92,6 +93,13 @@ class SnapshotManager:
         snapshots/ pool) and uses a deterministic per-turn directory. If the
         target dir already exists (e.g. running `every_n_turns=5` twice with
         the same turn counter), it's overwritten.
+
+        ``task_master_state`` — when TaskMaster is enabled, the run loop passes
+        ``{current_task, current_task_turn, task_history[]}`` here and it is
+        written as ``task_master_state.json``. This is the replacement for the
+        legacy ``tasks.json`` task-state file in the TaskMaster path. On the
+        TM-disabled legacy path it is None and only the tasks.json copy below
+        runs (unchanged).
         """
         savepoints_root = run_dir / "savepoints"
         savepoints_root.mkdir(parents=True, exist_ok=True)
@@ -104,6 +112,13 @@ class SnapshotManager:
 
         if self.state_file.exists():
             shutil.copy2(self.state_file, target / "state.json")
+
+        # TaskMaster path: persist task state to task_master_state.json (the
+        # legacy tasks.json is bypassed when TM owns the task — see plan.md
+        # "Reconciliation with existing task machinery").
+        if task_master_state is not None:
+            with open(target / "task_master_state.json", "w") as f:
+                json.dump(task_master_state, f, indent=2, default=str)
 
         tasks_src = self.state_file.parent / "tasks.json"
         if tasks_src.exists():
@@ -121,6 +136,25 @@ class SnapshotManager:
             json.dump(metadata, f, indent=2)
 
         return target
+
+    @staticmethod
+    def load_task_master_state(snapshot_path: str) -> Optional[dict]:
+        """Read ``task_master_state.json`` from a savepoint dir, or None.
+
+        Used by the --continue path to restore ``current_task`` /
+        ``current_task_turn`` / ``task_history`` into a resumed run when
+        TaskMaster is enabled. Returns None when the file is absent (TM-disabled
+        source run, or a savepoint predating this format).
+        """
+        tm_state_path = Path(snapshot_path) / "task_master_state.json"
+        if not tm_state_path.exists():
+            return None
+        try:
+            with open(tm_state_path) as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else None
+        except (json.JSONDecodeError, OSError):
+            return None
 
     def load_snapshot(self, snapshot_path: str) -> dict:
         """Load a snapshot, restoring emulator and agent state.

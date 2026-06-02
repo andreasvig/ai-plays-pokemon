@@ -5,6 +5,7 @@ import json
 import logging
 import sys
 import time
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from PIL import Image
@@ -24,6 +25,13 @@ from pydantic_ai.messages import (
 from pydantic_ai.models.openai import OpenAIModel
 
 from src.agent.agent import AgentDeps, GameAction, create_agent
+from src.agent.task_master import (
+    TaskMasterDeps,
+    TaskMasterInput,
+    TaskMasterOutput,
+    create_task_master_agent,
+    render_input as render_task_master_input,
+)
 from src.emulator import EmulatorClient, VisionPipeline, OCRRunner
 from src.core import RunLogger, StateManager
 from src.core.snapshots import SnapshotManager
@@ -322,6 +330,79 @@ def _print_trace_summary(turn_num: int, trace: list[dict]) -> None:
             print(f"{tag('Retry')} {_truncate(msg.get('content', ''), 100)}")
 
 
+@dataclass
+class TaskMasterInvocation:
+    """Result of one TaskMaster invocation.
+
+    The seam between the run loop and the TaskMaster agent: the run loop only
+    needs the structured ``output`` plus the trace/cost/model for logging. Tests
+    inject a runner that returns scripted instances of this, so the handoff
+    orchestration can be exercised without OpenRouter or mGBA.
+    """
+
+    output: TaskMasterOutput
+    trace: list[dict] = field(default_factory=list)
+    cost_usd: float = 0.0
+    model_used: str = ""
+
+
+class TaskMasterRunner:
+    """Maps a ``TaskMasterInput`` → ``TaskMasterInvocation`` via pydantic-ai.
+
+    Construction mirrors the Player's: ``create_task_master_agent`` resolves
+    model + output-mode from config; the runner owns ``request_limit`` (round
+    count, NOT an aggregate token cap — a web-research agent accumulates page
+    text across tool rounds). A fresh ``PageVisitor`` per invocation keeps the
+    URL cache invocation-scoped (statelessness rule).
+
+    The whole class is the injectable seam: ``TurnManager`` accepts a
+    ``task_master_runner`` and only ever calls ``.invoke(inp)``, so a test can
+    pass a stub with the same one-method surface.
+    """
+
+    def __init__(self, config: dict[str, Any]):
+        from src.agent.task_master import DEFAULT_REQUEST_LIMIT
+
+        self.config = config
+        self._agent, self._model_settings = create_task_master_agent(config)
+        self._request_limit = DEFAULT_REQUEST_LIMIT
+        self._model_used = (
+            config.get("task_master_model") or config.get("llm_model") or ""
+        )
+
+    def invoke(self, inp: TaskMasterInput) -> TaskMasterInvocation:
+        """Run the TaskMaster agent once on ``inp`` (synchronous wrapper)."""
+        return asyncio.run(self._invoke_async(inp))
+
+    async def _invoke_async(self, inp: TaskMasterInput) -> TaskMasterInvocation:
+        from pydantic_ai import capture_run_messages
+        from pydantic_ai.usage import UsageLimits
+
+        from src.agent.tools.page_visit import PageVisitor
+
+        deps = TaskMasterDeps(page_visitor=PageVisitor())
+        user_message = render_task_master_input(inp)
+        usage_limits = UsageLimits(request_limit=self._request_limit)
+
+        kwargs: dict[str, Any] = {}
+        if self._model_settings:
+            kwargs["model_settings"] = self._model_settings
+
+        with capture_run_messages() as captured:
+            result = await self._agent.run(
+                user_message, deps=deps, usage_limits=usage_limits, **kwargs
+            )
+        messages = list(captured)
+        trace = _serialize_messages(messages)
+        cost = _extract_cost_from_messages(messages)
+        return TaskMasterInvocation(
+            output=result.output,
+            trace=trace,
+            cost_usd=cost,
+            model_used=self._model_used,
+        )
+
+
 class _TeeWriter:
     """Duplicates writes to both a stream and a file."""
 
@@ -351,7 +432,11 @@ class _TeeWriter:
 class TurnManager:
     """Orchestrates the turn loop: screenshot -> think -> act -> repeat."""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(
+        self,
+        config: dict[str, Any],
+        task_master_runner: Optional[Any] = None,
+    ):
         self.config = config
         self.max_turns = config.get("max_turns_per_task", 50)
 
@@ -364,14 +449,36 @@ class TurnManager:
             config.get("task_master", {}).get("enabled", False)
         )
         # How many turns the Player has spent on the CURRENT task (1-based, set
-        # at the top of each turn). Run-loop integration (Phase B4) resets this
-        # to 0 on each TaskMaster handoff; until then it tracks the global turn.
+        # at the top of each turn). Reset to 0 on each TaskMaster handoff.
         self.current_task_turn = 0
+        # 1-based index of the current task (cold-start task is 1). Drives the
+        # task_index carried on each player turn_start + the task-lifecycle events.
+        self.current_task_index = 0
         # The current task the Player is executing, as a dict with at least a
-        # `title`/`goal`; `description` and `success_criteria` optional. Populated
-        # by the run loop (B4) on each TaskMaster invocation. Falls back to the
-        # config task for cold-start / pre-B4 wiring.
+        # `title`/`goal`; `description` and `success_criteria` optional. Set by
+        # the cold-start / handoff logic from TaskMaster's returned task.
         self.current_task: Optional[dict] = None
+
+        # TaskMaster history + per-task evidence accumulators (only used when TM
+        # enabled). `task_history` is the list the savepoint persists and the
+        # rolling-window inputs are built from. The two `_cur_task_*` buffers
+        # collect the just-finished task's evidence so the next TaskMaster
+        # invocation can rate it.
+        self.task_history: list[dict] = []
+        self._cur_task_player_reasons: list[str] = []
+        self._cur_task_first_image: Optional[str] = None
+        self._cur_task_last_image: Optional[str] = None
+        # Separate TaskMaster cost counter (Decision 10) — distinct from the
+        # Player's total_cost_usd so strategy vs tactics cost is comparable.
+        self.task_master_cost_usd = 0.0
+        # Rolling-window size for the TaskMaster's view of its own prior outputs.
+        self.history_window_n = int(
+            config.get("task_master", {}).get("history_window_n", 20)
+        )
+        # The injectable seam. Built lazily on the real path (so a TM-disabled
+        # run never constructs the agent), or injected by tests as a stub with a
+        # matching `.invoke(TaskMasterInput) -> TaskMasterInvocation` surface.
+        self._task_master_runner = task_master_runner
 
         # These get set during setup
         self.emulator: Optional[EmulatorClient] = None
@@ -440,6 +547,15 @@ class TurnManager:
             sp_config["state_file"] = str(logger.run_dir / "state.json")
             self._snapshot_mgr = SnapshotManager(sp_config, emulator)
 
+        # tasks.json supersession (plan.md "Reconciliation"): when TaskMaster is
+        # enabled it OWNS the current task — the legacy tasks.json read is
+        # bypassed entirely and TM state lives in task_master_state.json instead.
+        # The block below runs ONLY on the TM-disabled legacy path.
+        if self.task_master_enabled:
+            cfg_goal = (self.config.get("task") or {}).get("goal", "?")
+            print(f"  Task source: TASKMASTER (supersedes tasks.json) — meta-goal: {cfg_goal!r}")
+            return
+
         # Load tasks from run folder if present — UNLESS the config has
         # task_override_snapshot=true, in which case we ignore the snapshot's
         # task and let the user-message build fall through to config["task"]
@@ -475,10 +591,12 @@ class TurnManager:
         if self._snapshot_mgr is None or self.turn_number <= 0:
             return None
         try:
+            tm_state = self._task_master_state() if self.task_master_enabled else None
             path = self._snapshot_mgr.save_run_savepoint(
                 run_dir=self.logger.run_dir,
                 turn=self.turn_number,
                 kind=kind,
+                task_master_state=tm_state,
             )
             self.logger.log_custom("savepoint_saved", {
                 "turn": self.turn_number, "kind": kind, "path": str(path),
@@ -491,6 +609,188 @@ class TurnManager:
             })
             print(f"  [Turn {self.turn_number}] Savepoint ({kind}) FAILED: {e}")
             return None
+
+    # --- TaskMaster orchestration -------------------------------------------
+
+    def _get_task_master_runner(self) -> Any:
+        """Lazily build the real TaskMasterRunner, or return the injected stub.
+
+        Built lazily so a TM-disabled run never constructs the agent, and tests
+        can inject a stub with a matching ``.invoke(...) -> TaskMasterInvocation``
+        surface before the loop runs.
+        """
+        if self._task_master_runner is None:
+            self._task_master_runner = TaskMasterRunner(self.config)
+        return self._task_master_runner
+
+    def _meta_goal(self) -> str:
+        """Run meta-goal = the existing top-level config task.goal (Decision 6)."""
+        task = self.config.get("task") or {}
+        if isinstance(task, str):
+            return task
+        return task.get("goal", "Play the game.")
+
+    def _prior_task_outputs(self) -> list[str]:
+        """Rolling window (oldest first) of TaskMaster's own prior outputs.
+
+        One line per finished task: the task it issued + the verdict it later
+        gave. Trimmed to ``history_window_n`` entries.
+        """
+        lines: list[str] = []
+        for rec in self.task_history:
+            task = rec.get("task") or {}
+            title = task.get("title", "?")
+            desc = task.get("description", "")
+            rating = rec.get("rating") or {}
+            status = rating.get("status", "(unrated)")
+            reasoning = rating.get("reasoning", "")
+            line = f"task={title!r} ({desc}) → rating={status}"
+            if reasoning:
+                line += f": {reasoning}"
+            lines.append(line)
+        if self.history_window_n > 0:
+            lines = lines[-self.history_window_n:]
+        return lines
+
+    def _build_cold_start_input(self) -> TaskMasterInput:
+        return TaskMasterInput(meta_goal=self._meta_goal())
+
+    def _build_handoff_input(self, handoff: Optional[Any]) -> TaskMasterInput:
+        """Assemble the rolling-window input for a boundary TaskMaster call.
+
+        Feeds the just-finished task's evidence: the Player's verbatim
+        self-assessment block (Decision 9), its per-turn reasons, and the first/
+        last screenshot refs (Decision 8). Withholds nothing the contract asks
+        for; the TaskMaster rates from this.
+        """
+        self_assessment: Optional[str] = None
+        if handoff is not None:
+            self_assessment = (
+                f"self_assessment={handoff.self_assessment}; "
+                f"task_summary={handoff.task_summary}; "
+                f"notes={handoff.notes or '(none)'}"
+            )
+        return TaskMasterInput(
+            meta_goal=self._meta_goal(),
+            prior_task_outputs=self._prior_task_outputs(),
+            prev_player_reasons=list(self._cur_task_player_reasons),
+            prev_first_image=self._cur_task_first_image,
+            prev_last_image=self._cur_task_last_image,
+            prev_player_self_assessment=self_assessment,
+        )
+
+    def _cold_start(self) -> None:
+        """First TaskMaster invocation: set task 1 (no rating).
+
+        Emits, in order: ``task_master_trace{1}`` → ``task_started{1}``. No
+        ``task_completed`` — there is no previous task to rate.
+        """
+        print("  Cold start: invoking TaskMaster for the opening task...")
+        runner = self._get_task_master_runner()
+        inv = runner.invoke(self._build_cold_start_input())
+        self.task_master_cost_usd += inv.cost_usd
+        self.current_task_index = 1
+        self.current_task_turn = 0
+        task = inv.output.task
+
+        self.logger.log_task_master_trace(
+            task_index=1,
+            messages=inv.trace,
+            model_used=inv.model_used,
+            cost_usd=inv.cost_usd,
+        )
+        self.logger.log_task_started(
+            task_index=1,
+            title=task.title,
+            description=task.description,
+            success_criteria=task.success_criteria,
+            global_turn=self.turn_number + 1,
+        )
+        self.current_task = task.model_dump()
+        # Start a fresh evidence buffer for task 1.
+        self._cur_task_player_reasons = []
+        self._cur_task_first_image = None
+        self._cur_task_last_image = None
+        print(f"  Task 1: {task.title!r}")
+
+    def _handle_handoff(self, result: GameAction, handoff: Optional[Any]) -> None:
+        """Boundary TaskMaster invocation: rate task N, set task N+1.
+
+        Emits, in order: ``task_completed{N}`` → ``task_master_trace{N+1}`` →
+        ``task_started{N+1}``. Appends the rating to task N's history record,
+        resets the per-task turn counter, and advances current_task to N+1.
+        """
+        n = self.current_task_index
+        why = "handed back" if handoff is not None else "budget exhausted"
+        print(f"  Handoff after task {n} ({why}): invoking TaskMaster...")
+
+        runner = self._get_task_master_runner()
+        inv = runner.invoke(self._build_handoff_input(handoff))
+        self.task_master_cost_usd += inv.cost_usd
+        out: TaskMasterOutput = inv.output
+
+        # 1. Rate the just-finished task N (task_completed{N}). Backward-stamp.
+        rating_dict: Optional[dict] = None
+        if out.rating_of_previous_task is not None:
+            rating_dict = out.rating_of_previous_task.model_dump()
+            self.logger.log_task_completed(task_index=n, rating=rating_dict)
+
+        # Record the finished task + its rating + evidence refs in history.
+        self.task_history.append({
+            "task": self.current_task,
+            "rating": rating_dict,
+            "first_image_ref": self._cur_task_first_image,
+            "last_image_ref": self._cur_task_last_image,
+            "player_reasons": list(self._cur_task_player_reasons),
+        })
+
+        # 2. Set task N+1: trace then started.
+        next_index = n + 1
+        next_task = out.task
+        self.logger.log_task_master_trace(
+            task_index=next_index,
+            messages=inv.trace,
+            model_used=inv.model_used,
+            cost_usd=inv.cost_usd,
+        )
+        self.logger.log_task_started(
+            task_index=next_index,
+            title=next_task.title,
+            description=next_task.description,
+            success_criteria=next_task.success_criteria,
+            global_turn=self.turn_number + 1,
+        )
+
+        # 3. Advance state + reset per-task buffers.
+        self.current_task_index = next_index
+        self.current_task = next_task.model_dump()
+        self.current_task_turn = 0
+        self._cur_task_player_reasons = []
+        self._cur_task_first_image = None
+        self._cur_task_last_image = None
+        status = rating_dict["status"] if rating_dict else "(none)"
+        print(f"  Task {n} rated {status}; Task {next_index}: {next_task.title!r}")
+
+    def _task_master_state(self) -> dict:
+        """Serializable TaskMaster state for a savepoint (Phase B4)."""
+        return {
+            "current_task": self.current_task,
+            "current_task_index": self.current_task_index,
+            "current_task_turn": self.current_task_turn,
+            "task_history": self.task_history,
+        }
+
+    def restore_task_master_state(self, state: dict) -> None:
+        """Reload TaskMaster state from a savepoint (--continue path).
+
+        Setting ``current_task`` here suppresses the cold-start in the run loop,
+        so a resumed run keeps its task index + history instead of restarting at
+        task 1.
+        """
+        self.current_task = state.get("current_task")
+        self.current_task_index = int(state.get("current_task_index", 0) or 0)
+        self.current_task_turn = int(state.get("current_task_turn", 0) or 0)
+        self.task_history = list(state.get("task_history") or [])
 
     def run_loop(self, max_turns: Optional[int] = None) -> None:
         """Run the turn loop synchronously."""
@@ -506,6 +806,13 @@ class TurnManager:
         self._orig_stdout = sys.stdout
         sys.stdout = _TeeWriter(self._orig_stdout, self._terminal_log)
 
+        # Cold start: before turn 1, ask TaskMaster for the opening task. Emits
+        # task_master_trace{1} → task_started{1} (no task_completed — nothing to
+        # rate yet). Skipped when TaskMaster is disabled OR a continued run
+        # already restored a current_task from task_master_state.json.
+        if self.task_master_enabled and self.current_task is None:
+            self._cold_start()
+
         for _ in range(limit):
             self.turn_number += 1
             print(f"\n{'─'*60}")
@@ -516,6 +823,20 @@ class TurnManager:
             if result is None:
                 print(f"  [Turn {self.turn_number}] No result. Stopping.")
                 break
+
+            # TaskMaster handoff: when the Player hands control back
+            # (return_to_taskmaster set — the budget validator forces this at the
+            # boundary) OR the per-task budget is exhausted, rate the finished
+            # task and set the next one. The Player's `inputs` are ignored on a
+            # handoff turn (it handed back), so we skip button execution + memory.
+            if self.task_master_enabled:
+                handoff = getattr(result, "return_to_taskmaster", None)
+                budget_hit = (
+                    self.max_turns > 0 and self.current_task_turn >= self.max_turns
+                )
+                if handoff is not None or budget_hit:
+                    self._handle_handoff(result, handoff)
+                    continue
 
             # Apply memory updates from the agent's output (string → dict)
             updates = {}
@@ -548,6 +869,10 @@ class TurnManager:
             }
             self.turn_explanations.append(explanation)
             self.logger.log_turn_explanation(self.turn_number, explanation)
+            # Accumulate the Player's reasoning for the CURRENT task — fed to the
+            # next TaskMaster invocation so it can judge the task from the trace.
+            if self.task_master_enabled and result.reasoning:
+                self._cur_task_player_reasons.append(result.reasoning)
 
             # Execute button presses and wait for screen to settle.
             # OCR captures are gated to this window only — no captures during
@@ -610,19 +935,33 @@ class TurnManager:
         """Execute a single turn."""
         turn_start = time.time()
         t = self.turn_number
-        self.logger.log_turn_start(t)
 
-        # Per-task turn counter feeds the budget validator. The run loop (Phase
-        # B4) resets self.current_task_turn to 0 on each TaskMaster handoff; here
-        # we just advance it one per turn. Only meaningful when TaskMaster is
-        # enabled — left untouched/ignored on the legacy path.
+        # Per-task turn counter feeds the budget validator. The run loop resets
+        # self.current_task_turn to 0 on each TaskMaster handoff; here we advance
+        # it one per turn. Only meaningful when TaskMaster is enabled — left
+        # untouched/ignored on the legacy path.
         if self.task_master_enabled:
             self.current_task_turn += 1
+
+        # turn_start carries the current task_index (the only hard new field on
+        # player turns under the TaskMaster contract) so the frontend can bucket
+        # the turn into its task group. None on the legacy path → omitted.
+        self.logger.log_turn_start(
+            t, task_index=self.current_task_index if self.task_master_enabled else None
+        )
 
         # 1. Capture screenshot
         print(f"  [Turn {t}] Capturing screenshot...")
         screenshot = self.emulator.capture_screenshot(preprocess=True)
-        self.logger.log_screenshot(screenshot, label=f"turn_{t}")
+        screenshot_ref = self.logger.log_screenshot(screenshot, label=f"turn_{t}")
+        # Track first/last screenshot refs for the CURRENT task so the next
+        # TaskMaster invocation can rate it from start/end evidence (Decision 8 —
+        # stored by ref, resolved at TM-invocation time). Only the run loop's
+        # handoff reads these; harmless on the legacy path.
+        if self.task_master_enabled:
+            if self._cur_task_first_image is None:
+                self._cur_task_first_image = screenshot_ref
+            self._cur_task_last_image = screenshot_ref
 
         # 2. Run vision pipeline
         vision_label = "VLM" if self.vision.vision_mode == "separate_vlm" else "Vision"
@@ -1250,7 +1589,11 @@ class TurnManager:
                 ) if self._run_start_time else None,
             },
             "cost": {
-                "total_usd": round(self.total_cost_usd, 6),
+                # total_usd is the all-in run cost: Player (LLM) + VLM + OCR +
+                # TaskMaster. self.total_cost_usd tracks Player/VLM/OCR; the
+                # TaskMaster cost is accumulated separately (Decision 10) so it
+                # can be compared, and added in here for the grand total.
+                "total_usd": round(self.total_cost_usd + self.task_master_cost_usd, 6),
                 "llm_usd": round(
                     self.total_cost_usd
                     - (self.vision.total_cost_usd if self.vision else 0)
@@ -1259,6 +1602,9 @@ class TurnManager:
                 ),
                 "vlm_usd": round(self.vision.total_cost_usd if self.vision else 0, 6),
                 "ocr_usd": round(self.ocr.total_cost_usd if self.ocr else 0, 6),
+                # Separate TaskMaster (strategy) cost — distinct from the Player's
+                # (tactics) llm_usd above (Decision 10).
+                "task_master_usd": round(self.task_master_cost_usd, 6),
                 "total_input_tokens": self.total_input_tokens,
                 "total_output_tokens": self.total_output_tokens,
                 "per_turn": self.turn_costs,
