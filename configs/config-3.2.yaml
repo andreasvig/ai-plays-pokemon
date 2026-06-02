@@ -34,7 +34,6 @@ vision_mode: "direct_multimodal"
 vlm_model: null
 
 # --- Task System ---
-max_task_depth: 5
 max_turns_per_task: 50
 
 # --- Context Management ---

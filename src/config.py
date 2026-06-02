@@ -210,6 +210,27 @@ def _validate_config(config: dict[str, Any], *, require_llm_model: bool = True) 
             f"task_override_snapshot must be a bool, got {tos!r}"
         )
 
+    # task_master: optional block enabling the TaskMaster meta-agent. When the
+    # block is ABSENT, TaskMaster is disabled and the harness keeps its single-
+    # agent behavior unchanged. When present, validate its fields — `enabled`
+    # (bool) toggles the meta-agent and `history_window_n` (int) bounds how many
+    # recent task records the meta-agent sees. TaskMaster reuses the top-level
+    # `task.goal` and `max_turns_per_task`; it adds no goal/turn fields of its own.
+    tm = config.get("task_master")
+    if tm is not None:
+        if not isinstance(tm, dict):
+            raise ValueError(f"task_master must be a dict, got {type(tm).__name__}")
+        enabled = tm.get("enabled", False)
+        if not isinstance(enabled, bool):
+            raise ValueError(
+                f"task_master.enabled must be a bool, got {enabled!r}"
+            )
+        hwn = tm.get("history_window_n")
+        if not isinstance(hwn, int) or isinstance(hwn, bool):
+            raise ValueError(
+                f"task_master.history_window_n must be an int, got {hwn!r}"
+            )
+
     # historic_images_count: how many of the most recent visible turns should
     # have their start-of-turn screenshot included inline alongside the current
     # screenshot. 0 = text-only history (default).

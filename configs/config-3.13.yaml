@@ -1,28 +1,44 @@
 # ============================================================================
-# Config 3.1 — Perceptron Mk1 benchmark run
+# Config 3.13 — Gemma 4 26B A4B IT (thinking) + TaskMaster meta-agent
 # ============================================================================
-# Identical to 3.0 except for llm_model. Bumped to a fresh config version so
-# the run sits in its own observed-numbers bucket in models.yaml without
-# co-mingling with prior 3.0 runs.
+# Identical to config-3.12 except the new `task_master:` block enables the
+# TaskMaster meta-agent. TaskMaster reuses the existing top-level `task.goal`
+# and `max_turns_per_task` — it adds no goal/turn fields of its own.
+# ============================================================================
+# Identical to config-3.10 except llm_model swapped to
+# gemma-4-26b-a4b(thinking) and turn count bumped to 50. Run in parallel
+# with config-3.11 (gemma-4-31b thinking) on slots 1+2 — same baseline
+# snapshot, same task, same prompt, same OCR. Direct A/B between the two
+# open-weights Gemma 4 family members at 50T.
 #
-# Perceptron Mk1 is a brand-new multimodal VLM from Perceptron (listed on
-# OpenRouter 2026-05-12), marketed as a "highest-quality vision-language
-# model for video and embodied reasoning" — explicitly aimed at the
-# perception-and-act loop this project runs. Cheap-at-scale pricing
-# ($0.15/$1.50 per M), 32K context (smallest in registry — watch for
-# trim/truncation past ~20-30T). See models.yaml for the registry entry
-# and rationale for output_mode: "native_json".
+# This is the FIRST agent-side run of the 26B-a4b variant. The model is
+# already used project-wide as the OCR cleanup model (every config 2.x+);
+# now we get to see if its agentic reasoning is sharper or faster than
+# the 31B at the bedroom-exit task. A4B = 4-billion active params via
+# routing, but 30B-class total weights.
+#
+# Model alias resolves to OpenRouter `google/gemma-4-26b-a4b-it` with:
+#   - reasoning.enabled: true (Gemma 4 family binary toggle)
+#   - provider.sort: "throughput" (6+ providers including DekaLLM,
+#     DeepInfra, Cloudflare, SiliconFlow, Parasail, Novita)
+#   - output_mode: "prompted" (required: DekaLLM has no tools/structured
+#     outputs at all)
+#
+# Cost floor: $0.07/$0.34 per M on cheapest provider — half the 31B price.
+# Expect ~$0.02-0.05 at 50T. Runtime unknown; A4B routing might be faster
+# than 31B dense, but throughput-sort latency depends on which provider
+# the router picks turn-to-turn.
 # ============================================================================
 
 # --- Top-Level Task ---
 task:
   goal: "Beat the first gym leader Brock"
-  description: "Explore Pallet Town, get a starter Pokemon from Professor Oak, train it, and defeat Brock at Pewter City Gym."
+  description: "Get a starter Pokémon from Professor Oak, then go to Viridian City, then Viridian Forest, prepare your Pokémon team for Brock and defeat him."
 # When true, ignore the snapshot's tasks.json and use the config's `task:` field
 # above instead. Default false preserves 'snapshot wins' behavior. Without this,
 # the user message's task can silently disagree with the system prompt (which
 # always uses config's task).
-task_override_snapshot: false
+task_override_snapshot: true
 
 
 # --- Vision Configuration ---
@@ -37,6 +53,14 @@ vlm_model: null
 # --- Task System ---
 max_turns_per_task: 50
 
+# --- TaskMaster ---
+# Optional meta-agent. Block absent = disabled (single-agent behavior). When
+# enabled, TaskMaster reuses task.goal and max_turns_per_task above.
+# history_window_n bounds how many recent task records it sees.
+task_master:
+  enabled: true
+  history_window_n: 20
+
 # --- Context Management ---
 # How many of the most recent turns to render in the "Previous Turns" block.
 # Older turns are dropped with a "(Earlier turns have been truncated.)" notice.
@@ -48,7 +72,7 @@ max_turns_before_trim: 10
 # 0 = text-only history (default). K > 0 attaches that many historic screenshots
 # at the END of the user message, immediately before the current screenshot.
 # Requires vision_mode: direct_multimodal. Must be <= max_turns_before_trim.
-historic_images_count: 0
+historic_images_count: 1
 
 # --- System Prompts ---
 
@@ -201,7 +225,7 @@ emulator:
   ab_hold_frames: 12           # ~200ms hold for A/B
   ab_gap_frames: 60            # ~1s gap after A/B (gives dialogue time to fully render for OCR capture)
 screenshot:
-  upscale_factor: 3
+  upscale_factor: 6
   grid_overlay: true
 
 screen_stability:
@@ -242,6 +266,15 @@ valid_inputs:
 
 # --- Global State ---
 state_file: "local/state/state.json"
+
+# --- Savepoints ---
+# Per-run checkpoints into <run_dir>/savepoints/turn_<N>/. `pokemon run --continue`
+# resumes from the latest. Continued runs start with a fresh turn counter and
+# empty agent text history — only state.json carries over.
+savepoints:
+  every_n_turns: 3   # 0 disables periodic saves
+  at_end: true
+  on_crash: true
 
 # --- OCR ---
 ocr:

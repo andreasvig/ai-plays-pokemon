@@ -42,9 +42,6 @@ vision_mode: "separate_vlm"
 vlm_model: "google/gemini-3.1-flash-lite-preview"
 
 # --- Task System ---
-# Maximum depth of the agent tree (how many levels of sub-agents can be spawned)
-max_task_depth: 5
-
 # Maximum turns an agent gets before being forced to return failed to its parent
 max_turns_per_task: 50
 
