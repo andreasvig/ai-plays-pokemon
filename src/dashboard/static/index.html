@@ -338,8 +338,8 @@
   }
   .master-card-desc { white-space: pre-wrap; }
   .master-card .master-verdict { margin-bottom: 0; }
-  /* The rating-of-previous "result" card, pinned at the bottom of the block */
-  .master-result { margin-top: 10px; margin-bottom: 0; }
+  /* The master's output card (task + rating), pinned at the bottom of the block */
+  .master-output { margin-top: 10px; margin-bottom: 0; }
   /* Screenshots the master actually saw, shown under its Input tab */
   .master-thumbs { display: flex; gap: 8px; margin: 6px 0; flex-wrap: wrap; }
   .master-thumb { margin: 0; text-align: center; }
@@ -946,9 +946,10 @@ function renderMasterTrace(evt) {
   const mbody = document.createElement('div');
   mbody.className = 'master-block-body';
 
-  // Structured "decision card": the master's task (title), its 1-4 paragraph
-  // plan (description), the success criteria, and the verdict — surfaced clearly
-  // above the raw trace (which stays collapsible below).
+  // Structured "output card": the master's task (title), its 1-4 paragraph plan
+  // (description), the success criteria, and (added below) its rating of the
+  // previous task. This is the agent's RESULT, so it is appended at the BOTTOM of
+  // the block — after the input + reasoning — so the trace reads chronologically.
   const card = document.createElement('div');
   card.className = 'master-card';
 
@@ -983,14 +984,12 @@ function renderMasterTrace(evt) {
     card.appendChild(r);
   }
 
-  // (The master's rating of the PREVIOUS task is its *result*, so it renders at
-  // the BOTTOM of this block — below the trace — not in this top card. The
-  // current task's own verdict is never shown here; it lives only as the badge.)
-
-  mbody.appendChild(card);
+  // (The output card built above is appended at the BOTTOM of the block, after
+  // the input and reasoning — NOT here at the top.)
 
   // Reuse the same trace-replay rendering used by renderTurnTrace, but the
-  // master's final_result carries task fields (already on the header), so skip it.
+  // master's final_result carries task fields (rendered in the output card), so
+  // skip it.
   const messages = evt.messages || [];
   // Live view: the verbose system prompt and the input-prompt TEXT are
   // report-only. Here we keep just the screenshots the master actually saw
@@ -1035,11 +1034,10 @@ function renderMasterTrace(evt) {
     }
   }
 
-  // The master's OWN result, at the BOTTOM (chronological): its rating of the
-  // PREVIOUS task, produced at THIS invocation. Null on the cold-start turn.
+  // Append the master's rating of the PREVIOUS task as the final row of the
+  // output card (produced at THIS invocation; null on the cold-start turn), then
+  // place the whole output card at the BOTTOM of the block.
   const rop = masterRatingOfPrevious(evt.messages);
-  const resultCard = document.createElement('div');
-  resultCard.className = 'master-card master-result';
   const rr = document.createElement('div');
   rr.className = 'master-card-row';
   if (rop) {
@@ -1052,8 +1050,9 @@ function renderMasterTrace(evt) {
     rr.innerHTML = '<span class="master-card-label">⚖️ Rating of the previous task</span>' +
       '<span style="color:var(--text-dim);">First task — no previous task to rate.</span>';
   }
-  resultCard.appendChild(rr);
-  mbody.appendChild(resultCard);
+  card.appendChild(rr);
+  card.classList.add('master-output');
+  mbody.appendChild(card);
 
   block.appendChild(header);
   block.appendChild(mbody);

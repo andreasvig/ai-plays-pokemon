@@ -592,11 +592,12 @@ def _master_rating_of_previous(trace: list[dict]) -> dict | None:
 
 
 def _render_master_block_html(group: dict, run_dir: Path) -> str:
-    """Render the TaskMaster detail block CHRONOLOGICALLY: only what THIS
-    invocation produced — its rating of the PREVIOUS task (from its own output)
-    and its trace, with the actual screenshots it saw under the Input tab. The
-    current task's own verdict is NOT backfilled here (that belongs to the next
-    invocation); it lives only as the badge on the task header."""
+    """Render the TaskMaster detail block CHRONOLOGICALLY: its trace (with the
+    screenshots it saw under the Input tab) first, then its OUTPUT card at the
+    bottom — the task it set (title + plan + success criteria) plus its rating of
+    the PREVIOUS task. Mirrors the live dashboard. The current task's own verdict
+    is NOT backfilled here (that belongs to the next invocation); it lives only as
+    the badge on the task header."""
     trace = group.get("master_trace") or []
 
     # The master's own output: the result of the PREVIOUS task it just judged.
@@ -633,13 +634,34 @@ def _render_master_block_html(group: dict, run_dir: Path) -> str:
             <div class="trace-container">{trace_content}</div>
         </div>"""
 
-    # Chronological order: the trace (what this invocation did) first, then its
-    # RESULT — the rating of the previous task — pinned at the bottom.
+    # The master's OUTPUT card at the BOTTOM (chronological), mirroring the live
+    # dashboard: the task it set (title + plan + success criteria), then its rating
+    # of the previous task. The task header above is the collapsed-nav label.
+    title = group.get("title", "")
+    description = group.get("description", "")
+    criteria = group.get("success_criteria", "")
+    output_rows = ""
+    if title:
+        output_rows += (
+            f'<div class="decision-row"><strong>📋 Task:</strong> {_escape(title)}</div>'
+        )
+    if description:
+        output_rows += (
+            '<div class="decision-row"><strong>🧭 Plan:</strong></div>'
+            f'<div class="master-output-desc">{_escape(description)}</div>'
+        )
+    if criteria:
+        output_rows += (
+            '<div class="decision-row"><strong>🎯 Success criteria:</strong> '
+            f'{_escape(criteria)}</div>'
+        )
+    output_rows += verdict_rows
+
     return f"""
     <div class="master-block">
         <div class="master-label">TaskMaster</div>
         {trace_html}
-        <div class="master-verdict">{verdict_rows}</div>
+        <div class="master-verdict master-output">{output_rows}</div>
     </div>
     """
 
@@ -825,6 +847,7 @@ def generate_html(run_dir: Path, events: list[dict], turns: list[dict]) -> str:
         .master-verdict .decision-row strong {{ color: #ffce54; }}
         .master-verdict .decision-row.player-handback {{ padding-bottom: 6px; margin-bottom: 6px; border-bottom: 1px dashed #3a3320; }}
         .master-verdict .decision-row.player-handback strong {{ color: #6ca4ff; }}
+        .master-output-desc {{ white-space: pre-wrap; margin: 2px 0 8px; color: #d8d8d8; line-height: 1.6; }}
         .master-thumbs {{ display: flex; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }}
         .master-thumb {{ margin: 0; text-align: center; }}
         .master-thumb img {{ width: 160px; image-rendering: pixelated; border: 1px solid #3a3320; border-radius: 4px; display: block; }}
