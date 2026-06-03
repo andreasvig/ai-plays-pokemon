@@ -34,6 +34,7 @@ from src.agent.task_master import (
 )
 from src.emulator import EmulatorClient, VisionPipeline, OCRRunner
 from src.core import RunLogger, StateManager
+from src.core.prompts import fill_prompt
 from src.core.snapshots import SnapshotManager
 
 logger = logging.getLogger(__name__)
@@ -89,15 +90,17 @@ def _serialize_messages(messages) -> list[dict]:
                         content = str(part.content)
                     trace.append({"role": "user", "content": content})
                 elif isinstance(part, ToolReturnPart):
+                    # Full tool response (e.g. the perplexity answer) — no cap; the
+                    # frontends contain it with a scrollable max-height instead.
                     trace.append({
                         "role": "tool_result",
                         "tool_name": part.tool_name,
-                        "content": str(part.content)[:2000],
+                        "content": str(part.content),
                     })
                 elif isinstance(part, RetryPromptPart):
                     trace.append({
                         "role": "retry",
-                        "content": str(part.content)[:1000],
+                        "content": str(part.content),
                     })
                 else:
                     trace.append({"role": "request_part", "type": type(part).__name__, "content": str(part)[:500]})
@@ -180,6 +183,25 @@ def _screenshot_path_to_data_url(path: Optional[str]) -> Optional[str]:
     import base64
 
     return "data:image/png;base64," + base64.b64encode(data).decode("ascii")
+
+
+def _master_input_images(inp) -> list[dict]:
+    """The actual screenshots a TaskMaster invocation saw, for the trace.
+
+    Cold-start sees one image (the current/start screen); a handoff sees two
+    (the previous task's start + end). Returns a list of ``{label, data_url}``,
+    skipping any that aren't real data URLs (capture failed / none attached).
+    """
+    pairs = [
+        ("Start screen", getattr(inp, "current_screen_image", None)),
+        ("Previous task — start screen", getattr(inp, "prev_first_image", None)),
+        ("Previous task — end screen", getattr(inp, "prev_last_image", None)),
+    ]
+    out: list[dict] = []
+    for label, url in pairs:
+        if isinstance(url, str) and url.strip().lower().startswith("data:"):
+            out.append({"label": label, "data_url": url})
+    return out
 
 
 def _extract_provider_from_messages(messages) -> str:
@@ -363,6 +385,7 @@ class TaskMasterInvocation:
     output: TaskMasterOutput
     trace: list[dict] = field(default_factory=list)
     cost_usd: float = 0.0
+    tool_cost_usd: float = 0.0
     model_used: str = ""
 
 
@@ -371,9 +394,10 @@ class TaskMasterRunner:
 
     Construction mirrors the Player's: ``create_task_master_agent`` resolves
     model + output-mode from config; the runner owns ``request_limit`` (round
-    count, NOT an aggregate token cap — a web-research agent accumulates page
-    text across tool rounds). A fresh ``PageVisitor`` per invocation keeps the
-    URL cache invocation-scoped (statelessness rule).
+    count, NOT an aggregate token cap — a web-research agent accumulates result
+    text across tool rounds). Fresh ``TaskMasterDeps`` per invocation (incl. an
+    empty ``tool_costs`` accumulator) keeps each call self-contained
+    (statelessness rule).
 
     The whole class is the injectable seam: ``TurnManager`` accepts a
     ``task_master_runner`` and only ever awaits ``.invoke_async(inp)``, so a test
@@ -381,7 +405,7 @@ class TaskMasterRunner:
     """
 
     def __init__(self, config: dict[str, Any]):
-        from src.agent.task_master import DEFAULT_REQUEST_LIMIT
+        from src.agent.task_master import DEFAULT_REQUEST_LIMIT, DEFAULT_SEARCH_MODEL
 
         self.config = config
         self._agent, self._model_settings = create_task_master_agent(config)
@@ -389,6 +413,14 @@ class TaskMasterRunner:
         self._model_used = (
             config.get("task_master_model") or config.get("llm_model") or ""
         )
+        self._search_model = (
+            config.get("task_master", {}).get("search_model") or DEFAULT_SEARCH_MODEL
+        )
+        # User-message templates (config-provided wins; module defaults apply when
+        # omitted). Two: the handoff template and the cold-start template.
+        tm_cfg = config.get("task_master", {}) or {}
+        self._user_prompt = tm_cfg.get("user_prompt")
+        self._cold_start_prompt = tm_cfg.get("user_prompt_cold_start")
 
     async def invoke_async(
         self, inp: TaskMasterInput, *, is_cold_start: bool = False
@@ -409,15 +441,22 @@ class TaskMasterRunner:
         from pydantic_ai.usage import UsageLimits
 
         from src.agent.task_master import _looks_like_data_url
-        from src.agent.tools.page_visit import PageVisitor
 
         deps = TaskMasterDeps(
-            page_visitor=PageVisitor(), is_cold_start=is_cold_start
+            is_cold_start=is_cold_start,
+            search_model=self._search_model,
+            tool_costs=[],
         )
-        text = render_task_master_input(inp)
+        text = render_task_master_input(
+            inp,
+            is_cold_start=is_cold_start,
+            template=self._user_prompt,
+            cold_start_template=self._cold_start_prompt,
+        )
 
         content: list[Any] = [text]
         for label, img in (
+            ("CURRENT screen (starting point)", inp.current_screen_image),
             ("START of the previous task", inp.prev_first_image),
             ("END of the previous task", inp.prev_last_image),
         ):
@@ -439,10 +478,12 @@ class TaskMasterRunner:
         messages = list(captured)
         trace = _serialize_messages(messages)
         cost = _extract_cost_from_messages(messages)
+        tool_cost = float(sum(deps.tool_costs))
         return TaskMasterInvocation(
             output=result.output,
             trace=trace,
             cost_usd=cost,
+            tool_cost_usd=tool_cost,
             model_used=self._model_used,
         )
 
@@ -471,6 +512,33 @@ class _TeeWriter:
 
     def __getattr__(self, name):
         return getattr(self._original, name)
+
+
+# Default Player per-turn user-message template. Overridable via the top-level
+# `user_prompt` config key (mirrors `system_prompt`). {{placeholders}} are filled
+# with computed VALUES each turn (fill_prompt); the per-turn loop + screen
+# heads-up are pre-rendered into their values. Keep one logical line per
+# paragraph for readability.
+DEFAULT_PLAYER_USER_PROMPT = """\
+{{screen_heads_up}}
+
+## Recent OCR Text
+Cleaned text captured from the screen between the last turn and now. May include scrolling dialogue, menu labels, and UI text. Use as ground-truth for exact character sequences; trust the screenshot for spatial layout.
+{{ocr_text}}
+
+## Memory
+```json
+{{memory_json}}
+```
+
+## Previous Turns
+{{previous_turns}}
+
+## Current Task
+{{task_block}}
+
+Output your action (inputs) and update memory_updates with any new information.{{handoff_instruction}}
+"""
 
 
 class TurnManager:
@@ -674,53 +742,107 @@ class TurnManager:
             return task
         return task.get("goal", "Play the game.")
 
-    def _prior_task_outputs(self) -> list[str]:
+    def _prior_task_outputs(self, *, include_current_unrated: bool = False) -> list[str]:
         """Rolling window (oldest first) of TaskMaster's own prior outputs.
 
-        One line per finished task: the task it issued + the verdict it later
-        gave. Trimmed to ``history_window_n`` entries.
+        One entry per task: the task it issued (title + description + success
+        criteria) and the verdict it later gave. Trimmed to ``history_window_n``
+        entries.
+
+        ``include_current_unrated`` appends the task that just finished — the one
+        this invocation must rate — as the newest entry, with its rating left as
+        a fill-in placeholder. Without this the first handoff shows "(none)" and
+        the master never sees the spec (esp. success_criteria) it is rating
+        against; it only has the Player's trace, which is the wrong thing to
+        anchor a verdict on.
         """
+        records = list(self.task_history)
+        if include_current_unrated and self.current_task:
+            records.append({"task": self.current_task, "rating": None})
+
         lines: list[str] = []
-        for rec in self.task_history:
+        for rec in records:
             task = rec.get("task") or {}
             title = task.get("title", "?")
             desc = task.get("description", "")
+            crit = task.get("success_criteria", "")
             rating = rec.get("rating") or {}
-            status = rating.get("status", "(unrated)")
-            reasoning = rating.get("reasoning", "")
-            line = f"task={title!r} ({desc}) → rating={status}"
-            if reasoning:
-                line += f": {reasoning}"
-            lines.append(line)
+            if rating:
+                status = rating.get("status", "(unrated)")
+                reasoning = rating.get("reasoning", "")
+                verdict = f"your rating: {status}" + (f" — {reasoning}" if reasoning else "")
+            else:
+                verdict = "your rating: ⟵ THIS is the task you must rate now (set rating_of_previous_task)"
+            entry = f"task={title!r}\n  description: {desc}"
+            if crit:
+                entry += f"\n  success_criteria: {crit}"
+            entry += f"\n  {verdict}"
+            lines.append(entry)
         if self.history_window_n > 0:
             lines = lines[-self.history_window_n:]
         return lines
 
+    def _current_screen_data_url(self) -> Optional[str]:
+        """Capture the current screen as a data-URL for the cold-start TaskMaster
+        input (so it can see where the Player is starting). Returns None if the
+        emulator/vision aren't ready or capture fails — the master then plans
+        from text alone."""
+        try:
+            shot = self.emulator.capture_screenshot(preprocess=True)
+            return self.vision.image_to_data_url(shot)
+        except Exception:
+            return None
+
+    def _player_memory_json(self) -> Optional[str]:
+        """JSON snapshot of the Player's persistent memory for the TaskMaster
+        input. Returns None when empty so the renderer shows "(empty)"."""
+        try:
+            view = self.state.get_truncated_view()
+        except Exception:
+            return None
+        if not view:
+            return None
+        try:
+            return json.dumps(view, ensure_ascii=False)
+        except (TypeError, ValueError):
+            return str(view)
+
     def _build_cold_start_input(self) -> TaskMasterInput:
-        return TaskMasterInput(meta_goal=self._meta_goal())
+        """Cold-start input: no previous task, but show the master the current
+        screen, the (likely empty) Player memory, and the per-task turn budget so
+        the first task is informed and correctly sized."""
+        return TaskMasterInput(
+            meta_goal=self._meta_goal(),
+            current_screen_image=self._current_screen_data_url(),
+            player_memory=self._player_memory_json(),
+            max_turns=self.max_turns if self.max_turns > 0 else None,
+        )
 
     def _build_handoff_input(self, handoff: Optional[Any]) -> TaskMasterInput:
         """Assemble the rolling-window input for a boundary TaskMaster call.
 
         Feeds the just-finished task's evidence: the Player's verbatim
-        self-assessment block (Decision 9), its per-turn reasons, and the first/
-        last screenshot refs (Decision 8). Withholds nothing the contract asks
-        for; the TaskMaster rates from this.
+        self-assessment block (Decision 9), its per-turn reasons, the first/last
+        screenshot refs (Decision 8), the Player's memory, and how much of the
+        per-task budget it used. Withholds nothing the contract asks for; the
+        TaskMaster rates from this.
         """
         self_assessment: Optional[str] = None
         if handoff is not None:
             self_assessment = (
                 f"self_assessment={handoff.self_assessment}; "
-                f"task_summary={handoff.task_summary}; "
-                f"notes={handoff.notes or '(none)'}"
+                f"task_summary={handoff.task_summary}"
             )
         return TaskMasterInput(
             meta_goal=self._meta_goal(),
-            prior_task_outputs=self._prior_task_outputs(),
+            prior_task_outputs=self._prior_task_outputs(include_current_unrated=True),
             prev_player_reasons=list(self._cur_task_player_reasons),
             prev_first_image=_screenshot_path_to_data_url(self._cur_task_first_image),
             prev_last_image=_screenshot_path_to_data_url(self._cur_task_last_image),
             prev_player_self_assessment=self_assessment,
+            player_memory=self._player_memory_json(),
+            max_turns=self.max_turns if self.max_turns > 0 else None,
+            turns_used=self.current_task_turn,
         )
 
     async def _cold_start(self) -> None:
@@ -731,10 +853,9 @@ class TurnManager:
         """
         print("  Cold start: invoking TaskMaster for the opening task...")
         runner = self._get_task_master_runner()
-        inv = await runner.invoke_async(
-            self._build_cold_start_input(), is_cold_start=True
-        )
-        self.task_master_cost_usd += inv.cost_usd
+        cs_input = self._build_cold_start_input()
+        inv = await runner.invoke_async(cs_input, is_cold_start=True)
+        self.task_master_cost_usd += inv.cost_usd + inv.tool_cost_usd
         self.current_task_index = 1
         self.current_task_turn = 0
         task = inv.output.task
@@ -744,6 +865,8 @@ class TurnManager:
             messages=inv.trace,
             model_used=inv.model_used,
             cost_usd=inv.cost_usd,
+            search_cost_usd=inv.tool_cost_usd,
+            input_images=_master_input_images(cs_input),
         )
         self.logger.log_task_started(
             task_index=1,
@@ -775,17 +898,29 @@ class TurnManager:
         print(f"  Handoff after task {n} ({why}): invoking TaskMaster...")
 
         runner = self._get_task_master_runner()
-        inv = await runner.invoke_async(
-            self._build_handoff_input(handoff), is_cold_start=False
-        )
-        self.task_master_cost_usd += inv.cost_usd
+        ho_input = self._build_handoff_input(handoff)
+        inv = await runner.invoke_async(ho_input, is_cold_start=False)
+        self.task_master_cost_usd += inv.cost_usd + inv.tool_cost_usd
         out: TaskMasterOutput = inv.output
 
         # 1. Rate the just-finished task N (task_completed{N}). Backward-stamp.
+        # Carry the Player's own hand-back (self-assessment + summary) on the same
+        # event so the frontends can show the Player's claim beside the Master's
+        # ruling. None when the run-loop force-hands-off at the budget boundary
+        # (the Player emitted no return block that turn).
         rating_dict: Optional[dict] = None
         if out.rating_of_previous_task is not None:
             rating_dict = out.rating_of_previous_task.model_dump()
-            self.logger.log_task_completed(task_index=n, rating=rating_dict)
+            self.logger.log_task_completed(
+                task_index=n,
+                rating=rating_dict,
+                player_self_assessment=(
+                    handoff.self_assessment if handoff is not None else None
+                ),
+                player_task_summary=(
+                    handoff.task_summary if handoff is not None else None
+                ),
+            )
 
         # Record the finished task + its rating + evidence refs in history.
         self.task_history.append({
@@ -804,6 +939,8 @@ class TurnManager:
             messages=inv.trace,
             model_used=inv.model_used,
             cost_usd=inv.cost_usd,
+            search_cost_usd=inv.tool_cost_usd,
+            input_images=_master_input_images(ho_input),
         )
         self.logger.log_task_started(
             task_index=next_index,
@@ -1431,141 +1568,49 @@ class TurnManager:
           [text, hist_label_1, hist_img_1, ..., hist_label_K, hist_img_K,
            current_label, current_image].
         """
-        text_parts: list[str] = []
         current_image_url: Optional[str] = None
+        screen_text_extra: list[str] = []
 
         # Vision content. In direct_multimodal mode this yields a "[Game Screen]"
-        # text marker plus a data URL — we strip the marker (the explicit labels
-        # below carry the role information) and keep the URL for the image-tail.
+        # text marker plus a data URL — strip the marker (the explicit labels in
+        # the image tail carry the role) and keep the URL. Any other text blocks
+        # are folded into the screen heads-up value.
         for block in vision_content:
             if block["type"] == "text":
-                # Skip the bare "[Game Screen]" placeholder — replaced by the
-                # explicit current-screen label appended at the end.
                 if block["text"].strip() != "[Game Screen]":
-                    text_parts.append(block["text"])
+                    screen_text_extra.append(block["text"])
             elif block["type"] == "image_url":
                 current_image_url = block["image_url"]["url"]
 
-        # Heads-up about the image tail. Only emitted in direct_multimodal mode
-        # so the model knows what to expect at the end of the message.
-        if current_image_url is not None:
-            n_historic = len(self.turn_screenshots) if self.historic_images_count > 0 else 0
-            n_total_images = n_historic + 1
-            if n_historic > 0:
-                text_parts.append(
-                    f"\n## Screens\n"
-                    f"This message ends with {n_total_images} screenshots in chronological order. "
-                    f"The first {n_historic} are historic — the screen the agent saw at the START "
-                    f"of each of the last {n_historic} turn(s), BEFORE pressing the actions listed "
-                    f"under '## Previous Turns'. The LAST screenshot is the CURRENT turn — that "
-                    f"is what you must reason about and act on now. Each image is preceded by an "
-                    f"explicit label."
-                )
-            else:
-                text_parts.append(
-                    "\n## Screen\n"
-                    "The current-turn screenshot is shown at the end of this message — that is "
-                    "what you must reason about and act on."
-                )
+        # Compute the template VALUES, then fill the user-prompt template. The
+        # template (config `user_prompt` or DEFAULT_PLAYER_USER_PROMPT) owns the
+        # layout + wording; the {{placeholders}} carry the dynamic values (the
+        # per-turn loop + screen heads-up are pre-rendered into theirs).
+        screen_heads_up = self._render_screen_heads_up(current_image_url)
+        if screen_text_extra:
+            extra = "\n".join(screen_text_extra)
+            screen_heads_up = (
+                extra + ("\n" + screen_heads_up if screen_heads_up else "")
+            ).strip()
 
-        # OCR (cleaned text captured between last turn and now)
-        if ocr_text:
-            text_parts.append(
-                f"\n## Recent OCR Text\n"
-                f"Cleaned text captured from the screen between the last turn and now. "
-                f"May include scrolling dialogue, menu labels, and UI text. Use as ground-truth "
-                f"for exact character sequences; trust the screenshot for spatial layout.\n\n"
-                f"{ocr_text}"
-            )
+        handoff_instruction = (
+            " If the current task is complete, impossible, or you're out of "
+            "useful moves, set `return_to_taskmaster` instead to hand control "
+            "back to TaskMaster."
+            if self.task_master_enabled
+            else ""
+        )
 
-        # Memory dictionary
-        state_json = json.dumps(state_view, indent=2)
-        text_parts.append(f"\n## Memory\n```json\n{state_json}\n```")
-
-        # Turn history. Each turn k's `did this turn succeed?` is the value the
-        # FOLLOWING turn (k+1) wrote into its `last_turn_succeeded` field. The
-        # most recent prior turn has no follower yet, so its grade is left blank
-        # for the current turn to fill in via `last_turn_succeeded`.
-        # Turns whose screenshot is also included in the image tail get a
-        # cross-reference line so the model can bind text history ↔ image.
-        historic_turn_nums = {
-            turn_num for (turn_num, _) in self.turn_screenshots
-        } if self.historic_images_count > 0 else set()
-        if self.turn_explanations:
-            history = "\n## Previous Turns"
-            n_total = len(self.turn_explanations)
-            trim = self.max_turns_before_trim
-            if trim is not None and n_total > trim:
-                start = n_total - trim
-                history += (
-                    f"\n\n_(Earlier turns have been truncated. "
-                    f"Showing the last {trim} of {n_total} turns.)_"
-                )
-            else:
-                start = 0
-            visible = self.turn_explanations[start:]
-            n_visible = len(visible)
-            for j, exp in enumerate(visible):
-                turn_num = start + j + 1
-                action = exp.get('action', [])
-                if isinstance(action, list):
-                    action_str = ", ".join(action)
-                else:
-                    action_str = str(action)
-                reasoning = exp.get('reasoning', '')
-                next_idx = j + 1
-                if next_idx < n_visible:
-                    grade = visible[next_idx].get('last_turn_succeeded')
-                    if grade is True:
-                        grade_str = "true"
-                    elif grade is False:
-                        grade_str = "false"
-                    elif grade is None:
-                        grade_str = "null"
-                    else:
-                        grade_str = "(missing)"
-                else:
-                    grade_str = "<for you to decide this turn>"
-                history += f"\n\n### Turn {turn_num}"
-                history += f"\n- actions: {action_str}"
-                history += f"\n- reasoning: {reasoning}"
-                history += f"\n- did this turn succeed?: {grade_str}"
-                if turn_num in historic_turn_nums:
-                    history += (
-                        f"\n- (screenshot from the START of turn {turn_num}, "
-                        f"BEFORE these actions were pressed, is included in the image tail "
-                        f"below — compare to the CURRENT screen image)"
-                    )
-            text_parts.append(history)
-
-        if self.task_master_enabled:
-            # TaskMaster owns the current task. Render its title + description +
-            # success_criteria, plus a per-turn progress line, and tell the
-            # Player it can hand control back. Falls back to the config task for
-            # cold-start / pre-B4 wiring when self.current_task isn't set yet.
-            self._append_taskmaster_task_block(text_parts)
-            text_parts.append(
-                "\nOutput your action (inputs) and update memory_updates with any new information. "
-                "If the current task is complete, impossible, or you're out of useful moves, "
-                "set `return_to_taskmaster` instead to hand control back to TaskMaster."
-            )
-        else:
-            # Task (tasks.json overrides config task)
-            task = self.tasks or self.config.get("task", {})
-            if isinstance(task, str):
-                task = {"goal": task}
-            goal = task.get("goal", "Play the game.")
-            desc = task.get("description", "")
-            task_text = f"**Goal:** {goal}"
-            if desc:
-                task_text += f"\n{desc}"
-            text_parts.append(f"\n## Current Task\n{task_text}")
-
-            text_parts.append(
-                "\nOutput your action (inputs) and update memory_updates with any new information."
-            )
-
-        combined_text = "\n".join(text_parts)
+        template = self.config.get("user_prompt") or DEFAULT_PLAYER_USER_PROMPT
+        combined_text = fill_prompt(
+            template,
+            screen_heads_up=screen_heads_up,
+            ocr_text=ocr_text if ocr_text else "(none)",
+            memory_json=json.dumps(state_view, indent=2),
+            previous_turns=self._render_previous_turns_text(),
+            task_block=self._render_current_task_text(),
+            handoff_instruction=handoff_instruction,
+        ).strip()
 
         # Separate VLM: no images, just return the text.
         if current_image_url is None:
@@ -1593,41 +1638,122 @@ class TurnManager:
         parts.append(ImageUrl(url=current_image_url))
         return parts
 
-    def _append_taskmaster_task_block(self, text_parts: list[str]) -> None:
-        """Render the TaskMaster-owned current-task block + progress line.
+    def _render_screen_heads_up(self, current_image_url: Optional[str]) -> str:
+        """Value for the {{screen_heads_up}} placeholder: the ## Screen(s) note
+        telling the model what the image tail contains. Empty when there is no
+        current image (separate_vlm mode)."""
+        if current_image_url is None:
+            return ""
+        n_historic = len(self.turn_screenshots) if self.historic_images_count > 0 else 0
+        n_total_images = n_historic + 1
+        if n_historic > 0:
+            return (
+                "## Screens\n"
+                f"This message ends with {n_total_images} screenshots in chronological order. "
+                f"The first {n_historic} are historic — the screen the agent saw at the START "
+                f"of each of the last {n_historic} turn(s), BEFORE pressing the actions listed "
+                "under '## Previous Turns'. The LAST screenshot is the CURRENT turn — that "
+                "is what you must reason about and act on now. Each image is preceded by an "
+                "explicit label."
+            )
+        return (
+            "## Screen\n"
+            "The current-turn screenshot is shown at the end of this message — that is "
+            "what you must reason about and act on."
+        )
 
-        Only called when TaskMaster is enabled. Reads `self.current_task` (set by
-        the run loop on each TaskMaster handoff) for the task's title /
-        description / success_criteria, falling back to the config task for
-        cold-start / pre-B4 wiring. Appends a `task_progress: "turn N / M on
-        current task"` line so the Player can self-eject before the budget
-        validator forces it.
-        """
-        task = self.current_task
-        if not task:
-            # Cold-start fallback: reuse the config/snapshot task shape.
-            task = self.tasks or self.config.get("task", {})
-            if isinstance(task, str):
-                task = {"goal": task}
-        task = task or {}
+    def _render_previous_turns_text(self) -> str:
+        """Value for the {{previous_turns}} placeholder: the rendered per-turn
+        history (the loop body stays in code), with the truncation notice. Returns
+        a '(none)' note on the first turn."""
+        historic_turn_nums = {
+            turn_num for (turn_num, _) in self.turn_screenshots
+        } if self.historic_images_count > 0 else set()
+        if not self.turn_explanations:
+            return "(none — this is the first turn.)"
+        out: list[str] = []
+        n_total = len(self.turn_explanations)
+        trim = self.max_turns_before_trim
+        if trim is not None and n_total > trim:
+            start = n_total - trim
+            out.append(
+                f"_(Earlier turns have been truncated. Showing the last {trim} of {n_total} turns.)_"
+            )
+        else:
+            start = 0
+        visible = self.turn_explanations[start:]
+        n_visible = len(visible)
+        for j, exp in enumerate(visible):
+            turn_num = start + j + 1
+            action = exp.get('action', [])
+            action_str = ", ".join(action) if isinstance(action, list) else str(action)
+            reasoning = exp.get('reasoning', '')
+            next_idx = j + 1
+            if next_idx < n_visible:
+                grade = visible[next_idx].get('last_turn_succeeded')
+                if grade is True:
+                    grade_str = "true"
+                elif grade is False:
+                    grade_str = "false"
+                elif grade is None:
+                    grade_str = "null"
+                else:
+                    grade_str = "(missing)"
+            else:
+                grade_str = "<for you to decide this turn>"
+            out.append(f"### Turn {turn_num}")
+            out.append(f"- actions: {action_str}")
+            out.append(f"- reasoning: {reasoning}")
+            out.append(f"- did this turn succeed?: {grade_str}")
+            if turn_num in historic_turn_nums:
+                out.append(
+                    f"- (screenshot from the START of turn {turn_num}, BEFORE these actions "
+                    "were pressed, is included in the image tail below — compare to the "
+                    "CURRENT screen image)"
+                )
+            out.append("")
+        return "\n".join(out).rstrip()
 
-        # Title accepts either `title` (TaskMaster shape) or `goal` (config shape).
-        title = task.get("title") or task.get("goal") or "Play the game."
+    def _render_current_task_text(self) -> str:
+        """Value for the {{task_block}} placeholder: the TaskMaster-owned current
+        task (title / description / success_criteria + progress line) when
+        TaskMaster is enabled, else the legacy goal/description. The '## Current
+        Task' header lives in the template."""
+        if self.task_master_enabled:
+            task = self.current_task
+            if not task:
+                # Cold-start fallback: reuse the config/snapshot task shape.
+                task = self.tasks or self.config.get("task", {})
+                if isinstance(task, str):
+                    task = {"goal": task}
+            task = task or {}
+            # Title accepts either `title` (TaskMaster shape) or `goal` (config).
+            title = task.get("title") or task.get("goal") or "Play the game."
+            desc = task.get("description", "")
+            criteria = task.get("success_criteria", "")
+            task_text = f"**Task:** {title}"
+            if desc:
+                task_text += f"\n{desc}"
+            if criteria:
+                task_text += f"\n\n**Success criteria:** {criteria}"
+            # Progress line: turns used / budget on the CURRENT task (not the
+            # global run) — so the Player can self-eject before the budget
+            # validator forces it.
+            used = self.current_task_turn
+            budget = self.max_turns
+            task_text += f"\n\n_task_progress: {used}/{budget} turns used for this task_"
+            return task_text
+
+        # Legacy (TaskMaster disabled): tasks.json overrides config task.
+        task = self.tasks or self.config.get("task", {})
+        if isinstance(task, str):
+            task = {"goal": task}
+        goal = task.get("goal", "Play the game.")
         desc = task.get("description", "")
-        criteria = task.get("success_criteria", "")
-
-        task_text = f"**Task:** {title}"
+        task_text = f"**Goal:** {goal}"
         if desc:
             task_text += f"\n{desc}"
-        if criteria:
-            task_text += f"\n\n**Success criteria:** {criteria}"
-
-        # Progress line: turn N / M on the CURRENT task (not the global run).
-        used = self.current_task_turn
-        budget = self.max_turns
-        task_text += f"\n\n_task_progress: turn {used} / {budget} on current task_"
-
-        text_parts.append(f"\n## Current Task\n{task_text}")
+        return task_text
 
     def _lookup_actions(self, turn_num: int) -> str:
         """Return the comma-joined action list for a past turn, or '?' if unknown."""

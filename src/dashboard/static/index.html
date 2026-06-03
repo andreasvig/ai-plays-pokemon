@@ -111,9 +111,11 @@
     border: 2px solid var(--border);
   }
 
-  /* State area */
+  /* State area — shares the space below the screen 50/50 with the Current Task
+     panel; min-height:0 lets it actually shrink so its own scrollbar engages. */
   .state-area {
-    flex: 1;
+    flex: 1 1 0;
+    min-height: 0;
     overflow-y: auto;
     padding: 12px;
   }
@@ -127,6 +129,59 @@
     letter-spacing: 1px;
     margin-bottom: 8px;
   }
+
+  /* Current Task panel — pinned below the Memory Dictionary so the active
+     task's description + requirements are always visible without scrolling
+     the chat. Amber to match the master/task accent. */
+  .task-panel {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 12px;
+    border-top: 2px solid var(--border);
+    border-left: 3px solid #ffce54;
+    background: rgba(255, 206, 84, 0.05);
+  }
+  .task-panel::-webkit-scrollbar { width: 6px; }
+  .task-panel::-webkit-scrollbar-track { background: var(--bg); }
+  .task-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  .task-panel-header {
+    font-size: 12px;
+    color: #ffce54;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+    font-weight: bold;
+  }
+  .task-panel-title {
+    font-size: 13px;
+    font-weight: bold;
+    color: var(--text);
+    margin-bottom: 8px;
+    line-height: 1.4;
+  }
+  .task-panel-label {
+    display: block;
+    font-size: 10px;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #ffce54;
+    margin: 8px 0 2px;
+  }
+  .task-panel-desc {
+    font-size: 12px;
+    color: var(--text);
+    line-height: 1.5;
+    white-space: pre-wrap;
+  }
+  .task-panel-crit {
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.5;
+    white-space: pre-wrap;
+  }
+  .task-panel-empty { font-size: 12px; color: var(--text-dim); }
 
   /* Footer */
   .footer {
@@ -254,6 +309,42 @@
     font-size: 11px;
     line-height: 1.5;
   }
+  /* Player's hand-back, shown above the Master's verdict in the verdict box */
+  .player-handback {
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px dashed var(--border);
+    color: var(--text);
+  }
+  .player-handback .master-card-label { color: #6ca4ff; }
+  /* Structured master "decision card" — the master's output in labeled rows */
+  .master-card {
+    margin-bottom: 8px;
+    padding: 8px 10px;
+    border-radius: 4px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+  }
+  .master-card-row { margin-bottom: 8px; font-size: 12px; line-height: 1.55; color: var(--text); }
+  .master-card-row:last-child { margin-bottom: 0; }
+  .master-card-label {
+    display: block;
+    font-size: 10px;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #ffce54;
+    margin-bottom: 2px;
+  }
+  .master-card-desc { white-space: pre-wrap; }
+  .master-card .master-verdict { margin-bottom: 0; }
+  /* The rating-of-previous "result" card, pinned at the bottom of the block */
+  .master-result { margin-top: 10px; margin-bottom: 0; }
+  /* Screenshots the master actually saw, shown under its Input tab */
+  .master-thumbs { display: flex; gap: 8px; margin: 6px 0; flex-wrap: wrap; }
+  .master-thumb { margin: 0; text-align: center; }
+  .master-thumb img { width: 140px; image-rendering: pixelated; border: 1px solid var(--border); border-radius: 4px; display: block; }
+  .master-thumb figcaption { font-size: 10px; color: #ffce54; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 3px; }
   /* Player turns nested under their task with a guide line */
   .task-turns {
     margin-left: 24px;
@@ -346,6 +437,8 @@
   .box-tool .entry-box-body { color: var(--text-dim); font-size: 11px; }
   .box-memory .entry-box-header { background: #0a1a0a; color: #7ddf64; }
   .box-memory .entry-box-body { color: #7ddf64; font-size: 12px; white-space: pre-wrap; font-family: 'SF Mono', monospace; }
+  .box-handback .entry-box-header { background: #0a1929; color: #6ca4ff; }
+  .box-handback .entry-box-body { color: #aacbff; }
   .box-ocr .entry-box-header { background: #2a1a05; color: #ffb454; }
   .box-ocr .entry-box-body { color: #ffb454; font-size: 12px; white-space: pre-wrap; font-family: 'SF Mono', monospace; }
   .box-ocr .entry-box-body details { margin-top: 6px; }
@@ -415,6 +508,12 @@
     <div class="state-area">
       <div class="state-header">Memory Dictionary</div>
       <div class="json-tree" id="stateTree">Waiting for data...</div>
+    </div>
+    <div class="task-panel">
+      <div class="task-panel-header">🧭 Current Task</div>
+      <div id="currentTaskPanel">
+        <div class="task-panel-empty">No task yet.</div>
+      </div>
     </div>
   </div>
 </div>
@@ -560,6 +659,32 @@ function connectEvents() {
 }
 
 // --- Event handling ---
+// Pull this master invocation's own rating_of_previous_task out of its trace —
+// the chronologically-honest "result of the previous task" (null on cold start).
+function masterRatingOfPrevious(messages) {
+  for (const msg of (messages || [])) {
+    const name = msg.tool_name;
+    const role = msg.role || msg.kind;
+    if (name === 'final_result' || role === 'final_result') {
+      let a = msg.args;
+      if (typeof a === 'string') { try { a = JSON.parse(a); } catch(e) { a = null; } }
+      if (a && typeof a === 'object' && a.rating_of_previous_task) return a.rating_of_previous_task;
+    }
+  }
+  return null;
+}
+
+const STATUS_GLYPH = { succeeded: '✅', failed: '❌', partial: '🟡', other: '➖' };
+
+// Format the Player's return_to_taskmaster block for a turn card.
+function fmtHandback(r) {
+  if (!r || typeof r !== 'object') return '';
+  const parts = [];
+  if (r.self_assessment) parts.push('Self-assessment: ' + r.self_assessment);
+  if (r.task_summary) parts.push('Task summary: ' + r.task_summary);
+  return parts.join('\n\n');
+}
+
 function handleEvent(evt) {
   state.eventCount++;
   document.getElementById('footerEvents').textContent = 'Events: ' + state.eventCount;
@@ -606,10 +731,11 @@ function handleEvent(evt) {
       else if (grade === null) lines.push('➖ Last turn: n/a (first turn)');
       if (args.reasoning) lines.push('🧠 ' + args.reasoning);
       if (lines.length) addBox('output', '💬 Output', lines.join('\n\n'));
-      if (args.inputs) {
+      if (args.inputs && args.inputs.length) {
         const inputs = Array.isArray(args.inputs) ? JSON.stringify(args.inputs) : args.inputs;
         addBox('action', '🎮 Action', inputs);
       }
+      if (args.return_to_taskmaster) addBox('handback', '↩️ Return to TaskMaster', fmtHandback(args.return_to_taskmaster));
     } else {
       console.error('llm_output args not object:', typeof args, args);
     }
@@ -691,8 +817,28 @@ const BADGE = {
   other:     { glyph: '➖', cls: 'badge-other',      label: 'other' },
 };
 
+// Keep the pinned "Current Task" side panel in sync with the latest task.
+function updateCurrentTaskPanel(evt) {
+  const el = document.getElementById('currentTaskPanel');
+  if (!el) return;
+  const title = evt.title || '(untitled task)';
+  const desc = evt.description || '';
+  const crit = evt.success_criteria || '';
+  let html = '<div class="task-panel-title">Task ' + evt.task_index + ': ' + escapeHtml(title) + '</div>';
+  if (desc) {
+    html += '<span class="task-panel-label">Description</span>' +
+      '<div class="task-panel-desc">' + escapeHtml(desc) + '</div>';
+  }
+  if (crit) {
+    html += '<span class="task-panel-label">🎯 Requirements</span>' +
+      '<div class="task-panel-crit">' + escapeHtml(crit) + '</div>';
+  }
+  el.innerHTML = html;
+}
+
 function startNewTask(evt) {
   const taskIndex = evt.task_index;
+  updateCurrentTaskPanel(evt);
 
   // Replay/reconnect-safe: if this task group already exists, re-enter it instead
   // of creating a duplicate. Collapse the prior current group, re-open this one.
@@ -753,8 +899,10 @@ function startNewTask(evt) {
   body.appendChild(turns);
   chatScroll.appendChild(group);
 
-  // Stash success_criteria so completeTask / a flushed trace can surface it.
+  // Stash the task fields so the master card / a flushed trace can surface them.
   group.dataset.successCriteria = evt.success_criteria || '';
+  group.dataset.title = evt.title || '';
+  group.dataset.description = evt.description || '';
 
   currentTaskGroup = group;
   currentTaskBody = turns;
@@ -798,47 +946,75 @@ function renderMasterTrace(evt) {
   const mbody = document.createElement('div');
   mbody.className = 'master-block-body';
 
-  // Verdict row (rating of the previous task) is injected later by
-  // completeTask; reserve a placeholder so it lands inside this block.
-  const verdict = document.createElement('div');
-  verdict.className = 'master-verdict';
-  verdict.style.display = 'none';
-  mbody.appendChild(verdict);
+  // Structured "decision card": the master's task (title), its 1-4 paragraph
+  // plan (description), the success criteria, and the verdict — surfaced clearly
+  // above the raw trace (which stays collapsible below).
+  const card = document.createElement('div');
+  card.className = 'master-card';
 
-  // Success criterion for THIS task lives in the expanded master block
-  // (Decision 4 keeps it off the collapsed header).
+  const cardTitle = group.dataset.title || '';
+  if (cardTitle) {
+    const r = document.createElement('div');
+    r.className = 'master-card-row';
+    r.innerHTML = '<span class="master-card-label">📋 Task</span>' + escapeHtml(cardTitle);
+    card.appendChild(r);
+  }
+
+  const cardDesc = group.dataset.description || '';
+  if (cardDesc) {
+    const r = document.createElement('div');
+    r.className = 'master-card-row';
+    const lbl = document.createElement('span');
+    lbl.className = 'master-card-label';
+    lbl.textContent = '🧭 Plan';
+    const descEl = document.createElement('div');
+    descEl.className = 'master-card-desc';
+    descEl.textContent = cardDesc;
+    r.appendChild(lbl);
+    r.appendChild(descEl);
+    card.appendChild(r);
+  }
+
   const crit = group.dataset.successCriteria || '';
   if (crit) {
-    const critEl = document.createElement('div');
-    critEl.className = 'master-criteria';
-    critEl.textContent = '🎯 Success criterion: ' + crit;
-    mbody.appendChild(critEl);
+    const r = document.createElement('div');
+    r.className = 'master-card-row';
+    r.innerHTML = '<span class="master-card-label">🎯 Success criteria</span>' + escapeHtml(crit);
+    card.appendChild(r);
   }
+
+  // (The master's rating of the PREVIOUS task is its *result*, so it renders at
+  // the BOTTOM of this block — below the trace — not in this top card. The
+  // current task's own verdict is never shown here; it lives only as the badge.)
+
+  mbody.appendChild(card);
 
   // Reuse the same trace-replay rendering used by renderTurnTrace, but the
   // master's final_result carries task fields (already on the header), so skip it.
   const messages = evt.messages || [];
+  // Live view: the verbose system prompt and the input-prompt TEXT are
+  // report-only. Here we keep just the screenshots the master actually saw
+  // (under the Input tab) plus its reasoning, tool calls, and result. One image
+  // (start) on cold-start, two (previous task start + end) on a handoff.
+  const masterImgs = (evt.input_images || []).filter(im => im && im.data_url);
+  if (masterImgs.length) {
+    const det = document.createElement('details');
+    det.innerHTML = '<summary style="color:var(--text-dim);cursor:pointer;font-size:11px;">📷 Screens the master saw</summary>';
+    const strip = document.createElement('div');
+    strip.className = 'master-thumbs';
+    for (const im of masterImgs) {
+      const fig = document.createElement('figure');
+      fig.className = 'master-thumb';
+      fig.innerHTML = '<img src="' + im.data_url + '" alt="' + escapeHtml(im.label || '') + '"/>' +
+        '<figcaption>' + escapeHtml(im.label || '') + '</figcaption>';
+      strip.appendChild(fig);
+    }
+    det.appendChild(strip);
+    mbody.appendChild(det);
+  }
   for (const msg of messages) {
     const role = msg.role || msg.kind || '';
-    if (role === 'system') {
-      const det = document.createElement('details');
-      det.innerHTML = '<summary style="color:var(--text-dim);cursor:pointer;font-size:11px;">System Prompt</summary>';
-      const pre = document.createElement('pre');
-      pre.style.cssText = 'font-size:10px;color:var(--text-dim);white-space:pre-wrap;max-height:200px;overflow-y:auto;margin:4px 0;';
-      pre.textContent = truncate(msg.content || '', 2000);
-      det.appendChild(pre);
-      mbody.appendChild(det);
-    }
-    else if (role === 'user') {
-      const det = document.createElement('details');
-      det.innerHTML = '<summary style="color:var(--text-dim);cursor:pointer;font-size:11px;">Input (progress + screen)</summary>';
-      const pre = document.createElement('pre');
-      pre.style.cssText = 'font-size:10px;color:var(--text-dim);white-space:pre-wrap;max-height:200px;overflow-y:auto;margin:4px 0;';
-      pre.textContent = truncate(msg.content || '', 2000);
-      det.appendChild(pre);
-      mbody.appendChild(det);
-    }
-    else if (role === 'thinking') {
+    if (role === 'thinking') {
       addBoxTo(mbody, 'thinking', '💭 Thinking', msg.content || '', true);
     }
     else if (role === 'tool_call') {
@@ -858,6 +1034,26 @@ function renderMasterTrace(evt) {
       addBoxTo(mbody, 'error', '🔄 Retry', msg.content || 'Validation failed — retrying.');
     }
   }
+
+  // The master's OWN result, at the BOTTOM (chronological): its rating of the
+  // PREVIOUS task, produced at THIS invocation. Null on the cold-start turn.
+  const rop = masterRatingOfPrevious(evt.messages);
+  const resultCard = document.createElement('div');
+  resultCard.className = 'master-card master-result';
+  const rr = document.createElement('div');
+  rr.className = 'master-card-row';
+  if (rop) {
+    const g = STATUS_GLYPH[(rop.status || '').toLowerCase()] || '➖';
+    let html = '<span class="master-card-label">⚖️ Rating of the previous task</span>' +
+      '<strong>' + g + ' ' + capitalize(rop.status || '?') + '</strong>';
+    if (rop.reasoning) html += ' — ' + escapeHtml(rop.reasoning);
+    rr.innerHTML = html;
+  } else {
+    rr.innerHTML = '<span class="master-card-label">⚖️ Rating of the previous task</span>' +
+      '<span style="color:var(--text-dim);">First task — no previous task to rate.</span>';
+  }
+  resultCard.appendChild(rr);
+  mbody.appendChild(resultCard);
 
   block.appendChild(header);
   block.appendChild(mbody);
@@ -883,25 +1079,15 @@ function completeTask(evt) {
   const status = rating.status || 'other';
   const badgeInfo = BADGE[status] || BADGE.other;
 
+  // Only the compact status badge is backfilled onto the finished task's header.
+  // The verbose verdict + reasoning is NOT shown here — it appears (chronologically)
+  // as the NEXT master invocation's "rating of the previous task", and the Player's
+  // hand-back appears on its own final turn card. This keeps the trace readable.
   const badge = group.querySelector('.task-badge');
   if (badge) {
     badge.className = 'task-badge ' + badgeInfo.cls;
     badge.textContent = badgeInfo.glyph;
     badge.title = badgeInfo.label;
-  }
-
-  // Inject the rating into the verdict row of the master block. Always show the
-  // status line when a rating exists (matches the report, which always renders
-  // the verdict row); append the reasoning only when present.
-  const verdict = group.querySelector('.master-verdict');
-  if (verdict) {
-    verdict.style.display = '';
-    let html = '<strong style="color:' + badgeColor(status) + '">' +
-      badgeInfo.glyph + ' ' + capitalize(badgeInfo.label) + '</strong>';
-    if (rating.reasoning) {
-      html += ' — ' + escapeHtml(rating.reasoning);
-    }
-    verdict.innerHTML = html;
   }
   autoScroll();
 }
@@ -1041,25 +1227,8 @@ function renderTurnTrace(evt) {
   for (const msg of messages) {
     const role = msg.role || msg.kind || '';
 
-    if (role === 'system') {
-      const det = document.createElement('details');
-      det.innerHTML = '<summary style="color:var(--text-dim);cursor:pointer;font-size:11px;">System Prompt</summary>';
-      const pre = document.createElement('pre');
-      pre.style.cssText = 'font-size:10px;color:var(--text-dim);white-space:pre-wrap;max-height:200px;overflow-y:auto;margin:4px 0;';
-      pre.textContent = truncate(msg.content || '', 2000);
-      det.appendChild(pre);
-      turnBody.appendChild(det);
-    }
-    else if (role === 'user') {
-      const det = document.createElement('details');
-      det.innerHTML = '<summary style="color:var(--text-dim);cursor:pointer;font-size:11px;">Input (vision + state)</summary>';
-      const pre = document.createElement('pre');
-      pre.style.cssText = 'font-size:10px;color:var(--text-dim);white-space:pre-wrap;max-height:200px;overflow-y:auto;margin:4px 0;';
-      pre.textContent = truncate(msg.content || '', 2000);
-      det.appendChild(pre);
-      turnBody.appendChild(det);
-    }
-    else if (role === 'thinking') {
+    // Live view: the system prompt + input-prompt text are report-only (skip).
+    if (role === 'thinking') {
       addBoxTo(turnBody, 'thinking', '💭 Thinking', msg.content || '', true);
     }
     else if (role === 'tool_call') {
@@ -1076,10 +1245,11 @@ function renderTurnTrace(evt) {
           else if (fGrade === null) lines.push('➖ Last turn: n/a (first turn)');
           if (fargs.reasoning) lines.push('🧠 ' + fargs.reasoning);
           if (lines.length) addBoxTo(turnBody, 'output', '💬 Output', lines.join('\n\n'));
-          if (fargs.inputs) {
+          if (fargs.inputs && fargs.inputs.length) {
             const inputs = Array.isArray(fargs.inputs) ? JSON.stringify(fargs.inputs) : fargs.inputs;
             addBoxTo(turnBody, 'action', '🎮 Action', inputs);
           }
+          if (fargs.return_to_taskmaster) addBoxTo(turnBody, 'handback', '↩️ Return to TaskMaster', fmtHandback(fargs.return_to_taskmaster));
           const fMemRaw = fargs.memory_updates || '';
           if (typeof fMemRaw === 'string' && fMemRaw.length > 0 && fMemRaw.toLowerCase() !== 'none') {
             let fMemDisplay = fMemRaw;

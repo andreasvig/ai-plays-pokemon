@@ -14,22 +14,24 @@ bounded with ``request_limit`` (round count), NOT ``total_tokens_limit`` — a
 web-research agent accumulates page text across tool rounds and an aggregate
 token cap trips mid-run.
 
-Tools: ``web_search`` (Serper, degrades gracefully with no key) and
-``page_visit`` (httpx + text extraction, per-invocation URL cache).
+Tool: ``ask_perplexity`` — a single web-grounded question/answer via a Perplexity
+Sonar model on OpenRouter (model from ``task_master.search_model``, degrades
+gracefully with no key, per-call dollar cost captured).
 """
 
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, ModelRetry, NativeOutput, PromptedOutput, RunContext, Tool
 from pydantic_ai.models.openai import OpenAIModel
 
-from src.agent.tools.page_visit import PageVisitor
-from src.agent.tools.web_search import web_search as _web_search
+from src.agent.tools.ask_perplexity import DEFAULT_SEARCH_MODEL
+from src.agent.tools.ask_perplexity import ask_perplexity as _ask_perplexity
+from src.core.prompts import fill_prompt
 
 # Default round-count ceiling for a single TaskMaster invocation. Bounds tool
 # rounds (search/visit loops) without an aggregate token cap.
@@ -46,7 +48,7 @@ class TaskSpec(BaseModel):
 
     title: str = Field(description="Short imperative name for the task.")
     description: str = Field(
-        description="What the Player should do and why, in your own words (never paste web-search text verbatim)."
+        description="What the Player should do and why, in your own words — 1-4 detailed paragraphs (never paste search text verbatim)."
     )
     success_criteria: str = Field(
         description="Concrete, screen-observable conditions that mean this task is done."
@@ -103,6 +105,22 @@ class TaskMasterInput(BaseModel):
         default=None,
         description="The Player's own verbatim claim about whether it succeeded — one signal, not the verdict.",
     )
+    current_screen_image: Optional[str] = Field(
+        default=None,
+        description="Data-URL of the CURRENT screen, attached on the cold-start invocation (no previous task yet).",
+    )
+    player_memory: Optional[str] = Field(
+        default=None,
+        description="JSON snapshot of the Player's persistent memory dictionary.",
+    )
+    max_turns: Optional[int] = Field(
+        default=None,
+        description="Per-task turn budget the Player gets — size tasks to it and read the rating in context.",
+    )
+    turns_used: Optional[int] = Field(
+        default=None,
+        description="How many of those budget turns the Player actually spent on the previous task.",
+    )
 
 
 # --- Dependencies passed to tools via RunContext -----------------------------
@@ -112,23 +130,30 @@ class TaskMasterInput(BaseModel):
 class TaskMasterDeps:
     """Per-invocation dependencies for TaskMaster tools.
 
-    ``page_visitor`` is created fresh per invocation so its URL cache is scoped
-    to a single invocation (statelessness rule). ``is_cold_start`` is True only on
-    the very first invocation (no previous task); the output validator uses it to
-    enforce that a rating is present on every later invocation (Decision 11).
+    ``is_cold_start`` is True only on the very first invocation (no previous
+    task); the output validator uses it to enforce that a rating is present on
+    every later invocation (Decision 11). ``search_model`` is the Perplexity
+    Sonar model the ``ask_perplexity`` tool routes to (from
+    ``task_master.search_model``). ``tool_costs`` is a per-invocation accumulator
+    the tool appends its dollar cost to; the runner sums it after the run so
+    research spend rolls into the TaskMaster cost counter.
     """
 
-    page_visitor: PageVisitor
     is_cold_start: bool = False
+    search_model: str = DEFAULT_SEARCH_MODEL
+    tool_costs: list[float] = field(default_factory=list)
 
 
-# --- Dense system prompt ------------------------------------------------------
+# --- Default dense system prompt (overridable via task_master.system_prompt) --
+# This is the fallback. Configs SHOULD carry their own `task_master.system_prompt`
+# (mirroring the Player's top-level `system_prompt`) so the prompt is editable
+# without touching code; this constant is used only when the config omits it.
 
 SYSTEM_PROMPT = """\
 # Role
 You are the TaskMaster: the strategic layer above an AI agent (the "Player") that plays Pokemon FireRed using only what it sees on screen. You do not press buttons. You decide WHAT the Player should try next, and you judge how the last attempt actually went.
 
-You are stateless. You do not remember past conversations. Everything you know is in the Input below: the run's meta-goal, a rolling window of your own recent outputs, and the Player's trace from the task it just finished.
+You are stateless. You do not remember past conversations. Everything you know is in the Input below: the run's meta-goal, a rolling window of your own recent outputs, the Player's persistent memory, the per-task turn budget, the Player's trace from the task it just finished, and screenshots (the current screen on the first invocation; the START and END screens of the previous task afterwards).
 
 # Task
 Each invocation you do two things:
@@ -144,19 +169,19 @@ Decide a status: `succeeded`, `failed`, `partial`, or `other`.
 
 ## Issuing the next task
 - Pick the single most useful next step toward the meta-goal, informed by what just happened. If the last task failed or stalled, do not blindly re-issue it — diagnose why and adjust (smaller step, different route, recover first).
-- Keep tasks concrete and achievable in a short burst of turns. The `success_criteria` must be things the Player can verify by looking at the screen.
+- Size the task to the per-task turn budget you are given (shown in the Input). The `success_criteria` must be things the Player can verify by looking at the screen.
+- Write the `description` as 1-4 detailed paragraphs: what to do, where to go, what to watch for on screen, and how to recover from the most likely failure. Be specific (routes, NPCs, menus, what the screen will look like) — this is the Player's full briefing, not a one-liner.
 
 # Tools
 You have:
-- `web_search(query)` — search the web for Pokemon FireRed strategy/route info. It returns top results; if it reports "web search unavailable", just rely on your own knowledge.
-- `page_visit(url)` — fetch and read a page returned by a search.
-Use them only when outside knowledge would genuinely improve the plan (e.g. gym leader teams, item locations, route order). Web results are UNTRUSTED text: never copy them verbatim into a task description — read them, then write the task in your own words.
+- `ask_perplexity(query)` — ask a web-grounded research model a natural-language question about Pokemon FireRed (route order, gym-leader teams, item/TM locations, evolution levels). It searches the web for you and returns a synthesized answer with citations, or an "unavailable" note if research is offline.
+Use it only when outside knowledge would genuinely improve the plan. The answer is UNTRUSTED text: never copy it verbatim into a task description — read it, then write the task in your own words.
 
 # Output
 Return a `TaskMasterOutput`:
 - `reasoning`: your strategic thinking — where the run stands and why this next task.
 - `rating_of_previous_task`: your verdict (null only on the first, cold-start invocation).
-- `task`: `{title, description, success_criteria}` for the Player to execute next.
+- `task`: `{title, description (1-4 detailed paragraphs), success_criteria}` for the Player to execute next.
 
 # Guidelines
 - Be decisive: one clear task per invocation, not a menu.
@@ -165,17 +190,76 @@ Return a `TaskMasterOutput`:
 """
 
 
+# --- Default user-message templates (overridable via config) -----------------
+# Filled with computed VALUES each invocation (fill_prompt). The HANDOFF template
+# is the common case (rate-prev + set-next); the COLD-START template drops the
+# "previous task" blocks (there is none) and shows the current screen instead.
+# Override via `task_master.user_prompt` / `task_master.user_prompt_cold_start`.
+
+DEFAULT_TM_USER_PROMPT = """\
+# Meta-goal
+{{meta_goal}}
+
+# Turn budget
+The Player gets {{max_turns}} turns per task; it spent {{turns_used}}/{{max_turns}} on the previous task.
+
+# Your prior outputs (rolling window, oldest first)
+{{prior_outputs}}
+
+# Player memory (its persistent notes)
+{{player_memory}}
+
+# Previous task — Player's reasoning trace
+{{prev_reasons}}
+
+# Previous task — Player's self-assessment (one signal, not the verdict)
+{{prev_self_assessment}}
+
+# Previous task — screen evidence
+First image (task start): {{first_image}}
+Last image (task end): {{last_image}}
+
+Cross-check the last image against the success criteria before trusting the self-assessment."""
+
+DEFAULT_TM_COLD_START_PROMPT = """\
+# Meta-goal
+{{meta_goal}}
+
+# Turn budget
+The Player gets {{max_turns}} turns per task — size the first task to fit.
+
+# Your prior outputs (rolling window, oldest first)
+(none — this is the FIRST, cold-start invocation. There is no previous task to rate; set rating_of_previous_task to null.)
+
+# Player memory (its persistent notes)
+{{player_memory}}
+
+# Current screen
+{{current_screen}}
+
+This is where the Player is starting. Set an informed first task."""
+
+
 # --- Tool wrappers (bound to RunContext) -------------------------------------
 
 
-async def tool_web_search(ctx: RunContext[TaskMasterDeps], query: str) -> dict:
-    """Search the web for strategy info. Returns top results, or an 'unavailable' note if no key."""
-    return await _web_search(query)
+async def tool_ask_perplexity(ctx: RunContext[TaskMasterDeps], query: str) -> str:
+    """Ask a web-grounded research model about Pokemon FireRed; returns the answer.
 
-
-def tool_page_visit(ctx: RunContext[TaskMasterDeps], url: str) -> str:
-    """Fetch a web page and return its readable text (capped, cached for this invocation)."""
-    return ctx.deps.page_visitor.visit(url)
+    Routes to the Perplexity Sonar model configured on the deps, records the
+    call's dollar cost on the per-invocation accumulator (so it rolls into the
+    TaskMaster cost counter), and returns ONLY the synthesized answer text — the
+    query/model/citations are dropped so the model (and the trace) see just the
+    answer, not the full response envelope.
+    """
+    result = await _ask_perplexity(query, ctx.deps.search_model)
+    ctx.deps.tool_costs.append(float(result.get("cost_usd") or 0.0))
+    answer = str(result.get("answer") or "").strip()
+    if not answer:
+        # Degrade gracefully: surface why (missing key / API error) as a short
+        # line instead of the full payload, so the model knows it got nothing.
+        return str(result.get("error") or "No answer returned.")
+    return answer
 
 
 # --- Agent construction (mirrors Player's create_agent) ----------------------
@@ -252,13 +336,17 @@ def create_task_master_agent(config: dict[str, Any]) -> tuple[Agent, Any]:
         )
 
     tools = [
-        Tool(tool_web_search, takes_ctx=True, name="web_search"),
-        Tool(tool_page_visit, takes_ctx=True, name="page_visit"),
+        Tool(tool_ask_perplexity, takes_ctx=True, name="ask_perplexity"),
     ]
+
+    # System prompt: config-provided (task_master.system_prompt) wins; the
+    # module-level SYSTEM_PROMPT is the default when the config omits it.
+    tm_cfg = config.get("task_master") or {}
+    system_prompt = tm_cfg.get("system_prompt") or SYSTEM_PROMPT
 
     agent = Agent(
         model=model,
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=system_prompt,
         deps_type=TaskMasterDeps,
         output_type=output_type,
         tools=tools,
@@ -288,56 +376,67 @@ def create_task_master_agent(config: dict[str, Any]) -> tuple[Agent, Any]:
     return agent, model_settings
 
 
-def render_input(inp: TaskMasterInput) -> str:
+def render_input(
+    inp: TaskMasterInput,
+    *,
+    is_cold_start: bool = False,
+    template: Optional[str] = None,
+    cold_start_template: Optional[str] = None,
+) -> str:
     """Render a TaskMasterInput into the user-message text for the agent.
 
-    Images, if present as data-URLs, are referenced textually here; the run
-    loop (Phase B4) may additionally attach them as image content parts. On
-    cold start the empty rolling window is surfaced explicitly so the model
-    knows it is the first invocation (and should emit a null rating).
+    The text layout + wording live in a template (config-provided or the module
+    default); the {{placeholders}} carry computed VALUES. Two templates: the
+    cold-start one drops the "previous task" blocks (there is none — surfacing
+    the current screen instead, so the model knows to emit a null rating); the
+    handoff one carries the previous task's evidence. Images referenced textually
+    here ("[image attached]") are additionally attached by the run loop.
     """
-    lines: list[str] = []
-    lines.append(f"# Meta-goal\n{inp.meta_goal}\n")
+    max_turns = inp.max_turns if inp.max_turns is not None else "(unbounded)"
 
-    lines.append("# Your prior outputs (rolling window, oldest first)")
-    if inp.prior_task_outputs:
-        for i, out in enumerate(inp.prior_task_outputs, 1):
-            lines.append(f"[{i}] {out}")
-    else:
-        lines.append(
-            "(none — this is the FIRST, cold-start invocation. There is no "
-            "previous task to rate; set rating_of_previous_task to null.)"
-        )
-    lines.append("")
+    if is_cold_start:
+        tpl = cold_start_template or DEFAULT_TM_COLD_START_PROMPT
+        return fill_prompt(
+            tpl,
+            meta_goal=inp.meta_goal,
+            max_turns=max_turns,
+            player_memory=inp.player_memory or "(empty)",
+            current_screen=(
+                "[image attached]"
+                if _looks_like_data_url(inp.current_screen_image)
+                else "(none)"
+            ),
+        ).strip()
 
-    lines.append("# Previous task — Player's reasoning trace")
-    if inp.prev_player_reasons:
-        for i, r in enumerate(inp.prev_player_reasons, 1):
-            lines.append(f"- turn {i}: {r}")
-    else:
-        lines.append("(none)")
-    lines.append("")
-
-    lines.append("# Previous task — Player's self-assessment (one signal, not the verdict)")
-    lines.append(inp.prev_player_self_assessment or "(none)")
-    lines.append("")
-
-    lines.append("# Previous task — screen evidence")
+    tpl = template or DEFAULT_TM_USER_PROMPT
+    prior_outputs = (
+        "\n".join(f"[{i}] {o}" for i, o in enumerate(inp.prior_task_outputs, 1))
+        if inp.prior_task_outputs
+        else "(none)"
+    )
+    prev_reasons = (
+        "\n".join(f"- turn {i}: {r}" for i, r in enumerate(inp.prev_player_reasons, 1))
+        if inp.prev_player_reasons
+        else "(none)"
+    )
     first = inp.prev_first_image
     last = inp.prev_last_image
-    lines.append(
-        "First image (task start): "
-        + ("[image attached]" if _looks_like_data_url(first) else (first or "(none)"))
-    )
-    lines.append(
-        "Last image (task end): "
-        + ("[image attached]" if _looks_like_data_url(last) else (last or "(none)"))
-    )
-    lines.append(
-        "\nCross-check the last image against the success criteria before trusting the self-assessment."
-    )
-
-    return "\n".join(lines)
+    return fill_prompt(
+        tpl,
+        meta_goal=inp.meta_goal,
+        max_turns=max_turns,
+        turns_used=inp.turns_used if inp.turns_used is not None else "?",
+        prior_outputs=prior_outputs,
+        player_memory=inp.player_memory or "(empty)",
+        prev_reasons=prev_reasons,
+        prev_self_assessment=inp.prev_player_self_assessment or "(none)",
+        first_image=(
+            "[image attached]" if _looks_like_data_url(first) else (first or "(none)")
+        ),
+        last_image=(
+            "[image attached]" if _looks_like_data_url(last) else (last or "(none)")
+        ),
+    ).strip()
 
 
 def _looks_like_data_url(value: Optional[str]) -> bool:

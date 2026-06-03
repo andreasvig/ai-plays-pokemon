@@ -133,15 +133,26 @@ class RunLogger:
             "global_turn": global_turn,
         })
 
-    def log_task_completed(self, task_index: int, rating: dict) -> None:
+    def log_task_completed(
+        self,
+        task_index: int,
+        rating: dict,
+        player_self_assessment: Optional[str] = None,
+        player_task_summary: Optional[str] = None,
+    ) -> None:
         """Emit when a master call rates the just-finished task (#2 onward).
 
         ``rating`` is ``{status, reasoning}`` — it stamps backward onto the
         rated task_index in both frontend surfaces (Decision 2).
+        ``player_self_assessment`` / ``player_task_summary`` are the Player's own
+        hand-back from its final turn on the task (the message it returned to the
+        TaskMaster); both None on a budget-forced handoff with no Player output.
         """
         self._log_event("task_completed", {
             "task_index": task_index,
             "rating": rating,
+            "player_self_assessment": player_self_assessment,
+            "player_task_summary": player_task_summary,
         })
 
     def log_task_master_trace(
@@ -150,17 +161,27 @@ class RunLogger:
         messages: list[dict],
         model_used: str,
         cost_usd: float,
+        search_cost_usd: float = 0.0,
+        input_images: Optional[list[dict]] = None,
     ) -> None:
         """Emit the TaskMaster agent's own trace (analogous to turn_trace).
 
         ``messages`` is the same role-shape as turn_trace's messages
-        (system/user/thinking/tool_call/tool_result/final_result).
+        (system/user/thinking/tool_call/tool_result/final_result). ``cost_usd``
+        is the agent's own LLM cost; ``search_cost_usd`` is the dollar cost of
+        any ``ask_perplexity`` calls it made this invocation (0.0 if none).
+        ``input_images`` are the actual screenshots THIS invocation saw, each
+        ``{"label", "data_url"}`` — one (the start screen) on cold-start, two
+        (the previous task's start + end) on a handoff. Rendered under the
+        master's Input section so the trace shows what the agent actually saw.
         """
         self._log_event("task_master_trace", {
             "task_index": task_index,
             "messages": messages,
             "model_used": model_used,
             "cost_usd": cost_usd,
+            "search_cost_usd": search_cost_usd,
+            "input_images": input_images or [],
         })
 
     def log_turn_explanation(self, turn_number: int, explanation: dict, agent_id: str = "") -> None:

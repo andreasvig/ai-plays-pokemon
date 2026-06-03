@@ -236,7 +236,6 @@ def _run_three_task_scenario():
             handoff=ReturnToTaskMaster(
                 self_assessment="succeeded",
                 task_summary="reached the lab door",
-                notes="",
             ),
         ),
         _ga("t3 move 1"),
@@ -368,7 +367,6 @@ def test_rolling_window_and_evidence_fed_to_taskmaster():
             handoff=ReturnToTaskMaster(
                 self_assessment="failed",
                 task_summary="got stuck at the door",
-                notes="door is locked",
             ),
         ),
         _ga("t2 reason A"),

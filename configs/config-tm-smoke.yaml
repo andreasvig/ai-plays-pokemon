@@ -51,6 +51,10 @@ vision_mode: "direct_multimodal"
 vlm_model: null
 
 # --- Task System ---
+# Smoke config (copy of 3.13). Per-task turn budget = the real 25; task
+# boundaries come from the Player volunteering a handoff as it finishes tasks
+# (the budget is only the backstop), so a run exercises the full rate-prev →
+# set-next cycle + multi-task frontend without an artificially tiny budget.
 max_turns_per_task: 25
 
 # --- TaskMaster ---

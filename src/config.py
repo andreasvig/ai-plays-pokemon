@@ -216,6 +216,12 @@ def _validate_config(config: dict[str, Any], *, require_llm_model: bool = True) 
     # (bool) toggles the meta-agent and `history_window_n` (int) bounds how many
     # recent task records the meta-agent sees. TaskMaster reuses the top-level
     # `task.goal` and `max_turns_per_task`; it adds no goal/turn fields of its own.
+    # user_prompt: optional Player per-turn user-message template ({{value}}
+    # placeholders). Omit to use the code default (DEFAULT_PLAYER_USER_PROMPT).
+    up = config.get("user_prompt")
+    if up is not None and (not isinstance(up, str) or not up.strip()):
+        raise ValueError(f"user_prompt must be a non-empty string, got {up!r}")
+
     tm = config.get("task_master")
     if tm is not None:
         if not isinstance(tm, dict):
@@ -230,6 +236,29 @@ def _validate_config(config: dict[str, Any], *, require_llm_model: bool = True) 
             raise ValueError(
                 f"task_master.history_window_n must be an int, got {hwn!r}"
             )
+        # search_model: optional Perplexity Sonar model the ask_perplexity tool
+        # routes to. Omit to use the code default (perplexity/sonar-pro-search).
+        sm = tm.get("search_model")
+        if sm is not None and (not isinstance(sm, str) or not sm.strip()):
+            raise ValueError(
+                f"task_master.search_model must be a non-empty string, got {sm!r}"
+            )
+        # system_prompt: optional TaskMaster system prompt. Omit to use the code
+        # default (task_master.SYSTEM_PROMPT). Mirrors the Player's top-level
+        # `system_prompt` so both agents' prompts live in the config.
+        tsp = tm.get("system_prompt")
+        if tsp is not None and (not isinstance(tsp, str) or not tsp.strip()):
+            raise ValueError(
+                f"task_master.system_prompt must be a non-empty string, got {tsp!r}"
+            )
+        # user_prompt / user_prompt_cold_start: optional TaskMaster user-message
+        # templates ({{value}} placeholders). Omit to use the code defaults.
+        for _k in ("user_prompt", "user_prompt_cold_start"):
+            _v = tm.get(_k)
+            if _v is not None and (not isinstance(_v, str) or not _v.strip()):
+                raise ValueError(
+                    f"task_master.{_k} must be a non-empty string, got {_v!r}"
+                )
         # The per-task turn budget (reused top-level `max_turns_per_task`) is the
         # backstop that guarantees control returns to TaskMaster. With TaskMaster
         # enabled it must be a positive int — `0`/missing would disable both the

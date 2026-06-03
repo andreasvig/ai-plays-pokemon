@@ -2,9 +2,9 @@
 """Standalone smoke probe for the TaskMaster agent (Phase B2).
 
 Feeds a hand-crafted COLD-START ``TaskMasterInput`` and prints the resulting
-``TaskMasterOutput``. Runs without SERPER (web search degrades gracefully) and,
-if OpenRouter is unreachable / there is no network / no API key, skips
-gracefully with a clear message and exit 0 — never tracebacks.
+``TaskMasterOutput``. The ask_perplexity tool degrades gracefully without a key,
+and if OpenRouter is unreachable / there is no network / no API key, the probe
+skips gracefully with a clear message and exit 0 — never tracebacks.
 
 Usage:
     ./venv/bin/python scripts/probe_task_master.py
@@ -28,7 +28,6 @@ from src.agent.task_master import (
     create_task_master_agent,
     render_input,
 )
-from src.agent.tools.page_visit import PageVisitor
 
 
 # A hand-crafted cold-start input: no prior task outputs, no previous-task
@@ -61,10 +60,9 @@ def _build_config() -> dict:
 async def _main() -> int:
     load_dotenv()  # must run BEFORE agent construction / Serper key read
 
-    # Report tool availability up front (SERPER is expected to be absent here).
-    has_serper = bool(os.environ.get("SERPER_API_KEY"))
+    # Report tool availability up front. ask_perplexity routes via OpenRouter,
+    # so it shares OPENROUTER_API_KEY (degrades gracefully when absent).
     has_openrouter = bool(os.environ.get("OPENROUTER_API_KEY"))
-    print(f"[probe] SERPER_API_KEY present: {has_serper}")
     print(f"[probe] OPENROUTER_API_KEY present: {has_openrouter}")
 
     config = _build_config()
@@ -80,14 +78,14 @@ async def _main() -> int:
         print("[probe] SKIP — no OPENROUTER_API_KEY; cannot call the model. "
               "(Construction + input rendering verified above.)")
         print("\n[probe] Rendered cold-start user message:\n")
-        print(render_input(COLD_START_INPUT))
+        print(render_input(COLD_START_INPUT, is_cold_start=True))
         return 0
 
     # This probe feeds a COLD-START input (no previous task), so flag the deps
     # accordingly — otherwise the rating-required output validator would reject
     # the (correct) null rating and force the model to fabricate one.
-    deps = TaskMasterDeps(page_visitor=PageVisitor(), is_cold_start=True)
-    user_message = render_input(COLD_START_INPUT)
+    deps = TaskMasterDeps(is_cold_start=True)
+    user_message = render_input(COLD_START_INPUT, is_cold_start=True)
 
     from pydantic_ai.usage import UsageLimits
 

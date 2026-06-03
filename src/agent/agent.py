@@ -30,10 +30,12 @@ class ReturnToTaskMaster(BaseModel):
         description="Your own grade of how the current task went — TaskMaster makes the final call and may disagree.",
     )
     task_summary: str = Field(
-        description="A short factual summary of what you actually did and the resulting game state, for TaskMaster to evaluate.",
-    )
-    notes: str = Field(
-        description="Anything else TaskMaster should know (blockers hit, things learned, suggestions for the next task); \"\" if nothing.",
+        description=(
+            "A single factual summary of the task for TaskMaster to evaluate: what you actually did, "
+            "the resulting game state, and anything else it should know — blockers you hit, things you "
+            "learned, and suggestions for the next task. Incorporate all of that here in prose; do not "
+            "hold anything back as separate notes."
+        ),
     )
 
 
@@ -273,7 +275,7 @@ def create_agent(config: dict[str, Any]) -> tuple[Agent, Any, list[str]]:
                 "\nExample of a hand-back-to-TaskMaster response (the current task is done — "
                 "leave `inputs` empty and set `return_to_taskmaster`):\n"
                 "{{\"inputs\":[],\"reasoning\":\"...\",\"last_turn_succeeded\":true,\"memory_updates\":\"none\","
-                "\"return_to_taskmaster\":{{\"self_assessment\":\"succeeded\",\"task_summary\":\"...\",\"notes\":\"\"}}}}"
+                "\"return_to_taskmaster\":{{\"self_assessment\":\"succeeded\",\"task_summary\":\"...\"}}}}"
             )
         output_type = PromptedOutput(OutputModel, template=prompted_template)
     elif output_mode == "tool":
@@ -328,7 +330,7 @@ def create_agent(config: dict[str, Any]) -> tuple[Agent, Any, list[str]]:
                     f"You have used the full per-task turn budget "
                     f"({used}/{budget} turns on this task). You must hand control "
                     f"back to TaskMaster now: set `return_to_taskmaster` with your "
-                    f"self_assessment, a task_summary, and notes. An interact-with-game "
+                    f"self_assessment and a task_summary. An interact-with-game "
                     f"output (button presses) is not allowed at the budget boundary."
                 )
             return output

@@ -141,6 +141,7 @@ def group_turns_by_task(turns: list[dict], events: list[dict]) -> list[dict]:
             g["master_trace"] = event.get("messages", [])
             g["master_model"] = event.get("model_used", "")
             g["master_cost"] = event.get("cost_usd", 0) or 0
+            g["master_input_images"] = event.get("input_images", []) or []
         elif etype == "task_completed":
             idx = event.get("task_index")
             if idx is None:
@@ -150,6 +151,9 @@ def group_turns_by_task(turns: list[dict], events: list[dict]) -> list[dict]:
                 order.append(idx)
             g = groups.setdefault(idx, _empty_task_group(idx))
             g["rating"] = event.get("rating") or g["rating"]
+            # The Player's own hand-back (final message returned to TaskMaster).
+            g["player_self_assessment"] = event.get("player_self_assessment")
+            g["player_task_summary"] = event.get("player_task_summary")
 
     # Bucket turns into their task group by task_index.
     for turn in turns:
@@ -175,6 +179,9 @@ def _empty_task_group(idx: int) -> dict:
         "description": "",
         "success_criteria": "",
         "rating": None,
+        "player_self_assessment": None,
+        "player_task_summary": None,
+        "master_input_images": [],
         "master_trace": [],
         "master_model": "",
         "master_cost": 0,
@@ -277,8 +284,20 @@ def _group_trace_into_steps(trace: list[dict]) -> dict:
     return result
 
 
-def _render_trace_html(trace: list[dict]) -> str:
-    """Render the trace into grouped, collapsible HTML."""
+def _render_trace_html(
+    trace: list[dict],
+    input_images: list[dict] | None = None,
+    skip_final_result: bool = False,
+) -> str:
+    """Render the trace into grouped, collapsible HTML.
+
+    ``input_images`` (TaskMaster only) are the actual screenshots this agent
+    saw; they render inside the Input step so the trace shows what it looked at.
+
+    ``skip_final_result`` (TaskMaster only): the master's final_result is the
+    TaskSpec (next task + rating of the previous task), already surfaced as the
+    task header + the verdict row — so its raw "Output" step is dropped here.
+    """
     grouped = _group_trace_into_steps(trace)
 
     parts = []
@@ -292,15 +311,27 @@ def _render_trace_html(trace: list[dict]) -> str:
         </details>""")
 
     # --- User input (collapsible, collapsed by default, with preview) ---
-    if grouped["user_input"]:
-        preview = grouped["user_input"][:100].replace("\n", " ")
+    # The screenshots the agent actually saw render here, under the Input tab.
+    imgs_html = ""
+    if input_images:
+        cells = "".join(
+            f'<figure class="master-thumb"><img src="{img.get("data_url", "")}" '
+            f'alt="{_escape(img.get("label", ""))}"/>'
+            f'<figcaption>{_escape(img.get("label", ""))}</figcaption></figure>'
+            for img in input_images if img.get("data_url")
+        )
+        if cells:
+            imgs_html = f'<div class="master-thumbs">{cells}</div>'
+    if grouped["user_input"] or imgs_html:
+        preview = (grouped["user_input"] or "")[:100].replace("\n", " ")
         parts.append(f"""
         <details class="trace-step trace-input">
             <summary>
                 <span class="step-label">Input</span>
                 <span class="step-preview">{_escape(preview)}...</span>
             </summary>
-            <pre class="step-content">{_escape(grouped["user_input"][:8000])}</pre>
+            {imgs_html}
+            <pre class="step-content">{_escape(grouped["user_input"] or "")}</pre>
         </details>""")
 
     # --- Steps: tool calls and final result ---
@@ -317,10 +348,10 @@ def _render_trace_html(trace: list[dict]) -> str:
             # Build inner content
             inner = ""
             if step["thinking"]:
-                inner += f'<div class="step-thinking"><div class="thinking-label">Thinking</div><pre>{_escape(step["thinking"][:5000])}</pre></div>'
-            inner += f'<div class="step-call"><div class="call-label">Call</div><pre>{_escape(tool_name)}({_escape(args_str[:2000])})</pre></div>'
+                inner += f'<div class="step-thinking"><div class="thinking-label">Thinking</div><pre>{_escape(step["thinking"])}</pre></div>'
+            inner += f'<div class="step-call"><div class="call-label">Call</div><pre>{_escape(tool_name)}({_escape(args_str)})</pre></div>'
             if resp_str:
-                inner += f'<div class="step-response"><div class="response-label">Response</div><pre>{_escape(resp_str[:2000])}</pre></div>'
+                inner += f'<div class="step-response"><div class="response-label">Response</div><pre>{_escape(resp_str)}</pre></div>'
 
             # Summary line
             if isinstance(args, dict):
@@ -339,12 +370,25 @@ def _render_trace_html(trace: list[dict]) -> str:
             </details>""")
 
         elif step["type"] == "final_result":
+            # Master block: its final_result is the TaskSpec (next task + rating of
+            # the previous task), already shown as the task header + the verdict row
+            # below. The TaskSpec carries a `reasoning` key, so the player-template
+            # branch below would render a nonsensical "Output ? / Last turn / Action"
+            # step. Skip it — keep only the planning thinking (parity with live).
+            if skip_final_result:
+                if step["thinking"]:
+                    parts.append(f"""
+            <details class="trace-step trace-thinking-only">
+                <summary><span class="step-label">Thinking</span></summary>
+                <pre class="step-content">{_escape(step["thinking"])}</pre>
+            </details>""")
+                continue
             args = step["args"]
             parsed = args if isinstance(args, dict) else _try_parse_json(args)
 
             inner = ""
             if step["thinking"]:
-                inner += f'<div class="step-thinking"><div class="thinking-label">Thinking</div><pre>{_escape(step["thinking"][:5000])}</pre></div>'
+                inner += f'<div class="step-thinking"><div class="thinking-label">Thinking</div><pre>{_escape(step["thinking"])}</pre></div>'
 
             if isinstance(parsed, dict) and ("reasoning" in parsed or "last_turn_succeeded" in parsed):
                 memory_html = ""
@@ -366,15 +410,30 @@ def _render_trace_html(trace: list[dict]) -> str:
                     grade_label = "➖ n/a (first turn)"
                 else:
                     grade_label = "(missing)"
+                # If the Player handed control back to TaskMaster this turn, show
+                # the return block (self-assessment + summary) instead of an empty
+                # action — this is the "final output" of the Player on the task.
+                handback = parsed.get('return_to_taskmaster')
+                if isinstance(handback, dict):
+                    action_row = (
+                        '<div class="decision-row"><strong>↩️ Return to TaskMaster:</strong> '
+                        f'<strong>{_escape(str(handback.get("self_assessment", "")).capitalize())}</strong> — '
+                        f'{_escape(handback.get("task_summary", ""))}</div>'
+                    )
+                else:
+                    action_row = (
+                        '<div class="decision-row"><strong>Action:</strong> '
+                        f'<code>{_escape(_format_action(parsed.get("inputs", "")))}</code></div>'
+                    )
                 inner += f"""<div class="step-decision">
                     <div class="decision-row"><strong>Last turn:</strong> {grade_label}</div>
                     <div class="decision-row"><strong>Reasoning:</strong> {_escape(parsed.get('reasoning', ''))}</div>
-                    <div class="decision-row"><strong>Action:</strong> <code>{_escape(_format_action(parsed.get('inputs', '')))}</code></div>
+                    {action_row}
                     {memory_html}
                 </div>"""
             else:
                 args_str = json.dumps(parsed, indent=2) if isinstance(parsed, dict) else str(args)
-                inner += f'<div class="step-call"><pre>{_escape(args_str[:2000])}</pre></div>'
+                inner += f'<div class="step-call"><pre>{_escape(args_str)}</pre></div>'
 
             action_preview = _format_action(parsed.get("inputs", "?")) if isinstance(parsed, dict) else "?"
             parts.append(f"""
@@ -390,14 +449,14 @@ def _render_trace_html(trace: list[dict]) -> str:
             parts.append(f"""
             <div class="trace-step trace-retry-step">
                 <span class="step-label">Retry</span>
-                <pre>{_escape(str(step["args"])[:1000])}</pre>
+                <pre>{_escape(str(step["args"]))}</pre>
             </div>""")
 
         elif step["type"] == "thinking_only":
             parts.append(f"""
             <details class="trace-step trace-thinking-only">
                 <summary><span class="step-label">Thinking</span></summary>
-                <pre class="step-content">{_escape(step["thinking"][:5000])}</pre>
+                <pre class="step-content">{_escape(step["thinking"])}</pre>
             </details>""")
 
     return "\n".join(parts)
@@ -512,33 +571,61 @@ def _render_turn_card_html(turn: dict, label: str, run_dir: Path) -> str:
     """
 
 
-def _render_master_block_html(group: dict) -> str:
-    """Render the TaskMaster detail block: a verdict row (badge + rating
-    reasoning + success_criteria) followed by the master agent's trace."""
-    rating = group.get("rating")
-    badge = _task_badge_html(rating)
+def _master_rating_of_previous(trace: list[dict]) -> dict | None:
+    """Pull this invocation's own ``rating_of_previous_task`` out of its trace.
 
-    verdict_rows = f'<div class="decision-row"><strong>Verdict:</strong> {badge}</div>'
-    if rating and rating.get("reasoning"):
-        verdict_rows += (
-            f'<div class="decision-row"><strong>Rating reasoning:</strong> '
-            f'{_escape(rating.get("reasoning", ""))}</div>'
-        )
-    elif not rating:
-        verdict_rows += (
-            '<div class="decision-row"><strong>Rating reasoning:</strong> '
-            '<span style="color:#888;">(task still in progress)</span></div>'
-        )
-    if group.get("success_criteria"):
-        verdict_rows += (
-            f'<div class="decision-row"><strong>Success criteria:</strong> '
-            f'{_escape(group.get("success_criteria", ""))}</div>'
-        )
+    This is the chronologically-honest "result of the previous task" — the
+    verdict the master produced AT this invocation — as opposed to the badge,
+    which is the current task's verdict (backfilled from the next invocation).
+    """
+    for msg in trace or []:
+        name = msg.get("tool_name")
+        role = msg.get("role") or msg.get("kind")
+        if name == "final_result" or role == "final_result":
+            args = msg.get("args")
+            parsed = args if isinstance(args, dict) else _try_parse_json(args)
+            if isinstance(parsed, dict):
+                rop = parsed.get("rating_of_previous_task")
+                if isinstance(rop, dict):
+                    return rop
+    return None
 
+
+def _render_master_block_html(group: dict, run_dir: Path) -> str:
+    """Render the TaskMaster detail block CHRONOLOGICALLY: only what THIS
+    invocation produced — its rating of the PREVIOUS task (from its own output)
+    and its trace, with the actual screenshots it saw under the Input tab. The
+    current task's own verdict is NOT backfilled here (that belongs to the next
+    invocation); it lives only as the badge on the task header."""
     trace = group.get("master_trace") or []
+
+    # The master's own output: the result of the PREVIOUS task it just judged.
+    # Null on the cold-start invocation (there is no previous task).
+    rop = _master_rating_of_previous(trace)
+    verdict_rows = ""
+    if rop:
+        status = (rop.get("status") or "").lower()
+        icon, label, _cls = _TASK_BADGES.get(status, ("➖", status or "?", "badge-other"))
+        verdict_rows = (
+            f'<div class="decision-row"><strong>⚖️ Rating of the previous task:</strong> '
+            f'{icon} {_escape(label)}</div>'
+        )
+        if rop.get("reasoning"):
+            verdict_rows += (
+                f'<div class="decision-row"><strong>Reasoning:</strong> '
+                f'{_escape(rop.get("reasoning", ""))}</div>'
+            )
+    else:
+        verdict_rows = (
+            '<div class="decision-row" style="color:#888;">First task — no previous '
+            'task to rate.</div>'
+        )
+
     trace_html = ""
     if trace:
-        trace_content = _render_trace_html(trace)
+        trace_content = _render_trace_html(
+            trace, group.get("master_input_images"), skip_final_result=True
+        )
         n_tools = sum(1 for s in _group_trace_into_steps(trace)["steps"] if s["type"] == "tool_call")
         trace_html = f"""
         <div class="trace-section">
@@ -546,11 +633,13 @@ def _render_master_block_html(group: dict) -> str:
             <div class="trace-container">{trace_content}</div>
         </div>"""
 
+    # Chronological order: the trace (what this invocation did) first, then its
+    # RESULT — the rating of the previous task — pinned at the bottom.
     return f"""
     <div class="master-block">
         <div class="master-label">TaskMaster</div>
-        <div class="master-verdict">{verdict_rows}</div>
         {trace_html}
+        <div class="master-verdict">{verdict_rows}</div>
     </div>
     """
 
@@ -595,7 +684,7 @@ def _render_task_group_html(group: dict, run_dir: Path) -> str:
             <div class="task-description">{_escape(description)}</div>
         </div>
         <div class="task-body">
-            {_render_master_block_html(group)}
+            {_render_master_block_html(group, run_dir)}
             <div class="task-turns">
                 {turns_inner}
             </div>
@@ -731,9 +820,15 @@ def generate_html(run_dir: Path, events: list[dict], turns: list[dict]) -> str:
         /* Master detail block — distinct amber strategy layer */
         .master-block {{ background: #211d0f; border-left: 3px solid #ffce54; border-radius: 6px; padding: 12px 14px; margin-bottom: 12px; }}
         .master-label {{ font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #ffce54; font-weight: 700; margin-bottom: 8px; }}
-        .master-verdict {{ line-height: 1.7; margin-bottom: 8px; }}
+        .master-verdict {{ line-height: 1.7; margin-top: 10px; padding-top: 8px; border-top: 1px solid #3a3320; }}
         .master-verdict .decision-row {{ margin-bottom: 4px; }}
         .master-verdict .decision-row strong {{ color: #ffce54; }}
+        .master-verdict .decision-row.player-handback {{ padding-bottom: 6px; margin-bottom: 6px; border-bottom: 1px dashed #3a3320; }}
+        .master-verdict .decision-row.player-handback strong {{ color: #6ca4ff; }}
+        .master-thumbs {{ display: flex; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }}
+        .master-thumb {{ margin: 0; text-align: center; }}
+        .master-thumb img {{ width: 160px; image-rendering: pixelated; border: 1px solid #3a3320; border-radius: 4px; display: block; }}
+        .master-thumb figcaption {{ font-size: 10px; color: #ffce54; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 3px; }}
 
         /* Nested player turns — indented under the task with a guide line */
         .task-turns {{ margin-left: 24px; border-left: 2px solid #2a3a5a; padding-left: 12px; }}
