@@ -224,7 +224,6 @@ async def get_config(run_id: str):
         "label": s.label,
         "task": s.config.get("task", {}).get("goal", ""),
         "llm_model": s.config.get("_llm_alias") or s.config.get("llm_model", ""),
-        "vlm_model": s.config.get("vlm_model", ""),
     })
 
 

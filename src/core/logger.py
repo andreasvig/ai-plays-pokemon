@@ -86,12 +86,6 @@ class RunLogger:
     def log_tool_response(self, tool_name: str, response: Any, agent_id: str = "") -> None:
         self._log_event("tool_response", {"tool": tool_name, "response": _safe_serialize(response), "agent_id": agent_id})
 
-    def log_vlm_request(self, prompt: str, agent_id: str = "") -> None:
-        self._log_event("vlm_request", {"prompt": prompt, "agent_id": agent_id})
-
-    def log_vlm_response(self, response: str, agent_id: str = "") -> None:
-        self._log_event("vlm_response", {"response": response, "agent_id": agent_id})
-
     def log_turn_start(
         self,
         turn_number: int,

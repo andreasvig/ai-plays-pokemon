@@ -61,9 +61,6 @@ class _StubEmulator:
 
 
 class _StubVision:
-    vision_mode = "direct_multimodal"
-    total_cost_usd = 0.0
-
     def analyze_screenshot(self, screenshot):
         return {}
 

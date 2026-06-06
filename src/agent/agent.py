@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field
-from pydantic_ai import Agent, ModelRetry, NativeOutput, PromptedOutput, RunContext, Tool
+from pydantic_ai import Agent, ModelRetry, NativeOutput, PromptedOutput, RunContext
 from pydantic_ai.models.openai import OpenAIModel
 
 Button = Literal["up", "down", "left", "right", "a", "b", "start", "select"]
@@ -13,7 +13,7 @@ Button = Literal["up", "down", "left", "right", "a", "b", "start", "select"]
 from src.core.patches import apply_patches
 apply_patches()
 
-from src.emulator import EmulatorClient, VisionPipeline, OCRRunner
+from src.emulator import EmulatorClient, OCRRunner
 from src.core import RunLogger, StateManager
 
 
@@ -115,12 +115,10 @@ class AgentDeps:
     # Shared infrastructure (immutable per run)
     emulator: EmulatorClient
     state: StateManager
-    vision: VisionPipeline
     logger: RunLogger
     ocr: Optional[OCRRunner] = None
 
     # Per-turn state (mutable)
-    current_screenshot: Any = None  # PIL Image
     turn_number: int = 0
     agent_id: str = "agent_0"
 
@@ -217,16 +215,9 @@ def create_agent(config: dict[str, Any]) -> tuple[Agent, Any, list[str]]:
         previous_turns_description=previous_turns_description,
     )
 
-    # Build tool list based on config toggles
-    tool_config = config.get("tools", {})
-    all_tools = [
-        ("ask_vlm", tool_ask_vlm),
-    ]
-    tools = [
-        Tool(fn, takes_ctx=True, name=name)
-        for name, fn in all_tools
-        if tool_config.get(name, True)
-    ]
+    # The Player drives the game purely through its structured output
+    # (GameAction); it has no agent tools. (The former ask_vlm follow-up tool
+    # was removed along with the separate-VLM vision mode.)
 
     # TaskMaster gate: when enabled, the Player output schema gains the optional
     # `return_to_taskmaster` discriminator field (GameAction) and a budget-aware
@@ -300,7 +291,7 @@ def create_agent(config: dict[str, Any]) -> tuple[Agent, Any, list[str]]:
         system_prompt=system_prompt,
         deps_type=AgentDeps,
         output_type=output_type,
-        tools=tools if tools else [],
+        tools=[],
         retries=5,
     )
     if tm_enabled:
@@ -339,15 +330,3 @@ def create_agent(config: dict[str, Any]) -> tuple[Agent, Any, list[str]]:
     fallback_models = config.get("llm_fallback_models", []) or []
 
     return agent, model_settings, fallback_models
-
-
-# --- Tool implementations ---
-
-async def tool_ask_vlm(ctx: RunContext[AgentDeps], question: str) -> str:
-    """Ask the vision model a follow-up question about the current game screenshot."""
-    ctx.deps.logger.log_tool_call("ask_vlm", {"question": question}, ctx.deps.agent_id)
-    ctx.deps.logger.log_vlm_request(question, ctx.deps.agent_id)
-    answer = ctx.deps.vision.ask_vlm(ctx.deps.current_screenshot, question)
-    ctx.deps.logger.log_vlm_response(answer, ctx.deps.agent_id)
-    ctx.deps.logger.log_tool_response("ask_vlm", answer, ctx.deps.agent_id)
-    return answer

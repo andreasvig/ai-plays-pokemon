@@ -105,6 +105,35 @@ def find_latest_config() -> Path:
     return configs[-1][1]
 
 
+def _hoist_player_agent(config: dict[str, Any], config_path: Path) -> None:
+    """Lift keys from an optional ``player_agent:`` block to the top level.
+
+    The Player agent's settings can be authored either flat at the top level
+    (the historical layout, still used by config-1.x..3.12) or grouped under a
+    ``player_agent:`` mapping (the layout that mirrors ``task_master:``).
+    Grouping is purely an authoring convenience: every key inside the block is
+    hoisted to the top level here, before validation, so all downstream code
+    keeps a single flat read path. Defining the same key both inside the block
+    and at the top level is rejected rather than silently shadowed.
+    """
+    pa = config.get("player_agent")
+    if pa is None:
+        return
+    if not isinstance(pa, dict):
+        raise ValueError(
+            f"{config_path.name}: player_agent must be a dict, "
+            f"got {type(pa).__name__}"
+        )
+    for key, value in pa.items():
+        if key in config:
+            raise ValueError(
+                f"{config_path.name}: {key!r} is set both at the top level and "
+                "inside player_agent — define it in exactly one place."
+            )
+        config[key] = value
+    del config["player_agent"]
+
+
 def load_config(
     path: Optional[str] = None,
     *,
@@ -134,6 +163,14 @@ def load_config(
 
     with open(config_path) as f:
         config = yaml.safe_load(f)
+
+    # player_agent: optional nested block grouping the Player agent's own
+    # settings (prompts, context window, per-turn limits, tools) — the mirror of
+    # the task_master block. Authored grouped in the YAML for readability; its
+    # keys are lifted to the top level here, before any other processing, so the
+    # rest of the code keeps a single flat read path and the older flat
+    # config-1.x..3.12 files keep loading unchanged.
+    _hoist_player_agent(config, config_path)
 
     # Model choice is a CLI flag, not a config field. Reject configs that
     # still carry it so old habits surface as a clear error instead of
@@ -178,7 +215,6 @@ def _validate_config(config: dict[str, Any], *, require_llm_model: bool = True) 
     """
     required = [
         "task",
-        "vision_mode",
         "emulator",
         "valid_inputs",
         "state_file",
@@ -188,15 +224,6 @@ def _validate_config(config: dict[str, Any], *, require_llm_model: bool = True) 
     for key in required:
         if key not in config:
             raise ValueError(f"Missing required config key: {key}")
-
-    if config["vision_mode"] not in ("separate_vlm", "direct_multimodal"):
-        raise ValueError(
-            f"Invalid vision_mode: {config['vision_mode']}. "
-            "Must be 'separate_vlm' or 'direct_multimodal'"
-        )
-
-    if config["vision_mode"] == "separate_vlm" and not config.get("vlm_model"):
-        raise ValueError("vlm_model is required when vision_mode is 'separate_vlm'")
 
     # task_override_snapshot: when true, ignore the snapshot's tasks.json and
     # use the config's `task:` field instead. Default false preserves the
@@ -281,12 +308,6 @@ def _validate_config(config: dict[str, Any], *, require_llm_model: bool = True) 
             f"historic_images_count must be a non-negative int, got {hic!r}"
         )
     if hic > 0:
-        if config["vision_mode"] != "direct_multimodal":
-            raise ValueError(
-                "historic_images_count > 0 requires vision_mode: direct_multimodal "
-                f"(got {config['vision_mode']!r}). In separate_vlm mode the LLM never "
-                "sees raw images, so historic screenshots cannot be included."
-            )
         trim = config.get("max_turns_before_trim")
         if trim is not None and hic > trim:
             raise ValueError(

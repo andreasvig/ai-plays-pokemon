@@ -86,7 +86,7 @@ def test_ocr():
 
 
 def test_vision():
-    """Test the vision pipeline with real API calls."""
+    """Test the screenshot-encoding pipeline (direct multimodal, no API)."""
     from PIL import Image
     from src.config import load_config
     from src.emulator import VisionPipeline
@@ -95,12 +95,7 @@ def test_vision():
 
     config = load_config()
 
-    if not config.get("openrouter_api_key") or config["openrouter_api_key"] == "YOUR_API_KEY_HERE":
-        print("No OpenRouter API key configured. Skipping vision tests.")
-        print("Set openrouter_api_key in config.yaml to test.\n")
-        return
-
-    # Load a real screenshot
+    # Load a real screenshot if available, otherwise synthesize one.
     preview = Path("local/snapshots/bedroom_start/preview.png")
     if not preview.exists():
         print("No snapshot preview found. Creating a test image.")
@@ -110,39 +105,22 @@ def test_vision():
 
     vision = VisionPipeline(config)
 
-    # Test separate VLM mode
-    if config["vision_mode"] == "separate_vlm":
-        print("1. Testing separate VLM mode (screenshot analysis)...")
-        analysis = vision.analyze_screenshot(img)
-        assert "description" in analysis
-        print(f"   VLM description:\n   ---\n   {analysis['description'][:500]}\n   ---")
-        print("   OK\n")
-
-        # Test format for LLM
-        print("2. Testing format_for_llm...")
-        content = vision.format_for_llm(analysis)
-        assert len(content) == 1
-        assert content[0]["type"] == "text"
-        assert "[Game Screen]" in content[0]["text"]
-        print("   OK\n")
-
-    # Test direct multimodal mode
-    print("3. Testing direct multimodal format...")
-    old_mode = vision.vision_mode
-    vision.vision_mode = "direct_multimodal"
+    print("1. Testing analyze_screenshot (direct multimodal encoding)...")
     analysis = vision.analyze_screenshot(img)
     assert "image_base64" in analysis
-    content = vision.format_for_llm(analysis)
-    assert len(content) == 2
-    assert content[1]["type"] == "image_url"
     print(f"   Image base64 length: {len(analysis['image_base64'])} chars")
     print("   OK\n")
-    vision.vision_mode = old_mode
 
-    # Test ask_vlm
-    print("4. Testing ask_vlm (follow-up question)...")
-    answer = vision.ask_vlm(img, "What room is the player in? What objects can you see?")
-    print(f"   VLM answer:\n   ---\n   {answer[:500]}\n   ---")
+    print("2. Testing format_for_llm...")
+    content = vision.format_for_llm(analysis)
+    assert len(content) == 2
+    assert content[0]["type"] == "text"
+    assert content[1]["type"] == "image_url"
+    print("   OK\n")
+
+    print("3. Testing image_to_data_url...")
+    url = vision.image_to_data_url(img)
+    assert url.startswith("data:image/png;base64,")
     print("   OK\n")
 
     print("=== Vision Pipeline Tests Passed ===\n")

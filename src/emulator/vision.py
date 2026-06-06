@@ -1,80 +1,36 @@
-"""Vision pipeline: separate VLM mode and direct multimodal mode.
+"""Screenshot encoding for the direct-multimodal Player.
 
-Handles screenshot analysis at turn start and on-demand VLM follow-up questions.
-All model calls go through OpenRouter via the OpenAI SDK.
+The Player LLM sees raw screenshots; this turns a PIL image into the base64
+data URL / message-content blocks the model API expects. (The earlier
+separate-VLM mode and the on-demand ask_vlm follow-up tool have been removed —
+they are no longer used.)
 """
 
 import base64
 import io
-from typing import Any, Optional
+from typing import Any
 
-from openai import OpenAI
 from PIL import Image
 
 
 class VisionPipeline:
-    """Configurable vision pipeline with two modes.
-
-    - separate_vlm: VLM analyses screenshot into text, LLM gets text only
-    - direct_multimodal: LLM gets the raw screenshot directly
-    """
+    """Encodes screenshots for the direct-multimodal Player LLM."""
 
     def __init__(self, config: dict[str, Any]):
-        self.vision_mode = config.get("vision_mode", "separate_vlm")
-        self.vlm_model = config.get("vlm_model", "")
-        self.llm_model = config.get("llm_model", "")
-        self.vlm_system_prompt = config.get("vlm_system_prompt", "")
-        self.vlm_ask_prompt = config.get("vlm_ask_prompt", "")
-
-        # Accumulated VLM cost (USD) from OpenRouter
-        self.total_cost_usd = 0.0
-
-        import os
-        api_key = config.get("openrouter_api_key", "") or os.environ.get("OPENROUTER_API_KEY", "")
-        self._client = OpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=api_key,
-        )
+        # `config` is accepted for call-site compatibility; nothing is
+        # configurable now that the separate-VLM mode is gone.
+        pass
 
     def analyze_screenshot(self, image: Image.Image) -> dict:
-        """Analyze a screenshot at turn start.
-
-        In separate_vlm mode: calls VLM, returns {"description": text}
-        In direct_multimodal mode: returns {"image_base64": base64_string}
-        """
-        if self.vision_mode == "separate_vlm":
-            description = self._call_vlm(
-                image=image,
-                system_prompt=self.vlm_system_prompt,
-                user_prompt="Describe the current game state.",
-            )
-            return {"description": description}
-        else:
-            # Direct multimodal - encode image for the LLM
-            b64 = self._image_to_base64(image)
-            return {"image_base64": b64}
-
-    def ask_vlm(self, image: Image.Image, question: str) -> str:
-        """Ask the VLM a follow-up question about the current screenshot.
-
-        Always uses the VLM model, even in direct_multimodal mode.
-        """
-        return self._call_vlm(
-            image=image,
-            system_prompt=self.vlm_ask_prompt,
-            user_prompt=question,
-        )
+        """Encode a turn-start screenshot for the LLM."""
+        return {"image_base64": self._image_to_base64(image)}
 
     def format_for_llm(self, analysis: dict) -> list[dict]:
-        """Format the vision analysis as message content for the LLM.
+        """Format the screenshot as message content for the LLM.
 
         Returns a list of content blocks suitable for the OpenAI messages API.
         """
-        if "description" in analysis:
-            # Separate VLM mode - text only
-            return [{"type": "text", "text": f"[Game Screen]\n{analysis['description']}"}]
-        elif "image_base64" in analysis:
-            # Direct multimodal - include the image
+        if "image_base64" in analysis:
             return [
                 {"type": "text", "text": "[Game Screen]"},
                 {
@@ -86,51 +42,6 @@ class VisionPipeline:
                 },
             ]
         return [{"type": "text", "text": "[No game screen available]"}]
-
-    # --- Internal ---
-
-    def _call_vlm(
-        self,
-        image: Image.Image,
-        system_prompt: str,
-        user_prompt: str,
-    ) -> str:
-        """Call the VLM model with an image and prompt."""
-        b64 = self._image_to_base64(image)
-
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/png;base64,{b64}",
-                            "detail": "high",
-                        },
-                    },
-                    {"type": "text", "text": user_prompt},
-                ],
-            },
-        ]
-
-        response = self._client.chat.completions.create(
-            model=self.vlm_model,
-            messages=messages,
-            max_tokens=1024,
-        )
-
-        # Extract cost from OpenRouter usage extras
-        try:
-            usage_extra = getattr(response.usage, 'model_extra', None) or {}
-            cost = usage_extra.get('cost')
-            if cost is not None:
-                self.total_cost_usd += float(cost)
-        except (AttributeError, TypeError):
-            pass
-
-        return response.choices[0].message.content or ""
 
     def image_to_data_url(self, image: Image.Image) -> str:
         """Convert a PIL Image to a data: URL suitable for ImageUrl content parts."""

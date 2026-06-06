@@ -775,13 +775,10 @@ def generate_html(run_dir: Path, events: list[dict], turns: list[dict]) -> str:
     cost_summary = ""
     if total_cost > 0:
         llm_cost = cost_info.get("llm_usd", 0)
-        vlm_cost = cost_info.get("vlm_usd", 0)
         ocr_cost = cost_info.get("ocr_usd", 0)
         breakdown_bits = []
         if llm_cost:
             breakdown_bits.append(f"LLM ${llm_cost:.4f}")
-        if vlm_cost:
-            breakdown_bits.append(f"VLM ${vlm_cost:.4f}")
         if ocr_cost:
             breakdown_bits.append(f"OCR ${ocr_cost:.5f}")
         breakdown = f" ({' + '.join(breakdown_bits)})" if breakdown_bits else ""
@@ -966,7 +963,6 @@ def generate_html(run_dir: Path, events: list[dict], turns: list[dict]) -> str:
     <div class="meta">
         <span><span class="label">Run:</span> {run_name}</span>
         <span><span class="label">LLM:</span> {config.get('_llm_alias') or config.get('llm_model', '?')}</span>
-        <span><span class="label">VLM:</span> {config.get('vlm_model', '?')}</span>
         <span><span class="label">Turns:</span> {len(turns)}</span>
         <span><span class="label">Events:</span> {len(events)}</span>
         {cost_summary}

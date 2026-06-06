@@ -576,7 +576,7 @@ function autoScroll() {
 fetch(`${RUN_PREFIX}/api/config`).then(r => r.json()).then(cfg => {
   document.getElementById('taskLabel').textContent = 'Task: ' + (cfg.task || '—');
   document.getElementById('footerModel').textContent =
-    'LLM: ' + (cfg.llm_model || '—') + ' | VLM: ' + (cfg.vlm_model || '—');
+    'LLM: ' + (cfg.llm_model || '—');
   if (cfg.label) document.title = cfg.label + ' — AI Plays Pokemon';
 }).catch(() => {});
 
@@ -753,12 +753,6 @@ function handleEvent(evt) {
   }
   else if (t === 'llm_text') {
     addBox('output', '💬 Output', evt.content || '');
-  }
-  else if (t === 'vlm_request') {
-    // skip — vlm_response will show the result
-  }
-  else if (t === 'vlm_response') {
-    addBox('vision', '📷 Vision', evt.response || '');
   }
   else if (t === 'tool_call') {
     addBox('tool', '🔧 ' + evt.tool, JSON.stringify(evt.args, null, 2));

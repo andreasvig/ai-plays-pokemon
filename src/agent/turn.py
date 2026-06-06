@@ -1117,17 +1117,13 @@ class TurnManager:
         if self.savepoint_at_end:
             self.save_savepoint("end")
 
-        # Add VLM cost to total
-        vlm_cost = self.vision.total_cost_usd if self.vision else 0.0
-        self.total_cost_usd += vlm_cost
-
         ocr_cost = self.ocr.total_cost_usd if self.ocr else 0.0
-        llm_cost = self.total_cost_usd - vlm_cost - ocr_cost
+        llm_cost = self.total_cost_usd - ocr_cost
         print(f"\n{'═'*60}")
         print(f"  Run complete: {self.turn_number} turns")
         print(
             f"  Cost: ${self.total_cost_usd:.4f} "
-            f"(LLM: ${llm_cost:.4f}, VLM: ${vlm_cost:.4f}, OCR: ${ocr_cost:.5f})"
+            f"(LLM: ${llm_cost:.4f}, OCR: ${ocr_cost:.5f})"
         )
         print(f"  Tokens: {self.total_input_tokens} in / {self.total_output_tokens} out")
         print(f"{'═'*60}")
@@ -1171,23 +1167,10 @@ class TurnManager:
                 self._cur_task_first_image = screenshot_ref
             self._cur_task_last_image = screenshot_ref
 
-        # 2. Run vision pipeline
-        vision_label = "VLM" if self.vision.vision_mode == "separate_vlm" else "Vision"
-        print(f"  [Turn {t}] Running {vision_label}...")
+        # 2. Encode the screenshot for the LLM (direct multimodal)
+        print(f"  [Turn {t}] Encoding screen...")
         analysis = self.vision.analyze_screenshot(screenshot)
         vision_content = self.vision.format_for_llm(analysis)
-
-        if "description" in analysis:
-            desc = analysis["description"]
-            self.logger.log_vlm_response(desc)
-            print(f"  [Turn {t}] VLM: {_truncate(desc, 100)}")
-
-            # Sync facing direction from VLM (more reliable than tracking)
-            desc_lower = desc.lower()
-            for direction in ("facing up", "facing down", "facing left", "facing right"):
-                if direction in desc_lower:
-                    self.emulator.facing = direction.split()[-1]
-                    break
 
         # 3. Flush OCR buffer (background captures since last turn) + LLM cleanup
         ocr_text = ""
@@ -1269,10 +1252,8 @@ class TurnManager:
         deps = AgentDeps(
             emulator=self.emulator,
             state=self.state,
-            vision=self.vision,
             logger=self.logger,
             ocr=self.ocr,
-            current_screenshot=screenshot,
             turn_number=t,
             current_task_turn=self.current_task_turn if self.task_master_enabled else 0,
             max_turns_per_task=self.max_turns if self.task_master_enabled else 0,
@@ -1560,13 +1541,12 @@ class TurnManager:
         preceding each one. The current-turn screenshot is ALWAYS last so it
         sits closest to the model's decision point.
 
-        Returns:
-        - str for separate_vlm mode (LLM never sees raw images).
-        - list[UserContent] for direct_multimodal — always at least
-          [text, label, current_image]. With historic_images_count = K and
-          enough prior turns, becomes
-          [text, hist_label_1, hist_img_1, ..., hist_label_K, hist_img_K,
-           current_label, current_image].
+        Returns a list[UserContent] — always at least
+        [text, label, current_image]. With historic_images_count = K and
+        enough prior turns, becomes
+        [text, hist_label_1, hist_img_1, ..., hist_label_K, hist_img_K,
+         current_label, current_image]. (Falls back to a plain text string
+        only in the defensive case where no screenshot could be encoded.)
         """
         current_image_url: Optional[str] = None
         screen_text_extra: list[str] = []
@@ -1612,7 +1592,7 @@ class TurnManager:
             handoff_instruction=handoff_instruction,
         ).strip()
 
-        # Separate VLM: no images, just return the text.
+        # Defensive: if no screenshot could be encoded, return text only.
         if current_image_url is None:
             return combined_text
 
@@ -1641,7 +1621,7 @@ class TurnManager:
     def _render_screen_heads_up(self, current_image_url: Optional[str]) -> str:
         """Value for the {{screen_heads_up}} placeholder: the ## Screen(s) note
         telling the model what the image tail contains. Empty when there is no
-        current image (separate_vlm mode)."""
+        current image."""
         if current_image_url is None:
             return ""
         n_historic = len(self.turn_screenshots) if self.historic_images_count > 0 else 0
@@ -1773,8 +1753,6 @@ class TurnManager:
             "session": {
                 "llm_alias": self.config.get("_llm_alias"),
                 "llm_model": self.config.get("llm_model", ""),
-                "vlm_model": self.config.get("vlm_model", ""),
-                "vision_mode": self.config.get("vision_mode", ""),
                 "thinking": self.config.get("thinking"),
                 "fallback_models": self.fallback_models,
                 "task": (self.tasks or self.config.get("task", {})).get("goal", ""),
@@ -1786,18 +1764,16 @@ class TurnManager:
                 ) if self._run_start_time else None,
             },
             "cost": {
-                # total_usd is the all-in run cost: Player (LLM) + VLM + OCR +
-                # TaskMaster. self.total_cost_usd tracks Player/VLM/OCR; the
+                # total_usd is the all-in run cost: Player (LLM) + OCR +
+                # TaskMaster. self.total_cost_usd tracks Player/OCR; the
                 # TaskMaster cost is accumulated separately (Decision 10) so it
                 # can be compared, and added in here for the grand total.
                 "total_usd": round(self.total_cost_usd + self.task_master_cost_usd, 6),
                 "llm_usd": round(
                     self.total_cost_usd
-                    - (self.vision.total_cost_usd if self.vision else 0)
                     - (self.ocr.total_cost_usd if self.ocr else 0),
                     6,
                 ),
-                "vlm_usd": round(self.vision.total_cost_usd if self.vision else 0, 6),
                 "ocr_usd": round(self.ocr.total_cost_usd if self.ocr else 0, 6),
                 # Separate TaskMaster (strategy) cost — distinct from the Player's
                 # (tactics) llm_usd above (Decision 10).
