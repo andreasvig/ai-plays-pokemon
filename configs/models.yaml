@@ -349,12 +349,11 @@
 
 # mimo-v2.5-pro is TEXT-ONLY on OpenRouter — no endpoints support image
 # input (confirmed 2026-04-24 via 404 "No endpoints found that support
-# image input"). Incompatible with our default vision_mode: direct_multimodal
-# which sends screenshots as ImageUrl. To use Pro in this project, switch
-# the config to vision_mode: separate_vlm (vision model captions screens
-# to text first). Leaving both entries in the registry so the cost/intel
-# numbers stay documented, but don't expect them to work in config 2.2+
-# without a vision-mode change.
+# image input"). The Player sends screenshots as ImageUrl (direct
+# multimodal), so this model cannot drive the agent — and the old
+# separate-VLM (caption-to-text) fallback has been removed. Leaving both
+# entries in the registry so the cost/intel numbers stay documented, but
+# they won't work as the Player model in this project.
 "mimo-v2.5-pro(thinking)":
   # Flagship tier, $1.00/$3.00 per M (~2.5× mimo-v2.5 base). TEXT-ONLY.
   openrouter_id: "xiaomi/mimo-v2.5-pro"
@@ -730,9 +729,9 @@
 # everyone else is binary or max_tokens-based).
 #
 # Image input: marketed as "multimodal" / "visual coding capability" by
-# Moonshot. Not 100% confirmed safe with our default vision_mode:
-# direct_multimodal yet — if it 404s like mimo-v2.5-pro did, fall back to
-# vision_mode: separate_vlm.
+# Moonshot. Not 100% confirmed safe with the Player's direct-multimodal
+# screenshots yet — if it 404s on image input like mimo-v2.5-pro did, it
+# can't be used as the Player model (there is no text-only fallback).
 #
 # Sampling: 0.3 / 0.95, matching the function-call profile used elsewhere
 # in this registry for reasoning models with structured-output schemas.
@@ -1169,6 +1168,97 @@
 
 "claude-opus-4.7(minimal)":
   openrouter_id: "anthropic/claude-opus-4.7"
+  reasoning:
+    effort: "minimal"
+  output_mode: "prompted"
+  observed:
+    sample_turns: 0
+
+# --- Anthropic Claude Opus 4.8 (added 2026-05-29) ---
+# Successor to Opus 4.7. Same headline specs on OpenRouter: 1M context,
+# $5.00/$25.00 per M (identical rate card to 4.7 — confirmed via the models
+# endpoint 2026-05-29), multimodal (text+image+file→text). Same effort-tier
+# shape (xhigh/high/medium/low/minimal) and the same `output_mode: "prompted"`
+# constraint as every other Anthropic entry — tool_choice="required" silently
+# strips extended thinking on Anthropic routes via OpenRouter (see the Haiku
+# 4.5 entry for the full incident write-up).
+#
+# Opus 4.7(medium) was the first non-Gemini model in the registry to clear the
+# spatial-grounding bottleneck (reached Pallet Town out of the house at T10,
+# best Anthropic capability-per-dollar on this task) and xhigh ≈ medium within
+# run-to-run noise. 4.8 is the natural re-probe of that frontline candidate.
+# Starting with (high) per Andreas's request; 3T smoke test first to confirm
+# the slug + prompted-output path work before committing to a full run.
+"claude-opus-4.8(xhigh)":
+  openrouter_id: "anthropic/claude-opus-4.8"
+  reasoning:
+    effort: "xhigh"
+  output_mode: "prompted"
+  observed:
+    sample_turns: 0
+
+"claude-opus-4.8(high)":
+  # Observed (2026-05-29, 50T run on config-3.12): **cleared the house→lab
+  # navigation arc that stumped every prior non-Gemini model, then stalled at
+  # the starter table.** End state: inside Oak's Lab, Pallet Town, standing at
+  # the green 3-Poke-Ball starter table — but never grabbed a starter. Turns
+  # 47-50 stuck: the rightward step into the table was blocked and A-from-the-
+  # side didn't register the Poke Ball pick. The model self-diagnosed the stall
+  # cleanly ("screen unchanged from turns 47-49, right/a presses keep failing,
+  # right step blocked by the green starter table") — same land-the-interaction-
+  # tile bottleneck that the house-exit used to be, just one full scene deeper.
+  #
+  # This is the deepest any Anthropic entry has reached: Opus 4.7(medium) 10T
+  # only made Pallet Town (out of the house); 4.8(high) navigated bedroom → 1F
+  # → Pallet Town → into Oak's Lab → the starter table. Still short of the
+  # registry leader Gemini 3.5 Flash(medium) 50T, which GOT the starter
+  # (Bulbasaur) + leveled to 6 + reached Route 1 by T50. Gemini still leads on
+  # raw game progress; Opus 4.8 is the strongest non-Gemini result.
+  #
+  # Grades 31/18/1 true/false/null = 62% — honest calibration, correctly graded
+  # the stuck T47-50 turns as false (no metric-gaming like GPT-5.5(medium) or
+  # Grok Build). 3 prompted-output retries across 50T (6%, cleaner than
+  # Qwen3.6-Plus's 33%).
+  #
+  # Cost: $3.64 / 50T = $0.0727/turn — MOST EXPENSIVE 50T in the registry,
+  # past Sonnet 4.6(medium)'s $0.0557. Output 760 tokens/turn (vs ~300 for
+  # 4.7 medium) — high effort reasons ~2.5× more verbosely, which drives the
+  # per-turn cost above the 4.7 tiers despite identical $5/$25 rate card.
+  # Latency avg 14.3s/turn (median 9.4s, range 5.3-51.2s); total 17.8 min.
+  #
+  # Next probe: (medium) at 50T — 4.7's medium ≈ xhigh within noise, so 4.8
+  # medium may match this run at ~40% lower output cost. And a starter-table
+  # prompt nudge (approach-angle hint for the Poke Ball pick) could be the
+  # cheap unlock past this new bottleneck.
+  openrouter_id: "anthropic/claude-opus-4.8"
+  reasoning:
+    effort: "high"
+  output_mode: "prompted"
+  observed:
+    avg_turn_cost_usd: 0.0727
+    avg_turn_latency_s: 14.3
+    sample_turns: 50
+    last_updated: 2026-05-29
+    notes: "Reached the starter table inside Oak's Lab by T50 — deepest non-Gemini progress in registry (past Opus 4.7 medium's Pallet Town) but stalled T47-50 unable to land the Poke-Ball pick (right blocked by table, A-from-side not registering). Self-diagnosed the stall honestly. Short of leader Gemini 3.5 Flash medium (got Bulbasaur + Route 1 at 50T). 31/18/1 grades (62% true, honest). 3 prompted-output retries (6%). $3.64/50T = $0.0727/turn — most expensive 50T in registry; 760 output tokens/turn (high effort ~2.5× more verbose than 4.7 medium's ~300). 14.3s/turn avg, 17.8min total. config-3.12. Next: 50T (medium) for ~40% cheaper output + starter-table approach-angle prompt nudge."
+
+"claude-opus-4.8(medium)":
+  openrouter_id: "anthropic/claude-opus-4.8"
+  reasoning:
+    effort: "medium"
+  output_mode: "prompted"
+  observed:
+    sample_turns: 0
+
+"claude-opus-4.8(low)":
+  openrouter_id: "anthropic/claude-opus-4.8"
+  reasoning:
+    effort: "low"
+  output_mode: "prompted"
+  observed:
+    sample_turns: 0
+
+"claude-opus-4.8(minimal)":
+  openrouter_id: "anthropic/claude-opus-4.8"
   reasoning:
     effort: "minimal"
   output_mode: "prompted"
