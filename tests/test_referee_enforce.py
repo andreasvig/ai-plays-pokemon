@@ -188,26 +188,23 @@ def test_enforce_stamped_before_deadline_then_later_gate_not_yet_due(tmp_path):
     assert ref.should_terminate() is False
 
 
-def test_enforce_early_out_of_order_stamp_pre_satisfies_its_deadline(tmp_path):
+def test_enforce_early_out_of_order_stamp_backfills_and_pre_satisfies(tmp_path):
     logger = FakeLogger()
-    # Reach left_house (deadline 50) EARLY, before left_bedroom — out of order.
+    # Reach left_house (deadline 50) EARLY at turn 10, before left_bedroom.
     emu = FakeEmulator(FakeImage(block=build_sb1(map_group=3, map_num=0)))
     ref = make_referee(tmp_path, emu, logger, enforce=True)
 
-    # Turn 10: left_house stamped early. left_bedroom (deadline 30) still unmet
-    # but its deadline hasn't arrived -> no termination yet.
+    # Turn 10: left_house detected. The safety net back-fills left_bedroom
+    # (deadline 30) because 10 <= 30 — reaching left_house proves it was passed.
     assert ref.poll(10) is False
     assert ref.stamps["left_house"] == 10
-    assert "left_bedroom" not in ref.stamps
+    assert ref.stamps["left_bedroom"] == 10
+    assert "left_bedroom" in ref.autofilled
 
-    # Satisfy left_bedroom before its deadline so it doesn't trip at turn 30.
-    emu.set_image(FakeImage(block=build_sb1(map_group=4, map_num=0)))
-    assert ref.poll(20) is False
-    assert ref.stamps["left_bedroom"] == 20
-
-    # Turn 50: left_house's deadline — but it was stamped early at turn 10, so
-    # it's pre-satisfied and must NOT terminate.
+    # Turn 30 (left_bedroom's deadline) and 50 (left_house's): both already
+    # stamped, so neither gate trips — no termination.
     emu.set_image(FakeImage(block=build_sb1(map_group=4, map_num=1)))
+    assert ref.poll(30) is False
     assert ref.poll(50) is False
     assert ref.should_terminate() is False
     assert gate_missed_events(logger) == []

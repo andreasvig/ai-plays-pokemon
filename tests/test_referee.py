@@ -338,5 +338,72 @@ def test_referee_checkpoint_serializes_with_real_logger(tmp_path):
     assert not any(ev.get("type") == "map" for ev in events)
 
 
+# --- (h) back-fill safety net -------------------------------------------------
+# Gates are ordered milestones: reaching a later gate implies the earlier ones
+# were passed (a per-turn poll can miss a within-turn-transient map). Back-fill
+# an earlier skipped gate ONLY if the later gate was reached within the skipped
+# gate's deadline; otherwise the skipped gate is a genuine missed-pace gate.
+
+def test_backfill_fills_skipped_gate_within_deadline(tmp_path):
+    logger = FakeLogger()
+    # Jump straight to (3,0) = left_house at turn 20, never having seen (4,0).
+    emu = FakeEmulator(FakeImage(block=build_sb1(map_group=3, map_num=0)))
+    ref = make_referee(tmp_path, emu, logger)
+
+    ref.poll(20)  # 20 <= left_bedroom deadline 30 -> back-fill
+
+    assert ref.stamps["left_house"] == 20
+    assert ref.stamps["left_bedroom"] == 20  # auto-credited
+    assert "left_bedroom" in ref.autofilled
+    assert "left_house" not in ref.autofilled  # directly detected
+    cp_events = {
+        d["checkpoint_id"]: d for t, d in logger.events if t == "referee_checkpoint"
+    }
+    assert cp_events["left_bedroom"]["auto"] is True
+    assert cp_events["left_house"]["auto"] is False
+
+
+def test_backfill_skips_gate_past_its_deadline(tmp_path):
+    logger = FakeLogger()
+    emu = FakeEmulator(FakeImage(block=build_sb1(map_group=3, map_num=0)))
+    ref = make_referee(tmp_path, emu, logger)
+
+    ref.poll(40)  # 40 > left_bedroom deadline 30 -> NOT back-filled
+
+    assert ref.stamps["left_house"] == 40
+    assert "left_bedroom" not in ref.stamps
+    statuses = {g["id"]: g["status"] for g in ref.scorecard()["gates"]}
+    assert statuses["left_bedroom"] == "skipped"  # deeper gate stamped, this one missed
+    assert statuses["left_house"] == "done"
+    assert ref.scorecard()["first_unmet"] == "left_bedroom"
+
+
+def test_scorecard_statuses_and_autofilled(tmp_path):
+    logger = FakeLogger()
+    emu = FakeEmulator(FakeImage(block=build_sb1(map_group=3, map_num=0)))
+    ref = make_referee(tmp_path, emu, logger)
+    ref.poll(20)  # left_house detected, left_bedroom auto-filled
+
+    sc = ref.scorecard()
+    statuses = {g["id"]: g["status"] for g in sc["gates"]}
+    assert statuses["left_bedroom"] == "auto"
+    assert statuses["left_house"] == "done"
+    assert statuses["starter_chosen"] == "pending"
+    assert sc["autofilled"] == ["left_bedroom"]
+    assert sc["furthest"] == "left_house"
+    assert sc["first_unmet"] == "starter_chosen"
+
+
+def test_backfill_persists_and_restores(tmp_path):
+    logger = FakeLogger()
+    emu = FakeEmulator(FakeImage(block=build_sb1(map_group=3, map_num=0)))
+    ref = make_referee(tmp_path, emu, logger)
+    ref.poll(20)
+
+    ref2 = Referee(make_ladder(), emu, FakeLogger(), tmp_path)
+    assert ref2.stamps["left_bedroom"] == 20
+    assert "left_bedroom" in ref2.autofilled  # auto flag survives --continue
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))

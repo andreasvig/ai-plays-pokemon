@@ -102,6 +102,10 @@ class Referee:
 
         # The latch: checkpoint id -> first-seen turn. NEVER un-stamped.
         self.stamps: dict[str, int] = {}
+        # Subset of stamps that were back-filled by the safety net (a later gate
+        # was reached within this gate's deadline, so this skipped gate is
+        # credited rather than detected directly). Reported distinctly.
+        self.autofilled: set[str] = set()
         self._load_state()
 
     # --- persistence ----------------------------------------------------------
@@ -118,16 +122,24 @@ class Referee:
             for cp_id, turn in raw.items():
                 if cp_id in self._by_id:
                     self.stamps[cp_id] = int(turn)
+            for cp_id in data.get("autofilled", []):
+                if cp_id in self.stamps:
+                    self.autofilled.add(cp_id)
         except Exception:
             # Corrupt/partial state must never crash the run — start fresh.
             self.stamps = {}
+            self.autofilled = set()
 
     def _persist_state(self) -> None:
         """Write the latch to ``referee_state.json`` (best-effort)."""
         try:
             self.run_dir.mkdir(parents=True, exist_ok=True)
             with open(self._state_path, "w") as f:
-                json.dump({"stamps": self.stamps}, f, indent=2)
+                json.dump(
+                    {"stamps": self.stamps, "autofilled": sorted(self.autofilled)},
+                    f,
+                    indent=2,
+                )
         except Exception:
             pass  # persistence failure must never take down a run
 
@@ -198,21 +210,19 @@ class Referee:
             if cp.id in self.stamps:
                 continue  # latched — never re-evaluate, never un-stamp
             if self._satisfied(cp, snap):
-                self.stamps[cp.id] = turn_number
+                self._stamp(cp, turn_number)
                 newly_stamped = True
-                # NOTE: payload keys must NOT be "id" or "type" — the Logger
-                # envelope reserves those (event sequence id + event type) and
-                # spreads the payload LAST, so an "id"/"type" here clobbers the
-                # envelope and the dashboard never sees a "referee_checkpoint".
-                self.logger.log_event(
-                    "referee_checkpoint",
-                    {
-                        "checkpoint_id": cp.id,
-                        "name": cp.name,
-                        "checkpoint_type": cp.type,
-                        "turn": turn_number,
-                    },
-                )
+
+        # Safety net: gates are ordered milestones, so reaching a later gate
+        # proves the earlier ones were passed. A per-turn poll can miss a
+        # within-turn-transient map (agent enters+exits a map inside one button
+        # sequence). So when the furthest stamped gate is ahead of an unstamped
+        # earlier gate, back-fill that earlier gate — but ONLY if we're still
+        # within its deadline (turn <= its limit, or it has no limit). An earlier
+        # gate whose deadline already passed stays unstamped: a later gate
+        # reached too late doesn't retroactively rescue a missed pace gate.
+        if self._backfill_skipped(turn_number):
+            newly_stamped = True
 
         if newly_stamped:
             self._persist_state()
@@ -223,6 +233,54 @@ class Referee:
             self._check_deadlines(turn_number)
 
         return self.should_terminate()
+
+    def _stamp(self, cp: Checkpoint, turn_number: int, *, auto: bool = False) -> None:
+        """Latch a checkpoint's first-seen turn and emit its event.
+
+        ``auto=True`` marks a safety-net back-fill (credited via a later gate,
+        not detected directly). NOTE: payload keys must NOT be "id" or "type" —
+        the RunLogger envelope reserves those (event sequence id + event type)
+        and spreads the payload LAST, so an "id"/"type" here would clobber the
+        envelope and the dashboard would never see a "referee_checkpoint".
+        """
+        self.stamps[cp.id] = turn_number
+        if auto:
+            self.autofilled.add(cp.id)
+        self.logger.log_event(
+            "referee_checkpoint",
+            {
+                "checkpoint_id": cp.id,
+                "name": cp.name,
+                "checkpoint_type": cp.type,
+                "turn": turn_number,
+                "auto": auto,
+            },
+        )
+
+    def _backfill_skipped(self, turn_number: int) -> bool:
+        """Back-fill earlier unstamped gates implied by a deeper stamped gate.
+
+        Returns True if anything was back-filled. A gate is credited only when
+        ``turn_number`` is still within its deadline (or it has no deadline);
+        an earlier gate already past its limit is left unstamped (a genuine
+        missed-pace gate, surfaced as a skip in the scorecard).
+        """
+        furthest_idx = -1
+        for i, cp in enumerate(self.checkpoints):
+            if cp.id in self.stamps:
+                furthest_idx = i
+        if furthest_idx < 0:
+            return False
+
+        filled = False
+        for cp in self.checkpoints[:furthest_idx]:
+            if cp.id in self.stamps:
+                continue
+            within = cp.deadline_turn is None or turn_number <= cp.deadline_turn
+            if within:
+                self._stamp(cp, turn_number, auto=True)
+                filled = True
+        return filled
 
     def _check_deadlines(self, turn_number: int) -> None:
         """Latch ``terminated_reason`` if a deadline gate is missed.
@@ -291,13 +349,46 @@ class Referee:
         per_checkpoint: dict[str, Optional[int]] = {
             cp.id: self.stamps.get(cp.id) for cp in self.checkpoints
         }
-        furthest: Optional[str] = None
-        for cp in self.checkpoints:
+        furthest_idx = -1
+        for i, cp in enumerate(self.checkpoints):
             if cp.id in self.stamps:
-                furthest = cp.id
+                furthest_idx = i
+        furthest = self.checkpoints[furthest_idx].id if furthest_idx >= 0 else None
+
+        # Per-gate status for the report:
+        #   done    — detected directly
+        #   auto    — back-filled by the safety net (credited via a later gate)
+        #   skipped — unstamped but a deeper gate is stamped (missed its pace)
+        #   pending — not reached (at/after the furthest stamped gate)
+        gates = []
+        first_unmet: Optional[str] = None
+        for i, cp in enumerate(self.checkpoints):
+            turn = self.stamps.get(cp.id)
+            if turn is not None:
+                status = "auto" if cp.id in self.autofilled else "done"
+            elif i < furthest_idx:
+                status = "skipped"
+            else:
+                status = "pending"
+            if turn is None and first_unmet is None:
+                first_unmet = cp.id
+            gates.append(
+                {
+                    "id": cp.id,
+                    "name": cp.name,
+                    "type": cp.type,
+                    "deadline_turn": cp.deadline_turn,
+                    "turn": turn,
+                    "status": status,
+                }
+            )
+
         return {
             "checkpoints": per_checkpoint,
+            "gates": gates,
             "furthest": furthest,
+            "first_unmet": first_unmet,
+            "autofilled": sorted(self.autofilled),
             "termination_reason": self.terminated_reason,
         }
 

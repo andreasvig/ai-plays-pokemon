@@ -715,6 +715,89 @@ def _render_task_group_html(group: dict, run_dir: Path) -> str:
     """
 
 
+def _render_referee_html(summary: dict) -> str:
+    """Top-of-report benchmark-gate scorecard.
+
+    Renders only when the run carried a referee (``summary["referee"]``):
+    a headline verdict (failed-at-gate / reached-furthest / all-cleared), then a
+    table of every gate with its status (done / auto / skipped / pending), the
+    turn it was reached, and its limit. Returns "" for non-benchmark runs.
+    """
+    ref = summary.get("referee")
+    if not ref or not ref.get("gates"):
+        return ""
+    gates = ref["gates"]
+    total = len(gates)
+    cleared = sum(1 for g in gates if g["status"] in ("done", "auto"))
+    by_id = {g["id"]: g for g in gates}
+
+    tr = ref.get("termination_reason")
+    if tr and tr.startswith("missed_gate:"):
+        fid = tr.split(":", 1)[1]
+        fg = by_id.get(fid, {})
+        dl = fg.get("deadline_turn")
+        headline = (
+            '<span class="ref-verdict failed">✗ Failed</span> missed '
+            f'<strong>{_escape(fg.get("name", fid))}</strong>'
+            + (f" (limit T{dl})" if dl is not None else "")
+        )
+    else:
+        furthest = ref.get("furthest")
+        fu = ref.get("first_unmet")
+        if furthest is None:
+            headline = '<span class="ref-verdict none">No gates reached</span>'
+        elif fu is None:
+            headline = '<span class="ref-verdict cleared">🏁 All gates cleared</span>'
+        else:
+            fname = by_id.get(furthest, {}).get("name", furthest)
+            uname = by_id.get(fu, {}).get("name", fu)
+            headline = (
+                '<span class="ref-verdict stopped">Reached</span> '
+                f"<strong>{_escape(fname)}</strong> — stopped before "
+                f"<strong>{_escape(uname)}</strong>"
+            )
+
+    status_cell = {
+        "done": '<span class="ref-st done">✓ done</span>',
+        "auto": '<span class="ref-st auto">⤴ auto</span>',
+        "skipped": '<span class="ref-st skipped">✗ skipped</span>',
+        "pending": '<span class="ref-st pending">·</span>',
+    }
+    rows = []
+    for g in gates:
+        turn_str = f"T{g['turn']}" if g["turn"] is not None else "—"
+        limit_str = f"T{g['deadline_turn']}" if g["deadline_turn"] is not None else "—"
+        rows.append(
+            f'<tr class="ref-row {g["status"]}">'
+            f'<td>{_escape(g["name"])}</td>'
+            f'<td>{status_cell.get(g["status"], g["status"])}</td>'
+            f"<td>{turn_str}</td><td>{limit_str}</td></tr>"
+        )
+
+    auto_note = ""
+    n_auto = len(ref.get("autofilled") or [])
+    if n_auto:
+        auto_note = (
+            f'<div class="ref-note">⤴ {n_auto} gate{"s" if n_auto != 1 else ""} '
+            "auto-credited by the safety net (a later gate was reached within the "
+            "skipped gate's limit).</div>"
+        )
+
+    return f"""
+    <div class="referee-report">
+        <div class="ref-head">
+            <span class="ref-title">🏁 Benchmark Gates</span>
+            <span class="ref-score">{cleared}/{total} cleared</span>
+            <span class="ref-headline">{headline}</span>
+        </div>
+        <table class="ref-table">
+            <thead><tr><th>Gate</th><th>Status</th><th>Reached</th><th>Limit</th></tr></thead>
+            <tbody>{''.join(rows)}</tbody>
+        </table>
+        {auto_note}
+    </div>"""
+
+
 def generate_html(run_dir: Path, events: list[dict], turns: list[dict]) -> str:
     """Generate the full HTML report."""
     config = {}
@@ -739,6 +822,9 @@ def generate_html(run_dir: Path, events: list[dict], turns: list[dict]) -> str:
     total_input = cost_info.get("total_input_tokens", 0)
     total_output = cost_info.get("total_output_tokens", 0)
     duration = summary.get("session", {}).get("duration_seconds", 0)
+
+    # --- Benchmark gate scorecard (top of report) ---
+    referee_html = _render_referee_html(summary)
 
     # --- Task goal section ---
     task_html = ""
@@ -802,6 +888,32 @@ def generate_html(run_dir: Path, events: list[dict], turns: list[dict]) -> str:
         .meta span {{ white-space: nowrap; }}
         .meta .label {{ color: #888; }}
         .stats {{ background: #16213e; padding: 10px 15px; border-radius: 8px; margin-bottom: 20px; font-size: 12px; color: #888; }}
+
+        /* Benchmark gate scorecard (top of report) */
+        .referee-report {{ background: #16213e; border-radius: 8px; padding: 16px 20px; margin-bottom: 20px; border-left: 4px solid #53d8fb; }}
+        .ref-head {{ display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }}
+        .ref-title {{ font-size: 16px; font-weight: bold; color: #53d8fb; }}
+        .ref-score {{ font-size: 13px; color: #aaa; }}
+        .ref-headline {{ font-size: 14px; color: #ddd; }}
+        .ref-verdict {{ font-weight: 700; padding: 2px 8px; border-radius: 999px; font-size: 12px; }}
+        .ref-verdict.failed {{ background: #e94560; color: #fff; }}
+        .ref-verdict.stopped {{ background: #ffce54; color: #16213e; }}
+        .ref-verdict.cleared {{ background: #7ddf64; color: #16213e; }}
+        .ref-verdict.none {{ background: #555; color: #ddd; }}
+        .ref-table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
+        .ref-table th {{ text-align: left; color: #888; font-weight: normal; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; padding: 4px 8px; border-bottom: 1px solid #0f3460; }}
+        .ref-table td {{ padding: 4px 8px; border-bottom: 1px solid rgba(15,52,96,0.4); }}
+        .ref-table th:nth-child(n+3), .ref-table td:nth-child(n+3) {{ text-align: right; white-space: nowrap; color: #aaa; }}
+        .ref-row.done td:first-child {{ color: #7ddf64; }}
+        .ref-row.auto td:first-child {{ color: #53d8fb; }}
+        .ref-row.skipped td:first-child {{ color: #e94560; }}
+        .ref-row.pending td:first-child {{ color: #888; }}
+        .ref-st {{ font-size: 11px; font-weight: 600; }}
+        .ref-st.done {{ color: #7ddf64; }}
+        .ref-st.auto {{ color: #53d8fb; }}
+        .ref-st.skipped {{ color: #e94560; }}
+        .ref-st.pending {{ color: #666; }}
+        .ref-note {{ margin-top: 8px; font-size: 12px; color: #53d8fb; }}
 
         /* Task section */
         .task-section {{ background: #0f3460; border-radius: 8px; padding: 16px 20px; margin-bottom: 20px; border-left: 4px solid #e94560; }}
@@ -968,6 +1080,8 @@ def generate_html(run_dir: Path, events: list[dict], turns: list[dict]) -> str:
         {cost_summary}
         {duration_str}
     </div>
+
+    {referee_html}
 
     {task_html}
 
