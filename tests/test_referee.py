@@ -161,7 +161,7 @@ def test_map_latch_and_backtrack(tmp_path):
     cp_events = [d for t, d in logger.events if t == "referee_checkpoint"]
     by_id = {}
     for d in cp_events:
-        by_id.setdefault(d["id"], []).append(d["turn"])
+        by_id.setdefault(d["checkpoint_id"], []).append(d["turn"])
     assert by_id["left_bedroom"] == [2]
     assert by_id["left_house"] == [3]
 
@@ -185,7 +185,7 @@ def test_flag_latch_once(tmp_path):
     ref.poll(3)
     starter_events = [
         d for t, d in logger.events
-        if t == "referee_checkpoint" and d["id"] == "starter_chosen"
+        if t == "referee_checkpoint" and d["checkpoint_id"] == "starter_chosen"
     ]
     assert len(starter_events) == 1
     assert starter_events[0]["turn"] == 2
@@ -252,9 +252,9 @@ def test_events_and_scorecard(tmp_path):
 
     # event correctness
     cp_events = [d for t, d in logger.events if t == "referee_checkpoint"]
-    assert {"id", "name", "type", "turn"} <= set(cp_events[0])
-    assert cp_events[0]["id"] == "left_bedroom" and cp_events[0]["turn"] == 2
-    assert cp_events[1]["id"] == "left_house" and cp_events[1]["turn"] == 7
+    assert {"checkpoint_id", "name", "checkpoint_type", "turn"} <= set(cp_events[0])
+    assert cp_events[0]["checkpoint_id"] == "left_bedroom" and cp_events[0]["turn"] == 2
+    assert cp_events[1]["checkpoint_id"] == "left_house" and cp_events[1]["turn"] == 7
 
     sc = ref.scorecard()
     assert sc["checkpoints"]["left_bedroom"] == 2
@@ -300,6 +300,42 @@ def test_persistence_restores_latch(tmp_path):
     cp_events = [d for t, d in logger2.events if t == "referee_checkpoint"]
     assert cp_events == []
     assert ref2.stamps["left_bedroom"] == 3
+
+
+# --- (g) REAL-logger envelope integration (regression for the key collision) --
+# The FakeLogger captures (event_type, data) call args, so it can't catch the
+# bug where a payload key shadows a reserved envelope key. RunLogger spreads the
+# payload LAST over {"id", "type", ...}; a payload "id"/"type" would clobber the
+# envelope and the event serializes as type="map" (the checkpoint type), which
+# the dashboard never matches. This drives the REAL RunLogger and asserts the
+# serialized events.jsonl line.
+
+def test_referee_checkpoint_serializes_with_real_logger(tmp_path):
+    from src.core.logger import RunLogger
+
+    logger = RunLogger({"runs_directory": str(tmp_path), "run_name": "reftest"})
+    emu = FakeEmulator(FakeImage(block=build_sb1(map_group=4, map_num=0)))
+    ref = Referee(make_ladder(), emu, logger, logger.run_dir)
+
+    ref.poll(6)  # map (4,0) -> stamps left_bedroom
+
+    events = [
+        json.loads(line)
+        for line in (logger.run_dir / "events.jsonl").read_text().splitlines()
+        if line.strip()
+    ]
+    cps = [e for e in events if e.get("type") == "referee_checkpoint"]
+    assert len(cps) == 1, f"want one referee_checkpoint, got {[e['type'] for e in events]}"
+    e = cps[0]
+    # Envelope reserved keys survive (not clobbered by the payload).
+    assert e["type"] == "referee_checkpoint"
+    assert isinstance(e["id"], int)  # event sequence id, NOT the checkpoint id
+    # Checkpoint identity rides on the non-colliding keys the dashboard reads.
+    assert e["checkpoint_id"] == "left_bedroom"
+    assert e["checkpoint_type"] == "map"
+    assert e["turn"] == 6
+    # It must NOT have serialized as the checkpoint's detector type.
+    assert not any(ev.get("type") == "map" for ev in events)
 
 
 if __name__ == "__main__":

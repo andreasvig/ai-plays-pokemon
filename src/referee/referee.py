@@ -200,12 +200,16 @@ class Referee:
             if self._satisfied(cp, snap):
                 self.stamps[cp.id] = turn_number
                 newly_stamped = True
+                # NOTE: payload keys must NOT be "id" or "type" — the Logger
+                # envelope reserves those (event sequence id + event type) and
+                # spreads the payload LAST, so an "id"/"type" here clobbers the
+                # envelope and the dashboard never sees a "referee_checkpoint".
                 self.logger.log_event(
                     "referee_checkpoint",
                     {
-                        "id": cp.id,
+                        "checkpoint_id": cp.id,
                         "name": cp.name,
-                        "type": cp.type,
+                        "checkpoint_type": cp.type,
                         "turn": turn_number,
                     },
                 )
@@ -239,9 +243,9 @@ class Referee:
                 self.logger.log_event(
                     "referee_gate_missed",
                     {
-                        "id": cp.id,
+                        "checkpoint_id": cp.id,
                         "name": cp.name,
-                        "type": cp.type,
+                        "checkpoint_type": cp.type,
                         "deadline_turn": cp.deadline_turn,
                         "turn": turn_number,
                     },

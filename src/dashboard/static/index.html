@@ -526,6 +526,35 @@
   .referee-row { padding: 1px 0; color: var(--text-dim); }
   .referee-row.done { color: var(--green); }
   .referee-row.current { color: var(--text); font-weight: bold; }
+  /* Gate ladder rendered as a table */
+  .referee-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .referee-table th {
+    text-align: left;
+    color: var(--text-dim);
+    font-weight: normal;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border);
+    padding: 2px 6px;
+  }
+  .referee-table td { padding: 2px 6px; vertical-align: top; }
+  .referee-table th:nth-child(2), .referee-table td:nth-child(2),
+  .referee-table th:nth-child(3), .referee-table td:nth-child(3) {
+    text-align: right; white-space: nowrap; color: var(--text-dim);
+  }
+  .referee-grouphdr td {
+    color: var(--accent);
+    font-weight: bold;
+    text-transform: uppercase;
+    font-size: 10px;
+    letter-spacing: 0.5px;
+    padding-top: 6px;
+  }
+  .referee-trow.done td:first-child { color: var(--green); }
+  .referee-trow.current td { color: var(--text); font-weight: bold; }
+  .referee-trow.missed td { color: var(--accent2); font-weight: bold; }
+  .referee-empty { color: var(--text-dim); }
 </style>
 </head>
 <body>
@@ -658,10 +687,13 @@ function renderReferee() {
     if (!next) {
       strip.className = 'referee-strip neutral';
       strip.textContent = 'All gates cleared';
-    } else if (!referee.enforce || next.deadline_turn === null || next.deadline_turn === undefined) {
+    } else if (next.deadline_turn === null || next.deadline_turn === undefined) {
+      // Only null-deadline gates (the un-enforced tail) are pure "observed".
       strip.className = 'referee-strip observed';
       strip.textContent = `Next gate: ${next.name} — observed only`;
     } else {
+      // A numeric limit always shows the countdown — even in observe mode
+      // (enforce=false), where it's a pace indicator that doesn't terminate.
       const left = next.deadline_turn - now;
       // Color by remaining budget. Anchor the budget on the previous gate's
       // deadline (or 0) so "fraction left" is window-relative, not absolute.
@@ -679,8 +711,9 @@ function renderReferee() {
       if (frac < 0.10) cls = 'red';
       else if (frac < 0.25) cls = 'amber';
       strip.className = 'referee-strip ' + cls;
+      const tag = referee.enforce ? '' : ' · observe';
       strip.textContent =
-        `Next gate: ${next.name} — ${left} turns left (deadline T${next.deadline_turn}, now T${now})`;
+        `Next gate: ${next.name} — ${left} turns left (limit T${next.deadline_turn}, now T${now})${tag}`;
     }
   }
 
@@ -705,39 +738,51 @@ function renderRefereePanel() {
   }
 
   const esc = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-  const sections = [];
+  const fmtLimit = cp => refereeFmtDeadline(cp.deadline_turn);
+  const groupHdr = label => `<tr class="referee-grouphdr"><td colspan="3">${label}</td></tr>`;
+  const empty = txt => `<tr class="referee-trow"><td colspan="3" class="referee-empty">${txt}</td></tr>`;
+  const rows = [];
 
-  let completedRows = completed.map(cp =>
-    `<div class="referee-row done">${esc(cp.name)} ✓ T${referee.stamps[cp.id]} / limit ${refereeFmtDeadline(cp.deadline_turn)}</div>`
-  ).join('');
-  sections.push(
-    `<div class="referee-section"><div class="referee-section-title">Completed</div>` +
-    (completedRows || '<div class="referee-row">—</div>') + `</div>`);
-
-  let currentRow;
-  if (referee.missed) {
-    currentRow = `<div class="referee-row current">${esc(referee.missed.name)} — MISSED (deadline ${refereeFmtDeadline(referee.missed.deadline_turn)})</div>`;
-  } else if (current) {
-    if (!referee.enforce || current.deadline_turn === null || current.deadline_turn === undefined) {
-      currentRow = `<div class="referee-row current">${esc(current.name)} — observed only</div>`;
-    } else {
-      const left = current.deadline_turn - now;
-      currentRow = `<div class="referee-row current">${esc(current.name)} — ${left} turns left (deadline T${current.deadline_turn}, now T${now})</div>`;
+  // Completed: gate · first-seen turn · limit
+  rows.push(groupHdr(`Completed (${completed.length})`));
+  if (completed.length) {
+    for (const cp of completed) {
+      rows.push(
+        `<tr class="referee-trow done"><td>✓ ${esc(cp.name)}</td>` +
+        `<td>T${referee.stamps[cp.id]}</td><td>${fmtLimit(cp)}</td></tr>`);
     }
-  } else {
-    currentRow = '<div class="referee-row">— all gates cleared</div>';
-  }
-  sections.push(
-    `<div class="referee-section"><div class="referee-section-title">Current</div>${currentRow}</div>`);
+  } else { rows.push(empty('—')); }
 
-  let upcomingRows = upcoming.map(cp =>
-    `<div class="referee-row">${esc(cp.name)} ${refereeFmtDeadline(cp.deadline_turn)}</div>`
-  ).join('');
-  sections.push(
-    `<div class="referee-section"><div class="referee-section-title">Upcoming</div>` +
-    (upcomingRows || '<div class="referee-row">—</div>') + `</div>`);
+  // Current: gate · turns-left (or observed) · limit
+  rows.push(groupHdr('Current'));
+  if (referee.missed) {
+    rows.push(
+      `<tr class="referee-trow missed"><td>✗ ${esc(referee.missed.name)}</td>` +
+      `<td>missed</td><td>${refereeFmtDeadline(referee.missed.deadline_turn)}</td></tr>`);
+  } else if (current) {
+    let turnsCell;
+    if (current.deadline_turn === null || current.deadline_turn === undefined) {
+      turnsCell = 'observed';
+    } else {
+      turnsCell = `${current.deadline_turn - now} left (now T${now})`;
+    }
+    rows.push(
+      `<tr class="referee-trow current"><td>▶ ${esc(current.name)}</td>` +
+      `<td>${turnsCell}</td><td>${fmtLimit(current)}</td></tr>`);
+  } else { rows.push(empty('all gates cleared')); }
 
-  panel.innerHTML = sections.join('');
+  // Upcoming: gate · — · limit
+  rows.push(groupHdr(`Upcoming (${upcoming.length})`));
+  if (upcoming.length) {
+    for (const cp of upcoming) {
+      rows.push(
+        `<tr class="referee-trow"><td>${esc(cp.name)}</td><td></td><td>${fmtLimit(cp)}</td></tr>`);
+    }
+  } else { rows.push(empty('—')); }
+
+  panel.innerHTML =
+    `<table class="referee-table"><thead><tr><th>Gate</th><th>Turns</th><th>Limit</th></tr></thead>` +
+    `<tbody>${rows.join('')}</tbody></table>`;
 }
 
 document.getElementById('referee-strip').addEventListener('click', () => {
@@ -893,13 +938,14 @@ function handleEvent(evt) {
   else if (t === 'referee_checkpoint') {
     // Latch append-only: never overwrite an existing stamp, never un-stamp.
     // On reconnect the cursor replay re-feeds these → the latch rebuilds.
-    if (evt.id != null && !(evt.id in referee.stamps)) {
-      referee.stamps[evt.id] = evt.turn;
+    // checkpoint_id (not id): the envelope reserves `id` for the event seq id.
+    if (evt.checkpoint_id != null && !(evt.checkpoint_id in referee.stamps)) {
+      referee.stamps[evt.checkpoint_id] = evt.turn;
     }
     if (referee.ladder) renderReferee();
   }
   else if (t === 'referee_gate_missed' || t === 'referee_terminate') {
-    referee.missed = { name: evt.name || evt.id, deadline_turn: evt.deadline_turn };
+    referee.missed = { name: evt.name || evt.checkpoint_id, deadline_turn: evt.deadline_turn };
     if (referee.ladder) renderReferee();
   }
   else if (t === 'turn_trace') {

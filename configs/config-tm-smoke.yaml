@@ -376,6 +376,16 @@ savepoints:
   at_end: true
   on_crash: true
 
+# --- Referee (PokeBench) ---
+# Deterministic checkpoint referee. Reads game memory out-of-band each turn and
+# stamps gates from configs/checkpoints-firered-v1.yaml. enforce:false = OBSERVE
+# ONLY (stamps + scores, never terminates) — the safe first-smoke mode while we
+# confirm the FireRed address table reads correctly against real hardware. Flip
+# to enforce:true once stamps look right.
+referee:
+  checkpoints: "configs/checkpoints-firered-v1.yaml"
+  enforce: false
+
 # --- OCR ---
 ocr:
   enabled: true

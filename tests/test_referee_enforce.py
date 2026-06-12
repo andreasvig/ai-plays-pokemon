@@ -139,7 +139,7 @@ def test_enforce_missed_gate_terminates(tmp_path):
     # The FIRST missed gate is reported (left_bedroom, not left_house).
     missed = gate_missed_events(logger)
     assert len(missed) == 1
-    assert missed[0]["id"] == "left_bedroom"
+    assert missed[0]["checkpoint_id"] == "left_bedroom"
     assert missed[0]["deadline_turn"] == 30
     assert missed[0]["turn"] == 30
 
@@ -155,7 +155,7 @@ def test_enforce_first_missed_gate_when_both_overdue(tmp_path):
     assert ref.termination_reason == "missed_gate:left_bedroom"
     missed = gate_missed_events(logger)
     assert len(missed) == 1  # latched once, first gate only
-    assert missed[0]["id"] == "left_bedroom"
+    assert missed[0]["checkpoint_id"] == "left_bedroom"
 
 
 # --- (b) stamped on/before deadline -> no termination; pre-satisfied -----------
