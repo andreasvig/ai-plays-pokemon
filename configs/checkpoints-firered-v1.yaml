@@ -1,0 +1,97 @@
+benchmark_version: pokebench-v1-draft
+game: firered-us
+rom_sha1:
+  v1_0: 41cb23d8dccc8ebd7c649cd8fbb58eeace6e2fdc
+  v1_1: dd5945db9b930750cb39d00c84da8571feebf417
+
+# Detector types and their signature fields:
+#   map:   {map_group, map_num}            stamped when the latch first sees this map
+#   flag:  {flag_id}                       stamped when this story-flag bit is set
+#   var:   {var_id, min_value}             stamped when the var first reaches min_value
+#   party: {min_count}                     stamped when party count first reaches min_count
+# deadline_turn: int = enforced gate (terminate if unstamped when this turn ends)
+#                null = observed-only (stamped + scored, never terminates)
+# cross_check: optional second signature logged for diagnostics, never decides
+
+checkpoints:
+  - id: left_bedroom
+    name: "Left the bedroom"
+    type: map
+    signature: {map_group: 4, map_num: 0}        # Player's House 1F
+    deadline_turn: 30
+
+  - id: left_house
+    name: "Stepped outside in Pallet Town"
+    type: map
+    signature: {map_group: 3, map_num: 0}
+    deadline_turn: 50                             # Andreas's original anchor
+
+  - id: oaks_lab_entered
+    name: "Entered Oak's Lab"
+    type: map
+    signature: {map_group: 4, map_num: 3}
+    cross_check: {type: flag, flag_id: 0x2CF}     # FLAG_VISITED_OAKS_LAB
+    deadline_turn: 100                            # Andreas's original anchor (Oak encounter)
+
+  - id: starter_chosen
+    name: "Chose a starter"
+    type: flag
+    signature: {flag_id: 0x828}                   # FLAG_SYS_POKEMON_GET
+    cross_check: {type: party, min_count: 1}
+    deadline_turn: 120
+
+  - id: rival1_done
+    name: "First rival battle done"               # scene-complete, win or lose (no victory flag exists)
+    type: flag
+    signature: {flag_id: 0x258}                   # FLAG_BEAT_RIVAL_IN_OAKS_LAB
+    deadline_turn: 150
+
+  - id: route1_reached
+    name: "Reached Route 1"
+    type: map
+    signature: {map_group: 3, map_num: 19}
+    deadline_turn: 180
+
+  - id: viridian_reached
+    name: "Reached Viridian City"
+    type: map
+    signature: {map_group: 3, map_num: 1}
+    deadline_turn: 230                            # Route 1 traversal + encounters
+
+  - id: parcel_delivered
+    name: "Delivered Oak's Parcel"
+    type: var
+    signature: {var_id: 0x4057, min_value: 2}     # VAR_MAP_SCENE_VIRIDIAN_CITY_MART
+    deadline_turn: 260
+
+  - id: pokedex_received
+    name: "Received the Pokédex"
+    type: flag
+    signature: {flag_id: 0x829}                   # FLAG_SYS_POKEDEX_GET
+    cross_check: {type: var, var_id: 0x4055, min_value: 6}
+    deadline_turn: 310                            # backtrack Viridian -> Pallet lab
+
+  - id: viridian_forest_reached
+    name: "Entered Viridian Forest"
+    type: map
+    signature: {map_group: 1, map_num: 0}
+    deadline_turn: 370                            # north again: Viridian + Route 2 — v1 enforcement ends here
+
+  - id: pewter_reached
+    name: "Reached Pewter City"
+    type: map
+    signature: {map_group: 3, map_num: 2}
+    deadline_turn: null
+
+  - id: pewter_gym_entered
+    name: "Entered Pewter Gym"
+    type: map
+    signature: {map_group: 6, map_num: 2}
+    deadline_turn: null
+
+  - id: brock_defeated
+    name: "Defeated Brock (Boulder Badge)"
+    type: flag
+    signature: {flag_id: 0x820}                   # FLAG_BADGE01_GET
+    cross_check: {type: flag, flag_id: 0x4B0}     # DEFEATED_BROCK (speedrun autosplitter's choice)
+    deadline_turn: null
