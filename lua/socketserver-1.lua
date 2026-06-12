@@ -52,6 +52,15 @@ local function respond(msg)
     end
 end
 
+-- Hex-encode a raw byte string (lowercase, two chars per byte)
+local function tohex(bytes)
+    local parts = {}
+    for i = 1, #bytes do
+        parts[i] = string.format("%02x", string.byte(bytes, i))
+    end
+    return table.concat(parts)
+end
+
 -- Execute a command in the frame callback context (safe to call emu functions)
 local function execute_command(cmd)
     if cmd == nil or cmd == "" then
@@ -117,6 +126,19 @@ local function execute_command(cmd)
         else
             respond("ERROR:Failed to load state from " .. filepath)
         end
+
+    elseif cmd:sub(1, 8) == "READMEM:" then
+        -- READMEM:<addr>:<len> — addr/len decimal or 0x-prefixed hex.
+        -- Stay dumb: read raw bytes at addr, hex-encode, respond. No game knowledge.
+        local addr_s, len_s = cmd:sub(9):match("([^:]+):(.+)")
+        local addr = addr_s and tonumber(addr_s)
+        local len = len_s and tonumber(len_s)
+        if not addr or not len then
+            respond("ERROR:Invalid READMEM format. Use READMEM:addr:len")
+            return
+        end
+        local bytes = emu:readRange(addr, len)
+        respond("MEM:" .. tohex(bytes))
 
     elseif cmd:sub(1, 7) == "CONFIG:" then
         local param, value = cmd:sub(8):match("([^=]+)=(.+)")

@@ -138,6 +138,35 @@ class EmulatorClient:
 
         return img
 
+    def read_memory(self, addr: int, length: int) -> bytes:
+        """Read `length` raw bytes from the emulator at GBA bus address `addr`.
+
+        Sends READMEM:<addr>:<length> and expects a MEM:<hex> response from the
+        Lua bridge (hex-encoded raw bytes). Lua stays dumb — all decoding of the
+        bytes into game state happens on the Python side (the referee layer).
+        """
+        self._send(f"READMEM:{addr}:{length}")
+        response = self._recv_line()
+
+        if response.startswith("ERROR:"):
+            raise RuntimeError(f"read_memory failed: {response}")
+        if not response.startswith("MEM:"):
+            raise RuntimeError(f"Unexpected read_memory response: {response}")
+
+        hex_str = response[len("MEM:"):]
+        try:
+            data = bytes.fromhex(hex_str)
+        except ValueError as exc:
+            raise RuntimeError(
+                f"Malformed hex in read_memory response: {response}"
+            ) from exc
+
+        if len(data) != length:
+            raise RuntimeError(
+                f"read_memory expected {length} bytes, got {len(data)}: {response}"
+            )
+        return data
+
     def press_button(self, button: str) -> None:
         """Press a single button."""
         button = button.upper()
