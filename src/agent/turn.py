@@ -679,6 +679,9 @@ class TurnManager:
                 emulator=emulator,
                 logger=logger,
                 run_dir=logger.run_dir,
+                # Calibration runs leave enforce off (observe-only); only an
+                # explicit `enforce: true` arms the deadline gates.
+                enforce=bool(referee_cfg.get("enforce", False)),
             )
 
         # tasks.json supersession (plan.md "Reconciliation"): when TaskMaster is
@@ -1128,16 +1131,28 @@ class TurnManager:
                 if self.ocr and self.ocr.enabled:
                     self.ocr.set_active(False)
 
-            # Referee poll (observe-only) — runs after the screen has settled so
-            # memory reflects the just-executed action. Wrapped so a referee
-            # failure (e.g. a flaky memory read) can NEVER take down a player run.
+            # Referee poll — runs after the screen has settled so memory
+            # reflects the just-executed action. Wrapped so a referee failure
+            # (e.g. a flaky memory read) can NEVER take down a player run.
+            # Under enforcement, poll() returns True when a deadline gate was
+            # missed; we then stop the run cleanly (same graceful exit as a
+            # normal completion — savepoint + summary still written below).
+            referee_terminate = False
             if self.referee is not None:
                 try:
-                    self.referee.poll(self.turn_number)
+                    referee_terminate = bool(self.referee.poll(self.turn_number))
                 except Exception as e:
                     self.logger.log_custom("referee_error", {
                         "turn": self.turn_number, "error": str(e),
                     })
+            if referee_terminate:
+                reason = self.referee.termination_reason
+                print(f"  [Turn {self.turn_number}] Referee gate enforcement: "
+                      f"{reason}. Stopping run cleanly.")
+                self.logger.log_custom("referee_terminate", {
+                    "turn": self.turn_number, "reason": reason,
+                })
+                break
 
             # Periodic savepoint — at the very end of the iteration so the
             # emulator state is post-settle, not mid-button-press.

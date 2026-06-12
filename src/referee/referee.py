@@ -2,9 +2,17 @@
 
 The Referee reads FireRed (BPRE-US) game memory out-of-band — the player agent
 is provably blind to it (module boundary: nothing in ``src/agent/agent.py``
-imports this) — and latches checkpoint first-seen turns. This phase is
-OBSERVE-ONLY: it stamps + emits events + persists state, but never terminates a
-run. Gate enforcement is Phase 5 (``termination_reason`` stays ``None`` here).
+imports this) — and latches checkpoint first-seen turns.
+
+By default the Referee is OBSERVE-ONLY: it stamps + emits events + persists
+state but never terminates a run (calibration runs leave ``enforce=False``).
+With ``enforce=True`` (Phase 5) it additionally evaluates deadline gates: a
+checkpoint with an int ``deadline_turn`` still unstamped once ``turn_number >=
+deadline_turn`` latches ``termination_reason = "missed_gate:<id>"`` (the first
+missed gate in ladder order) and signals the turn loop to stop the run cleanly.
+The deadline is checked AFTER each poll's stamping, so a gate met exactly on
+its deadline turn — or reached early, out of ladder order — is pre-satisfied
+and never terminates.
 
 Memory layout (verified addresses, see local/plan-referee-benchmark.md):
   - ``gSaveBlock1Ptr`` @ 0x03005008, ``gSaveBlock2Ptr`` @ 0x0300500C — IWRAM
@@ -73,6 +81,7 @@ class Referee:
         emulator: Any,
         logger: Any,
         run_dir: Any,
+        enforce: bool = False,
     ) -> None:
         self.checkpoints: list[Checkpoint] = list(checkpoints)
         self._by_id: dict[str, Checkpoint] = {cp.id: cp for cp in self.checkpoints}
@@ -80,6 +89,16 @@ class Referee:
         self.logger = logger
         self.run_dir = Path(run_dir)
         self._state_path = self.run_dir / "referee_state.json"
+
+        # Gate enforcement (Phase 5). When False the Referee is observe-only,
+        # behaving EXACTLY as Phase 4 (used by calibration runs). When True a
+        # checkpoint with an int deadline_turn that is still unstamped once its
+        # deadline turn is reached terminates the run.
+        self.enforce = enforce
+
+        # Set to "missed_gate:<id>" the first time a gate is missed under
+        # enforcement; otherwise None. Once set, never cleared.
+        self.terminated_reason: Optional[str] = None
 
         # The latch: checkpoint id -> first-seen turn. NEVER un-stamped.
         self.stamps: dict[str, int] = {}
@@ -155,16 +174,24 @@ class Referee:
 
     # --- poll -----------------------------------------------------------------
 
-    def poll(self, turn_number: int) -> None:
+    def poll(self, turn_number: int) -> bool:
         """Evaluate every not-yet-stamped checkpoint for this turn.
 
         On the first satisfaction of a checkpoint, record its first-seen turn,
         emit a ``referee_checkpoint`` event, and persist the latch. A stamp is
         NEVER cleared (backtracking must not un-stamp).
+
+        Returns ``True`` if the run should terminate after this poll (a gate was
+        missed under enforcement), else ``False``. The return value is advisory:
+        ``poll`` never raises or kills the process itself — the turn loop reads
+        the flag (or ``should_terminate()``) and stops the run cleanly.
         """
         snap = self._read_memory_snapshot()
         if snap is None:
-            return  # out-of-range pointer or unrecoverable torn read
+            # Out-of-range pointer or unrecoverable torn read. We still surface
+            # any termination latched on a prior poll so a transient bad read
+            # near a deadline doesn't un-stick a missed gate.
+            return self.should_terminate()
 
         newly_stamped = False
         for cp in self.checkpoints:
@@ -185,6 +212,50 @@ class Referee:
 
         if newly_stamped:
             self._persist_state()
+
+        # Deadline check (Phase 5). Runs AFTER this poll's stamping so a gate met
+        # exactly on its deadline turn counts as satisfied and never terminates.
+        if self.enforce:
+            self._check_deadlines(turn_number)
+
+        return self.should_terminate()
+
+    def _check_deadlines(self, turn_number: int) -> None:
+        """Latch ``terminated_reason`` if a deadline gate is missed.
+
+        Evaluated as ``turn_number >= deadline_turn`` with the gate still
+        unstamped after this poll's stamping. The FIRST (lowest ladder-order)
+        missed gate wins. Idempotent: once latched, never re-evaluated.
+        """
+        if self.terminated_reason is not None:
+            return
+        for cp in self.checkpoints:
+            if cp.deadline_turn is None:
+                continue  # observed-only gate — never terminates
+            if cp.id in self.stamps:
+                continue  # satisfied (possibly out of order / early) — pre-met
+            if turn_number >= cp.deadline_turn:
+                self.terminated_reason = f"missed_gate:{cp.id}"
+                self.logger.log_event(
+                    "referee_gate_missed",
+                    {
+                        "id": cp.id,
+                        "name": cp.name,
+                        "type": cp.type,
+                        "deadline_turn": cp.deadline_turn,
+                        "turn": turn_number,
+                    },
+                )
+                return  # first missed gate decides
+
+    def should_terminate(self) -> bool:
+        """True iff enforcement has latched a missed-gate termination."""
+        return self.terminated_reason is not None
+
+    @property
+    def termination_reason(self) -> Optional[str]:
+        """``"missed_gate:<id>"`` once a gate is missed under enforcement, else None."""
+        return self.terminated_reason
 
     def _satisfied(self, cp: Checkpoint, snap: "_MemorySnapshot") -> bool:
         """Detector dispatch for a single checkpoint type."""
@@ -209,7 +280,9 @@ class Referee:
 
         ``furthest`` is the id of the deepest stamped checkpoint in LADDER
         ORDER (not first-seen order) — stamps can land out of order.
-        ``termination_reason`` is ``None`` this phase (Phase 5 fills it).
+        ``termination_reason`` is ``"missed_gate:<id>"`` when enforcement
+        terminated the run on a missed deadline, else ``None`` (observe-only
+        runs, or enforced runs that hit no missed gate).
         """
         per_checkpoint: dict[str, Optional[int]] = {
             cp.id: self.stamps.get(cp.id) for cp in self.checkpoints
@@ -221,7 +294,7 @@ class Referee:
         return {
             "checkpoints": per_checkpoint,
             "furthest": furthest,
-            "termination_reason": None,
+            "termination_reason": self.terminated_reason,
         }
 
 
