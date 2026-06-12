@@ -732,13 +732,14 @@ def _render_referee_html(summary: dict) -> str:
     by_id = {g["id"]: g for g in gates}
 
     tr = ref.get("termination_reason")
+    failed_id = None
     if tr and tr.startswith("missed_gate:"):
-        fid = tr.split(":", 1)[1]
-        fg = by_id.get(fid, {})
+        failed_id = tr.split(":", 1)[1]
+        fg = by_id.get(failed_id, {})
         dl = fg.get("deadline_turn")
         headline = (
             '<span class="ref-verdict failed">✗ Failed</span> missed '
-            f'<strong>{_escape(fg.get("name", fid))}</strong>'
+            f'<strong>{_escape(fg.get("name", failed_id))}</strong>'
             + (f" (limit T{dl})" if dl is not None else "")
         )
     else:
@@ -762,15 +763,19 @@ def _render_referee_html(summary: dict) -> str:
         "auto": '<span class="ref-st auto">⤴ auto</span>',
         "skipped": '<span class="ref-st skipped">✗ skipped</span>',
         "pending": '<span class="ref-st pending">·</span>',
+        "failed": '<span class="ref-st failed">✗ failed</span>',
     }
     rows = []
     for g in gates:
+        # The gate that tripped enforcement is shown as "failed" (not "pending",
+        # which it shares with the never-reached gates after it).
+        status = "failed" if g["id"] == failed_id else g["status"]
         turn_str = f"T{g['turn']}" if g["turn"] is not None else "—"
         limit_str = f"T{g['deadline_turn']}" if g["deadline_turn"] is not None else "—"
         rows.append(
-            f'<tr class="ref-row {g["status"]}">'
+            f'<tr class="ref-row {status}">'
             f'<td>{_escape(g["name"])}</td>'
-            f'<td>{status_cell.get(g["status"], g["status"])}</td>'
+            f'<td>{status_cell.get(status, status)}</td>'
             f"<td>{turn_str}</td><td>{limit_str}</td></tr>"
         )
 
@@ -907,11 +912,13 @@ def generate_html(run_dir: Path, events: list[dict], turns: list[dict]) -> str:
         .ref-row.done td:first-child {{ color: #7ddf64; }}
         .ref-row.auto td:first-child {{ color: #53d8fb; }}
         .ref-row.skipped td:first-child {{ color: #e94560; }}
+        .ref-row.failed td:first-child {{ color: #e94560; font-weight: 700; }}
         .ref-row.pending td:first-child {{ color: #888; }}
         .ref-st {{ font-size: 11px; font-weight: 600; }}
         .ref-st.done {{ color: #7ddf64; }}
         .ref-st.auto {{ color: #53d8fb; }}
         .ref-st.skipped {{ color: #e94560; }}
+        .ref-st.failed {{ color: #e94560; }}
         .ref-st.pending {{ color: #666; }}
         .ref-note {{ margin-top: 8px; font-size: 12px; color: #53d8fb; }}
 
