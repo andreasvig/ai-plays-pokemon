@@ -216,15 +216,52 @@ async def get_state(run_id: str):
     return JSONResponse(s.state_manager.get_truncated_view() if s.state_manager else {})
 
 
+def _referee_payload(config: dict) -> Optional[dict]:
+    """Build the referee ladder block for the config payload, or None.
+
+    Reads the run's ``referee`` config block (``{checkpoints: <path>,
+    enforce: bool}``), loads the ladder, and returns
+    ``{"enforce": bool, "ladder": [{id, name, deadline_turn}, ...]}`` in
+    ladder order. Robust by design: a missing block, missing/unreadable
+    checkpoints file, or any load error returns ``None`` (the key is then
+    omitted) — it must never 500 the config endpoint for non-benchmark runs.
+    """
+    referee_cfg = config.get("referee")
+    if not isinstance(referee_cfg, dict):
+        return None
+    checkpoints_path = referee_cfg.get("checkpoints")
+    if not checkpoints_path:
+        return None
+    try:
+        from src.referee.checkpoints import load_checkpoints
+
+        checkpoints = load_checkpoints(checkpoints_path)
+    except Exception as exc:  # missing file, parse/validation error, etc.
+        print(f"  ⚠ dashboard: could not load referee ladder {checkpoints_path!r}: {exc}")
+        return None
+
+    return {
+        "enforce": bool(referee_cfg.get("enforce", False)),
+        "ladder": [
+            {"id": cp.id, "name": cp.name, "deadline_turn": cp.deadline_turn}
+            for cp in checkpoints
+        ],
+    }
+
+
 @app.get("/runs/{run_id}/api/config")
 async def get_config(run_id: str):
     s = _require_session(run_id)
-    return JSONResponse({
+    payload = {
         "run_id": s.run_id,
         "label": s.label,
         "task": s.config.get("task", {}).get("goal", ""),
         "llm_model": s.config.get("_llm_alias") or s.config.get("llm_model", ""),
-    })
+    }
+    referee = _referee_payload(s.config)
+    if referee is not None:
+        payload["referee"] = referee
+    return JSONResponse(payload)
 
 
 @app.websocket("/runs/{run_id}/ws/events")

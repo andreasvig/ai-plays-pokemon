@@ -481,6 +481,51 @@
     display: none;
   }
   .reconnecting.show { display: block; }
+
+  /* Referee benchmark HUD (Phase 6) */
+  #referee-hud { flex-shrink: 0; }
+  .referee-strip {
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: bold;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text);
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .referee-strip::before { content: '🏁'; }
+  .referee-strip.neutral { color: var(--text); }
+  .referee-strip.amber   { color: var(--yellow); }
+  .referee-strip.red     { color: var(--accent2); }
+  .referee-strip.missed {
+    background: var(--accent2);
+    color: white;
+  }
+  .referee-strip.observed { color: var(--text-dim); }
+  .referee-panel {
+    padding: 8px 12px;
+    font-size: 11px;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+    max-height: 220px;
+    overflow-y: auto;
+  }
+  .referee-section { margin-bottom: 8px; }
+  .referee-section-title {
+    color: var(--accent);
+    font-weight: bold;
+    margin-bottom: 3px;
+    text-transform: uppercase;
+    font-size: 10px;
+    letter-spacing: 0.5px;
+  }
+  .referee-row { padding: 1px 0; color: var(--text-dim); }
+  .referee-row.done { color: var(--green); }
+  .referee-row.current { color: var(--text); font-weight: bold; }
 </style>
 </head>
 <body>
@@ -502,6 +547,10 @@
     <div class="chat-scroll" id="chatScroll"></div>
   </div>
   <div class="right-panel">
+    <div id="referee-hud" style="display:none">
+      <div id="referee-strip" class="referee-strip" title="Click to expand the gate ladder"></div>
+      <div id="referee-panel" class="referee-panel" style="display:none"></div>
+    </div>
     <div class="screen-area">
       <img id="screen" alt="GBA Screen" width="720" height="480" />
     </div>
@@ -572,12 +621,143 @@ function autoScroll() {
   }
 }
 
+// --- Referee benchmark HUD state (Phase 6) ---
+// ladder: [{id, name, deadline_turn}] in order, served once by /api/config.
+// stamps: {id: turn} latched append-only from referee_checkpoint events;
+//   NEVER reset on socket reopen (cursor replay re-feeds the events → rebuilds).
+// missed: {name, deadline_turn} once a gate-missed/terminate event arrives.
+const referee = {
+  ladder: null,
+  enforce: false,
+  stamps: {},
+  missed: null,
+};
+
+function refereeFmtDeadline(d) {
+  return (d === null || d === undefined) ? '—' : 'T' + d;
+}
+
+function renderReferee() {
+  const hud = document.getElementById('referee-hud');
+  if (!referee.ladder || !referee.ladder.length) {
+    hud.style.display = 'none';
+    return;
+  }
+  hud.style.display = '';
+  const strip = document.getElementById('referee-strip');
+  const now = state.currentTurn;
+
+  // Missed-gate lock takes precedence over everything.
+  if (referee.missed) {
+    strip.className = 'referee-strip missed';
+    strip.textContent =
+      `Missed gate: ${referee.missed.name} (deadline ${refereeFmtDeadline(referee.missed.deadline_turn)})`;
+  } else {
+    // The next unmet gate is the first ladder entry not in stamps.
+    const next = referee.ladder.find(cp => !(cp.id in referee.stamps));
+    if (!next) {
+      strip.className = 'referee-strip neutral';
+      strip.textContent = 'All gates cleared';
+    } else if (!referee.enforce || next.deadline_turn === null || next.deadline_turn === undefined) {
+      strip.className = 'referee-strip observed';
+      strip.textContent = `Next gate: ${next.name} — observed only`;
+    } else {
+      const left = next.deadline_turn - now;
+      // Color by remaining budget. Anchor the budget on the previous gate's
+      // deadline (or 0) so "fraction left" is window-relative, not absolute.
+      const prevDeadline = (() => {
+        let prev = 0;
+        for (const cp of referee.ladder) {
+          if (cp.id === next.id) break;
+          if (typeof cp.deadline_turn === 'number') prev = cp.deadline_turn;
+        }
+        return prev;
+      })();
+      const windowSize = Math.max(1, next.deadline_turn - prevDeadline);
+      const frac = left / windowSize;
+      let cls = 'neutral';
+      if (frac < 0.10) cls = 'red';
+      else if (frac < 0.25) cls = 'amber';
+      strip.className = 'referee-strip ' + cls;
+      strip.textContent =
+        `Next gate: ${next.name} — ${left} turns left (deadline T${next.deadline_turn}, now T${now})`;
+    }
+  }
+
+  renderRefereePanel();
+}
+
+function renderRefereePanel() {
+  const panel = document.getElementById('referee-panel');
+  if (panel.style.display === 'none') return;  // only build when expanded
+  const now = state.currentTurn;
+  const completed = [];
+  const upcoming = [];
+  let current = null;
+  for (const cp of referee.ladder) {
+    if (cp.id in referee.stamps) {
+      completed.push(cp);
+    } else if (current === null) {
+      current = cp;
+    } else {
+      upcoming.push(cp);
+    }
+  }
+
+  const esc = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  const sections = [];
+
+  let completedRows = completed.map(cp =>
+    `<div class="referee-row done">${esc(cp.name)} ✓ T${referee.stamps[cp.id]} / limit ${refereeFmtDeadline(cp.deadline_turn)}</div>`
+  ).join('');
+  sections.push(
+    `<div class="referee-section"><div class="referee-section-title">Completed</div>` +
+    (completedRows || '<div class="referee-row">—</div>') + `</div>`);
+
+  let currentRow;
+  if (referee.missed) {
+    currentRow = `<div class="referee-row current">${esc(referee.missed.name)} — MISSED (deadline ${refereeFmtDeadline(referee.missed.deadline_turn)})</div>`;
+  } else if (current) {
+    if (!referee.enforce || current.deadline_turn === null || current.deadline_turn === undefined) {
+      currentRow = `<div class="referee-row current">${esc(current.name)} — observed only</div>`;
+    } else {
+      const left = current.deadline_turn - now;
+      currentRow = `<div class="referee-row current">${esc(current.name)} — ${left} turns left (deadline T${current.deadline_turn}, now T${now})</div>`;
+    }
+  } else {
+    currentRow = '<div class="referee-row">— all gates cleared</div>';
+  }
+  sections.push(
+    `<div class="referee-section"><div class="referee-section-title">Current</div>${currentRow}</div>`);
+
+  let upcomingRows = upcoming.map(cp =>
+    `<div class="referee-row">${esc(cp.name)} ${refereeFmtDeadline(cp.deadline_turn)}</div>`
+  ).join('');
+  sections.push(
+    `<div class="referee-section"><div class="referee-section-title">Upcoming</div>` +
+    (upcomingRows || '<div class="referee-row">—</div>') + `</div>`);
+
+  panel.innerHTML = sections.join('');
+}
+
+document.getElementById('referee-strip').addEventListener('click', () => {
+  const panel = document.getElementById('referee-panel');
+  const showing = panel.style.display !== 'none';
+  panel.style.display = showing ? 'none' : '';
+  if (!showing) renderRefereePanel();
+});
+
 // --- Fetch initial config ---
 fetch(`${RUN_PREFIX}/api/config`).then(r => r.json()).then(cfg => {
   document.getElementById('taskLabel').textContent = 'Task: ' + (cfg.task || '—');
   document.getElementById('footerModel').textContent =
     'LLM: ' + (cfg.llm_model || '—');
   if (cfg.label) document.title = cfg.label + ' — AI Plays Pokemon';
+  if (cfg.referee && Array.isArray(cfg.referee.ladder) && cfg.referee.ladder.length) {
+    referee.ladder = cfg.referee.ladder;
+    referee.enforce = !!cfg.referee.enforce;
+    renderReferee();
+  }
 }).catch(() => {});
 
 fetch(`${RUN_PREFIX}/api/state`).then(r => r.json()).then(data => {
@@ -704,7 +884,23 @@ function handleEvent(evt) {
     completeTask(evt);
   }
   else if (t === 'turn_start') {
+    if (typeof evt.turn === 'number') {
+      state.currentTurn = evt.turn;
+      if (referee.ladder) renderReferee();
+    }
     startNewTurn(evt.turn);
+  }
+  else if (t === 'referee_checkpoint') {
+    // Latch append-only: never overwrite an existing stamp, never un-stamp.
+    // On reconnect the cursor replay re-feeds these → the latch rebuilds.
+    if (evt.id != null && !(evt.id in referee.stamps)) {
+      referee.stamps[evt.id] = evt.turn;
+    }
+    if (referee.ladder) renderReferee();
+  }
+  else if (t === 'referee_gate_missed' || t === 'referee_terminate') {
+    referee.missed = { name: evt.name || evt.id, deadline_turn: evt.deadline_turn };
+    if (referee.ladder) renderReferee();
   }
   else if (t === 'turn_trace') {
     // turn_trace is the authoritative view of the turn — replace streaming entries
