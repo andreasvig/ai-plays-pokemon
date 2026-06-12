@@ -598,6 +598,9 @@ class TurnManager:
         self.vision: Optional[VisionPipeline] = None
         self.logger: Optional[RunLogger] = None
         self.ocr: Optional[OCRRunner] = None
+        # Observe-only Referee (set in setup() if a `referee` config block is
+        # present). Polled in the turn loop; never reachable from agent.py.
+        self.referee: Optional[Any] = None
         self.agent, self.model_settings, self.fallback_models = create_agent(config)
         self.max_steps_per_turn = config.get("max_steps_per_turn", 10)
         self.max_turns_before_trim = config.get("max_turns_before_trim")
@@ -658,6 +661,25 @@ class TurnManager:
             sp_config = dict(self.config)
             sp_config["state_file"] = str(logger.run_dir / "state.json")
             self._snapshot_mgr = SnapshotManager(sp_config, emulator)
+
+        # Referee (observe-only): when a `referee` config block is present, load
+        # its checkpoint ladder and build a Referee that polls game memory
+        # out-of-band each turn. The player agent is provably blind to it — the
+        # import lives here, in turn.py, and nothing in src/agent/agent.py
+        # references the referee (module boundary, enforced by a grep check).
+        self.referee = None
+        referee_cfg = self.config.get("referee")
+        if referee_cfg:
+            from src.referee.checkpoints import load_checkpoints
+            from src.referee.referee import Referee
+
+            checkpoints = load_checkpoints(referee_cfg["checkpoints"])
+            self.referee = Referee(
+                checkpoints=checkpoints,
+                emulator=emulator,
+                logger=logger,
+                run_dir=logger.run_dir,
+            )
 
         # tasks.json supersession (plan.md "Reconciliation"): when TaskMaster is
         # enabled it OWNS the current task — the legacy tasks.json read is
@@ -1105,6 +1127,17 @@ class TurnManager:
             finally:
                 if self.ocr and self.ocr.enabled:
                     self.ocr.set_active(False)
+
+            # Referee poll (observe-only) — runs after the screen has settled so
+            # memory reflects the just-executed action. Wrapped so a referee
+            # failure (e.g. a flaky memory read) can NEVER take down a player run.
+            if self.referee is not None:
+                try:
+                    self.referee.poll(self.turn_number)
+                except Exception as e:
+                    self.logger.log_custom("referee_error", {
+                        "turn": self.turn_number, "error": str(e),
+                    })
 
             # Periodic savepoint — at the very end of the iteration so the
             # emulator state is post-settle, not mid-button-press.
@@ -1792,6 +1825,14 @@ class TurnManager:
                 for i, exp in enumerate(self.turn_explanations)
             ],
         }
+
+        # Referee scorecard (observe-only this phase). Best-effort: a scorecard
+        # failure must not block writing the rest of the summary.
+        if self.referee is not None:
+            try:
+                summary["referee"] = self.referee.scorecard()
+            except Exception as e:
+                summary["referee"] = {"error": str(e)}
 
         summary_path = self.logger.run_dir / "run_summary.json"
         with open(summary_path, "w") as f:
