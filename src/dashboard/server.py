@@ -221,10 +221,14 @@ def _referee_payload(config: dict) -> Optional[dict]:
 
     Reads the run's ``referee`` config block (``{checkpoints: <path>,
     enforce: bool}``), loads the ladder, and returns
-    ``{"enforce": bool, "ladder": [{id, name, deadline_turn}, ...]}`` in
-    ladder order. Robust by design: a missing block, missing/unreadable
-    checkpoints file, or any load error returns ``None`` (the key is then
-    omitted) — it must never 500 the config endpoint for non-benchmark runs.
+    ``{"enforce": bool, "ladder": [{id, name, deadline_turn, group?}, ...]}`` in
+    ladder order. Multigate members are flattened into the ladder, each tagged
+    with its ``group`` (the group's display name) and given the group's FINAL
+    deadline as ``deadline_turn`` so the live HUD countdown works; the exact
+    per-completion pacing is enforced by the referee and shown in the report.
+    Robust by design: a missing block, missing/unreadable checkpoints file, or
+    any load error returns ``None`` (the key is then omitted) — it must never
+    500 the config endpoint for non-benchmark runs.
     """
     referee_cfg = config.get("referee")
     if not isinstance(referee_cfg, dict):
@@ -233,19 +237,36 @@ def _referee_payload(config: dict) -> Optional[dict]:
     if not checkpoints_path:
         return None
     try:
-        from src.referee.checkpoints import load_checkpoints
+        from src.referee.checkpoints import MultiGate, load_ladder
 
-        checkpoints = load_checkpoints(checkpoints_path)
+        nodes = load_ladder(checkpoints_path).nodes
     except Exception as exc:  # missing file, parse/validation error, etc.
         print(f"  ⚠ dashboard: could not load referee ladder {checkpoints_path!r}: {exc}")
         return None
 
+    ladder: list[dict] = []
+    for node in nodes:
+        if isinstance(node, MultiGate):
+            final_deadline = next(
+                (d for d in reversed(node.deadline_turns) if d is not None), None
+            )
+            for member in node.gates:
+                ladder.append(
+                    {
+                        "id": member.id,
+                        "name": member.name,
+                        "deadline_turn": final_deadline,
+                        "group": node.name,
+                    }
+                )
+        else:
+            ladder.append(
+                {"id": node.id, "name": node.name, "deadline_turn": node.deadline_turn}
+            )
+
     return {
         "enforce": bool(referee_cfg.get("enforce", False)),
-        "ladder": [
-            {"id": cp.id, "name": cp.name, "deadline_turn": cp.deadline_turn}
-            for cp in checkpoints
-        ],
+        "ladder": ladder,
     }
 
 

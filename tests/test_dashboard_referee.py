@@ -53,33 +53,28 @@ def test_config_includes_referee_ladder():
         assert ref["enforce"] is True
 
         ladder = ref["ladder"]
-        assert len(ladder) == 13
-
         ids = [c["id"] for c in ladder]
+        # Multigate members are FLATTENED into the ladder (the HUD is a flat
+        # list), so both Misty and Bill's-errand appear as individual entries.
         assert ids[0] == "left_bedroom"
-        # order preserved exactly as authored in the yaml
-        assert ids == [
-            "left_bedroom",
-            "left_house",
-            "oaks_lab_entered",
-            "starter_chosen",
-            "rival1_done",
-            "route1_reached",
-            "viridian_reached",
-            "parcel_delivered",
-            "pokedex_received",
-            "viridian_forest_reached",
-            "pewter_reached",
-            "pewter_gym_entered",
-            "brock_defeated",
-        ]
+        assert ids[-1] == "thunder_badge"
+        assert "cascade_badge" in ids and "bills_errand_reached" in ids
 
-        # names + deadline_turn carried through
+        # names + deadline_turn carried through for a plain single gate
         by_id = {c["id"]: c for c in ladder}
         assert by_id["left_house"]["name"] == "Stepped outside in Pallet Town"
         assert by_id["left_house"]["deadline_turn"] == 50
-        # observed-only gate keeps a null deadline
-        assert by_id["brock_defeated"]["deadline_turn"] is None
+        assert "group" not in by_id["left_house"]
+
+        # multigate members carry a `group` label and the group's FINAL deadline
+        # (so the live HUD countdown works) — the exact value is hand-tuned, so
+        # assert structure, not the number: a positive int shared by both members.
+        misty = by_id["cascade_badge"]
+        bill = by_id["bills_errand_reached"]
+        assert misty["group"] and bill["group"]
+        assert misty["group"] == bill["group"]
+        assert isinstance(misty["deadline_turn"], int) and misty["deadline_turn"] > 0
+        assert misty["deadline_turn"] == bill["deadline_turn"]
     finally:
         _cleanup(run_id)
 

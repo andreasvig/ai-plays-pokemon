@@ -41,7 +41,9 @@ class Checkpoint:
     """One rung of the checkpoint ladder.
 
     ``deadline_turn`` is ``None`` for observed-only gates (stamped + scored,
-    never terminates a run). ``cross_check`` is an optional second signature
+    never terminates a run) AND for any gate that is a member of a
+    :class:`MultiGate` (its pacing comes from the group's ``deadline_turns``,
+    not a per-gate limit). ``cross_check`` is an optional second signature
     logged for diagnostics; it never decides anything.
     """
 
@@ -54,16 +56,47 @@ class Checkpoint:
 
 
 @dataclass
+class MultiGate:
+    """A set of gates completable in ANY order, paced by a list of deadlines.
+
+    The gates inside have no individual ``deadline_turn``; instead the group
+    carries ``deadline_turns`` — a progressive pace ladder where the *k*-th
+    completion among the members must occur by ``deadline_turns[k-1]``. So
+    ``[875, 960]`` over two gates means: at least one of the two done by turn
+    875, both done by turn 960. A ``None`` entry makes that completion-count
+    observed-only (no deadline). ``len(deadline_turns) == len(gates)``.
+
+    ``id``/``name`` are synthetic group identifiers (derived from the members
+    unless authored). The group is one *rung* of the ladder for scoring; its
+    members are still latched individually by the referee.
+    """
+
+    id: str
+    name: str
+    gates: list[Checkpoint]
+    deadline_turns: list[Optional[int]]
+
+
+# A ladder node is either a single gate or an any-order multigate.
+Node = Union[Checkpoint, MultiGate]
+
+
+@dataclass
 class CheckpointLadder:
     """The full ladder plus its benchmark metadata.
 
-    ``checkpoints`` preserves the order written in the YAML.
+    ``nodes`` is the ladder as authored: an ordered mix of single
+    :class:`Checkpoint` rungs and :class:`MultiGate` rungs. ``checkpoints`` is
+    the flattened, ordered list of every individual gate (multigate members
+    expanded in place) — what the referee's per-gate latch iterates. Both
+    preserve YAML order.
     """
 
     benchmark_version: str
     game: str
     rom_sha1: dict[str, str]
     checkpoints: list[Checkpoint] = field(default_factory=list)
+    nodes: list[Node] = field(default_factory=list)
 
 
 def _parse_int_or_hex(value: Any, *, field_name: str, ctx: str) -> int:
@@ -180,6 +213,83 @@ def _parse_checkpoint(raw: Any, *, index: int) -> Checkpoint:
     )
 
 
+def _parse_multigate(raw: Any, *, index: int) -> MultiGate:
+    """Parse a ``multigate`` ladder item (any-order set + progressive deadlines).
+
+    Shape::
+
+        - multigate:
+            id: optional-group-id            # synthesised from members if absent
+            name: optional display name
+            deadline_turns: [875, 960]        # one per required completion
+            gates:
+              - {id, name, type, signature, cross_check?}   # NO deadline_turn
+
+    Validation: ``gates`` non-empty list of valid checkpoints; ``deadline_turns``
+    a list (int or null per element) of the SAME length as ``gates``; its
+    non-null entries strictly increasing; members carry no ``deadline_turn``.
+    """
+    block = raw["multigate"]
+    if not isinstance(block, dict):
+        raise ValueError(
+            f"checkpoint #{index}: 'multigate' must be a mapping, "
+            f"got {type(block).__name__}"
+        )
+
+    raw_gates = block.get("gates")
+    if not isinstance(raw_gates, list) or not raw_gates:
+        raise ValueError(
+            f"checkpoint #{index}: multigate 'gates' must be a non-empty list"
+        )
+
+    gates: list[Checkpoint] = []
+    for j, g in enumerate(raw_gates):
+        if isinstance(g, dict) and "deadline_turn" in g:
+            raise ValueError(
+                f"checkpoint #{index}: multigate member #{j} {g.get('id')!r} must "
+                "not set 'deadline_turn' — pacing comes from the group's "
+                "'deadline_turns'"
+            )
+        gates.append(_parse_checkpoint(g, index=j))
+
+    member_ids = [g.id for g in gates]
+    gid = block.get("id") or "+".join(member_ids)
+    if not isinstance(gid, str) or not gid:
+        raise ValueError(f"checkpoint #{index}: multigate 'id' must be a string")
+    name = block.get("name") or (" / ".join(g.name for g in gates) + " (any order)")
+
+    deadlines = block.get("deadline_turns")
+    if not isinstance(deadlines, list) or not deadlines:
+        raise ValueError(
+            f"multigate {gid!r}: 'deadline_turns' must be a non-empty list"
+        )
+    if len(deadlines) != len(gates):
+        raise ValueError(
+            f"multigate {gid!r}: 'deadline_turns' has {len(deadlines)} entries but "
+            f"there are {len(gates)} gates — need one deadline per required "
+            "completion (use null for an observed-only completion-count)"
+        )
+    norm_deadlines: list[Optional[int]] = []
+    for d in deadlines:
+        if d is None:
+            norm_deadlines.append(None)
+        elif isinstance(d, int) and not isinstance(d, bool):
+            norm_deadlines.append(d)
+        else:
+            raise ValueError(
+                f"multigate {gid!r}: deadline_turns entries must be int or null, "
+                f"got {d!r}"
+            )
+    ints = [d for d in norm_deadlines if d is not None]
+    if any(b <= a for a, b in zip(ints, ints[1:])):
+        raise ValueError(
+            f"multigate {gid!r}: deadline_turns must be strictly increasing, "
+            f"got {norm_deadlines}"
+        )
+
+    return MultiGate(id=gid, name=name, gates=gates, deadline_turns=norm_deadlines)
+
+
 def load_ladder(path: Union[str, Path]) -> CheckpointLadder:
     """Load + validate the full checkpoint ladder (metadata + checkpoints).
 
@@ -224,22 +334,37 @@ def load_ladder(path: Union[str, Path]) -> CheckpointLadder:
             f"{config_path.name}: 'checkpoints' must be a non-empty list"
         )
 
+    nodes: list[Node] = []
     checkpoints: list[Checkpoint] = []
     seen_ids: set[str] = set()
-    for i, raw in enumerate(raw_checkpoints):
-        cp = _parse_checkpoint(raw, index=i)
-        if cp.id in seen_ids:
+
+    def _claim(cp_id: str, *, kind: str) -> None:
+        if cp_id in seen_ids:
             raise ValueError(
-                f"{config_path.name}: duplicate checkpoint id {cp.id!r}"
+                f"{config_path.name}: duplicate {kind} id {cp_id!r}"
             )
-        seen_ids.add(cp.id)
-        checkpoints.append(cp)
+        seen_ids.add(cp_id)
+
+    for i, raw in enumerate(raw_checkpoints):
+        if isinstance(raw, dict) and "multigate" in raw:
+            mg = _parse_multigate(raw, index=i)
+            _claim(mg.id, kind="multigate")
+            for member in mg.gates:
+                _claim(member.id, kind="checkpoint")
+                checkpoints.append(member)
+            nodes.append(mg)
+        else:
+            cp = _parse_checkpoint(raw, index=i)
+            _claim(cp.id, kind="checkpoint")
+            checkpoints.append(cp)
+            nodes.append(cp)
 
     return CheckpointLadder(
         benchmark_version=benchmark_version,
         game=game,
         rom_sha1=rom_sha1,
         checkpoints=checkpoints,
+        nodes=nodes,
     )
 
 

@@ -764,19 +764,44 @@ def _render_referee_html(summary: dict) -> str:
         "skipped": '<span class="ref-st skipped">✗ skipped</span>',
         "pending": '<span class="ref-st pending">·</span>',
         "failed": '<span class="ref-st failed">✗ failed</span>',
+        "partial": '<span class="ref-st skipped">◐ partial</span>',
     }
+
+    def _turn_str(t):
+        return f"T{t}" if t is not None else "—"
+
     rows = []
     for g in gates:
         # The gate that tripped enforcement is shown as "failed" (not "pending",
         # which it shares with the never-reached gates after it).
         status = "failed" if g["id"] == failed_id else g["status"]
-        turn_str = f"T{g['turn']}" if g["turn"] is not None else "—"
+        if g.get("kind") == "multigate":
+            # Group row: the any-order set, its progressive pace ladder, and how
+            # many members were completed; then each member as an indented sub-row.
+            pace = " / ".join(
+                f"T{d}" if d is not None else "—" for d in g["deadline_turns"]
+            )
+            reached = f'{g["completed_count"]}/{g["required_count"]}'
+            rows.append(
+                f'<tr class="ref-row {status}">'
+                f'<td>{_escape(g["name"])}</td>'
+                f'<td>{status_cell.get(status, status)}</td>'
+                f"<td>{reached}</td><td>{pace}</td></tr>"
+            )
+            for m in g["members"]:
+                rows.append(
+                    f'<tr class="ref-row {m["status"]}">'
+                    f'<td style="padding-left:18px">↳ {_escape(m["name"])}</td>'
+                    f'<td>{status_cell.get(m["status"], m["status"])}</td>'
+                    f"<td>{_turn_str(m['turn'])}</td><td>—</td></tr>"
+                )
+            continue
         limit_str = f"T{g['deadline_turn']}" if g["deadline_turn"] is not None else "—"
         rows.append(
             f'<tr class="ref-row {status}">'
             f'<td>{_escape(g["name"])}</td>'
             f'<td>{status_cell.get(status, status)}</td>'
-            f"<td>{turn_str}</td><td>{limit_str}</td></tr>"
+            f"<td>{_turn_str(g['turn'])}</td><td>{limit_str}</td></tr>"
         )
 
     auto_note = ""

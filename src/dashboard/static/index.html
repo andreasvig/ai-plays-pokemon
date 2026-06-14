@@ -666,6 +666,12 @@ function refereeFmtDeadline(d) {
   return (d === null || d === undefined) ? '—' : 'T' + d;
 }
 
+// Members of a multigate carry a `group` (its display name); flag them as
+// any-order so two consecutive same-deadline gates don't read as a strict pair.
+function refereeLabel(cp) {
+  return cp.group ? cp.name + ' (any order)' : cp.name;
+}
+
 function renderReferee() {
   const hud = document.getElementById('referee-hud');
   if (!referee.ladder || !referee.ladder.length) {
@@ -690,7 +696,7 @@ function renderReferee() {
     } else if (next.deadline_turn === null || next.deadline_turn === undefined) {
       // Only null-deadline gates (the un-enforced tail) are pure "observed".
       strip.className = 'referee-strip observed';
-      strip.textContent = `Next gate: ${next.name} — observed only`;
+      strip.textContent = `Next gate: ${refereeLabel(next)} — observed only`;
     } else {
       // A numeric limit always shows the countdown — even in observe mode
       // (enforce=false), where it's a pace indicator that doesn't terminate.
@@ -713,7 +719,7 @@ function renderReferee() {
       strip.className = 'referee-strip ' + cls;
       const tag = referee.enforce ? '' : ' · observe';
       strip.textContent =
-        `Next gate: ${next.name} — ${left} turns left (limit T${next.deadline_turn}, now T${now})${tag}`;
+        `Next gate: ${refereeLabel(next)} — ${left} turns left (limit T${next.deadline_turn}, now T${now})${tag}`;
     }
   }
 
@@ -748,7 +754,7 @@ function renderRefereePanel() {
   if (completed.length) {
     for (const cp of completed) {
       rows.push(
-        `<tr class="referee-trow done"><td>✓ ${esc(cp.name)}</td>` +
+        `<tr class="referee-trow done"><td>✓ ${esc(refereeLabel(cp))}</td>` +
         `<td>T${referee.stamps[cp.id]}</td><td>${fmtLimit(cp)}</td></tr>`);
     }
   } else { rows.push(empty('—')); }
@@ -767,7 +773,7 @@ function renderRefereePanel() {
       turnsCell = `${current.deadline_turn - now} left (now T${now})`;
     }
     rows.push(
-      `<tr class="referee-trow current"><td>▶ ${esc(current.name)}</td>` +
+      `<tr class="referee-trow current"><td>▶ ${esc(refereeLabel(current))}</td>` +
       `<td>${turnsCell}</td><td>${fmtLimit(current)}</td></tr>`);
   } else { rows.push(empty('all gates cleared')); }
 
@@ -776,7 +782,7 @@ function renderRefereePanel() {
   if (upcoming.length) {
     for (const cp of upcoming) {
       rows.push(
-        `<tr class="referee-trow"><td>${esc(cp.name)}</td><td></td><td>${fmtLimit(cp)}</td></tr>`);
+        `<tr class="referee-trow"><td>${esc(refereeLabel(cp))}</td><td></td><td>${fmtLimit(cp)}</td></tr>`);
     }
   } else { rows.push(empty('—')); }
 

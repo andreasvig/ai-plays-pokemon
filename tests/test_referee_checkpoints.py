@@ -14,6 +14,7 @@ import pytest
 from src.referee.checkpoints import (
     Checkpoint,
     CheckpointLadder,
+    MultiGate,
     load_checkpoints,
     load_ladder,
 )
@@ -23,23 +24,13 @@ REAL_LADDER = REPO_ROOT / "configs" / "checkpoints-firered-v1.yaml"
 
 
 # --- real ladder ----------------------------------------------------------
+#
+# These assert DURABLE STRUCTURE (gate ids, order, types, monotonic pace),
+# NOT the exact deadline numbers — those are tuned by hand against real runs
+# (the whole point of calibration), so pinning them just guarantees churn.
 
-# The 10 enforced gates (bedroom -> viridian_forest) with their exact deadlines.
-ENFORCED_DEADLINES = {
-    "left_bedroom": 30,
-    "left_house": 50,
-    "oaks_lab_entered": 100,
-    "starter_chosen": 120,
-    "rival1_done": 150,
-    "route1_reached": 180,
-    "viridian_reached": 230,
-    "parcel_delivered": 260,
-    "pokedex_received": 310,
-    "viridian_forest_reached": 370,
-}
-
-# The 3 Pewter gates that stay observed-only (null deadline).
-NULL_GATES = {"pewter_reached", "pewter_gym_entered", "brock_defeated"}
+# The Misty + Bill's-errand any-order rung.
+MULTIGATE_MEMBERS = ["cascade_badge", "bills_errand_reached"]
 
 
 def test_real_ladder_loads_metadata():
@@ -51,12 +42,11 @@ def test_real_ladder_loads_metadata():
     assert ladder.rom_sha1["v1_1"] == "dd5945db9b930750cb39d00c84da8571feebf417"
 
 
-def test_real_ladder_has_13_checkpoints_in_order():
+def test_real_ladder_progression_order():
+    """The full Pallet -> Lt. Surge progression, flattened, in order."""
     cps = load_checkpoints(REAL_LADDER)
-    assert len(cps) == 13
     assert cps[0].id == "left_bedroom"
-    assert cps[-1].id == "brock_defeated"
-    # Full order preserved as written.
+    assert cps[-1].id == "thunder_badge"
     expected_order = [
         "left_bedroom",
         "left_house",
@@ -69,24 +59,45 @@ def test_real_ladder_has_13_checkpoints_in_order():
         "pokedex_received",
         "viridian_forest_reached",
         "pewter_reached",
-        "pewter_gym_entered",
         "brock_defeated",
+        "route3_reached",
+        "mt_moon_entered",
+        "mt_moon_cleared",
+        "cerulean_reached",
+        "cascade_badge",
+        "bills_errand_reached",
+        "vermilion_reached",
+        "ss_anne_boarded",
+        "thunder_badge",
     ]
     assert [c.id for c in cps] == expected_order
 
 
-def test_real_ladder_enforced_deadlines_exact():
-    cps = {c.id: c for c in load_checkpoints(REAL_LADDER)}
-    for cp_id, deadline in ENFORCED_DEADLINES.items():
-        assert isinstance(cps[cp_id].deadline_turn, int), cp_id
-        assert not isinstance(cps[cp_id].deadline_turn, bool), cp_id
-        assert cps[cp_id].deadline_turn == deadline, cp_id
+def test_real_ladder_has_one_multigate_for_misty_and_bill():
+    nodes = load_ladder(REAL_LADDER).nodes
+    multigates = [n for n in nodes if isinstance(n, MultiGate)]
+    assert len(multigates) == 1
+    mg = multigates[0]
+    assert [g.id for g in mg.gates] == MULTIGATE_MEMBERS
+    # Two members -> two progressive deadlines, strictly increasing ints.
+    assert len(mg.deadline_turns) == len(mg.gates)
+    ints = [d for d in mg.deadline_turns if d is not None]
+    assert all(isinstance(d, int) and not isinstance(d, bool) for d in ints)
+    assert ints == sorted(set(ints))
 
 
-def test_real_ladder_pewter_gates_are_null():
-    cps = {c.id: c for c in load_checkpoints(REAL_LADDER)}
-    for cp_id in NULL_GATES:
-        assert cps[cp_id].deadline_turn is None, cp_id
+def test_real_ladder_enforced_gates_are_ints_and_monotonic():
+    """Every single gate is an enforced int deadline, non-decreasing in order."""
+    cps = load_checkpoints(REAL_LADDER)
+    members = set(MULTIGATE_MEMBERS)
+    prev = 0
+    for cp in cps:
+        if cp.id in members:
+            continue  # paced by the group's deadline_turns, not a per-gate limit
+        assert isinstance(cp.deadline_turn, int), cp.id
+        assert not isinstance(cp.deadline_turn, bool), cp.id
+        assert cp.deadline_turn >= prev, cp.id
+        prev = cp.deadline_turn
 
 
 def test_real_ladder_flag_id_hex_parses_to_int():

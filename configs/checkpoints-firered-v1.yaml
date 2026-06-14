@@ -18,7 +18,7 @@ checkpoints:
     name: "Left the bedroom"
     type: map
     signature: {map_group: 4, map_num: 0}        # Player's House 1F
-    deadline_turn: 30
+    deadline_turn: 25
 
   - id: left_house
     name: "Stepped outside in Pallet Town"
@@ -31,67 +31,123 @@ checkpoints:
     type: map
     signature: {map_group: 4, map_num: 3}
     cross_check: {type: flag, flag_id: 0x2CF}     # FLAG_VISITED_OAKS_LAB
-    deadline_turn: 100                            # Andreas's original anchor (Oak encounter)
+    deadline_turn: 75                            # Andreas's original anchor (Oak encounter)
 
   - id: starter_chosen
     name: "Chose a starter"
     type: flag
     signature: {flag_id: 0x828}                   # FLAG_SYS_POKEMON_GET
     cross_check: {type: party, min_count: 1}
-    deadline_turn: 120
+    deadline_turn: 100
 
   - id: rival1_done
     name: "First rival battle done"               # scene-complete, win or lose (no victory flag exists)
     type: flag
     signature: {flag_id: 0x258}                   # FLAG_BEAT_RIVAL_IN_OAKS_LAB
-    deadline_turn: 150
+    deadline_turn: 125
 
   - id: route1_reached
     name: "Reached Route 1"
     type: map
     signature: {map_group: 3, map_num: 19}
-    deadline_turn: 180
+    deadline_turn: 150
 
   - id: viridian_reached
     name: "Reached Viridian City"
     type: map
     signature: {map_group: 3, map_num: 1}
-    deadline_turn: 230                            # Route 1 traversal + encounters
+    deadline_turn: 200                            # Route 1 traversal + encounters
 
   - id: parcel_delivered
     name: "Delivered Oak's Parcel"
     type: var
     signature: {var_id: 0x4057, min_value: 2}     # VAR_MAP_SCENE_VIRIDIAN_CITY_MART
-    deadline_turn: 260
+    deadline_turn: 250
 
   - id: pokedex_received
     name: "Received the Pokédex"
     type: flag
     signature: {flag_id: 0x829}                   # FLAG_SYS_POKEDEX_GET
     cross_check: {type: var, var_id: 0x4055, min_value: 6}
-    deadline_turn: 310                            # backtrack Viridian -> Pallet lab
+    deadline_turn: 300                            # backtrack Viridian -> Pallet lab
 
   - id: viridian_forest_reached
     name: "Entered Viridian Forest"
     type: map
     signature: {map_group: 1, map_num: 0}
-    deadline_turn: 370                            # north again: Viridian + Route 2 — v1 enforcement ends here
+    deadline_turn: 350                            # north again: Viridian + Route 2
 
   - id: pewter_reached
     name: "Reached Pewter City"
     type: map
     signature: {map_group: 3, map_num: 2}
-    deadline_turn: null
-
-  - id: pewter_gym_entered
-    name: "Entered Pewter Gym"
-    type: map
-    signature: {map_group: 6, map_num: 2}
-    deadline_turn: null
+    deadline_turn: 400
 
   - id: brock_defeated
     name: "Defeated Brock (Boulder Badge)"
     type: flag
     signature: {flag_id: 0x820}                   # FLAG_BADGE01_GET
     cross_check: {type: flag, flag_id: 0x4B0}     # DEFEATED_BROCK (speedrun autosplitter's choice)
-    deadline_turn: null
+    deadline_turn: 500
+
+  # --- Brock -> Misty: east through Route 3 + Mt. Moon to Cerulean ---
+  - id: route3_reached
+    name: "Reached Route 3"
+    type: map
+    signature: {map_group: 3, map_num: 21}        # east out of Pewter
+    deadline_turn: 550
+
+  - id: mt_moon_entered
+    name: "Entered Mt. Moon"
+    type: map
+    signature: {map_group: 1, map_num: 1}         # MtMoon_1F (B1F/B2F are transient — not gated)
+    deadline_turn: 600                            # long trainer route 3 first
+
+  - id: mt_moon_cleared
+    name: "Cleared Mt. Moon (reached Route 4)"
+    type: map
+    signature: {map_group: 3, map_num: 22}        # Route 4 = the west exit of Mt. Moon
+    cross_check: {type: flag, flag_id: 0x232}     # FLAG_GOT_FOSSIL_FROM_MT_MOON (must pass the Super Nerd)
+    deadline_turn: 700                           # 3-floor maze + Rocket fights
+
+  - id: cerulean_reached
+    name: "Reached Cerulean City"
+    type: map
+    signature: {map_group: 3, map_num: 3}
+    deadline_turn: 700
+
+  # --- Misty + Bill's errand: ANY ORDER ---
+  # Nugget Bridge opens the moment you reach Cerulean, so the agent may beat
+  # Misty first OR fetch Bill's S.S. Ticket first. Progressive pace: the FIRST
+  # of the two done by T875, BOTH done by T960 (multigate deadline_turns).
+  - multigate:
+      deadline_turns: [800, 900]
+      gates:
+        - id: cascade_badge
+          name: "Defeated Misty (Cascade Badge)"
+          type: flag
+          signature: {flag_id: 0x821}                 # FLAG_BADGE02_GET
+          cross_check: {type: flag, flag_id: 0x4B1}   # FLAG_DEFEATED_MISTY
+        - id: bills_errand_reached
+          name: "Reached Route 25 (Bill's house)"     # north over Nugget Bridge — the S.S. Ticket is here
+          type: map
+          signature: {map_group: 3, map_num: 44}      # Route 25
+
+  - id: vermilion_reached
+    name: "Reached Vermilion City"
+    type: map
+    signature: {map_group: 3, map_num: 5}         # back south via Route 5 / underground path / Route 6
+    deadline_turn: 1000
+
+  - id: ss_anne_boarded
+    name: "Boarded the S.S. Anne"
+    type: map
+    signature: {map_group: 1, map_num: 4}         # SSAnne_Exterior (Cut is obtained from the captain inside)
+    deadline_turn: 1100
+
+  - id: thunder_badge
+    name: "Defeated Lt. Surge (Thunder Badge)"   # implies Cut obtained — the gym is gated by a cuttable tree
+    type: flag
+    signature: {flag_id: 0x822}                   # FLAG_BADGE03_GET
+    cross_check: {type: flag, flag_id: 0x4B2}     # FLAG_DEFEATED_LT_SURGE
+    deadline_turn: 1200                           # S.S. Anne nav + Cut + trash-can puzzle + Surge

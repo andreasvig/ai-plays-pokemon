@@ -670,12 +670,12 @@ class TurnManager:
         self.referee = None
         referee_cfg = self.config.get("referee")
         if referee_cfg:
-            from src.referee.checkpoints import load_checkpoints
+            from src.referee.checkpoints import load_ladder
             from src.referee.referee import Referee
 
-            checkpoints = load_checkpoints(referee_cfg["checkpoints"])
+            ladder = load_ladder(referee_cfg["checkpoints"])
             self.referee = Referee(
-                checkpoints=checkpoints,
+                nodes=ladder.nodes,
                 emulator=emulator,
                 logger=logger,
                 run_dir=logger.run_dir,

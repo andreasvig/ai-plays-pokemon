@@ -34,7 +34,7 @@ import struct
 from pathlib import Path
 from typing import Any, Optional
 
-from src.referee.checkpoints import Checkpoint
+from src.referee.checkpoints import Checkpoint, MultiGate, Node
 
 # --- Verified address constants (FireRed BPRE-US v1.0 == v1.1) -----------------
 GSAVEBLOCK1_PTR = 0x03005008
@@ -77,13 +77,27 @@ class Referee:
 
     def __init__(
         self,
-        checkpoints: list[Checkpoint],
+        nodes: list[Node],
         emulator: Any,
         logger: Any,
         run_dir: Any,
         enforce: bool = False,
     ) -> None:
-        self.checkpoints: list[Checkpoint] = list(checkpoints)
+        # ``nodes`` is the ladder as authored: an ordered mix of single
+        # Checkpoint rungs and MultiGate (any-order) rungs. A plain list of
+        # Checkpoints (no multigates) is accepted unchanged — every element is
+        # then a single-gate node, and all pacing/scoring below is identical to
+        # the pre-multigate referee.
+        self.nodes: list[Node] = list(nodes)
+        # Flattened, ladder-ordered list of every individual gate (multigate
+        # members expanded in place). The per-gate latch iterates THIS; the
+        # multigate structure only affects pacing + scoring.
+        self.checkpoints: list[Checkpoint] = []
+        for node in self.nodes:
+            if isinstance(node, MultiGate):
+                self.checkpoints.extend(node.gates)
+            else:
+                self.checkpoints.append(node)
         self._by_id: dict[str, Checkpoint] = {cp.id: cp for cp in self.checkpoints}
         self.emulator = emulator
         self.logger = logger
@@ -257,54 +271,114 @@ class Referee:
             },
         )
 
-    def _backfill_skipped(self, turn_number: int) -> bool:
-        """Back-fill earlier unstamped gates implied by a deeper stamped gate.
+    # --- node helpers (a node is a single Checkpoint or a MultiGate) ----------
 
-        Returns True if anything was back-filled. A gate is credited only when
-        ``turn_number`` is still within its deadline (or it has no deadline);
-        an earlier gate already past its limit is left unstamped (a genuine
-        missed-pace gate, surfaced as a skip in the scorecard).
+    def _node_completed_count(self, node: Node) -> int:
+        """How many of a node's gates are stamped (0/1 for a single)."""
+        if isinstance(node, MultiGate):
+            return sum(1 for g in node.gates if g.id in self.stamps)
+        return 1 if node.id in self.stamps else 0
+
+    def _node_reached(self, node: Node) -> bool:
+        """True once the run is at-or-past this node (any member for a group)."""
+        if isinstance(node, MultiGate):
+            return any(g.id in self.stamps for g in node.gates)
+        return node.id in self.stamps
+
+    def _node_complete(self, node: Node) -> bool:
+        """True when a node is fully satisfied (ALL members for a group)."""
+        if isinstance(node, MultiGate):
+            return all(g.id in self.stamps for g in node.gates)
+        return node.id in self.stamps
+
+    def _furthest_reached_node_idx(self) -> int:
+        """Index of the deepest node the run has reached, or -1."""
+        furthest = -1
+        for i, node in enumerate(self.nodes):
+            if self._node_reached(node):
+                furthest = i
+        return furthest
+
+    def _backfill_skipped(self, turn_number: int) -> bool:
+        """Back-fill earlier unstamped SINGLE gates implied by a deeper node.
+
+        Returns True if anything was back-filled. A single gate is credited only
+        when ``turn_number`` is still within its deadline (or it has no
+        deadline); an earlier gate already past its limit is left unstamped (a
+        genuine missed-pace gate, surfaced as a skip in the scorecard).
+
+        Multigate members are NEVER back-filled: the set is any-order, so being
+        "deeper" in the ladder does not imply a specific member was completed
+        (e.g. reaching Vermilion does not prove Misty was beaten). Members are
+        latched only by direct detection — and the realistically-missable ones
+        are flags, which are sticky and caught on the next poll regardless.
         """
-        furthest_idx = -1
-        for i, cp in enumerate(self.checkpoints):
-            if cp.id in self.stamps:
-                furthest_idx = i
+        furthest_idx = self._furthest_reached_node_idx()
         if furthest_idx < 0:
             return False
 
         filled = False
-        for cp in self.checkpoints[:furthest_idx]:
-            if cp.id in self.stamps:
+        for node in self.nodes[:furthest_idx]:
+            if isinstance(node, MultiGate):
+                continue  # never back-fill into an any-order group
+            if node.id in self.stamps:
                 continue
-            within = cp.deadline_turn is None or turn_number <= cp.deadline_turn
+            within = node.deadline_turn is None or turn_number <= node.deadline_turn
             if within:
-                self._stamp(cp, turn_number, auto=True)
+                self._stamp(node, turn_number, auto=True)
                 filled = True
         return filled
 
     def _check_deadlines(self, turn_number: int) -> None:
         """Latch ``terminated_reason`` if a deadline gate is missed.
 
-        Evaluated as ``turn_number >= deadline_turn`` with the gate still
-        unstamped after this poll's stamping. The FIRST (lowest ladder-order)
-        missed gate wins. Idempotent: once latched, never re-evaluated.
+        For a single gate: ``turn_number >= deadline_turn`` with the gate still
+        unstamped after this poll's stamping. For a multigate: the *k*-th
+        completion deadline ``deadline_turns[k-1]`` is missed when, at that turn,
+        fewer than *k* members are stamped (any order). The FIRST (lowest
+        ladder-order) missed gate wins. Idempotent: once latched, never
+        re-evaluated.
         """
         if self.terminated_reason is not None:
             return
-        for cp in self.checkpoints:
-            if cp.deadline_turn is None:
+        for node in self.nodes:
+            if isinstance(node, MultiGate):
+                completed = self._node_completed_count(node)
+                for k, dl in enumerate(node.deadline_turns, start=1):
+                    if dl is None:
+                        continue  # observed-only completion-count
+                    if completed >= k:
+                        continue  # the k-th completion already happened in time
+                    if turn_number >= dl:
+                        self.terminated_reason = f"missed_gate:{node.id}"
+                        self.logger.log_event(
+                            "referee_gate_missed",
+                            {
+                                "checkpoint_id": node.id,
+                                "name": node.name,
+                                "checkpoint_type": "multigate",
+                                "deadline_turn": dl,
+                                "needed": k,
+                                "completed": completed,
+                                "turn": turn_number,
+                            },
+                        )
+                        return
+                continue
+            # single gate
+            if node.deadline_turn is None:
                 continue  # observed-only gate — never terminates
-            if cp.id in self.stamps:
+            if node.id in self.stamps:
                 continue  # satisfied (possibly out of order / early) — pre-met
-            if turn_number >= cp.deadline_turn:
-                self.terminated_reason = f"missed_gate:{cp.id}"
+            if turn_number >= node.deadline_turn:
+                self.terminated_reason = f"missed_gate:{node.id}"
                 self.logger.log_event(
                     "referee_gate_missed",
                     {
-                        "checkpoint_id": cp.id,
-                        "name": cp.name,
-                        "checkpoint_type": cp.type,
-                        "deadline_turn": cp.deadline_turn,
+                        "checkpoint_id": node.id,
+                        "name": node.name,
+                        "checkpoint_type": node.type,
+                        "deadline_turn": node.deadline_turn,
                         "turn": turn_number,
                     },
                 )
@@ -337,51 +411,110 @@ class Referee:
 
     # --- scorecard ------------------------------------------------------------
 
-    def scorecard(self) -> dict:
-        """Per-checkpoint first-seen turn, deepest stamped rung, termination.
+    def _gate_status(self, cp: Checkpoint) -> str:
+        """done / auto for a stamped gate (used for single nodes + members)."""
+        return "auto" if cp.id in self.autofilled else "done"
 
-        ``furthest`` is the id of the deepest stamped checkpoint in LADDER
-        ORDER (not first-seen order) — stamps can land out of order.
-        ``termination_reason`` is ``"missed_gate:<id>"`` when enforcement
-        terminated the run on a missed deadline, else ``None`` (observe-only
-        runs, or enforced runs that hit no missed gate).
+    def scorecard(self) -> dict:
+        """Per-gate first-seen turns, deepest reached rung, termination.
+
+        ``gates`` is NODE-oriented: each entry is one rung of the ladder, tagged
+        ``kind`` = ``"single"`` or ``"multigate"``. A single rung carries the
+        familiar ``{id, name, type, deadline_turn, turn, status}``; a multigate
+        rung carries ``{deadline_turns, members:[...], completed_count,
+        required_count, status, deadline_turn}`` (its ``deadline_turn`` is the
+        final group deadline, for display). ``furthest``/``first_unmet`` are
+        NODE ids. ``termination_reason`` is ``"missed_gate:<node-id>"`` when
+        enforcement terminated the run, else ``None``.
         """
         per_checkpoint: dict[str, Optional[int]] = {
             cp.id: self.stamps.get(cp.id) for cp in self.checkpoints
         }
-        furthest_idx = -1
-        for i, cp in enumerate(self.checkpoints):
-            if cp.id in self.stamps:
-                furthest_idx = i
-        furthest = self.checkpoints[furthest_idx].id if furthest_idx >= 0 else None
+        furthest_idx = self._furthest_reached_node_idx()
+        furthest = self.nodes[furthest_idx].id if furthest_idx >= 0 else None
 
-        # Per-gate status for the report:
-        #   done    — detected directly
-        #   auto    — back-filled by the safety net (credited via a later gate)
-        #   skipped — unstamped but a deeper gate is stamped (missed its pace)
-        #   pending — not reached (at/after the furthest stamped gate)
-        gates = []
+        # Per-rung status for the report:
+        #   done    — fully satisfied (single stamped / all members stamped)
+        #   auto    — single back-filled by the safety net
+        #   partial — multigate with some but not all members stamped (and the
+        #             run hasn't moved past it)
+        #   skipped — unstamped/incomplete but a deeper rung was reached
+        #   pending — not reached (at/after the furthest reached rung)
+        gates: list[dict] = []
         first_unmet: Optional[str] = None
-        for i, cp in enumerate(self.checkpoints):
-            turn = self.stamps.get(cp.id)
-            if turn is not None:
-                status = "auto" if cp.id in self.autofilled else "done"
-            elif i < furthest_idx:
-                status = "skipped"
+        for i, node in enumerate(self.nodes):
+            if first_unmet is None and not self._node_complete(node):
+                first_unmet = node.id
+
+            if isinstance(node, MultiGate):
+                members = [
+                    {
+                        "id": g.id,
+                        "name": g.name,
+                        "type": g.type,
+                        "turn": self.stamps.get(g.id),
+                        "status": (
+                            self._gate_status(g)
+                            if g.id in self.stamps
+                            else "pending"
+                        ),
+                    }
+                    for g in node.gates
+                ]
+                completed = self._node_completed_count(node)
+                required = len(node.gates)
+                final_deadline = next(
+                    (d for d in reversed(node.deadline_turns) if d is not None),
+                    None,
+                )
+                if completed >= required:
+                    status = "done"
+                    turn = max(
+                        (self.stamps[g.id] for g in node.gates), default=None
+                    )
+                elif i < furthest_idx:
+                    status = "skipped"
+                    turn = None
+                elif completed > 0:
+                    status = "partial"
+                    turn = None
+                else:
+                    status = "pending"
+                    turn = None
+                gates.append(
+                    {
+                        "kind": "multigate",
+                        "id": node.id,
+                        "name": node.name,
+                        "type": "multigate",
+                        "deadline_turns": list(node.deadline_turns),
+                        "deadline_turn": final_deadline,
+                        "members": members,
+                        "completed_count": completed,
+                        "required_count": required,
+                        "turn": turn,
+                        "status": status,
+                    }
+                )
             else:
-                status = "pending"
-            if turn is None and first_unmet is None:
-                first_unmet = cp.id
-            gates.append(
-                {
-                    "id": cp.id,
-                    "name": cp.name,
-                    "type": cp.type,
-                    "deadline_turn": cp.deadline_turn,
-                    "turn": turn,
-                    "status": status,
-                }
-            )
+                turn = self.stamps.get(node.id)
+                if turn is not None:
+                    status = self._gate_status(node)
+                elif i < furthest_idx:
+                    status = "skipped"
+                else:
+                    status = "pending"
+                gates.append(
+                    {
+                        "kind": "single",
+                        "id": node.id,
+                        "name": node.name,
+                        "type": node.type,
+                        "deadline_turn": node.deadline_turn,
+                        "turn": turn,
+                        "status": status,
+                    }
+                )
 
         return {
             "checkpoints": per_checkpoint,
