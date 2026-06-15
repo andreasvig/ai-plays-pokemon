@@ -27,7 +27,7 @@ from typing import Any, Optional
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from src.dashboard.event_bridge import EventBridge
 from src.dashboard.screen_stream import ScreenStreamer
@@ -156,7 +156,51 @@ async def index_page():
 
 
 @app.get("/api/runs")
-async def api_runs():
+async def api_runs(
+    kind: str | None = None,
+    status: str | None = None,
+    q: str | None = None,
+    sort: str = "recent",
+    order: str = "desc",
+):
+    """Run list.
+
+    When the control plane is configured (``pokemon app``), this is the HISTORY
+    view: filtered + sorted flat RunSummary projections from the index (Plan §P4).
+    When unconfigured (the headless ``pokemon run`` path), it falls back to the
+    legacy listing of LIVE-registered runs — backward compatible for callers that
+    predate the control plane.
+    """
+    index = _CONTROL["index"]
+    if index is not None:
+        from src.app import derivations
+        from src.app.models import RunKind, RunStatus
+
+        kind_enum = None
+        if kind:
+            try:
+                kind_enum = RunKind(kind)
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"invalid kind: {kind!r}")
+        status_enum = None
+        if status:
+            try:
+                status_enum = RunStatus(status)
+            except ValueError:
+                raise HTTPException(
+                    status_code=400, detail=f"invalid status: {status!r}"
+                )
+
+        rows = derivations.history(
+            index.all(),
+            kind=kind_enum,
+            status=status_enum,
+            q=q,
+            sort=sort,
+            order=order,
+        )
+        return JSONResponse([s.model_dump(mode="json") for s in rows])
+
     sessions = sorted(_REGISTRY.all(), key=lambda s: s.registered_at)
     return JSONResponse([
         {
@@ -606,3 +650,102 @@ async def api_run_continue(run_id: str, body: dict | None = None):
         continue_from=spec["continue_from"],
     )
     return JSONResponse(item.model_dump(mode="json"), status_code=201)
+
+
+# ───────────────────────── read routes (Plan §P4) ─────────────────────────
+#
+# ADDITIVE read surface backing the SPA's leaderboard / history / report /
+# models / configs / emulator-status. Same style as the P3 control routes:
+# backed by the injected _CONTROL (queue/executor/index); 503 until configured —
+# EXCEPT /api/emulator/status, which returns an idle "configured: false" payload
+# rather than erroring when the control plane isn't wired (a useful Home signal
+# even on the headless `pokemon run` path).
+
+
+@app.get("/api/leaderboard")
+async def api_leaderboard():
+    """Official winners — best per model, gates desc then turns asc (locked #3)."""
+    from src.app import derivations
+
+    _queue, _executor, index = _require_control()
+    winners = derivations.leaderboard(index.all())
+    return JSONResponse([s.model_dump(mode="json") for s in winners])
+
+
+@app.get("/api/runs/{run_id}")
+async def api_run_get(run_id: str):
+    """One flat RunSummary; 404 if the index has no such run."""
+    _queue, _executor, index = _require_control()
+    entry = index.get(run_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
+    return JSONResponse(entry.model_dump(mode="json"))
+
+
+@app.get("/api/runs/{run_id}/report")
+async def api_run_report(run_id: str):
+    """Serve the run's ``report.html``; regenerate from events if missing/stale.
+
+    404 only when the run DIR doesn't exist. Regeneration mirrors
+    ``pokemon report``'s main(): load_events → group_events_by_turn →
+    generate_html → write ``run_dir/report.html`` → serve.
+    """
+    _queue, executor, _index = _require_control()
+    run_dir = Path(executor.runs_root) / run_id
+    if not run_dir.is_dir():
+        raise HTTPException(status_code=404, detail=f"run dir not found: {run_id}")
+
+    report_path = run_dir / "report.html"
+    if not report_path.exists():
+        from src.cli import report as report_mod
+
+        events = report_mod.load_events(run_dir)
+        turns = report_mod.group_events_by_turn(events)
+        html = report_mod.generate_html(run_dir, events, turns)
+        report_path.write_text(html)
+
+    return FileResponse(str(report_path), media_type="text/html")
+
+
+@app.get("/api/models")
+async def api_models():
+    """Aliases from ``models.yaml`` (+ observed cost/latency, or null)."""
+    from src.app.catalog import list_models
+
+    return JSONResponse(list_models())
+
+
+@app.get("/api/configs")
+async def api_configs():
+    """Casual config stems discovered from ``configs/config-*.yaml``."""
+    from src.app.catalog import list_configs
+
+    return JSONResponse(list_configs())
+
+
+@app.get("/api/emulator/status")
+async def api_emulator_status():
+    """Supervisor health (``process_up``/``connected``/``busy``).
+
+    Never 500/503 when the control plane isn't configured yet — returns an idle
+    ``configured: false`` payload so the Home spectate pill can render grey.
+    """
+    import dataclasses
+
+    executor = _CONTROL["executor"]
+    if executor is None or getattr(executor, "supervisor", None) is None:
+        return JSONResponse(
+            {"configured": False, "process_up": False, "connected": False, "busy": False}
+        )
+
+    status = executor.supervisor.status()
+    if dataclasses.is_dataclass(status) and not isinstance(status, type):
+        payload = dataclasses.asdict(status)
+    else:
+        payload = {
+            "process_up": getattr(status, "process_up", False),
+            "connected": getattr(status, "connected", False),
+            "busy": getattr(status, "busy", False),
+        }
+    payload["configured"] = True
+    return JSONResponse(payload)
