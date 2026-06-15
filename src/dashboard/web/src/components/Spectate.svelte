@@ -27,7 +27,7 @@
   let enforce = $state(false)
   let stamps = $state({})              // {checkpoint_id: turn} latched
   let currentTurn = $state(0)
-  let feed = $state([])                // [{turn, boxes:[...]}] oldest→newest
+  let feed = $state([])                // [{kind:'master'|'turn', ...}] chronological
   let eventCount = $state(0)
   let screenConnected = $state(false)
   let eventsConnected = $state(false)
@@ -37,6 +37,13 @@
 
   // per-turn box accumulation while streaming (turn → boxes[])
   let turnBoxes = new Map()
+  // master (TaskMaster) trace accumulation. The master trace for task N arrives
+  // BEFORE task_started{N}, which in turn arrives before that task's turns. So
+  // we buffer the raw trace + objective by task_index, then bind the resulting
+  // card to the FIRST turn of the task (the next turn_start after task_started).
+  let masterTraces = new Map()   // task_index → {model_used, cost_usd, input_images}
+  let masterCards = new Map()    // task_index → {taskIndex, firstTurn, model, cost, images, title, description, success}
+  let pendingTaskIndex = null    // task_index whose first turn we still need to bind
   let prevScreenUrl = null
 
   // ── derivations for the gate HUD ──
@@ -84,7 +91,32 @@
   }
   function rebuildFeed() {
     const turns = [...turnBoxes.keys()].sort((a, b) => a - b)
-    feed = turns.map((t) => ({ turn: t, boxes: turnBoxes.get(t) }))
+    // master cards keyed by the first turn of their task, rendered just BEFORE
+    // that turn's block (chronological / task order).
+    const mastersByTurn = new Map()
+    for (const c of masterCards.values()) {
+      if (c.firstTurn != null) mastersByTurn.set(c.firstTurn, c)
+    }
+    const out = []
+    for (const t of turns) {
+      const m = mastersByTurn.get(t)
+      if (m) out.push({ kind: 'master', id: 'm' + m.taskIndex, ...m })
+      out.push({ kind: 'turn', id: 't' + t, turn: t, boxes: turnBoxes.get(t) })
+    }
+    feed = out
+  }
+
+  // Build the master card once both halves are in: the trace (model/cost/images)
+  // and the objective the master set (title/description/success from task_started).
+  // Reconnect-safe: the WS replays the full backlog, so dedup by task_index and
+  // never overwrite a firstTurn that's already bound.
+  function buildMasterCard(taskIndex) {
+    const trace = masterTraces.get(taskIndex)
+    const card = masterCards.get(taskIndex)
+    if (!trace || !card) return
+    card.model = trace.model_used || ''
+    card.cost = trace.cost_usd
+    card.images = (trace.input_images || []).filter((im) => im && im.data_url)
   }
 
   // map one raw event → zero or more trace boxes (parity with static/index.html)
@@ -94,11 +126,47 @@
 
     if (t === 'turn_start') {
       if (typeof evt.turn === 'number') currentTurn = evt.turn
-      if (!turnBoxes.has(evt.turn)) { turnBoxes.set(evt.turn, []); rebuildFeed() }
+      if (!turnBoxes.has(evt.turn)) turnBoxes.set(evt.turn, [])
+      // bind the just-started task's master card to its first turn (once)
+      if (pendingTaskIndex != null) {
+        const card = masterCards.get(pendingTaskIndex)
+        if (card && card.firstTurn == null) card.firstTurn = evt.turn
+        pendingTaskIndex = null
+      }
+      rebuildFeed()
+      return
+    }
+    if (t === 'task_master_trace') {
+      // arrives BEFORE task_started{N}; buffer the trace half by task_index.
+      const idx = evt.task_index
+      masterTraces.set(idx, {
+        model_used: evt.model_used,
+        cost_usd: evt.cost_usd,
+        input_images: evt.input_images || [],
+      })
+      buildMasterCard(idx)
+      rebuildFeed()
       return
     }
     if (t === 'task_started') {
       task = { title: evt.title || '(untitled task)', description: evt.description || '', success: evt.success_criteria || '' }
+      // objective half of the master card; first turn bound on next turn_start.
+      const idx = evt.task_index
+      if (idx != null) {
+        if (!masterCards.has(idx)) {
+          masterCards.set(idx, {
+            taskIndex: idx, firstTurn: null,
+            model: '', cost: null, images: [],
+            title: task.title, description: task.description, success: task.success,
+          })
+        } else {
+          const c = masterCards.get(idx)
+          c.title = task.title; c.description = task.description; c.success = task.success
+        }
+        buildMasterCard(idx)
+        pendingTaskIndex = idx
+      }
+      rebuildFeed()
       return
     }
     if (t === 'task_completed') {
@@ -178,6 +246,9 @@
     currentTurn = 0
     eventCount = 0
     turnBoxes = new Map()
+    masterTraces = new Map()
+    masterCards = new Map()
+    pendingTaskIndex = null
     feed = []
   }
 
