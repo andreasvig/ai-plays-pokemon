@@ -1,6 +1,7 @@
 """Top-level `pokemon` CLI dispatcher.
 
 Subcommands:
+  app        Launch the long-lived control center (persistent emulator + web UI).
   run        Launch mGBA and run the agent for one or more (config, model) pairs.
   launch     Launch mGBA + connect to Lua and idle (no agent — manual play / debug).
   report     Generate the standalone HTML report for a run directory.
@@ -13,6 +14,7 @@ import sys
 from importlib import import_module
 
 SUBCOMMANDS = {
+    "app":      "src.cli.app",
     "run":      "src.cli.runner",
     "launch":   "src.cli.launch",
     "report":   "src.cli.report",
@@ -24,6 +26,7 @@ def _print_help() -> None:
     print("Usage: pokemon <subcommand> [args...]")
     print()
     print("Subcommands:")
+    print("  app        Launch the long-lived control center (persistent emulator + web UI).")
     print("  run        Launch mGBA and run the agent (single or sequential).")
     print("  launch     Launch mGBA + Lua connection, no agent (manual play / debug).")
     print("  report     Generate HTML report for a run directory.")
