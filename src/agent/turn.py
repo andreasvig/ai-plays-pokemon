@@ -1793,8 +1793,24 @@ class TurnManager:
             return str(action)
         return "?"
 
-    def _write_run_summary(self) -> None:
-        """Write a structured run_summary.json to the run folder."""
+    def _write_run_summary(
+        self,
+        *,
+        run_id: str | None = None,
+        kind: str | None = None,
+        benchmark_version: str | None = None,
+        status: str | None = None,
+        continued_from: str | None = None,
+        ended_at: str | None = None,
+    ) -> None:
+        """Write a structured run_summary.json to the run folder.
+
+        The optional keyword args let a caller (the control-center executor, P3)
+        stamp control-plane fields as TOP-LEVEL keys alongside the nested
+        ``session``/``cost``/``turns``/``referee`` blocks. When omitted the writer
+        behaves exactly as before (no extra keys), so existing callers are
+        unchanged. The flat ``app.projection`` layer reads these when present and
+        falls back to defensive inference when absent (legacy runs)."""
         duration = time.time() - self._run_start_time if self._run_start_time else 0
 
         summary = {
@@ -1848,6 +1864,27 @@ class TurnManager:
                 summary["referee"] = self.referee.scorecard()
             except Exception as e:
                 summary["referee"] = {"error": str(e)}
+
+        # Control-plane top-level fields (Plan §P1 deliverable 6). Only written
+        # when a caller provides them; otherwise the dict keeps its legacy shape.
+        # If the caller didn't pass an explicit status but the referee latched a
+        # missed-gate termination, derive `terminated` locally.
+        if status is None and self.referee is not None:
+            try:
+                if self.referee.termination_reason:
+                    status = "terminated"
+            except Exception:
+                pass
+        for _key, _val in (
+            ("run_id", run_id),
+            ("kind", kind),
+            ("benchmark_version", benchmark_version),
+            ("status", status),
+            ("continued_from", continued_from),
+            ("ended_at", ended_at),
+        ):
+            if _val is not None:
+                summary[_key] = _val
 
         summary_path = self.logger.run_dir / "run_summary.json"
         with open(summary_path, "w") as f:
