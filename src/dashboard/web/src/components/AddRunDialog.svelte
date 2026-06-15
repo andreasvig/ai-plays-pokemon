@@ -1,31 +1,61 @@
 <script>
   // MODELS / CONFIGS are now fed from App (sourced from /api/models + /api/configs)
   // instead of importing the mock module directly.
+  // MODELS is now an array of {alias, run_count} objects (api.fetchModels).
+  // CONFIGS is a list of config stems, e.g. "config-3.13".
   let { open = false, continueFrom = null, models = [], configs = [], onclose, onsubmit } = $props()
   const MODELS = $derived(models)
   const CONFIGS = $derived(configs)
 
+  // Latest config stem: parse the version number out of the stem (e.g.
+  // "config-3.13" → 3.13) and pick the max. /api/configs isn't guaranteed
+  // newest-first, so don't trust order. Unparseable stems fall back to the
+  // last element of the list.
+  function latestConfig(stems) {
+    if (!stems || !stems.length) return ''
+    let best = null
+    let bestV = -Infinity
+    for (const s of stems) {
+      const m = String(s).match(/(\d+(?:\.\d+)*)/)
+      const v = m ? parseFloat(m[1]) : NaN
+      if (!Number.isNaN(v) && v > bestV) { bestV = v; best = s }
+    }
+    return best ?? stems[stems.length - 1]
+  }
+
   // continue mode forces casual + locks the model to the source run's model
   let kind = $state('official')
-  let model = $state('')
+  let model = $state('')           // always the ALIAS string (submit contract)
   let config = $state('')
-  let maxTurns = $state(1500)
+  let maxTurns = $state(100)        // casual default: 100 turns
+  let modelQuery = $state('')       // searchable model-picker filter text
 
   $effect(() => {
     if (open && continueFrom) {
       kind = 'casual'
       model = continueFrom.model
-      maxTurns = continueFrom.maxTurns ?? 1500
-      if (!config) config = CONFIGS[0] ?? ''
+      maxTurns = continueFrom.maxTurns ?? 100
+      if (!config) config = latestConfig(CONFIGS)
     } else if (open && !continueFrom) {
       kind = 'official'
-      model = MODELS[0] ?? ''
-      if (!config) config = CONFIGS[0] ?? ''
+      model = MODELS[0]?.alias ?? ''
+      if (!config) config = latestConfig(CONFIGS)
     }
   })
 
   const isContinue = $derived(!!continueFrom)
   const isOfficial = $derived(kind === 'official')
+
+  // Searchable, run-count-sorted model list. Models you've already run
+  // (higher run_count) sort first so they're easy to find; alias breaks ties.
+  const sortedModels = $derived(
+    [...MODELS].sort((a, b) => (b.run_count ?? 0) - (a.run_count ?? 0) || a.alias.localeCompare(b.alias))
+  )
+  const filteredModels = $derived(
+    modelQuery.trim()
+      ? sortedModels.filter((m) => m.alias.toLowerCase().includes(modelQuery.trim().toLowerCase()))
+      : sortedModels
+  )
 
   function submit() {
     onsubmit({
@@ -38,9 +68,8 @@
 </script>
 
 {#if open}
-  <div class="scrim" onclick={() => onclose()} onkeydown={(e) => e.key === 'Escape' && onclose()} role="presentation">
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <div class="dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
+  <div class="scrim" onkeydown={(e) => e.key === 'Escape' && onclose()} role="presentation">
+    <div class="dialog" role="dialog" aria-modal="true" tabindex="-1">
       <header class="dh">
         <h3>{isContinue ? 'Continue run' : 'Queue a new run'}</h3>
         <button class="x" onclick={() => onclose()} aria-label="Close">✕</button>
@@ -63,12 +92,37 @@
       {/if}
 
       <div class="fields">
-        <label class="field">
+        <div class="field">
           <span class="flabel">Model {#if isContinue}<span class="locked">locked</span>{/if}</span>
-          <select bind:value={model} disabled={isContinue}>
-            {#each MODELS as m}<option value={m}>{m}</option>{/each}
-          </select>
-        </label>
+          {#if isContinue}
+            <div class="frozen mono">{model} <span class="faint">(reused from source run)</span></div>
+          {:else}
+            <input
+              type="search"
+              class="model-search"
+              placeholder="Search models…"
+              bind:value={modelQuery}
+              autocomplete="off"
+            />
+            <div class="model-list" role="listbox" aria-label="Model">
+              {#each filteredModels as m (m.alias)}
+                <button
+                  type="button"
+                  class="model-row"
+                  class:on={m.alias === model}
+                  role="option"
+                  aria-selected={m.alias === model}
+                  onclick={() => model = m.alias}
+                >
+                  <span class="m-alias">{m.alias}</span>
+                  <span class="m-runs">{m.run_count} {m.run_count === 1 ? 'run' : 'runs'}</span>
+                </button>
+              {:else}
+                <div class="model-empty faint">No models match “{modelQuery}”.</div>
+              {/each}
+            </div>
+          {/if}
+        </div>
 
         {#if isOfficial}
           <div class="field">
@@ -143,6 +197,26 @@
   select:focus, input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
   select:disabled, input:disabled { background: var(--surface-2); color: var(--muted); }
   .frozen { font-size: 13px; padding: 9px 11px; border: 1px dashed var(--border); border-radius: 8px; background: var(--surface-2); }
+
+  .model-search { margin-bottom: 6px; }
+  .model-list {
+    max-height: 168px; overflow-y: auto; border: 1px solid var(--border);
+    border-radius: 8px; background: var(--surface); display: flex; flex-direction: column;
+  }
+  .model-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    width: 100%; text-align: left; border: none; background: none;
+    padding: 8px 11px; font-family: inherit; font-size: 13px; color: var(--text);
+    border-bottom: 1px solid var(--border-2); cursor: pointer; transition: background .1s;
+  }
+  .model-row:last-child { border-bottom: none; }
+  .model-row:hover { background: var(--surface-2); }
+  .model-row.on { background: var(--accent-soft); }
+  .model-row.on .m-alias { color: var(--accent-ink); font-weight: 650; }
+  .m-alias { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .m-runs { flex: none; font-size: 11px; color: var(--faint); }
+  .model-row.on .m-runs { color: var(--accent); }
+  .model-empty { padding: 12px; font-size: 12px; text-align: center; }
 
   .df { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px 18px; margin-top: 6px; border-top: 1px solid var(--border-2); }
   .hint { font-size: 11.5px; max-width: 220px; line-height: 1.4; }

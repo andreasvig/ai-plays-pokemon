@@ -88,10 +88,11 @@ function stampPerfScore(rows) {
 // ───────────────────────────── reads ─────────────────────────────
 
 export async function fetchModels() {
-  // GET /api/models → [{alias, openrouter_id, observed|null}, ...]; the dialog
-  // only needs the alias list (MODELS in the mock was a string[]).
+  // GET /api/models → [{alias, openrouter_id, observed|null, run_count:int}, ...].
+  // Return the OBJECTS (the dialog's searchable picker needs alias + run_count;
+  // App passes this array straight through as `models`).
   const models = await getJSON('/api/models')
-  return models.map((m) => m.alias)
+  return models.map((m) => ({ alias: m.alias, run_count: m.run_count ?? 0 }))
 }
 
 export async function fetchConfigs() {
