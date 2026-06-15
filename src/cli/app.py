@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import argparse
 import os
+import signal
+import subprocess
 import sys
 import time
 import webbrowser
@@ -23,6 +25,108 @@ from pathlib import Path
 
 from src.app.supervisor import AppSupervisor, SupervisorStatus
 from src.cli.runner import prepare_config
+
+
+def _pids_listening_on(port: int) -> list[int]:
+    """PIDs holding a LISTEN socket on `port` (via lsof). Empty if none/lsof absent."""
+    try:
+        out = subprocess.run(
+            ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"],
+            capture_output=True, text=True, timeout=10,
+        ).stdout
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return []
+    pids = []
+    for line in out.split():
+        try:
+            pids.append(int(line))
+        except ValueError:
+            pass
+    return pids
+
+
+def _pids_matching(pattern: str, *, ignore_case: bool = False) -> list[int]:
+    """PIDs whose full command line matches `pattern` (via pgrep -f). Excludes self."""
+    cmd = ["pgrep", "-f"]
+    if ignore_case:
+        cmd.append("-i")
+    cmd.append(pattern)
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=10).stdout
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return []
+    me = os.getpid()
+    pids = []
+    for line in out.split():
+        try:
+            pid = int(line)
+        except ValueError:
+            continue
+        if pid != me:
+            pids.append(pid)
+    return pids
+
+
+def _find_stale_processes(web_port: int, emu_port: int) -> dict[int, str]:
+    """Detect processes left over from a prior `pokemon app` launch.
+
+    Returns {pid: human-label}. At pre-flight (before this process binds the
+    server or launches mGBA) we own none of these, so every hit is genuinely
+    stale. Detects: a server still holding the web or emulator-socket port, a
+    leftover mGBA, and the keep-awake `caffeinate -i -w` the app spawns.
+    """
+    found: dict[int, str] = {}
+    me = os.getpid()
+    for pid in _pids_listening_on(web_port):
+        if pid != me:
+            found[pid] = f"server on :{web_port}"
+    for pid in _pids_listening_on(emu_port):
+        if pid != me:
+            found[pid] = f"emulator socket on :{emu_port}"
+    for pid in _pids_matching("mgba", ignore_case=True):
+        found.setdefault(pid, "mGBA")
+    for pid in _pids_matching("caffeinate -i -w"):
+        found.setdefault(pid, "caffeinate (keep-awake)")
+    return found
+
+
+def _reclaim_stale_processes(web_port: int, emu_port: int, *, do_kill: bool) -> bool:
+    """Stop stale processes from a previous launch so the boot doesn't collide.
+
+    `do_kill=True` (default): SIGKILL the stale processes (uvicorn ignores SIGINT,
+    so we go straight to -9), then verify the ports freed. Returns True — boot
+    proceeds. `do_kill=False`: print what's stale + the manual fix and return
+    False so the caller aborts.
+    """
+    stale = _find_stale_processes(web_port, emu_port)
+    if not stale:
+        return True
+
+    desc = ", ".join(f"{label} (pid {pid})" for pid, label in sorted(stale.items()))
+    if not do_kill:
+        print(f"ERROR: stale processes from a previous launch are still running: {desc}")
+        print("  Re-run without --no-reclaim to stop them automatically, or manually:")
+        print('    pkill -9 -f "src.cli.main app"; pkill -9 -f mGBA; pkill -9 -f "caffeinate -i -w"')
+        return False
+
+    print(f"Found stale processes from a previous launch: {desc}")
+    print("  Stopping them...")
+    for pid in stale:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass  # already gone
+        except PermissionError:
+            print(f"  ⚠ could not stop pid {pid} (permission denied) — stop it manually")
+    # give the OS a moment to release the sockets, then confirm
+    time.sleep(0.5)
+    still = _pids_listening_on(web_port) + _pids_listening_on(emu_port)
+    still = [p for p in still if p != os.getpid()]
+    if still:
+        print(f"  ⚠ ports still held by pid(s) {still} after SIGKILL — boot may fail")
+    else:
+        print("  Stopped. Continuing boot.")
+    return True
 
 
 class _FakeSupervisor:
@@ -196,6 +300,14 @@ def main() -> None:
             "or a directory of run folders to scan. Also via POKEBENCH_SEED_RUNS."
         ),
     )
+    parser.add_argument(
+        "--no-reclaim", action="store_true",
+        help=(
+            "Don't auto-stop stale processes from a previous launch. By default "
+            "the boot SIGKILLs a leftover server / mGBA / caffeinate so it doesn't "
+            "collide on the port; --no-reclaim aborts with a message instead."
+        ),
+    )
     args = parser.parse_args()
 
     if args.fake_emulator or os.environ.get("POKEBENCH_FAKE_EMULATOR") == "1":
@@ -208,6 +320,13 @@ def main() -> None:
 
     if not os.path.exists(rom_path):
         sys.exit(f"ERROR: ROM not found at {rom_path}")
+
+    # Pre-flight: stop (or refuse, under --no-reclaim) any stale process from a
+    # previous launch before we bind the server / launch mGBA. uvicorn ignores
+    # SIGINT, so a Ctrl-C'd prior run often still holds the port.
+    emu_port = int(config["emulator"].get("port", 8888))
+    if not _reclaim_stale_processes(args.port, emu_port, do_kill=not args.no_reclaim):
+        sys.exit(1)
 
     ts = time.strftime("%Y-%m-%d_%H-%M-%S")
     saves_dir = Path(f"local/app/_session_{ts}/saves")
