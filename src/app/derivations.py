@@ -83,4 +83,19 @@ def history(
     return rows
 
 
-__all__ = ["leaderboard", "history", "RunStatus"]
+def run_counts_by_model(summaries: list[RunSummary]) -> dict[str, int]:
+    """Map each ``model`` alias → how many runs exist for it in the index.
+
+    Counts EVERY run (any kind/status) so the new-run dialog (Round 8 / C3) can
+    show ``model — N runs`` and tell at a glance which models are already
+    benchmarked. Pure aggregation over the index entries — cheap, no I/O.
+    Models with zero runs simply don't appear in the map (the API defaults them
+    to 0).
+    """
+    counts: dict[str, int] = {}
+    for s in summaries:
+        counts[s.model] = counts.get(s.model, 0) + 1
+    return counts
+
+
+__all__ = ["leaderboard", "history", "run_counts_by_model", "RunStatus"]

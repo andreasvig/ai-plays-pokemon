@@ -20,7 +20,6 @@ import asyncio
 import json
 import threading
 import time
-import webbrowser
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
@@ -514,8 +513,13 @@ def start_dashboard(
     # latest run (best for sequential orchestrators).
     run_url = f"http://localhost:{_SERVER_PORT}/runs/{run_id}"
     current_url = f"http://localhost:{_SERVER_PORT}/current"
-    if open_browser:
-        webbrowser.open(f"{current_url}?v={int(time.time())}")
+    # NOTE (Round 8 / B3): the legacy auto-open of the OLD `/current` livestream
+    # dashboard was removed here. It fired an extra browser tab on every run
+    # register (the headless `pokemon run` path, where `open_browser=True`). The
+    # control center opens the SPA itself at `pokemon app` boot (`cli/app.py`),
+    # so the stale `/current` tab is unwanted. `open_browser` is still accepted
+    # for signature compatibility; the URLs are printed below for manual use.
+    _ = open_browser  # retained for callers; no longer triggers a browser open
     print(f"  Dashboard: {run_url}")
     print(f"  Stable URL (sequential): {current_url}")
     return session
@@ -876,12 +880,200 @@ async def api_run_summary(run_id: str):
     return JSONResponse(summary)
 
 
+# ───────────────────── task-grouped trace (Plan Round 8 / B1+B2) ────────────
+#
+# The SPA Report inspector (Phase 5) needs the TWO-LEVEL TaskMaster structure the
+# old HTML report builds: each task group's master trace/model/cost as the
+# top-level node, with the Player's turns nested under it (plus the screenshots
+# the master + each turn saw). We REUSE report.py's canonical grouping
+# (`group_events_by_turn` + `group_turns_by_task` + `_group_trace_into_steps`) so
+# the SPA and the HTML report never drift. The endpoint returns a SPA-friendly
+# JSON projection of those groups — structured trace STEPS (not raw messages),
+# screenshot REFERENCES (filenames the SPA turns into `/screenshots/{name}` URLs),
+# and the master's input thumbnails inlined as data-URIs (they only exist in the
+# event as data_url; there's no stable on-disk name to reference).
+
+# Cap the master/player system-prompt block in the trace payload: it's a large
+# static prompt the SPA doesn't render verbatim — a preview keeps the JSON lean.
+_TRACE_SYSTEM_PROMPT_CAP = 2000
+
+
+def _screenshot_ref(file_path: str | None) -> str | None:
+    """Reduce a stored screenshot path to its basename (the SPA composes the URL).
+
+    ``group_events_by_turn`` stores the event's full ``file`` (e.g.
+    ``local/runs/<dir>/screenshots/00001_turn_1.png``). The SPA only needs the
+    basename to hit ``GET /api/runs/{id}/screenshots/{name}``. None → None.
+    """
+    if not file_path:
+        return None
+    return Path(file_path).name
+
+
+def _trace_steps(messages: list[dict]) -> dict:
+    """Project a raw message trace into SPA-friendly structured steps.
+
+    Reuses ``report._group_trace_into_steps`` (the canonical parser the HTML
+    report uses) so the two never diverge, then caps the static system prompt.
+    """
+    from src.cli import report as report_mod
+
+    grouped = report_mod._group_trace_into_steps(messages or [])
+    sys_prompt = grouped.get("system_prompt") or ""
+    if len(sys_prompt) > _TRACE_SYSTEM_PROMPT_CAP:
+        grouped["system_prompt"] = sys_prompt[:_TRACE_SYSTEM_PROMPT_CAP] + "…"
+    return grouped
+
+
+def _project_turn(turn: dict) -> dict:
+    """Project one per-turn dict (from ``group_events_by_turn``) for the SPA."""
+    exp = turn.get("explanation") or {}
+    usage = turn.get("usage") or {}
+    return {
+        "turn": turn.get("turn"),
+        "task_index": turn.get("task_index"),
+        "action": report_format_action(turn.get("action")),
+        "reasoning": exp.get("reasoning", ""),
+        "last_turn_succeeded": exp.get("last_turn_succeeded"),
+        "screenshot": _screenshot_ref(turn.get("screenshot")),
+        "cost_usd": usage.get("cost_usd"),
+        "request_tokens": usage.get("request_tokens"),
+        "response_tokens": usage.get("response_tokens"),
+        "trace": _trace_steps(turn.get("trace", [])),
+    }
+
+
+def report_format_action(action) -> str:
+    """Thin reuse wrapper over ``report._format_action`` (list vs str action)."""
+    from src.cli import report as report_mod
+
+    return report_mod._format_action(action if action is not None else "?")
+
+
+def _build_run_trace(run_dir: Path) -> dict:
+    """Build the task-grouped trace JSON for a finished run (Round 8 B1+B2).
+
+    Reuses ``report.py``'s grouping verbatim. For a TaskMaster run, returns one
+    entry per task group (master decision + nested player turns). For a casual /
+    non-TaskMaster run (no ``task_started`` events), returns a SINGLE implicit
+    group holding all turns — a degenerate-but-valid shape so the SPA never 500s.
+    """
+    from src.cli import report as report_mod
+
+    events = report_mod.load_events(run_dir)
+    turns = report_mod.group_events_by_turn(events)
+    has_tasks = any(e.get("type") == "task_started" for e in events)
+
+    tasks_out: list[dict] = []
+    if has_tasks:
+        groups = report_mod.group_turns_by_task(turns, events)
+        for g in groups:
+            tasks_out.append(
+                {
+                    "task_index": g.get("task_index"),
+                    "title": g.get("title", ""),
+                    "description": g.get("description", ""),
+                    "success_criteria": g.get("success_criteria", ""),
+                    "rating": g.get("rating"),
+                    "player_self_assessment": g.get("player_self_assessment"),
+                    "player_task_summary": g.get("player_task_summary"),
+                    "master_model": g.get("master_model", ""),
+                    "master_cost": g.get("master_cost", 0) or 0,
+                    # input_images already carry {label, data_url}; inline as-is
+                    # (no separate on-disk name to reference them by).
+                    "master_input_images": g.get("master_input_images", []) or [],
+                    "master_trace": _trace_steps(g.get("master_trace", [])),
+                    "turns": [_project_turn(t) for t in g.get("turns", [])],
+                }
+            )
+    else:
+        # Implicit single group (no TaskMaster): all turns, empty master node.
+        tasks_out.append(
+            {
+                "task_index": None,
+                "title": "",
+                "description": "",
+                "success_criteria": "",
+                "rating": None,
+                "player_self_assessment": None,
+                "player_task_summary": None,
+                "master_model": "",
+                "master_cost": 0,
+                "master_input_images": [],
+                "master_trace": {"system_prompt": "", "user_input": "", "steps": []},
+                "turns": [_project_turn(t) for t in turns],
+            }
+        )
+
+    return {
+        "run_id": run_dir.name,
+        "has_tasks": has_tasks,
+        "task_count": len(tasks_out),
+        "turn_count": len(turns),
+        "tasks": tasks_out,
+    }
+
+
+@app.get("/api/runs/{run_id}/trace")
+async def api_run_trace(run_id: str):
+    """Task-grouped trace + screenshot references for a finished run (B1+B2).
+
+    Two-level structure the SPA Report inspector renders: each task group is a
+    master decision (model/cost/structured trace/input thumbnails) with the
+    Player's turns nested. Screenshots are returned as BASENAMES — the SPA builds
+    ``/api/runs/{id}/screenshots/{name}`` to load each. Non-TaskMaster runs get a
+    single implicit group (never 500). 404 only when the run dir is absent.
+    """
+    _queue, executor, _index = _require_control()
+    run_dir = Path(executor.runs_root) / run_id
+    if not run_dir.is_dir():
+        raise HTTPException(status_code=404, detail=f"run dir not found: {run_id}")
+    return JSONResponse(_build_run_trace(run_dir))
+
+
+@app.get("/api/runs/{run_id}/screenshots/{name}")
+async def api_run_screenshot(run_id: str, name: str):
+    """Serve ``run_dir/screenshots/{name}`` as a PNG (Round 8 / B2).
+
+    The trace JSON returns screenshot basenames; the SPA composes this URL to
+    load each image. Path-traversal-guarded (the resolved file must stay inside
+    the run's ``screenshots/`` dir). 404 when the run dir or file is absent.
+    """
+    _queue, executor, _index = _require_control()
+    run_dir = Path(executor.runs_root) / run_id
+    shots_dir = (run_dir / "screenshots").resolve()
+    if not shots_dir.is_dir():
+        raise HTTPException(status_code=404, detail=f"no screenshots for run: {run_id}")
+    candidate = (shots_dir / name).resolve()
+    try:
+        candidate.relative_to(shots_dir)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid screenshot name")
+    if not candidate.is_file():
+        raise HTTPException(status_code=404, detail=f"screenshot not found: {name}")
+    return FileResponse(str(candidate), media_type="image/png")
+
+
 @app.get("/api/models")
 async def api_models():
-    """Aliases from ``models.yaml`` (+ observed cost/latency, or null)."""
+    """Aliases from ``models.yaml`` (+ observed cost/latency, + run_count).
+
+    Backward-compatible (Round 8 / C3): each entry keeps its existing
+    ``alias`` / ``openrouter_id`` / ``observed`` fields and gains a ``run_count``
+    int — how many runs exist for that alias in the history index. When the
+    control plane isn't configured (headless ``pokemon run`` path) the index is
+    absent, so every ``run_count`` is 0. The shape stays a list of objects; only
+    a new field was added.
+    """
+    from src.app import derivations
     from src.app.catalog import list_models
 
-    return JSONResponse(list_models())
+    models = list_models()
+    index = _CONTROL["index"]
+    counts = derivations.run_counts_by_model(index.all()) if index is not None else {}
+    for entry in models:
+        entry["run_count"] = counts.get(entry.get("alias"), 0)
+    return JSONResponse(models)
 
 
 @app.get("/api/configs")
