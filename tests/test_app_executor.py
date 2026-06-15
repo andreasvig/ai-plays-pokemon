@@ -55,12 +55,15 @@ def make_run_fn(runs_root: Path, *, recorder: list[str] | None = None):
     """
     counter = {"n": 0}
 
-    def run_fn(handle, config, *, turns, snapshot, open_browser=False):
+    def run_fn(handle, config, *, turns, snapshot, open_browser=False, on_run_dir=None):
         counter["n"] += 1
         # Derive a run-dir name from the run_name so order is observable.
         run_name = config.get("run_name", f"run{counter['n']}")
         run_dir = runs_root / f"2026-06-15_00-00-0{counter['n']}_{run_name}"
         run_dir.mkdir(parents=True, exist_ok=True)
+        # Mirror real run_single_loop: publish the run dir before "running".
+        if on_run_dir is not None:
+            on_run_dir(run_dir)
         summary = {
             "session": {
                 "llm_alias": config.get("_llm_alias") or config.get("llm_model"),

@@ -229,12 +229,19 @@ class RunExecutor:
         try:
             config, snapshot, turns = self.build_run_config(item)
             run_fn = self._resolve_run_fn()
+            # Publish the active run id the instant the run starts (not after it
+            # returns) so the control plane exposes it DURING the run — live
+            # spectate + a matchable stop target (run_fn blocks for the whole run).
+            def _publish(rd):
+                self._active_run_id = Path(rd).name
+
             run_dir = run_fn(
                 self.supervisor.handle,
                 config,
                 turns=turns,
                 snapshot=snapshot,
                 open_browser=False,
+                on_run_dir=_publish,
             )
             run_dir = Path(run_dir)
             run_id = run_dir.name

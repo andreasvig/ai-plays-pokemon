@@ -233,12 +233,18 @@ def run_single_loop(
     turns: int,
     snapshot: str | None,
     open_browser: bool = True,
+    on_run_dir=None,
 ) -> Path:
     """One agent run against the already-prepared mGBA + Lua connection.
 
     Builds fresh RunLogger, StateManager, VisionPipeline, OCRRunner,
     and dashboard session for THIS run. Reloads the snapshot to reset
     game state. Generates report HTML at the end. Returns run_dir.
+
+    ``on_run_dir`` (optional): called with the run_dir Path the moment it is
+    known — BEFORE the (blocking) turn loop — so a long-lived caller (the
+    control-center executor) can publish the active run id while the run is in
+    flight (live spectate + a matchable stop target), not only after it returns.
 
     Raises KeyboardInterrupt after cleanup if the user interrupted, so
     sequential orchestrators can abort the remainder.
@@ -259,6 +265,13 @@ def run_single_loop(
     logger = RunLogger(config)
     run_dir = Path(logger.run_dir)
     print(f"Run log: {run_dir}")
+    # Publish the run dir to a long-lived caller (executor) the instant it's
+    # known, so the control plane can expose the active run id DURING the run.
+    if on_run_dir is not None:
+        try:
+            on_run_dir(run_dir)
+        except Exception:
+            pass
 
     # Continuation mode: copy prior run artifacts BEFORE the new logger writes
     # more events, and seed the screenshot id so new captures extend the
