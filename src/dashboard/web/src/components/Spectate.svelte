@@ -41,12 +41,15 @@
   // BEFORE task_started{N}, which in turn arrives before that task's turns. So
   // we buffer the raw trace + objective by task_index, then bind the resulting
   // card to the FIRST turn of the task (the next turn_start after task_started).
-  let masterTraces = new Map()   // task_index → {model_used, cost_usd, input_images}
-  let masterCards = new Map()    // task_index → {taskIndex, firstTurn, model, cost, images, title, description, success}
+  let masterTraces = new Map()   // task_index → {model_used, cost_usd, steps}
+  let masterCards = new Map()    // task_index → {taskIndex, firstTurn, model, cost, steps, title, description, success}
   let pendingTaskIndex = null    // task_index whose first turn we still need to bind
   let prevScreenUrl = null
 
   // ── derivations for the gate HUD ──
+  // Gates only apply to OFFICIAL runs. When we KNOW the run is casual, hide every
+  // gate reference; null run (early) is treated as non-casual so we don't crash.
+  const showGates = $derived(run?.kind !== 'casual')
   const reached = $derived(Object.keys(stamps).length)
   const totalGates = $derived(ladder.length || 0)
   // next gate = first ladder rung NOT yet stamped
@@ -75,12 +78,43 @@
     if (typeof a === 'string') { try { return JSON.parse(a) } catch { return null } }
     return a
   }
+  // Parse return_to_taskmaster into a verdict box. Real shape (north-star run):
+  //   { self_assessment: 'succeeded'|'failed'|'partial'|<free text>, task_summary: str }
+  // Map the known enum to a labeled verdict; free text becomes the verdict line.
   function fmtHandback(r) {
-    if (!r || typeof r !== 'object') return ''
-    const parts = []
-    if (r.self_assessment) parts.push('Self-assessment: ' + r.self_assessment)
-    if (r.task_summary) parts.push('Task summary: ' + r.task_summary)
-    return parts.join('\n\n')
+    if (!r || typeof r !== 'object') return { verdict: '🟡 Returned to TaskMaster', tone: 'partial', summary: '' }
+    const raw = (r.self_assessment ?? '').toString().trim()
+    const lc = raw.toLowerCase()
+    let verdict, tone
+    if (/^succe/.test(lc) || lc === 'true' || lc === 'complete') { verdict = '✅ Task complete'; tone = 'ok' }
+    else if (/^fail/.test(lc) || lc === 'false' || /not (complete|done|succeed)/.test(lc)) { verdict = '❌ Task not complete'; tone = 'no' }
+    else if (/^partial/.test(lc) || /partly/.test(lc)) { verdict = '🟡 Partial'; tone = 'partial' }
+    else if (raw) { verdict = raw; tone = 'partial' }      // free-text self-assessment → use verbatim
+    else { verdict = '🟡 Returned to TaskMaster'; tone = 'partial' }
+    return { verdict, tone, summary: r.task_summary || '' }
+  }
+
+  // Turn raw pydantic-ai trace messages (master) into compact displayable steps,
+  // mirroring the player turn box shapes (thinking / tool call / tool response).
+  function parseMasterMessages(messages) {
+    if (!Array.isArray(messages)) return []
+    const steps = []
+    for (const m of messages) {
+      if (!m || typeof m !== 'object') continue
+      const role = m.role
+      if (role === 'thinking') {
+        if (m.content) steps.push({ k: 'thinking', t: String(m.content) })
+      } else if (role === 'tool_call') {
+        const args = parseArgs(m.args)
+        const argStr = args == null ? '' : (typeof args === 'string' ? args : JSON.stringify(args))
+        steps.push({ k: 'tool', name: m.tool_name || 'tool', args: argStr, resp: null })
+      } else if (role === 'tool_result') {
+        const c = typeof m.content === 'string' ? m.content : JSON.stringify(m.content)
+        steps.push({ k: 'tool', name: '↳ response', args: '', resp: c })
+      }
+      // system / user / assistant carry the prompt + final_result — not shown live.
+    }
+    return steps
   }
 
   function pushBox(turn, box) {
@@ -116,7 +150,9 @@
     if (!trace || !card) return
     card.model = trace.model_used || ''
     card.cost = trace.cost_usd
-    card.images = (trace.input_images || []).filter((im) => im && im.data_url)
+    card.steps = trace.steps || []
+    // NB: input images are intentionally NOT surfaced in the live feed (B9.7);
+    // they live only in the history Report.
   }
 
   // map one raw event → zero or more trace boxes (parity with static/index.html)
@@ -142,7 +178,7 @@
       masterTraces.set(idx, {
         model_used: evt.model_used,
         cost_usd: evt.cost_usd,
-        input_images: evt.input_images || [],
+        steps: parseMasterMessages(evt.messages),
       })
       buildMasterCard(idx)
       rebuildFeed()
@@ -156,7 +192,7 @@
         if (!masterCards.has(idx)) {
           masterCards.set(idx, {
             taskIndex: idx, firstTurn: null,
-            model: '', cost: null, images: [],
+            model: '', cost: null, steps: [],
             title: task.title, description: task.description, success: task.success,
           })
         } else {
@@ -199,7 +235,7 @@
           const inputs = Array.isArray(args.inputs) ? args.inputs.join(' ') : args.inputs
           pushBox(evt.turn, { k: 'action', t: inputs })
         }
-        if (args.return_to_taskmaster) pushBox(evt.turn, { k: 'handback', t: fmtHandback(args.return_to_taskmaster) })
+        if (args.return_to_taskmaster) pushBox(evt.turn, { k: 'handback', ...fmtHandback(args.return_to_taskmaster) })
       }
       return
     }
@@ -342,12 +378,12 @@
     <div class="layout">
       <!-- main: BIG emulator + HUD + stats + task + memory -->
       <div class="main">
-        <div class="stats">
+        <div class="stats" style={`grid-template-columns: repeat(${showGates ? 5 : 4}, 1fr)`}>
           <div class="stat"><span class="sl">Turn</span><span class="sv tnum">{stats.turns || currentTurn}</span></div>
           <div class="stat"><span class="sl">Cost</span><span class="sv tnum">{usd(stats.cost)}</span></div>
           <div class="stat"><span class="sl">Tokens</span><span class="sv tnum">{tokensLabel}<span class="su">/{tokensSub}</span></span></div>
           <div class="stat"><span class="sl">Elapsed</span><span class="sv tnum">{dur(elapsedS)}</span></div>
-          <div class="stat"><span class="sl">Gates</span><span class="sv tnum">{reached}/{totalGates || '—'}</span></div>
+          {#if showGates}<div class="stat"><span class="sl">Gates</span><span class="sv tnum">{reached}/{totalGates || '—'}</span></div>{/if}
         </div>
 
         <div class="gba">
@@ -379,6 +415,7 @@
           </div>
         </div>
 
+        {#if showGates}
         <div class="hud {tone}">
           <div class="hud-top">
             <span class="hl">Next gate</span>
@@ -400,6 +437,7 @@
             {/each}
           </div>
         </div>
+        {/if}
       </div>
 
       <!-- side: live trace feed (own component) -->
@@ -409,7 +447,7 @@
 </section>
 
 <style>
-  .wrap { max-width: 1320px; margin: 0 auto; padding: 22px 24px; }
+  .wrap { max-width: 1680px; margin: 0 auto; padding: 22px 24px; }
   .empty { text-align: center; padding: 80px 0; display: flex; flex-direction: column; gap: 10px; align-items: center; }
   .empty .faint { max-width: 440px; line-height: 1.5; }
   .big { font-size: 18px; font-weight: 700; margin: 0; }
@@ -421,7 +459,7 @@
   .c-ind.off .dot { background: var(--faint); }
   .c-evt { font-size: 11px; }
 
-  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; align-items: start; }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 500px; gap: 20px; align-items: start; }
   .main { display: flex; flex-direction: column; gap: 14px; }
   .gba { aspect-ratio: 240/160; background: #11141b; border-radius: var(--radius); display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-lg); overflow: hidden; }
   .screen { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; }

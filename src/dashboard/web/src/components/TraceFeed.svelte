@@ -1,5 +1,6 @@
 <script>
-  import { usd } from '../lib/format.js'
+  import { usd, actionEmoji } from '../lib/format.js'
+  import { mdToHtml } from '../lib/md.js'
 
   // turns: chronological feed of tagged entries — {kind:'turn', turn, boxes} and
   // {kind:'master', ...} (the TaskMaster card, interleaved at task boundaries
@@ -22,13 +23,25 @@
   $effect(() => { open = new Set(turnIds.slice(-2)) })
   function toggle(id) { const n = new Set(open); n.has(id) ? n.delete(id) : n.add(id); open = n }
 
+  // Sticky auto-scroll: only re-pin to the bottom when the user was ALREADY at
+  // (or near) the bottom. An onscroll handler tracks `atBottom`; the effect that
+  // reacts to `turns` only jumps to the bottom when that flag is set — so reading
+  // older turns isn't yanked away on the next update.
   let scroller
-  $effect(() => { if (scroller) scroller.scrollTop = scroller.scrollHeight })
+  let atBottom = true
+  function onScroll() {
+    if (!scroller) return
+    atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 40
+  }
+  $effect(() => {
+    turns // dependency: re-run when the feed changes
+    if (scroller && atBottom) scroller.scrollTop = scroller.scrollHeight
+  })
 </script>
 
 <div class="tracefeed">
   <div class="feed-h">Live trace</div>
-  <div class="scroll" bind:this={scroller}>
+  <div class="scroll" bind:this={scroller} onscroll={onScroll}>
     {#each turns as entry (entry.id)}
       {#if entry.kind === 'master'}
         <div class="master-block">
@@ -37,14 +50,19 @@
             {#if entry.title}<div class="m-row"><span class="m-lab">📋 Task</span>{entry.title}</div>{/if}
             {#if entry.description}<div class="m-row"><span class="m-lab">🧭 Plan</span><div class="m-desc">{entry.description}</div></div>{/if}
             {#if entry.success}<div class="m-row"><span class="m-lab">🎯 Success criteria</span><span class="mono">{entry.success}</span></div>{/if}
-            {#if entry.images && entry.images.length}
-              <div class="m-row"><span class="m-lab">📷 Screens the master saw</span>
-                <div class="master-thumbs">
-                  {#each entry.images as im}
-                    <figure class="master-thumb">
-                      <img src={im.data_url} alt={im.label || ''} />
-                      {#if im.label}<figcaption>{im.label}</figcaption>{/if}
-                    </figure>
+            {#if entry.steps && entry.steps.length}
+              <div class="m-row"><span class="m-lab">🛠 TaskMaster reasoning</span>
+                <div class="m-steps">
+                  {#each entry.steps as s}
+                    <div class="m-step {s.k}">
+                      {#if s.k === 'thinking'}
+                        <span class="m-step-h">💭 Thinking</span>
+                        <div class="m-step-b">{@html mdToHtml(s.t)}</div>
+                      {:else if s.k === 'tool'}
+                        {#if s.args}<div class="m-step-h">🔧 {s.name}</div><div class="m-step-b mono call">{s.name}({s.args})</div>
+                        {:else if s.resp != null}<div class="m-step-b resp faint">→ {s.resp}</div>{/if}
+                      {/if}
+                    </div>
                   {/each}
                 </div>
               </div>
@@ -68,10 +86,12 @@
                 <div class="ebox {b.k}">
                   <div class="ebox-h"><span class="ico">{boxIcon[b.k]}</span>{boxName[b.k]}{#if b.meta}<span class="ebox-meta faint">{b.meta}</span>{/if}</div>
                   <div class="ebox-b">
-                    {#if b.k === 'action'}<span class="mono act">{b.t}</span>
+                    {#if b.k === 'action'}<span class="act">{actionEmoji(b.t)}</span>
                     {:else if b.k === 'tool'}{#if b.args}<div class="mono call">{b.name}({b.args})</div>{/if}{#if b.resp != null}<div class="resp faint">→ {b.resp}</div>{/if}
                     {:else if b.k === 'memory'}<span class="mono">{b.t}</span>
-                    {:else if b.k === 'output'}{#if b.ok != null}<span class="ok-tag" class:ok={b.ok} class:no={!b.ok}>{b.ok ? '✓ ok' : '✗ failed'}</span>{/if}{b.t}
+                    {:else if b.k === 'thinking'}<div class="md">{@html mdToHtml(b.t)}</div>
+                    {:else if b.k === 'handback'}<div class="hb-verdict {b.tone}">{b.verdict}</div>{#if b.summary}<div class="hb-summary">{b.summary}</div>{/if}
+                    {:else if b.k === 'output'}{#if b.ok != null}<div class="out-tag"><span class="ok-tag" class:ok={b.ok} class:no={!b.ok}>{b.ok ? '✓ ok' : '✗ failed'}</span></div>{/if}{#if b.t}<div class="out-body">{b.t}</div>{/if}
                     {:else}{b.t}{/if}
                   </div>
                 </div>
@@ -98,10 +118,13 @@
   .m-row { font-size: 13px; line-height: 1.55; }
   .m-lab { display: block; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: #c79a18; margin-bottom: 3px; }
   .m-desc { white-space: pre-wrap; color: var(--muted); }
-  .master-thumbs { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
-  .master-thumb { margin: 0; text-align: center; }
-  .master-thumb img { width: 130px; image-rendering: pixelated; border: 1px solid var(--border); border-radius: 4px; display: block; }
-  .master-thumb figcaption { font-size: 9.5px; color: #c79a18; text-transform: uppercase; letter-spacing: .04em; margin-top: 3px; }
+  /* master's own trace: thinking + tool calls + responses, compact in the card */
+  .m-steps { display: flex; flex-direction: column; gap: 7px; margin-top: 2px; }
+  .m-step { border-left: 2px solid #f0d9a0; padding: 3px 0 3px 9px; }
+  .m-step-h { display: block; font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; color: #c79a18; margin-bottom: 2px; }
+  .m-step-b { font-size: 12px; line-height: 1.5; color: var(--muted); }
+  .m-step-b.call { font-size: 11px; color: var(--text); }
+  .m-step-b.resp { font-size: 11px; margin-top: 2px; }
 
   .turn-block { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; flex: none; }
   .turn-block.current { border-color: #c7c8f7; }
@@ -127,9 +150,29 @@
   .ebox.settle   { border-color: #d8a93b; }
   .ebox.handback { border-color: #6ca4ff; }
   .ebox.error    { border-color: var(--red); background: var(--red-soft, #fdeeee); }
-  .act { font-size: 13px; letter-spacing: 2px; }
+  .act { font-size: 18px; letter-spacing: 3px; }
   .call { font-size: 11.5px; }
   .resp { font-size: 11px; margin-top: 2px; }
-  .ok-tag { font-size: 10px; font-weight: 700; margin-right: 5px; }
+
+  /* B9.4 — looser output box: gap between the ok/fail tag line and reasoning. */
+  .ebox.output .ebox-b { display: flex; flex-direction: column; gap: 7px; }
+  .out-tag { line-height: 1; }
+  .out-body { line-height: 1.5; }
+  .ok-tag { font-size: 10px; font-weight: 700; }
   .ok-tag.ok { color: var(--green); } .ok-tag.no { color: var(--red); }
+
+  /* B9.3 — markdown thinking: bold section headers + paragraph gaps. */
+  .md :global(p) { margin: 0 0 8px; line-height: 1.5; }
+  .md :global(p:last-child) { margin-bottom: 0; }
+  .md :global(strong) { font-weight: 750; color: var(--text); }
+  .m-step-b :global(p) { margin: 0 0 7px; }
+  .m-step-b :global(p:last-child) { margin-bottom: 0; }
+  .m-step-b :global(strong) { font-weight: 750; color: var(--text); }
+
+  /* B9.9 — handback rendered as a clear verdict, not raw text. */
+  .hb-verdict { font-size: 13px; font-weight: 750; margin-bottom: 6px; }
+  .hb-verdict.ok { color: var(--green); }
+  .hb-verdict.no { color: var(--red); }
+  .hb-verdict.partial { color: #c79a18; }
+  .hb-summary { font-size: 12px; line-height: 1.5; color: var(--muted); }
 </style>

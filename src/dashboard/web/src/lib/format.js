@@ -25,6 +25,20 @@ export function dateShort(iso) {
   const dt = new Date(iso)
   return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
+// Map GBA button tokens → emoji for compact action display. Accepts a single
+// token, a space-joined string ("up up a"), or an array of tokens; maps each
+// (case-insensitive) and joins with a space. Unknown tokens pass through.
+const ACTION_EMOJI = {
+  left: '⬅️', right: '➡️', up: '⬆️', down: '⬇️',
+  a: '🅰️', b: '🅱️', start: '▶️', select: '⏹️',
+}
+export function actionEmoji(action) {
+  if (action == null) return ''
+  const tokens = Array.isArray(action) ? action : String(action).trim().split(/\s+/)
+  return tokens
+    .map((tok) => ACTION_EMOJI[String(tok).toLowerCase()] ?? tok)
+    .join(' ')
+}
 // "100%" for a full clear, else "86% · Cascade Badge" with the furthest gate.
 export function completionLabel(r) {
   if (r.completion >= 100) return '100%'
