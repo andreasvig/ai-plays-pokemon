@@ -234,6 +234,10 @@ class RunExecutor:
             # spectate + a matchable stop target (run_fn blocks for the whole run).
             def _publish(rd):
                 self._active_run_id = Path(rd).name
+                # Re-notify now that the active run id is known (the earlier
+                # run-became-active ping fired before run_fn set it). This second
+                # push lets the SPA refetch and open the live spectate stream.
+                self._notify_control()
 
             run_dir = run_fn(
                 self.supervisor.handle,
