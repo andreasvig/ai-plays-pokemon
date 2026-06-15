@@ -13,7 +13,7 @@
   <span class="qtitle">Queue</span>
   <div class="track">
     {#if active}
-      <div class="card active" onclick={() => onspectate()} role="button" tabindex="0">
+      <div class="card active" onclick={() => onspectate()} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onspectate() } }} role="button" tabindex="0">
         <div class="ctop">
           <span class="badge {active.kind}">{label(active.kind)}</span>
           <span class="now"><span class="dot live"></span> running</span>
@@ -27,6 +27,7 @@
     {/if}
 
     {#each queue as q, i (q.queueId)}
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div class="card up" class:over={overIndex === i} class:dragging={dragIndex === i}
            draggable="true"
            ondragstart={() => dragIndex = i}

@@ -63,7 +63,8 @@
 
   <ul class="rows">
     {#each filtered as r (r.runId)}
-      <li class="row" onclick={() => oninspect(r)} role="button" tabindex="0">
+      <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
+      <li class="row" onclick={() => oninspect(r)} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); oninspect(r) } }} role="button" tabindex="0">
         <span class="c-kind"><span class="badge {r.kind}">{r.kind === 'official' ? 'OFF' : 'CAS'}</span></span>
         <span class="c-model">
           <span class="mname mono">{r.model}</span>

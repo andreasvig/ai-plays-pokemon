@@ -58,7 +58,8 @@
 
   <ol class="rows">
     {#each shown as r (r.runId)}
-      <li class="row" class:top={r.displayRank <= 3} onclick={() => oninspect(r)} role="button" tabindex="0">
+      <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
+      <li class="row" class:top={r.displayRank <= 3} onclick={() => oninspect(r)} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); oninspect(r) } }} role="button" tabindex="0">
         <span class="c-rank"><span class="ranknum" style={`color:${medal(r.displayRank)}`}>{r.displayRank}</span></span>
         <span class="c-model">
           <span class="mname mono">{r.model}</span>

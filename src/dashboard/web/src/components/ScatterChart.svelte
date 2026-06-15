@@ -79,7 +79,7 @@
     {#each points as p (p.label)}
       <g class="pt" class:oss={p.openSource} class:front={onFrontier(p)} class:hot={hovered === p}
          onmouseenter={() => hovered = p} onmouseleave={() => hovered = null}
-         onclick={() => onpick && onpick(p.slug)} role="button" tabindex="0">
+         onclick={() => onpick && onpick(p.slug)} onkeydown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && onpick) { e.preventDefault(); onpick(p.slug) } }} role="button" tabindex="0">
         <circle cx={xs(p.x)} cy={ys(p.y)} r={onFrontier(p) ? 6 : 5} />
         <text x={xs(p.x) + 9} y={ys(p.y) + 3.5} class="plabel">{p.label.replace(/\(.*/, '')}</text>
       </g>

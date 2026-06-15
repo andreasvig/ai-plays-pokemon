@@ -39,6 +39,7 @@
 
 {#if open}
   <div class="scrim" onclick={() => onclose()} onkeydown={(e) => e.key === 'Escape' && onclose()} role="presentation">
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div class="dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
       <header class="dh">
         <h3>{isContinue ? 'Continue run' : 'Queue a new run'}</h3>
