@@ -205,7 +205,6 @@ def main() -> None:
     config = _build_supervisor_config()
 
     rom_path = config["emulator"]["rom_path"]
-    import os
 
     if not os.path.exists(rom_path):
         sys.exit(f"ERROR: ROM not found at {rom_path}")
