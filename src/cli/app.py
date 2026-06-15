@@ -95,15 +95,44 @@ def main() -> None:
     if not args.no_browser:
         webbrowser.open(url)
 
-    # TODO(P3): RunExecutor + queue routes — for now the app idles, serving the
-    # web UI and keeping the emulator warm until the user interrupts.
-    print("Idle — emulator warm, server up. Ctrl-C to shut down.")
+    # Control plane (P3): construct the queue + index + executor, wire the
+    # control routes to them, and start the executor's serial drain loop in a
+    # background thread. Runs are dispatched INTO the persistent emulator one at
+    # a time; the queue + history survive restarts via their JSON files.
+    import threading
+
+    from src.app.executor import RunExecutor
+    from src.app.queue_manager import QueueManager
+    from src.app.run_index import RunIndex
+
+    app_dir = Path("local/app")
+    runs_root = Path("local/runs")
+    queue_manager = QueueManager(app_dir / "queue.json")
+    run_index = RunIndex(app_dir / "runs_index.json", runs_root)
+    run_index.load()
+    executor = RunExecutor(
+        supervisor=supervisor,
+        queue_manager=queue_manager,
+        run_index=run_index,
+        runs_root=runs_root,
+        saves_dir=saves_dir,
+    )
+    _dash_server.configure_control_plane(
+        queue_manager=queue_manager, executor=executor, run_index=run_index
+    )
+    drain_thread = threading.Thread(
+        target=executor.drain_loop, daemon=True, name="run-executor-drain",
+    )
+    drain_thread.start()
+
+    print("Idle — emulator warm, server up, queue draining. Ctrl-C to shut down.")
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
         print("\nShutting down...")
     finally:
+        executor.stop()
         supervisor.shutdown()
         print("Emulator shut down. Bye.")
 

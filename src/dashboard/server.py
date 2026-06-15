@@ -453,3 +453,156 @@ def unregister_run(run_id: str) -> None:
 def get_registry() -> RunRegistry:
     """Expose the process-singleton registry (used by sequential orchestrator)."""
     return _REGISTRY
+
+
+# ───────────────────────── control plane (Plan §P3) ─────────────────────────
+#
+# The control routes below are ADDITIVE — they don't touch the existing run-
+# scoped routes / spectate streams / RunRegistry above. They're backed by a
+# QueueManager + RunExecutor + RunIndex injected at app boot via
+# `configure_control_plane(...)`. Until configured they 503 (the app wires them
+# in `pokemon app`; the per-run `pokemon run` path leaves them unconfigured).
+
+_CONTROL: dict[str, Any] = {"queue": None, "executor": None, "index": None}
+
+
+def configure_control_plane(*, queue_manager, executor, run_index) -> None:
+    """Inject the control-plane collaborators (called once at app boot, P3)."""
+    _CONTROL["queue"] = queue_manager
+    _CONTROL["executor"] = executor
+    _CONTROL["index"] = run_index
+
+
+def _require_control() -> tuple[Any, Any, Any]:
+    queue = _CONTROL["queue"]
+    executor = _CONTROL["executor"]
+    index = _CONTROL["index"]
+    if queue is None or executor is None or index is None:
+        raise HTTPException(status_code=503, detail="control plane not configured")
+    return queue, executor, index
+
+
+def _validate_model_alias(model: str) -> None:
+    """Reject a model that's neither a known models.yaml alias nor a raw id."""
+    from src.config import _is_raw_model_id, _load_models_registry
+
+    if _is_raw_model_id(model):
+        return
+    registry = _load_models_registry()
+    if model not in registry:
+        known = ", ".join(sorted(registry)) or "(registry empty)"
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown model {model!r}; known aliases: {known}",
+        )
+
+
+@app.get("/api/queue")
+async def api_queue_get():
+    """`{active, items}` — the serial queue (active queue_id + ordered items)."""
+    queue, _executor, _index = _require_control()
+    return JSONResponse(
+        {
+            "active": queue.active,
+            "items": [it.model_dump(mode="json") for it in queue.items],
+        }
+    )
+
+
+@app.post("/api/queue")
+async def api_queue_post(spec: dict):
+    """Enqueue a QueuedRun spec.
+
+    Official enqueue (locked #4/#7) FORCES the frozen config + enforced gates +
+    no max-turns — any config/max_turns in the request is IGNORED. Casual takes
+    the request's config + max_turns. The model is validated against models.yaml.
+    """
+    queue, _executor, _index = _require_control()
+
+    raw_kind = spec.get("kind")
+    try:
+        from src.app.models import RunKind
+
+        kind = RunKind(raw_kind)
+    except Exception:
+        raise HTTPException(status_code=400, detail=f"invalid kind: {raw_kind!r}")
+
+    model = spec.get("model")
+    if not model or not isinstance(model, str):
+        raise HTTPException(status_code=400, detail="model is required")
+    _validate_model_alias(model)
+
+    if kind == RunKind.official:
+        # Frozen: config + max_turns come from the executor's official wiring,
+        # not the request. Ignore whatever was sent.
+        item = queue.enqueue(kind=kind, model=model, config=None, max_turns=None)
+    else:
+        item = queue.enqueue(
+            kind=kind,
+            model=model,
+            config=spec.get("config"),
+            max_turns=spec.get("max_turns"),
+            continue_from=spec.get("continue_from"),
+        )
+    return JSONResponse(item.model_dump(mode="json"), status_code=201)
+
+
+@app.delete("/api/queue/{queue_id}")
+async def api_queue_delete(queue_id: str):
+    """Cancel a queued item by id."""
+    queue, _executor, _index = _require_control()
+    removed = queue.cancel(queue_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail=f"queue_id not found: {queue_id}")
+    return JSONResponse({"cancelled": queue_id})
+
+
+@app.post("/api/queue/{queue_id}/move")
+async def api_queue_move(queue_id: str, body: dict):
+    """Reorder ``queue_id`` to ``{to_index}``."""
+    queue, _executor, _index = _require_control()
+    to_index = body.get("to_index")
+    if not isinstance(to_index, int):
+        raise HTTPException(status_code=400, detail="to_index (int) is required")
+    try:
+        queue.move(queue_id, to_index)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"queue_id not found: {queue_id}")
+    return JSONResponse(
+        {"active": queue.active, "items": [it.model_dump(mode="json") for it in queue.items]}
+    )
+
+
+@app.post("/api/runs/{run_id}/stop")
+async def api_run_stop(run_id: str):
+    """Stop the active run gracefully → status ``cancelled`` (locked #9).
+
+    An official run stopped this way is VOIDED (never leaderboard-eligible).
+    The executor records the verdict; the graceful savepoint is taken by the
+    run loop when interrupted.
+    """
+    _queue, executor, _index = _require_control()
+    matched = executor.request_stop(run_id)
+    return JSONResponse({"stopping": run_id, "matched": bool(matched)})
+
+
+@app.post("/api/runs/{run_id}/continue")
+async def api_run_continue(run_id: str, body: dict | None = None):
+    """Build a CASUAL continue spec and enqueue it (locked #10).
+
+    Reuses the SOURCE run's model (any model in the request body is IGNORED),
+    resolves the latest savepoint, sets ``continue_from``, and enqueues casual.
+    """
+    queue, executor, _index = _require_control()
+    try:
+        spec = executor.build_continue_spec(run_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    item = queue.enqueue(
+        kind=spec["kind"],
+        model=spec["model"],
+        config=spec.get("config"),
+        max_turns=(body or {}).get("max_turns"),
+        continue_from=spec["continue_from"],
+    )
+    return JSONResponse(item.model_dump(mode="json"), status_code=201)

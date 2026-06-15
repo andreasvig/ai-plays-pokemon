@@ -393,6 +393,33 @@ class Referee:
         """``"missed_gate:<id>"`` once a gate is missed under enforcement, else None."""
         return self.terminated_reason
 
+    # --- success exit (locked decision #8) ------------------------------------
+
+    def should_complete_run(self) -> bool:
+        """True once the FINAL ladder rung is fully complete — a WIN.
+
+        Parallel to (and independent of) the missed-deadline path: the benchmark
+        ends immediately when the last node of the ladder is satisfied (a single
+        gate stamped, or every member of a final multigate stamped). The turn
+        loop reads this and stops the run cleanly instead of playing on.
+
+        Returns False on an empty ladder (nothing to complete). Never raises.
+        """
+        if not self.nodes:
+            return False
+        return self._node_complete(self.nodes[-1])
+
+    @property
+    def completion_reason(self) -> Optional[str]:
+        """``"final_gate:<node-id>"`` once the final rung is complete, else None.
+
+        A human-readable signal for the run summary, mirroring the shape of
+        :attr:`termination_reason` ("missed_gate:<id>").
+        """
+        if not self.should_complete_run():
+            return None
+        return f"final_gate:{self.nodes[-1].id}"
+
     def _satisfied(self, cp: Checkpoint, snap: "_MemorySnapshot") -> bool:
         """Detector dispatch for a single checkpoint type."""
         sig = cp.signature

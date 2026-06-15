@@ -601,6 +601,10 @@ class TurnManager:
         # Observe-only Referee (set in setup() if a `referee` config block is
         # present). Polled in the turn loop; never reachable from agent.py.
         self.referee: Optional[Any] = None
+        # Latched True when the referee signals the final ladder rung is reached
+        # (locked decision #8) — the run loop breaks as a WIN and the summary is
+        # stamped `completed`. Stays False on every other exit path.
+        self._referee_completed: bool = False
         self.agent, self.model_settings, self.fallback_models = create_agent(config)
         self.max_steps_per_turn = config.get("max_steps_per_turn", 10)
         self.max_turns_before_trim = config.get("max_turns_before_trim")
@@ -1154,6 +1158,29 @@ class TurnManager:
                 })
                 break
 
+            # Success exit (locked decision #8): the final ladder rung is
+            # complete → the benchmark is WON and ends immediately rather than
+            # playing on. Parallel to the missed-deadline path above; guarded so
+            # a referee that doesn't implement it (or a flaky read) can never
+            # take down a run. The end status is recorded as `completed`.
+            if self.referee is not None:
+                try:
+                    if self.referee.should_complete_run():
+                        self._referee_completed = True
+                        reason = getattr(
+                            self.referee, "completion_reason", "final_gate"
+                        )
+                        print(f"  [Turn {self.turn_number}] Referee: final ladder "
+                              f"gate reached ({reason}) — run complete (WIN).")
+                        self.logger.log_custom("referee_complete", {
+                            "turn": self.turn_number, "reason": reason,
+                        })
+                        break
+                except Exception as e:
+                    self.logger.log_custom("referee_error", {
+                        "turn": self.turn_number, "error": str(e),
+                    })
+
             # Periodic savepoint — at the very end of the iteration so the
             # emulator state is post-settle, not mid-button-press.
             if (
@@ -1176,8 +1203,13 @@ class TurnManager:
         print(f"  Tokens: {self.total_input_tokens} in / {self.total_output_tokens} out")
         print(f"{'═'*60}")
 
-        # Write structured run summary
-        self._write_run_summary()
+        # Write structured run summary. A referee success-exit (final ladder
+        # rung reached) is a WIN → stamp `completed`; other exits leave status
+        # to the writer's own inference (referee missed-gate → `terminated`,
+        # else the executor/caller decides).
+        self._write_run_summary(
+            status="completed" if self._referee_completed else None
+        )
 
         # Restore stdout and close terminal log
         sys.stdout = self._orig_stdout
