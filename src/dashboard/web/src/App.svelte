@@ -70,23 +70,32 @@
   async function loadRuns() { runs = await api.fetchRuns() }
   async function loadQueue() {
     const { active: a, items } = await api.fetchQueue()
-    queue = items
     activeId = a
-    // join the active run to its live RunSummary (the running run is in the
-    // index but NOT in queue.items). Prefer the executor's active_run_id from
-    // emulator status (authoritative for spectate); fall back to a running-status
-    // scan, then null. Used to badge the spectate bar (model/kind).
+    // The real /api/queue returns {active: <queue_id>, items: [ALL items incl.
+    // the active one]} (Plan §Round 7). Split it: the active queue item is the
+    // running run; the rest are the draggable upcoming cards. Without this the
+    // running run shows as an upcoming card and the strip's active slot is empty.
+    const activeItem = a ? items.find((q) => q.queueId === a) : null
+    queue = items.filter((q) => q.queueId !== a)
+    // Resolve the active run's live RunSummary so the active card + spectate bar
+    // show real model/kind/turn. Prefer the executor's active_run_id from
+    // emulator status (authoritative for spectate streams); fall back to a
+    // running-status scan. If the index hasn't caught up yet, fall back to the
+    // active queue item itself (kind/model are enough to populate the card +
+    // flip the TopBar pill green).
     const liveId = emulator.active_run_id ?? null
+    let resolved = null
     if (liveId) {
-      active = runs.find((r) => r.runId === liveId)
+      resolved = runs.find((r) => r.runId === liveId)
         || (await api.fetchRun(liveId).catch(() => null))
     } else if (a) {
-      const running = runs.find((r) => r.status === 'running')
+      resolved = runs.find((r) => r.status === 'running')
         || (await api.fetchRuns({ status: 'running' }).then((rs) => rs[0]).catch(() => null))
-      active = running ?? null
-    } else {
-      active = null
     }
+    // When there IS an active queue item, never leave `active` null — fall back
+    // to the queue item so the active card renders even before the RunSummary
+    // is available. When there's no active item, clear it.
+    active = resolved ?? (activeItem ? { ...activeItem, runId: liveId } : null)
   }
   async function loadEmulator() { emulator = await api.fetchEmulatorStatus() }
   async function loadCatalog() {
