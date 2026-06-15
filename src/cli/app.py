@@ -54,6 +54,24 @@ class _FakeSupervisor:
         pass
 
 
+def _backfill_index_on_boot(run_index) -> int:
+    """Populate an empty/missing run index from ``runs_root`` on a REAL boot.
+
+    Plan §P7: the live leaderboard/history should not be empty just because the
+    denormalized ``runs_index.json`` is missing or empty while ``local/runs`` has
+    real run folders (e.g. first boot after upgrading from ``pokemon run``, or a
+    deleted index). The index is fully rebuildable from a scan, so we re-derive it
+    rather than serving an empty board. An existing NON-empty index is left
+    untouched (``run_index.load()`` already populated it) — we never clobber it.
+
+    Returns the number of runs backfilled (0 if the index was already non-empty).
+    """
+    if run_index.all():
+        return 0
+    entries = run_index.rebuild_from_scan()
+    return len(entries)
+
+
 def _seed_index(run_index, seed_path: Path) -> int:
     """Seed ``run_index`` from a path for headless serving.
 
@@ -232,6 +250,12 @@ def main() -> None:
     queue_manager = QueueManager(app_dir / "queue.json")
     run_index = RunIndex(app_dir / "runs_index.json", runs_root)
     run_index.load()
+    # Backfill-on-boot (Plan §P7): if the index is missing/empty but real run
+    # folders exist under runs_root, rebuild it so the leaderboard/history aren't
+    # empty. No-op when the index already has entries.
+    backfilled = _backfill_index_on_boot(run_index)
+    if backfilled:
+        print(f"Backfilled run index with {backfilled} run(s) from {runs_root}")
     executor = RunExecutor(
         supervisor=supervisor,
         queue_manager=queue_manager,
