@@ -1,4 +1,5 @@
 <script>
+  import { untrack } from 'svelte'
   // MODELS / CONFIGS are now fed from App (sourced from /api/models + /api/configs)
   // instead of importing the mock module directly.
   // MODELS is now an array of {alias, run_count} objects (api.fetchModels).
@@ -13,12 +14,26 @@
   // last element of the list.
   function latestConfig(stems) {
     if (!stems || !stems.length) return ''
+    // Compare versions COMPONENT-WISE as integers so "3.13" > "3.9"
+    // (parseFloat would read 3.13 < 3.9). Split the numeric token on "."
+    // into [3,13] and compare element by element against the current best.
+    const cmp = (a, b) => {
+      const n = Math.max(a.length, b.length)
+      for (let i = 0; i < n; i++) {
+        const ai = a[i] ?? 0
+        const bi = b[i] ?? 0
+        if (ai !== bi) return ai - bi
+      }
+      return 0
+    }
     let best = null
-    let bestV = -Infinity
+    let bestV = null
     for (const s of stems) {
       const m = String(s).match(/(\d+(?:\.\d+)*)/)
-      const v = m ? parseFloat(m[1]) : NaN
-      if (!Number.isNaN(v) && v > bestV) { bestV = v; best = s }
+      if (!m) continue
+      const v = m[1].split('.').map((x) => parseInt(x, 10))
+      if (v.some(Number.isNaN)) continue
+      if (bestV === null || cmp(v, bestV) > 0) { bestV = v; best = s }
     }
     return best ?? stems[stems.length - 1]
   }
@@ -30,17 +45,29 @@
   let maxTurns = $state(100)        // casual default: 100 turns
   let modelQuery = $state('')       // searchable model-picker filter text
 
+  // Apply open-time defaults ONCE per false→true transition of `open`.
+  // Reading `config`/`kind`/`model`/`maxTurns` inside an $effect would make
+  // them dependencies, so the effect would re-run on every field edit and
+  // re-apply `kind = 'official'` (snapping the segment back). Gate on the
+  // `open` transition instead and wrap the field reads/writes in untrack so
+  // they never register as dependencies.
+  let prevOpen = false
   $effect(() => {
-    if (open && continueFrom) {
-      kind = 'casual'
-      model = continueFrom.model
-      maxTurns = continueFrom.maxTurns ?? 100
-      if (!config) config = latestConfig(CONFIGS)
-    } else if (open && !continueFrom) {
-      kind = 'official'
-      model = MODELS[0]?.alias ?? ''
-      if (!config) config = latestConfig(CONFIGS)
+    if (open && !prevOpen) {
+      untrack(() => {
+        if (continueFrom) {
+          kind = 'casual'
+          model = continueFrom.model
+          maxTurns = continueFrom.maxTurns ?? 100
+          if (!config) config = latestConfig(CONFIGS)
+        } else {
+          kind = 'official'
+          model = MODELS[0]?.alias ?? ''
+          if (!config) config = latestConfig(CONFIGS)
+        }
+      })
     }
+    prevOpen = open
   })
 
   const isContinue = $derived(!!continueFrom)
