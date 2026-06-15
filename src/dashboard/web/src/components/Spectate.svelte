@@ -1,66 +1,257 @@
 <script>
-  import { GATES, gate, TOTAL_GATES } from '../lib/gates.js'
+  // LIVE spectate (Plan §P6). The component tree is unchanged from the mock —
+  // every panel the real static/index.html carries stays — but the data source
+  // is swapped to the real streams:
+  //   stats row  ← `stats` WS msg (+ client-clock elapsed)
+  //   emulator   ← /runs/{id}/ws/screen binary PNG frames
+  //   memory     ← `state_update` WS msg
+  //   task       ← task_started/task_completed events (TaskMaster) w/ graceful fallback
+  //   gate HUD   ← referee_checkpoint events ÷ /runs/{id}/api/config ladder
+  //   trace feed ← the full event taxonomy, grouped by turn
+  // The active run id comes from /api/emulator/status (App passes it in).
+  import { gate, GATE_INDEX } from '../lib/gates.js'
   import { usd, dur } from '../lib/format.js'
   import JsonTree from './JsonTree.svelte'
   import TraceFeed from './TraceFeed.svelte'
-  let { run = null, onnew, onback } = $props()
+  import * as api from '../lib/api.js'
 
-  const reached = $derived(run ? run.gatesReached : 0)
-  const turnsLeft = $derived(run ? run.currentGateDeadline - run.currentTurn : 0)
-  const budgetPct = $derived(run ? Math.min(100, run.currentTurn / run.currentGateDeadline * 100) : 0)
-  const tone = $derived(turnsLeft < 25 ? 'red' : turnsLeft < 60 ? 'amber' : 'ok')
+  // `run` = the active RunSummary (for model + kind badge); `activeRunId` = the
+  // run-dir id to open the live streams against. Either may be null (no run).
+  let { run = null, activeRunId = null, onnew, onback } = $props()
 
-  // mini gate ladder window around the current rung
-  const ladder = $derived(GATES
-    .map((g, i) => ({ ...g, status: i < reached ? 'done' : i === reached ? 'current' : 'upcoming',
-                      turn: i < reached ? Math.round(g.deadline * 0.74) : null }))
-    .slice(Math.max(0, reached - 2), reached + 3))
+  // ── live state, populated by the event/screen sockets ──
+  let stats = $state({ turns: 0, cost: 0, input_tokens: 0, output_tokens: 0 })
+  let memory = $state({})
+  let task = $state(null)              // {title, description, success} | null
+  let ladder = $state([])              // [{id, name, deadline_turn, group?}]
+  let enforce = $state(false)
+  let stamps = $state({})              // {checkpoint_id: turn} latched
+  let currentTurn = $state(0)
+  let feed = $state([])                // [{turn, boxes:[...]}] oldest→newest
+  let eventCount = $state(0)
+  let screenConnected = $state(false)
+  let eventsConnected = $state(false)
+  let screenUrl = $state(null)
+  let startedAtMs = $state(null)
+  let elapsedS = $state(0)
 
-  const memory = {
-    location: 'Mt. Moon B1F',
-    party: [
-      { species: 'CHARMELEON', lvl: 22 },
-      { species: 'PIDGEY', lvl: 12 },
-      { species: 'NIDORAN♂', lvl: 14 },
-    ],
-    badges: ['Boulder', 'Cascade'],
-    money: 4210,
-    items: ['Potion x4', 'Antidote', 'Moon Stone', 'Escape Rope'],
-    objective: 'reach Route 4 via Mt. Moon',
+  // per-turn box accumulation while streaming (turn → boxes[])
+  let turnBoxes = new Map()
+  let prevScreenUrl = null
+
+  // ── derivations for the gate HUD ──
+  const reached = $derived(Object.keys(stamps).length)
+  const totalGates = $derived(ladder.length || 0)
+  // next gate = first ladder rung NOT yet stamped
+  const nextGate = $derived(ladder.find((g) => !(g.id in stamps)) || null)
+  const deadline = $derived(nextGate?.deadline_turn ?? null)
+  const turnsLeft = $derived(deadline != null ? deadline - currentTurn : null)
+  const budgetPct = $derived(
+    deadline ? Math.min(100, (currentTurn / deadline) * 100) : 0
+  )
+  const tone = $derived(
+    turnsLeft == null ? 'ok' : turnsLeft < 25 ? 'red' : turnsLeft < 60 ? 'amber' : 'ok'
+  )
+
+  // mini gate ladder window around the current rung (done/current/upcoming)
+  const ladderWindow = $derived(() => {
+    const rows = ladder.map((g) => ({
+      ...g,
+      status: g.id in stamps ? 'done' : g.id === nextGate?.id ? 'current' : 'upcoming',
+      turn: g.id in stamps ? stamps[g.id] : null,
+    }))
+    return rows.slice(Math.max(0, reached - 2), reached + 3)
+  })
+
+  // ── helpers to turn raw events into trace boxes ──
+  function parseArgs(a) {
+    if (typeof a === 'string') { try { return JSON.parse(a) } catch { return null } }
+    return a
   }
-  const task = {
-    title: 'Cross Mt. Moon to Route 4',
-    description: 'Navigate the three-floor cave, handle the Super Nerd and Rocket grunts, then exit north to Route 4. Pick up a fossil if convenient.',
-    success: 'Player map = Route 4 (north exit)',
+  function fmtHandback(r) {
+    if (!r || typeof r !== 'object') return ''
+    const parts = []
+    if (r.self_assessment) parts.push('Self-assessment: ' + r.self_assessment)
+    if (r.task_summary) parts.push('Task summary: ' + r.task_summary)
+    return parts.join('\n\n')
   }
 
-  const feed = [
-    { turn: 631, boxes: [
-      { k: 'thinking', t: "On Mt. Moon B1F near the eastern ladder. The Rocket grunt blocks the corridor to Route 4 — I'll engage and push through." },
-      { k: 'action', t: '↑ ↑ → → a ↑' },
-      { k: 'tool', name: 'press_buttons', args: 'buttons=[up,up,right,right,a,up]', resp: 'ok · screen advanced' },
-      { k: 'ocr', t: 'ROCKET wants to fight!', meta: '2 captures · 0.4s · $0.0003' },
-      { k: 'output', ok: null, t: 'Engaged the grunt; battle starting.' },
-      { k: 'settle', t: 'screen settled in 1.1s' },
-    ] },
-    { turn: 630, boxes: [
-      { k: 'thinking', t: 'Picked up the Moon Stone. The southern fork is a dead end — heading back north.' },
-      { k: 'memory', t: '{ items: [+Moon Stone], floor: "B1F" }' },
-      { k: 'output', ok: true, t: 'Backtracked north past the boulder.' },
-    ] },
-    { turn: 629, boxes: [
-      { k: 'thinking', t: 'Wild Zubat encounter — run, conserving PP for the grunt ahead.' },
-      { k: 'action', t: 'down b b' },
-      { k: 'output', ok: true, t: 'Fled the battle.' },
-    ] },
-  ]
+  function pushBox(turn, box) {
+    const t = turn ?? currentTurn
+    if (!turnBoxes.has(t)) turnBoxes.set(t, [])
+    turnBoxes.get(t).push(box)
+    rebuildFeed()
+  }
+  function rebuildFeed() {
+    const turns = [...turnBoxes.keys()].sort((a, b) => a - b)
+    feed = turns.map((t) => ({ turn: t, boxes: turnBoxes.get(t) }))
+  }
+
+  // map one raw event → zero or more trace boxes (parity with static/index.html)
+  function ingestEvent(evt) {
+    eventCount += 1
+    const t = evt.type
+
+    if (t === 'turn_start') {
+      if (typeof evt.turn === 'number') currentTurn = evt.turn
+      if (!turnBoxes.has(evt.turn)) { turnBoxes.set(evt.turn, []); rebuildFeed() }
+      return
+    }
+    if (t === 'task_started') {
+      task = { title: evt.title || '(untitled task)', description: evt.description || '', success: evt.success_criteria || '' }
+      return
+    }
+    if (t === 'task_completed') {
+      // keep the title; mark it done in the panel via a status note
+      if (task) task = { ...task, status: evt.status || 'completed' }
+      return
+    }
+    if (t === 'referee_checkpoint') {
+      if (evt.checkpoint_id != null && !(evt.checkpoint_id in stamps)) {
+        stamps = { ...stamps, [evt.checkpoint_id]: evt.turn }
+      }
+      return
+    }
+    if (t === 'referee_gate_missed' || t === 'referee_terminate') {
+      // surfaced via the HUD tone; nothing to add to the feed
+      return
+    }
+    if (t === 'llm_thinking') { pushBox(evt.turn, { k: 'thinking', t: evt.content || '' }); return }
+    if (t === 'llm_output') {
+      const args = parseArgs(evt.args || '')
+      if (args && typeof args === 'object') {
+        const lines = []
+        const grade = args.last_turn_succeeded
+        let ok = null
+        if (grade === true) { lines.push('Last turn: succeeded'); ok = true }
+        else if (grade === false) { lines.push('Last turn: failed'); ok = false }
+        if (args.reasoning) lines.push(args.reasoning)
+        if (lines.length) pushBox(evt.turn, { k: 'output', ok, t: lines.join(' — ') })
+        if (args.inputs && args.inputs.length) {
+          const inputs = Array.isArray(args.inputs) ? args.inputs.join(' ') : args.inputs
+          pushBox(evt.turn, { k: 'action', t: inputs })
+        }
+        if (args.return_to_taskmaster) pushBox(evt.turn, { k: 'handback', t: fmtHandback(args.return_to_taskmaster) })
+      }
+      return
+    }
+    if (t === 'memory_update_output') {
+      const raw = evt.content || '(no changes)'
+      let display = raw
+      if (raw !== '(no changes)' && raw.toLowerCase() !== 'none') {
+        try { display = JSON.stringify(JSON.parse(raw)) } catch { /* keep raw */ }
+      }
+      pushBox(evt.turn, { k: 'memory', t: display })
+      return
+    }
+    if (t === 'ocr_flush') {
+      const n = evt.n_captures || 0
+      const cleaned = evt.cleaned || ''
+      if (n === 0 && !cleaned) return
+      const cost = evt.cost_usd ? ` · $${Number(evt.cost_usd).toFixed(5)}` : ''
+      pushBox(evt.turn, { k: 'ocr', t: cleaned || '(empty)', meta: `${n} captures · ${evt.duration || 0}s${cost}` })
+      return
+    }
+    if (t === 'llm_text') { pushBox(evt.turn, { k: 'output', ok: null, t: evt.content || '' }); return }
+    if (t === 'tool_call') { pushBox(evt.turn, { k: 'tool', name: evt.tool, args: JSON.stringify(evt.args), resp: null }); return }
+    if (t === 'tool_response') {
+      const resp = typeof evt.response === 'string' ? evt.response : JSON.stringify(evt.response)
+      pushBox(evt.turn, { k: 'tool', name: '↳ response', args: '', resp })
+      return
+    }
+    if (t === 'screen_settled') { pushBox(evt.turn, { k: 'settle', t: `Settled in ${evt.duration || 0}s` }); return }
+    if (t === 'output_retry') { pushBox(evt.turn, { k: 'error', t: evt.content || 'Validation failed — retrying.' }); return }
+    if (t === 'agent_error' || t === 'action_error') {
+      pushBox(evt.turn, { k: 'error', t: evt.error || evt.message || JSON.stringify(evt) })
+      return
+    }
+    // screenshot, state_change, button_sequence, turn_trace/explanation/usage,
+    // screen_settling, run_start/end — ignored for the live feed (covered by
+    // dedicated streaming events above or by the stats msg).
+  }
+
+  function resetLiveState() {
+    stats = { turns: 0, cost: 0, input_tokens: 0, output_tokens: 0 }
+    memory = {}
+    task = null
+    stamps = {}
+    currentTurn = 0
+    eventCount = 0
+    turnBoxes = new Map()
+    feed = []
+  }
+
+  // ── socket lifecycle: open on activeRunId, tear down on change/unmount ──
+  let evtSock = null
+  let scrSock = null
+  let cfgRunId = null
+
+  $effect(() => {
+    const id = activeRunId
+    // tear down previous
+    if (evtSock) { evtSock.close(); evtSock = null }
+    if (scrSock) { scrSock.close(); scrSock = null }
+    if (prevScreenUrl) { URL.revokeObjectURL(prevScreenUrl); prevScreenUrl = null }
+    screenUrl = null
+    screenConnected = false
+    eventsConnected = false
+    if (!id) { resetLiveState(); return }
+
+    resetLiveState()
+    startedAtMs = run?.startedAt ? Date.parse(run.startedAt) : Date.now()
+
+    // the events WS replays the full backlog on connect → reset accumulators
+    // first so a reconnect rebuilds cleanly instead of double-appending.
+    evtSock = api.openEventSocket(id, (msg) => {
+      eventsConnected = true
+      if (msg.type === 'event') ingestEvent(msg.data)
+      else if (msg.type === 'state_update') memory = msg.data || {}
+      else if (msg.type === 'stats') stats = { ...stats, ...msg.data }
+    })
+    scrSock = api.openScreenSocket(id, (url) => {
+      screenConnected = true
+      if (prevScreenUrl) URL.revokeObjectURL(prevScreenUrl)
+      prevScreenUrl = url
+      screenUrl = url
+    })
+
+    // gate ladder for the HUD (real, never hardcoded)
+    cfgRunId = id
+    api.fetchRunConfig(id).then((cfg) => {
+      if (cfgRunId !== id) return
+      if (cfg.referee && Array.isArray(cfg.referee.ladder)) {
+        ladder = cfg.referee.ladder
+        enforce = !!cfg.referee.enforce
+      }
+    }).catch(() => {})
+
+    return () => {
+      if (evtSock) { evtSock.close(); evtSock = null }
+      if (scrSock) { scrSock.close(); scrSock = null }
+      if (prevScreenUrl) { URL.revokeObjectURL(prevScreenUrl); prevScreenUrl = null }
+    }
+  })
+
+  // ── elapsed = client clock from the run's start ──
+  $effect(() => {
+    if (!activeRunId) { elapsedS = 0; return }
+    const tick = () => { if (startedAtMs) elapsedS = Math.max(0, (Date.now() - startedAtMs) / 1000) }
+    tick()
+    const iv = setInterval(tick, 1000)
+    return () => clearInterval(iv)
+  })
+
+  const tokensLabel = $derived(
+    `${Math.round((stats.input_tokens || 0) / 1000)}k`
+  )
+  const tokensSub = $derived(`${Math.round((stats.output_tokens || 0) / 1000)}k`)
 </script>
 
 <section class="wrap">
-  {#if !run}
+  {#if !activeRunId}
     <div class="empty">
-      <p class="big">No active run</p>
-      <p class="faint">Queue a run to start spectating — the next item starts automatically.</p>
+      <p class="big">Waiting for a live run</p>
+      <p class="faint">No run is active right now. Queue a run to start spectating — the next item starts automatically and streams here live.</p>
       <button class="btn" onclick={() => onnew()}>+ New run</button>
       <button class="btn ghost" onclick={() => onback()}>← Back to leaderboard</button>
     </div>
@@ -68,12 +259,12 @@
     <div class="bar">
       <button class="btn ghost" onclick={() => onback()}>← Leaderboard</button>
       <span class="pill"><span class="dot live"></span> live</span>
-      <span class="badge official">benchmark</span>
-      <span class="model mono">{run.model}</span>
+      {#if run}<span class="badge {run.kind}">{run.kind === 'official' ? 'benchmark' : 'casual'}</span>{/if}
+      <span class="model mono">{run?.model ?? activeRunId}</span>
       <span class="conn">
-        <span class="c-ind"><span class="dot live"></span> screen</span>
-        <span class="c-ind"><span class="dot live"></span> events</span>
-        <span class="c-evt faint mono">1,284 events</span>
+        <span class="c-ind" class:off={!screenConnected}><span class="dot" class:live={screenConnected}></span> screen</span>
+        <span class="c-ind" class:off={!eventsConnected}><span class="dot" class:live={eventsConnected}></span> events</span>
+        <span class="c-evt faint mono">{eventCount.toLocaleString()} events</span>
       </span>
     </div>
 
@@ -81,45 +272,59 @@
       <!-- main: BIG emulator + HUD + stats + task + memory -->
       <div class="main">
         <div class="stats">
-          <div class="stat"><span class="sl">Turn</span><span class="sv tnum">{run.currentTurn}</span></div>
-          <div class="stat"><span class="sl">Cost</span><span class="sv tnum">{usd(run.totalCostUsd)}</span></div>
-          <div class="stat"><span class="sl">Tokens</span><span class="sv tnum">412k<span class="su">/89k</span></span></div>
-          <div class="stat"><span class="sl">Elapsed</span><span class="sv tnum">{dur(run.durationS)}</span></div>
-          <div class="stat"><span class="sl">Gates</span><span class="sv tnum">{reached}/{TOTAL_GATES}</span></div>
+          <div class="stat"><span class="sl">Turn</span><span class="sv tnum">{stats.turns || currentTurn}</span></div>
+          <div class="stat"><span class="sl">Cost</span><span class="sv tnum">{usd(stats.cost)}</span></div>
+          <div class="stat"><span class="sl">Tokens</span><span class="sv tnum">{tokensLabel}<span class="su">/{tokensSub}</span></span></div>
+          <div class="stat"><span class="sl">Elapsed</span><span class="sv tnum">{dur(elapsedS)}</span></div>
+          <div class="stat"><span class="sl">Gates</span><span class="sv tnum">{reached}/{totalGates || '—'}</span></div>
         </div>
 
-        <div class="gba"><div class="ph">emulator screen<br /><span class="faint">live stream (mock)</span></div></div>
+        <div class="gba">
+          {#if screenUrl}
+            <img class="screen" src={screenUrl} alt="emulator screen" />
+          {:else}
+            <div class="ph">emulator screen<br /><span class="faint">connecting to live stream…</span></div>
+          {/if}
+        </div>
 
         <div class="panels">
           <div class="panel task">
             <div class="p-h">🧭 Current task</div>
             <div class="p-scroll">
-              <div class="t-title">{task.title}</div>
-              <div class="t-lab">Description</div>
-              <p class="t-body">{task.description}</p>
-              <div class="t-lab">🎯 Success criteria</div>
-              <p class="t-body mono">{task.success}</p>
+              {#if task}
+                <div class="t-title">{task.title}{#if task.status}<span class="t-done faint"> · {task.status}</span>{/if}</div>
+                {#if task.description}<div class="t-lab">Description</div><p class="t-body">{task.description}</p>{/if}
+                {#if task.success}<div class="t-lab">🎯 Success criteria</div><p class="t-body mono">{task.success}</p>{/if}
+              {:else}
+                <p class="t-body faint">No task yet — waiting for the first TaskMaster handoff (or this run isn't TaskMaster-scaffolded).</p>
+              {/if}
             </div>
           </div>
           <div class="panel mem">
             <div class="p-h">🧠 Memory dictionary</div>
-            <div class="p-scroll"><JsonTree data={memory} /></div>
+            <div class="p-scroll">
+              {#if memory && Object.keys(memory).length}<JsonTree data={memory} />{:else}<p class="t-body faint">(empty)</p>{/if}
+            </div>
           </div>
         </div>
 
         <div class="hud {tone}">
           <div class="hud-top">
             <span class="hl">Next gate</span>
-            <span class="hv">{gate(run.nextGate)?.name}</span>
-            <span class="hv-left tnum">{turnsLeft} turns left · limit T{run.currentGateDeadline}</span>
+            <span class="hv">{nextGate?.name ?? '— all gates reached'}</span>
+            {#if deadline != null}
+              <span class="hv-left tnum">{turnsLeft} turns left · limit T{deadline}</span>
+            {/if}
           </div>
-          <div class="hud-track"><span class="hud-fill" style={`width:${budgetPct}%`}></span></div>
+          {#if deadline != null}
+            <div class="hud-track"><span class="hud-fill" style={`width:${budgetPct}%`}></span></div>
+          {/if}
           <div class="ladder">
-            {#each ladder as g}
+            {#each ladderWindow() as g}
               <div class="lg {g.status}">
                 <span class="lg-i">{g.status === 'done' ? '✓' : g.status === 'current' ? '▶' : '·'}</span>
                 <span class="lg-n">{g.name}</span>
-                <span class="lg-t tnum faint">{g.turn != null ? 'T' + g.turn : 'T' + g.deadline}</span>
+                <span class="lg-t tnum faint">{g.turn != null ? 'T' + g.turn : g.deadline_turn != null ? 'T' + g.deadline_turn : '—'}</span>
               </div>
             {/each}
           </div>
@@ -127,7 +332,7 @@
       </div>
 
       <!-- side: live trace feed (own component) -->
-      <TraceFeed turns={[...feed].reverse()} />
+      <TraceFeed turns={feed} />
     </div>
   {/if}
 </section>
@@ -135,16 +340,20 @@
 <style>
   .wrap { max-width: 1320px; margin: 0 auto; padding: 22px 24px; }
   .empty { text-align: center; padding: 80px 0; display: flex; flex-direction: column; gap: 10px; align-items: center; }
+  .empty .faint { max-width: 440px; line-height: 1.5; }
   .big { font-size: 18px; font-weight: 700; margin: 0; }
   .bar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
   .bar .model { font-size: 14px; font-weight: 650; }
   .conn { margin-left: auto; display: flex; align-items: center; gap: 12px; }
   .c-ind { font-size: 11px; font-weight: 650; color: var(--green); display: inline-flex; align-items: center; gap: 5px; }
+  .c-ind.off { color: var(--faint); }
+  .c-ind.off .dot { background: var(--faint); }
   .c-evt { font-size: 11px; }
 
   .layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; align-items: start; }
   .main { display: flex; flex-direction: column; gap: 14px; }
-  .gba { aspect-ratio: 240/160; background: #11141b; border-radius: var(--radius); display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-lg); }
+  .gba { aspect-ratio: 240/160; background: #11141b; border-radius: var(--radius); display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-lg); overflow: hidden; }
+  .screen { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; }
   .ph { color: #7b8696; text-align: center; font-size: 16px; line-height: 1.7; }
 
   .hud { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow); }
@@ -175,6 +384,7 @@
   .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow); }
   .p-h { font-size: 11px; font-weight: 750; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: 10px; }
   .t-title { font-size: 14px; font-weight: 700; margin-bottom: 8px; }
+  .t-done { font-weight: 500; }
   .t-lab { font-size: 10px; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); font-weight: 700; margin-top: 8px; }
   .t-body { font-size: 12.5px; line-height: 1.5; color: var(--muted); margin: 3px 0 0; }
   .p-scroll { max-height: 210px; overflow-y: auto; overflow-x: auto; padding-right: 4px; }

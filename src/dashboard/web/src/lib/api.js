@@ -143,13 +143,99 @@ export async function fetchQueue() {
 }
 
 export async function fetchEmulatorStatus() {
-  // GET /api/emulator/status → {configured, process_up, connected, busy}.
+  // GET /api/emulator/status → {configured, process_up, connected, busy, active_run_id}.
+  // active_run_id (Plan §P6) is the run-dir name of the live run, or null in
+  // headless / between runs — Spectate opens /runs/{active_run_id}/ws/* with it.
   // Never throws on an unconfigured control plane (returns configured:false).
   try {
     return await getJSON('/api/emulator/status')
   } catch {
-    return { configured: false, process_up: false, connected: false, busy: false }
+    return { configured: false, process_up: false, connected: false, busy: false, active_run_id: null }
   }
+}
+
+export async function fetchRunSummary(runId) {
+  // GET /api/runs/{id}/summary → the RAW nested run_summary.json
+  // ({session, cost:{…, per_turn}, turns, referee:{gates, furthest, …}}).
+  // The Report view renders the scorecard + per-turn trace from this (Plan §P6).
+  return getJSON(`/api/runs/${encodeURIComponent(runId)}/summary`)
+}
+
+// ───────────────────────────── live sockets (Plan §P6) ─────────────────────
+// WebSocket helpers. Each returns the WebSocket so the caller owns teardown
+// (close on unmount). Built against the EXISTING spectate streams + the new
+// control hub — same URL shapes the legacy dashboard used.
+
+function wsUrl(path) {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${proto}//${location.host}${path}`
+}
+
+export function openControlSocket(onMessage) {
+  // WS /api/ws/control — pushes {type:"control", active, queue_len,
+  // leaderboard_dirty} on every state change (refetch-on-ping, locked #7).
+  // Auto-reconnects on drop. Returns a handle with close() that stops retries.
+  let ws = null
+  let closed = false
+  let timer = null
+  function connect() {
+    if (closed) return
+    ws = new WebSocket(wsUrl('/api/ws/control'))
+    ws.onmessage = (e) => {
+      try { onMessage(JSON.parse(e.data)) } catch { /* ignore malformed */ }
+    }
+    ws.onclose = () => { if (!closed) timer = setTimeout(connect, 2000) }
+    ws.onerror = () => { try { ws.close() } catch { /* ignore */ } }
+  }
+  connect()
+  return { close() { closed = true; if (timer) clearTimeout(timer); try { ws && ws.close() } catch { /* ignore */ } } }
+}
+
+export function openEventSocket(runId, onMsg) {
+  // WS /runs/{id}/ws/events — pushes {type: event|state_update|stats, data};
+  // the server replays the full backlog from cursor 0 on every (re)connect.
+  // onMsg receives the parsed {type, data} envelope.
+  let ws = null
+  let closed = false
+  let timer = null
+  function connect() {
+    if (closed) return
+    ws = new WebSocket(wsUrl(`/runs/${encodeURIComponent(runId)}/ws/events`))
+    ws.onmessage = (e) => {
+      try { onMsg(JSON.parse(e.data)) } catch { /* ignore */ }
+    }
+    ws.onclose = (e) => { if (!closed && e.code !== 1008) timer = setTimeout(connect, 2000) }
+    ws.onerror = () => { try { ws.close() } catch { /* ignore */ } }
+  }
+  connect()
+  return { close() { closed = true; if (timer) clearTimeout(timer); try { ws && ws.close() } catch { /* ignore */ } } }
+}
+
+export function openScreenSocket(runId, onFrame) {
+  // WS /runs/{id}/ws/screen — binary PNG frames. onFrame receives an object URL
+  // for an <img src>; the caller revokes the PREVIOUS url it held.
+  let ws = null
+  let closed = false
+  let timer = null
+  function connect() {
+    if (closed) return
+    ws = new WebSocket(wsUrl(`/runs/${encodeURIComponent(runId)}/ws/screen`))
+    ws.binaryType = 'arraybuffer'
+    ws.onmessage = (e) => {
+      const blob = new Blob([e.data], { type: 'image/png' })
+      onFrame(URL.createObjectURL(blob))
+    }
+    ws.onclose = (e) => { if (!closed && e.code !== 1008) timer = setTimeout(connect, 2000) }
+    ws.onerror = () => { try { ws.close() } catch { /* ignore */ } }
+  }
+  connect()
+  return { close() { closed = true; if (timer) clearTimeout(timer); try { ws && ws.close() } catch { /* ignore */ } } }
+}
+
+export async function fetchRunConfig(runId) {
+  // GET /runs/{id}/api/config → {referee:{enforce, ladder:[{id,name,deadline_turn,group?}]}}.
+  // The spectate gate HUD reads the real ladder from here (never hardcoded).
+  return getJSON(`/runs/${encodeURIComponent(runId)}/api/config`)
 }
 
 // ───────────────────────────── mutations ─────────────────────────────

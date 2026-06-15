@@ -4,8 +4,10 @@
   // (mirrors the live dashboard chat-scroll). Scrolls to the live turn.
   let { turns = [] } = $props()
 
-  const boxIcon = { thinking: '💭', output: '💬', action: '🎮', tool: '🔧', memory: '🧠', ocr: '📝', settle: '⏱' }
-  const boxName = { thinking: 'Thinking', output: 'Output', action: 'Action', tool: 'Tool', memory: 'Memory', ocr: 'OCR', settle: 'Screen settling' }
+  // handback + error are present in the real event stream (static/index.html)
+  // but were omitted from the mock; wired in here for P6 parity.
+  const boxIcon = { thinking: '💭', output: '💬', action: '🎮', tool: '🔧', memory: '🧠', ocr: '📝', settle: '⏱', handback: '↩️', error: '❌' }
+  const boxName = { thinking: 'Thinking', output: 'Output', action: 'Action', tool: 'Tool', memory: 'Memory', ocr: 'OCR', settle: 'Screen settling', handback: 'Return to TaskMaster', error: 'Error' }
 
   const currentId = $derived(turns.length ? turns[turns.length - 1].turn : null)
   let open = $state(new Set())
@@ -36,9 +38,9 @@
                 <div class="ebox-h"><span class="ico">{boxIcon[b.k]}</span>{boxName[b.k]}{#if b.meta}<span class="ebox-meta faint">{b.meta}</span>{/if}</div>
                 <div class="ebox-b">
                   {#if b.k === 'action'}<span class="mono act">{b.t}</span>
-                  {:else if b.k === 'tool'}<div class="mono call">{b.name}({b.args})</div><div class="resp faint">→ {b.resp}</div>
+                  {:else if b.k === 'tool'}{#if b.args}<div class="mono call">{b.name}({b.args})</div>{/if}{#if b.resp != null}<div class="resp faint">→ {b.resp}</div>{/if}
                   {:else if b.k === 'memory'}<span class="mono">{b.t}</span>
-                  {:else if b.k === 'output'}{#if b.ok !== null}<span class="ok-tag" class:ok={b.ok} class:no={!b.ok}>{b.ok ? '✓ ok' : '✗ failed'}</span>{/if}{b.t}
+                  {:else if b.k === 'output'}{#if b.ok != null}<span class="ok-tag" class:ok={b.ok} class:no={!b.ok}>{b.ok ? '✓ ok' : '✗ failed'}</span>{/if}{b.t}
                   {:else}{b.t}{/if}
                 </div>
               </div>
@@ -77,6 +79,8 @@
   .ebox.memory   { border-color: var(--green); }
   .ebox.ocr      { border-color: #e8804a; }
   .ebox.settle   { border-color: #d8a93b; }
+  .ebox.handback { border-color: #6ca4ff; }
+  .ebox.error    { border-color: var(--red); background: var(--red-soft, #fdeeee); }
   .act { font-size: 13px; letter-spacing: 2px; }
   .call { font-size: 11.5px; }
   .resp { font-size: 11px; margin-top: 2px; }

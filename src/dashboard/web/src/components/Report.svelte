@@ -1,37 +1,81 @@
 <script>
-  import { GATES, gate, GATE_INDEX } from '../lib/gates.js'
+  // Native restyled report (Plan §P6 decision): meta KPIs + the REAL benchmark
+  // gate scorecard (from referee.gates) + the REAL per-turn trace (from
+  // summary.turns), fetched from /api/runs/{id}/summary (the raw nested doc).
+  // A "View full HTML report" link opens /api/runs/{id}/report — the exhaustive
+  // event-level report.py output — preserving it without iframing it as primary.
+  import { GATES } from '../lib/gates.js'
   import { usd, dur, perTurn, dateShort } from '../lib/format.js'
+  import * as api from '../lib/api.js'
   let { run = null, onback, oncontinue } = $props()
 
-  // synthesize a gate scorecard for the report (real one comes from referee)
-  function scorecard(r) {
-    const reached = r.gatesReached
-    const failedIdx = r.status === 'terminated' ? reached : -1
-    return GATES.map((g, i) => {
-      if (i < reached) return { ...g, status: 'done', turn: Math.min(r.turns, Math.round(g.deadline * 0.74)) }
-      if (i === failedIdx) return { ...g, status: 'failed', turn: null }
-      return { ...g, status: 'pending', turn: null }
-    })
-  }
-  const card = $derived(run ? scorecard(run) : [])
-  const verdict = $derived(() => {
-    if (!run) return ''
-    if (run.completion >= 100) return '🏁 All gates cleared — full ladder'
-    if (run.status === 'terminated') {
-      const next = GATES[GATE_INDEX[run.furthestGate] + 1]
-      return `✗ Failed at ${next?.name} (limit T${next?.deadline})`
-    }
-    return `Reached ${run.furthestGateName}`
-  })
-  const stIcon = { done: '✓', failed: '✗', pending: '·' }
+  let summary = $state(null)     // raw nested run_summary.json
+  let loading = $state(false)
+  let loadError = $state(null)
 
-  const sampleTurns = [
-    { n: 1, act: '↑ ↑ ← ← ← ← ←', ok: null, reason: "First turn. In Red's bedroom — walk up two tiles then left to reach the PC.", usage: '1.5k in / 0.3k out · $0.030' },
-    { n: 2, act: '↑ ↑ ← ← ↑ a', ok: false, reason: 'The bed blocked the path left. Re-routing around it to face the PC.', usage: '1.6k in / 0.4k out · $0.055' },
-    { n: 8, act: '← ← ↓ ↓ ← ←', ok: true, reason: 'Onto the stairs — transitioning to 1F.', usage: '1.4k in / 0.3k out · $0.034' },
-    { n: 9, act: '→ ↓ ↓ ↓ ↓ ← ← ←', ok: true, reason: 'Through the living room, out the door into Pallet Town.', usage: '1.5k in / 0.3k out · $0.041' },
-  ]
-  let openTurn = $state(8)
+  // fetch the nested summary whenever the run changes
+  $effect(() => {
+    const id = run?.runId
+    summary = null; loadError = null
+    if (!id) return
+    loading = true
+    api.fetchRunSummary(id)
+      .then((s) => { summary = s })
+      .catch((e) => { loadError = String(e) })
+      .finally(() => { loading = false })
+  })
+
+  // real gate scorecard from referee.gates (falls back to the GATES ladder when
+  // a run has no referee block — e.g. a casual run); each gate carries
+  // {id, name, deadline_turn, turn, status} from the referee.
+  const gates = $derived(summary?.referee?.gates ?? [])
+  const reachedN = $derived(gates.filter((g) => g.status === 'done').length)
+  const totalN = $derived(gates.length || GATES.length)
+  const termination = $derived(summary?.referee?.termination_reason ?? null)
+
+  const verdict = $derived(() => {
+    if (!summary) return ''
+    if (totalN > 0 && reachedN >= totalN) return '🏁 All gates cleared — full ladder'
+    if (termination && termination.startsWith('missed_gate:')) {
+      const missed = gates.find((g) => g.status === 'missed' || g.status === 'failed')
+        || gates.find((g) => g.id === termination.split(':')[1])
+      return `✗ Failed at ${missed?.name ?? termination.split(':')[1]}${missed?.deadline_turn != null ? ` (limit T${missed.deadline_turn})` : ''}`
+    }
+    const furthest = summary?.referee?.furthest
+    const fg = gates.find((g) => g.id === furthest)
+    return fg ? `Reached ${fg.name}` : `${reachedN}/${totalN} gates`
+  })
+  const stIcon = { done: '✓', missed: '✗', failed: '✗', pending: '·', unmet: '·' }
+
+  // real per-turn trace from summary.turns; join per-turn cost from cost.per_turn
+  const perTurnCost = $derived(() => {
+    const m = {}
+    for (const p of (summary?.cost?.per_turn ?? [])) m[p.turn] = p
+    return m
+  })
+  const turns = $derived(summary?.turns ?? [])
+  let openTurn = $state(-1)
+  // open the first turn by default once the trace loads
+  $effect(() => { if (turns.length && openTurn === -1) openTurn = turns[0].turn })
+
+  const reportUrl = $derived(run?.runId ? `/api/runs/${encodeURIComponent(run.runId)}/report` : '#')
+
+  function fmtAction(a) {
+    if (Array.isArray(a)) return a.join(' ')
+    return a ?? ''
+  }
+  function turnGrade(t) {
+    if (t.last_turn_succeeded === true) return '✓ succeeded'
+    if (t.last_turn_succeeded === false) return '✗ failed'
+    return '— n/a'
+  }
+  function turnUsage(t) {
+    const p = perTurnCost()[t.turn]
+    if (!p) return ''
+    const cost = p.cost_usd != null ? `$${Number(p.cost_usd).toFixed(4)}` : ''
+    const dur = p.duration_s != null ? `${Number(p.duration_s).toFixed(1)}s` : ''
+    return [dur, cost].filter(Boolean).join(' · ')
+  }
 </script>
 
 <section class="wrap">
@@ -41,6 +85,7 @@
     <div class="bar">
       <button class="btn ghost" onclick={() => onback()}>← Back</button>
       <span class="badge {run.kind}">{run.kind}</span>
+      <a class="btn ghost full-report" href={reportUrl} target="_blank" rel="noopener">⤢ View full HTML report</a>
       <button class="btn cont" disabled={run.status === 'running'} onclick={() => oncontinue(run)}>⟳ Continue this run</button>
     </div>
 
@@ -61,50 +106,59 @@
       </div>
     </header>
 
-    <!-- benchmark gate scorecard -->
-    <section class="score">
-      <div class="score-head">
-        <h3>🏁 Benchmark gates</h3>
-        <span class="cleared">{run.gatesReached}/{GATES.length} cleared</span>
-        <span class="verdict" class:fail={run.status === 'terminated'} class:win={run.completion >= 100}>{verdict()}</span>
-      </div>
-      <div class="gtable">
-        {#each card as g (g.id)}
-          <div class="grow {g.status}" class:grp={g.group}>
-            <span class="gst {g.status}">{stIcon[g.status]}</span>
-            <span class="gname">{g.name}</span>
-            <span class="gturn tnum">{g.turn != null ? 'T' + g.turn : '—'}</span>
-            <span class="glim tnum faint">T{g.deadline}</span>
+    {#if loading}
+      <p class="faint load">Loading run details…</p>
+    {:else if loadError}
+      <p class="faint load">Could not load run details ({loadError}). The KPIs above are from the index.</p>
+    {/if}
+
+    <!-- benchmark gate scorecard (real, from referee.gates) -->
+    {#if gates.length}
+      <section class="score">
+        <div class="score-head">
+          <h3>🏁 Benchmark gates</h3>
+          <span class="cleared">{reachedN}/{totalN} cleared</span>
+          <span class="verdict" class:fail={termination && termination.startsWith('missed_gate:')} class:win={reachedN >= totalN && totalN > 0}>{verdict()}</span>
+        </div>
+        <div class="gtable">
+          {#each gates as g (g.id)}
+            <div class="grow {g.status}" class:grp={g.group}>
+              <span class="gst {g.status}">{stIcon[g.status] ?? '·'}</span>
+              <span class="gname">{g.name}</span>
+              <span class="gturn tnum">{g.turn != null ? 'T' + g.turn : '—'}</span>
+              <span class="glim tnum faint">{g.deadline_turn != null ? 'T' + g.deadline_turn : '—'}</span>
+            </div>
+          {/each}
+        </div>
+      </section>
+    {/if}
+
+    <!-- per-turn trace (real, from summary.turns) -->
+    {#if turns.length}
+      <section class="trace">
+        <h3>Turn-by-turn <span class="faint">({turns.length} turns · full event-level detail in the HTML report)</span></h3>
+        {#each turns as t (t.turn)}
+          <div class="turn" class:open={openTurn === t.turn}>
+            <button class="thead" onclick={() => openTurn = openTurn === t.turn ? -1 : t.turn}>
+              <span class="arr">{openTurn === t.turn ? '▾' : '▸'}</span>
+              <span class="tn mono">Turn {t.turn}</span>
+              <span class="tact mono">{fmtAction(t.action)}</span>
+              <span class="tsum faint">{t.reasoning}</span>
+              <span class="tuse faint mono">{turnUsage(t)}</span>
+            </button>
+            {#if openTurn === t.turn}
+              <div class="tbody">
+                <div class="exp">
+                  <div class="exp-row"><span class="el">Last turn</span><span class="ev">{turnGrade(t)}</span></div>
+                  <div class="exp-row"><span class="el">Reasoning</span><span class="ev">{t.reasoning}</span></div>
+                  <div class="exp-row"><span class="el">Action</span><span class="ev mono">{fmtAction(t.action)}</span></div>
+                </div>
+              </div>
+            {/if}
           </div>
         {/each}
-      </div>
-    </section>
-
-    <!-- per-turn trace -->
-    <section class="trace">
-      <h3>Turn-by-turn <span class="faint">(sample — full report renders the run's events.jsonl)</span></h3>
-      {#each sampleTurns as t}
-        <div class="turn" class:open={openTurn === t.n}>
-          <button class="thead" onclick={() => openTurn = openTurn === t.n ? -1 : t.n}>
-            <span class="arr">{openTurn === t.n ? '▾' : '▸'}</span>
-            <span class="tn mono">Turn {t.n}</span>
-            <span class="tact mono">{t.act}</span>
-            <span class="tsum faint">{t.reason}</span>
-            <span class="tuse faint mono">{t.usage}</span>
-          </button>
-          {#if openTurn === t.n}
-            <div class="tbody">
-              <div class="shot"><div class="shot-ph faint">screenshot</div></div>
-              <div class="exp">
-                <div class="exp-row"><span class="el">Last turn</span><span class="ev">{t.ok === true ? '✓ succeeded' : t.ok === false ? '✗ failed' : '— first turn'}</span></div>
-                <div class="exp-row"><span class="el">Reasoning</span><span class="ev">{t.reason}</span></div>
-                <div class="exp-row"><span class="el">Action</span><span class="ev mono">{t.act}</span></div>
-              </div>
-            </div>
-          {/if}
-        </div>
-      {/each}
-    </section>
+      </section>
+    {/if}
   {/if}
 </section>
 
@@ -112,7 +166,9 @@
   .wrap { max-width: 880px; margin: 0 auto; padding: 24px; }
   .empty { text-align: center; padding: 80px 0; }
   .bar { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
-  .bar .cont { margin-left: auto; }
+  .bar .full-report { margin-left: auto; text-decoration: none; }
+  .bar .cont { }
+  .load { margin: 12px 2px; font-size: 13px; }
 
   .rhead { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; box-shadow: var(--shadow); }
   h2 { font-size: 20px; font-weight: 700; margin: 0 0 4px; }
@@ -134,9 +190,9 @@
   .grow { display: grid; grid-template-columns: 22px 1fr 60px 50px; gap: 10px; align-items: center; padding: 6px 8px; border-radius: 6px; font-size: 12.5px; }
   .grow.grp { padding-left: 18px; }
   .grow.done { background: var(--green-soft); }
-  .grow.failed { background: var(--red-soft); }
+  .grow.missed, .grow.failed { background: var(--red-soft); }
   .gst { text-align: center; font-weight: 800; color: var(--faint); }
-  .gst.done { color: var(--green); } .gst.failed { color: var(--red); }
+  .gst.done { color: var(--green); } .gst.missed, .gst.failed { color: var(--red); }
   .gname { font-weight: 550; }
   .gturn { text-align: right; font-weight: 650; }
   .glim { text-align: right; font-size: 11.5px; }
@@ -148,15 +204,13 @@
   .thead:hover { background: var(--surface-2); }
   .arr { color: var(--faint); font-size: 10px; }
   .tn { font-size: 12px; font-weight: 700; color: var(--accent); }
-  .tact { font-size: 12px; color: var(--muted); }
+  .tact { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
   .tsum { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tuse { font-size: 11px; }
-  .tbody { display: grid; grid-template-columns: 240px 1fr; gap: 16px; padding: 4px 16px 16px; }
-  .shot { aspect-ratio: 240/160; background: #11141b; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
-  .shot-ph { color: #7b8696; font-size: 12px; }
+  .tbody { padding: 4px 16px 16px; }
   .exp { display: flex; flex-direction: column; gap: 10px; }
   .exp-row { display: flex; flex-direction: column; gap: 2px; }
   .el { font-size: 10px; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); font-weight: 700; }
   .ev { font-size: 13px; line-height: 1.5; }
-  @media (max-width: 720px) { .kpis { grid-template-columns: repeat(3, 1fr); } .tbody { grid-template-columns: 1fr; } }
+  @media (max-width: 720px) { .kpis { grid-template-columns: repeat(3, 1fr); } }
 </style>

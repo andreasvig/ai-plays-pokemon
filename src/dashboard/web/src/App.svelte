@@ -28,8 +28,12 @@
   let queue = $state([])           // upcoming queue items (camelCase cards)
   let activeId = $state(null)      // queue_id of the running run (or null)
   let active = $state(null)        // RunSummary of the running run, joined below
-  let emulator = $state({ configured: false, process_up: false, connected: false, busy: false })
+  let emulator = $state({ configured: false, process_up: false, connected: false, busy: false, active_run_id: null })
   let selectedRun = $state(null)   // resolved run for the report view (P6)
+
+  // active run id for spectate streams (Plan §P6) — the run-dir id the executor
+  // is currently driving, from /api/emulator/status; null in headless/between runs.
+  const activeRunId = $derived(emulator.active_run_id ?? null)
   let models = $state([])          // alias list for the Add-run dialog
   let configs = $state([])         // casual config stems for the dialog
 
@@ -68,9 +72,15 @@
     const { active: a, items } = await api.fetchQueue()
     queue = items
     activeId = a
-    // join the active queue_id to its live RunSummary (the running run is in the
-    // index but NOT in queue.items). If we can't resolve it, fall back to null.
-    if (a) {
+    // join the active run to its live RunSummary (the running run is in the
+    // index but NOT in queue.items). Prefer the executor's active_run_id from
+    // emulator status (authoritative for spectate); fall back to a running-status
+    // scan, then null. Used to badge the spectate bar (model/kind).
+    const liveId = emulator.active_run_id ?? null
+    if (liveId) {
+      active = runs.find((r) => r.runId === liveId)
+        || (await api.fetchRun(liveId).catch(() => null))
+    } else if (a) {
       const running = runs.find((r) => r.status === 'running')
         || (await api.fetchRuns({ status: 'running' }).then((rs) => rs[0]).catch(() => null))
       active = running ?? null
@@ -99,6 +109,21 @@
 
   // initial load
   $effect(() => { loadHome() })
+
+  // ── live-live home updates via /api/ws/control (locked #7, NO polling) ──
+  // The server pushes a small blob on every state change (a run starting /
+  // finishing, the next item auto-dequeuing, a queue edit, a new leaderboard
+  // row). We refetch the affected slices on each ping. The user's own queue
+  // edits still update optimistically below; this catches the async changes.
+  $effect(() => {
+    const sock = api.openControlSocket(() => {
+      loadEmulator().catch(() => {})       // active_run_id may have changed
+      loadQueue().catch(() => {})          // active + items
+      loadLeaderboard().catch(() => {})    // a finished run may add a row
+      loadRuns().catch(() => {})           // history list
+    })
+    return () => sock.close()
+  })
 
   // resolve the report view's run on demand (P6 owns the report UI; we just feed it)
   $effect(() => {
@@ -162,7 +187,7 @@
   {:else if view === 'history'}
     <History {runs} oninspect={inspect} oncontinue={openContinue} />
   {:else if view === 'spectate'}
-    <Spectate run={active} onnew={openNew} onback={() => go('/')} />
+    <Spectate run={active} {activeRunId} onnew={openNew} onback={() => go('/')} />
   {:else if view === 'report'}
     <Report run={selectedRun} onback={() => go('/history')} oncontinue={openContinue} />
   {:else if view === 'about'}

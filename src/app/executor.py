@@ -98,6 +98,21 @@ class RunExecutor:
         self._lock = threading.Lock()
         self._stopped = threading.Event()
 
+    # --- control-hub notify ---------------------------------------------------
+
+    def _notify_control(self) -> None:
+        """Best-effort ping the dashboard control hub on a state change (P6).
+
+        Lazy import + swallow everything: the executor must stay usable headless
+        (tests, no server) and a broadcast failure must never derail the drain.
+        """
+        try:
+            from src.dashboard.server import notify_control
+
+            notify_control()
+        except Exception:
+            pass
+
     # --- seam resolution ------------------------------------------------------
 
     def _resolve_run_fn(self) -> RunFn:
@@ -193,6 +208,11 @@ class RunExecutor:
             self.supervisor.set_busy(True)
             self._active_kind = item.kind
 
+        # State change: a run just became active. Ping the control hub so the
+        # Home view reflects it live (Plan §P6). Best-effort — never let a
+        # notify failure derail the drain.
+        self._notify_control()
+
         run_id: Optional[str] = None
         try:
             config, snapshot, turns = self.build_run_config(item)
@@ -215,6 +235,10 @@ class RunExecutor:
                 self.supervisor.set_busy(False)
                 self._active_run_id = None
                 self._active_kind = None
+            # State change: the run finished, the queue advanced, and (on a
+            # successful finalize) the leaderboard may have a new row. Ping the
+            # control hub so Home refetches live (Plan §P6).
+            self._notify_control()
         return run_id
 
     def drain_loop(self, poll_interval: float = 0.5) -> None:

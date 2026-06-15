@@ -87,6 +87,14 @@ _SERVER_PORT: Optional[int] = None
 app = FastAPI(title="AI Plays Pokemon Dashboard")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+
+@app.on_event("startup")
+async def _on_startup() -> None:
+    # Capture the server's event loop at boot so off-thread callers (the
+    # executor drain thread) can broadcast control pings via the loop even
+    # before any /api/ws/control client connects (Plan §P6).
+    _capture_control_loop()
+
 STATIC_DIR = Path(__file__).parent / "static"
 
 # The built Svelte SPA (Plan §P5). `npm run build` in src/dashboard/web emits
@@ -534,6 +542,111 @@ def get_registry() -> RunRegistry:
 _CONTROL: dict[str, Any] = {"queue": None, "executor": None, "index": None}
 
 
+# ───────────────────────── control broadcast hub (Plan §P6) ─────────────────
+#
+# A tiny in-process pub/sub so the SPA's Home view is "live live" (locked #7) —
+# NOT polling, NOT a granular delta protocol. State changes (a run starting /
+# finishing, the next item auto-dequeuing, a leaderboard row landing, a queue
+# edit) call `notify_control()`, which broadcasts a small blob
+# `{type:"control", active, queue_len, leaderboard_dirty}` to every WS subscribed
+# to `/api/ws/control`. The client refetches /api/queue + /api/leaderboard on
+# receipt. Decoupled from the executor/queue internals: callers just ping.
+
+_CONTROL_SUBS: "set[asyncio.Queue]" = set()
+_CONTROL_LOOP: Optional[asyncio.AbstractEventLoop] = None
+_CONTROL_SUBS_LOCK = threading.Lock()
+
+
+def _capture_control_loop() -> None:
+    """Remember the server's event loop so off-thread callers can broadcast.
+
+    `notify_control()` is called from the executor's drain thread (and route
+    handlers run on the loop). To push onto async subscriber queues from another
+    thread we hop back onto the captured loop via `call_soon_threadsafe`.
+    """
+    global _CONTROL_LOOP
+    try:
+        _CONTROL_LOOP = asyncio.get_running_loop()
+    except RuntimeError:
+        _CONTROL_LOOP = None
+
+
+def _control_blob() -> dict:
+    """Build the minimal state-changed blob the control WS pushes."""
+    queue = _CONTROL["queue"]
+    index = _CONTROL["index"]
+    active = getattr(queue, "active", None) if queue is not None else None
+    try:
+        queue_len = len(queue.items) if queue is not None else 0
+    except Exception:
+        queue_len = 0
+    # leaderboard_dirty is a coarse "go refetch" flag; we don't diff rows here.
+    leaderboard_dirty = index is not None
+    return {
+        "type": "control",
+        "active": active,
+        "queue_len": queue_len,
+        "leaderboard_dirty": leaderboard_dirty,
+    }
+
+
+def _broadcast_control_blob(blob: dict) -> None:
+    """Push `blob` onto every subscriber queue (must run on the server loop)."""
+    with _CONTROL_SUBS_LOCK:
+        subs = list(_CONTROL_SUBS)
+    for q in subs:
+        try:
+            q.put_nowait(blob)
+        except Exception:
+            pass
+
+
+def notify_control() -> None:
+    """Broadcast a state-changed blob to all `/api/ws/control` subscribers.
+
+    Safe to call from any thread (the executor drain thread, queue mutations, or
+    a route handler). No-op when nothing is subscribed or the loop isn't up yet.
+    """
+    blob = _control_blob()
+    loop = _CONTROL_LOOP
+    if loop is None or loop.is_closed():
+        # No running server loop captured — drop the ping (a fresh connect will
+        # refetch current state anyway).
+        return
+    try:
+        loop.call_soon_threadsafe(_broadcast_control_blob, blob)
+    except RuntimeError:
+        pass
+
+
+@app.websocket("/api/ws/control")
+async def ws_control(websocket: WebSocket):
+    """Live-home control channel: pushes a small blob on every state change.
+
+    Sends one blob immediately on connect (so the client syncs without a race),
+    then one per `notify_control()`. The client refetches /api/queue +
+    /api/leaderboard on each message — minimal push, refetch-on-ping (locked #7).
+    """
+    await websocket.accept()
+    _capture_control_loop()
+    sub: asyncio.Queue = asyncio.Queue()
+    with _CONTROL_SUBS_LOCK:
+        _CONTROL_SUBS.add(sub)
+    try:
+        # Immediate sync blob on connect.
+        await websocket.send_text(json.dumps(_control_blob()))
+        while True:
+            blob = await sub.get()
+            await websocket.send_text(json.dumps(blob))
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        with _CONTROL_SUBS_LOCK:
+            _CONTROL_SUBS.discard(sub)
+
+
 def configure_control_plane(*, queue_manager, executor, run_index) -> None:
     """Inject the control-plane collaborators (called once at app boot, P3)."""
     _CONTROL["queue"] = queue_manager
@@ -612,6 +725,7 @@ async def api_queue_post(spec: dict):
             max_turns=spec.get("max_turns"),
             continue_from=spec.get("continue_from"),
         )
+    notify_control()
     return JSONResponse(item.model_dump(mode="json"), status_code=201)
 
 
@@ -622,6 +736,7 @@ async def api_queue_delete(queue_id: str):
     removed = queue.cancel(queue_id)
     if not removed:
         raise HTTPException(status_code=404, detail=f"queue_id not found: {queue_id}")
+    notify_control()
     return JSONResponse({"cancelled": queue_id})
 
 
@@ -636,6 +751,7 @@ async def api_queue_move(queue_id: str, body: dict):
         queue.move(queue_id, to_index)
     except KeyError:
         raise HTTPException(status_code=404, detail=f"queue_id not found: {queue_id}")
+    notify_control()
     return JSONResponse(
         {"active": queue.active, "items": [it.model_dump(mode="json") for it in queue.items]}
     )
@@ -651,6 +767,7 @@ async def api_run_stop(run_id: str):
     """
     _queue, executor, _index = _require_control()
     matched = executor.request_stop(run_id)
+    notify_control()
     return JSONResponse({"stopping": run_id, "matched": bool(matched)})
 
 
@@ -673,6 +790,7 @@ async def api_run_continue(run_id: str, body: dict | None = None):
         max_turns=(body or {}).get("max_turns"),
         continue_from=spec["continue_from"],
     )
+    notify_control()
     return JSONResponse(item.model_dump(mode="json"), status_code=201)
 
 
@@ -731,6 +849,33 @@ async def api_run_report(run_id: str):
     return FileResponse(str(report_path), media_type="text/html")
 
 
+@app.get("/api/runs/{run_id}/summary")
+async def api_run_summary(run_id: str):
+    """Serve the run's RAW nested ``run_summary.json`` (Plan §P6, the report).
+
+    Unlike ``/api/runs/{id}`` (the FLAT index projection for lists), the SPA's
+    Report view needs the full nested document — ``{session, cost:{…, per_turn},
+    turns, referee:{gates, furthest, termination_reason}}`` — to render the gate
+    scorecard + per-turn trace. We serve the on-disk JSON as-is. 404 when the run
+    dir or summary file is absent.
+    """
+    _queue, executor, _index = _require_control()
+    run_dir = Path(executor.runs_root) / run_id
+    summary_path = run_dir / "run_summary.json"
+    if not summary_path.is_file():
+        raise HTTPException(
+            status_code=404, detail=f"run_summary.json not found: {run_id}"
+        )
+    try:
+        with open(summary_path) as f:
+            summary = json.load(f)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"could not read run_summary.json: {exc}"
+        )
+    return JSONResponse(summary)
+
+
 @app.get("/api/models")
 async def api_models():
     """Aliases from ``models.yaml`` (+ observed cost/latency, or null)."""
@@ -759,7 +904,13 @@ async def api_emulator_status():
     executor = _CONTROL["executor"]
     if executor is None or getattr(executor, "supervisor", None) is None:
         return JSONResponse(
-            {"configured": False, "process_up": False, "connected": False, "busy": False}
+            {
+                "configured": False,
+                "process_up": False,
+                "connected": False,
+                "busy": False,
+                "active_run_id": None,
+            }
         )
 
     status = executor.supervisor.status()
@@ -772,6 +923,9 @@ async def api_emulator_status():
             "busy": getattr(status, "busy", False),
         }
     payload["configured"] = True
+    # Expose the executor's active run id so the SPA can open the right
+    # /runs/{id}/ws/* streams (Plan §P6). null in headless / between runs.
+    payload["active_run_id"] = getattr(executor, "_active_run_id", None)
     return JSONResponse(payload)
 
 
