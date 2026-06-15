@@ -178,9 +178,21 @@ class RunExecutor:
             return cfg, self.canonical_save, turns
 
         # Casual fresh.
-        cfg = prepare_config(item.config, item.model)
+        cfg = prepare_config(self._resolve_config_path(item.config), item.model)
         turns = item.max_turns or 1500
         return cfg, self.canonical_save, turns
+
+    @staticmethod
+    def _resolve_config_path(config: str | None) -> str:
+        """Map a casual config STEM (e.g. ``config-3.13``, as ``/api/configs``
+        returns and the dialog enqueues) to its file path
+        (``configs/config-3.13.yaml``). Accepts a bare stem, a filename, or a
+        full path unchanged — so this is idempotent for already-resolved paths."""
+        if not config:
+            raise ValueError("casual run requires a config")
+        if "/" in config or config.endswith(".yaml"):
+            return config
+        return f"configs/{config}.yaml"
 
     # A turn cap big enough that the gate ladder (not max-turns) bounds official
     # runs — "no max-turns" in practice. Read as a sentinel, not a tuned number.
@@ -249,7 +261,18 @@ class RunExecutor:
         """
         self._stopped.clear()
         while not self._stopped.is_set():
-            ran = self.drain_once()
+            try:
+                ran = self.drain_once()
+            except Exception:
+                # A single run failing (bad config, dispatch error, mid-run
+                # crash) must NOT kill the serial drain thread — otherwise one
+                # poisoned item silently stops the whole executor. drain_once's
+                # finally already removed the item from the queue and cleared
+                # busy/active, so we just log and carry on to the next item.
+                import traceback
+
+                traceback.print_exc()
+                ran = None
             if ran is None:
                 self._stopped.wait(poll_interval)
 
