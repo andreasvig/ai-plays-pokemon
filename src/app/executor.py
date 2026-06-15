@@ -226,32 +226,52 @@ class RunExecutor:
         self._notify_control()
 
         run_id: Optional[str] = None
+        captured: dict = {}
         try:
             config, snapshot, turns = self.build_run_config(item)
             run_fn = self._resolve_run_fn()
-            # Publish the active run id the instant the run starts (not after it
-            # returns) so the control plane exposes it DURING the run — live
-            # spectate + a matchable stop target (run_fn blocks for the whole run).
+            # Publish (and capture) the active run dir the instant the run starts
+            # (not after it returns) so the control plane exposes it DURING the run
+            # — live spectate + a matchable stop target (run_fn blocks for the whole
+            # run) — AND so a run interrupted by a stop (run_fn raises
+            # KeyboardInterrupt, see below) can still be finalised from the captured
+            # dir even though run_fn never returned it.
             def _publish(rd):
+                captured["run_dir"] = Path(rd)
                 self._active_run_id = Path(rd).name
                 # Re-notify now that the active run id is known (the earlier
                 # run-became-active ping fired before run_fn set it). This second
                 # push lets the SPA refetch and open the live spectate stream.
                 self._notify_control()
 
-            run_dir = run_fn(
-                self.supervisor.handle,
-                config,
-                turns=turns,
-                snapshot=snapshot,
-                open_browser=False,
-                open_report=False,
-                on_run_dir=_publish,
-            )
-            run_dir = Path(run_dir)
-            run_id = run_dir.name
-            self._active_run_id = run_id
-            self._finalize_run(run_dir, item)
+            run_dir = None
+            try:
+                run_dir = run_fn(
+                    self.supervisor.handle,
+                    config,
+                    turns=turns,
+                    snapshot=snapshot,
+                    open_browser=False,
+                    open_report=False,
+                    on_run_dir=_publish,
+                )
+            except KeyboardInterrupt:
+                # run_single_loop RAISES KeyboardInterrupt when the turn loop was
+                # interrupted — a stop request (locked #9) or a Ctrl-C that reached
+                # the run — instead of returning the run_dir. This is an EXPECTED
+                # stop, not a fatal error. It must NOT propagate out of the drain
+                # thread: letting it bubble to drain_loop (whose `except Exception`
+                # cannot catch a BaseException like KeyboardInterrupt) would KILL the
+                # serial drain thread and freeze the queue forever — no run, official
+                # or casual, would ever start again. Recover the run dir the run_fn
+                # published before it raised and fall through to finalise it (the
+                # stop verdict — cancelled + voided — is applied by _finalize_run).
+                run_dir = captured.get("run_dir")
+            if run_dir is not None:
+                run_dir = Path(run_dir)
+                run_id = run_dir.name
+                self._active_run_id = run_id
+                self._finalize_run(run_dir, item)
         finally:
             with self._lock:
                 # Remove the just-run item from the queue and clear active.
@@ -275,12 +295,18 @@ class RunExecutor:
         while not self._stopped.is_set():
             try:
                 ran = self.drain_once()
-            except Exception:
+            except BaseException:
                 # A single run failing (bad config, dispatch error, mid-run
-                # crash) must NOT kill the serial drain thread — otherwise one
-                # poisoned item silently stops the whole executor. drain_once's
-                # finally already removed the item from the queue and cleared
-                # busy/active, so we just log and carry on to the next item.
+                # crash, or a stop's KeyboardInterrupt that escaped drain_once)
+                # must NOT kill the serial drain thread — otherwise one poisoned
+                # item silently stops the whole executor and the queue freezes
+                # forever. We catch BaseException (not just Exception) precisely
+                # so a KeyboardInterrupt/SystemExit raised inside a run can never
+                # take the drain thread down. (App shutdown uses self._stopped on
+                # the MAIN thread — Ctrl-C is delivered there, not here — so this
+                # is safe and does not swallow a real shutdown.) drain_once's
+                # finally already removed the item + cleared busy/active, so we
+                # just log and carry on to the next item.
                 import traceback
 
                 traceback.print_exc()

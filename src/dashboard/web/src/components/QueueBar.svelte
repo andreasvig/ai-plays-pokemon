@@ -2,6 +2,11 @@
   let { active = null, queue = [], onkill, onremove, onreorder, onnew, onspectate } = $props()
   let dragIndex = $state(null)
   let overIndex = $state(null)
+  // Remove needs an explicit confirm (Andreas) — clicking ✕ arms an inline
+  // "Remove this run?" prompt on that card; the actual onremove only fires on
+  // the explicit Remove button. confirmId = the queueId currently awaiting
+  // confirmation (one at a time).
+  let confirmId = $state(null)
   function drop(i) {
     if (dragIndex !== null && dragIndex !== i) onreorder(dragIndex, i)
     dragIndex = null; overIndex = null
@@ -39,10 +44,19 @@
           <span class="grip" title="Drag to reorder">⠿</span>
           <span class="badge {q.kind}">{label(q.kind)}</span>
           {#if q.continueFrom}<span class="cont faint">↪</span>{/if}
-          <button class="rm" onclick={() => onremove(q.queueId)} title="Remove">✕</button>
+          <button class="rm" onclick={() => confirmId = q.queueId} title="Remove">✕</button>
         </div>
         <div class="cmodel mono">{q.model}</div>
         <div class="cmeta faint">{#if q.kind === 'casual'}<span class="mono">{q.config}</span> · {q.maxTurns}t{:else}pokebench-v1{/if}</div>
+        {#if confirmId === q.queueId}
+          <div class="confirm">
+            <span class="confirm-q">Remove this run?</span>
+            <div class="confirm-actions">
+              <button class="cf-yes" onclick={() => { onremove(q.queueId); confirmId = null }}>Remove</button>
+              <button class="cf-no" onclick={() => confirmId = null}>Cancel</button>
+            </div>
+          </div>
+        {/if}
       </div>
     {/each}
 
@@ -78,4 +92,14 @@
 
   .add { flex: none; align-self: stretch; border: 1px dashed var(--border); background: var(--surface-2); color: var(--muted); font-weight: 600; font-size: 12px; padding: 0 16px; border-radius: var(--radius-sm); white-space: nowrap; }
   .add:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* inline remove-confirm (replaces accidental one-click removal) */
+  .confirm { margin-top: 7px; border-top: 1px solid var(--border-2); padding-top: 6px; }
+  .confirm-q { display: block; font-size: 10.5px; font-weight: 650; color: var(--red); margin-bottom: 5px; }
+  .confirm-actions { display: flex; gap: 6px; }
+  .cf-yes, .cf-no { flex: 1; font-size: 10.5px; font-weight: 650; padding: 4px; border-radius: 6px; border: 1px solid var(--border); }
+  .cf-yes { border-color: #f0c5c5; background: var(--red-soft); color: var(--red); }
+  .cf-yes:hover { background: #f9dada; }
+  .cf-no { background: var(--surface); color: var(--muted); }
+  .cf-no:hover { background: var(--surface-2); }
 </style>
