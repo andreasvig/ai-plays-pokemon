@@ -226,6 +226,18 @@ def run_connect_phase(handle: dict, timeout: float = 300.0) -> None:
     print("Connected.")
 
 
+def _maybe_open_report(report_path: Path, *, open_report: bool) -> bool:
+    """Open the generated report in the OS viewer unless suppressed.
+
+    Returns True iff it actually invoked the opener. The app/executor passes
+    open_report=False (it uses the SPA); standalone `pokemon run` keeps True.
+    """
+    if open_report and sys.platform == "darwin":
+        subprocess.run(["open", str(report_path)], capture_output=True)
+        return True
+    return False
+
+
 def run_single_loop(
     handle: dict,
     config: dict,
@@ -233,6 +245,7 @@ def run_single_loop(
     turns: int,
     snapshot: str | None,
     open_browser: bool = True,
+    open_report: bool = True,
     on_run_dir=None,
 ) -> Path:
     """One agent run against the already-prepared mGBA + Lua connection.
@@ -384,8 +397,7 @@ def run_single_loop(
             with open(report_path, "w") as f:
                 f.write(html)
             print(f"Report: {report_path}")
-            if sys.platform == "darwin":
-                subprocess.run(["open", str(report_path)], capture_output=True)
+            _maybe_open_report(report_path, open_report=open_report)
         except Exception as report_err:
             print(f"\nReport generation failed: {report_err}")
 
