@@ -162,6 +162,15 @@ export async function fetchRunSummary(runId) {
   return getJSON(`/api/runs/${encodeURIComponent(runId)}/summary`)
 }
 
+export async function fetchRunTrace(runId) {
+  // GET /api/runs/{id}/trace → the two-level master→player trace
+  // ({run_id, has_tasks, task_count, turn_count, tasks: [{…master node…, turns:[…]}]}).
+  // Casual / no-TaskMaster runs collapse to a single implicit group
+  // (task_index:null, empty master_model, no master images). The Report view's
+  // master-as-top-level task tree + image traces render from this (Round 8 B1/B2).
+  return getJSON(`/api/runs/${encodeURIComponent(runId)}/trace`)
+}
+
 // ───────────────────────────── live sockets (Plan §P6) ─────────────────────
 // WebSocket helpers. Each returns the WebSocket so the caller owns teardown
 // (close on unmount). Built against the EXISTING spectate streams + the new
