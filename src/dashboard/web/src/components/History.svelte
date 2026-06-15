@@ -1,5 +1,5 @@
 <script>
-  import { usd, dur, perTurn, ago } from '../lib/format.js'
+  import { usd, dur, perTurn, ago, dateShort } from '../lib/format.js'
   let { runs = [], oninspect, oncontinue } = $props()
 
   let kindFilter = $state('all')
@@ -13,7 +13,7 @@
       .filter((r) => statusFilter === 'all' || r.status === statusFilter)
       .filter((r) => !query || r.model.toLowerCase().includes(query.toLowerCase()))
       .sort((a, b) => {
-        if (sort === 'completion') return b.completion - a.completion || a.turns - b.turns
+        if (sort === 'completion') return ((b.kind === 'official' ? b.completion : 0) - (a.kind === 'official' ? a.completion : 0)) || a.turns - b.turns
         if (sort === 'cost') return b.totalCostUsd - a.totalCostUsd
         if (sort === 'duration') return b.durationS - a.durationS
         return Date.parse(b.startedAt) - Date.parse(a.startedAt)
@@ -68,11 +68,15 @@
         <span class="c-kind"><span class="badge {r.kind}">{r.kind === 'official' ? 'OFF' : 'CAS'}</span></span>
         <span class="c-model">
           <span class="mname mono">{r.model}</span>
-          <span class="meta faint">{ago(r.startedAt)} · <span class="mono">{r.config}</span>{#if r.continuedFrom} · ↪ continued{/if}</span>
+          <span class="meta faint">{dateShort(r.startedAt)} <span class="rel">({ago(r.startedAt)})</span> · <span class="mono">{r.config}</span>{#if r.continuedFrom} · ↪ continued{/if}</span>
         </span>
         <span class="c-comp">
-          <span class="pct" class:full={r.completion >= 100}>{r.completion}%</span>
-          {#if r.completion < 100}<span class="gate faint">{r.furthestGateName?.replace(/ \(.*\)$/, '')}</span>{/if}
+          {#if r.kind === 'official'}
+            <span class="pct" class:full={r.completion >= 100}>{r.completion}%</span>
+            {#if r.completion < 100}<span class="gate faint">{r.furthestGateName?.replace(/ \(.*\)$/, '')}</span>{/if}
+          {:else}
+            <span class="pct dash faint">—</span>
+          {/if}
         </span>
         <span class="c-turns tnum r"><b>{r.turns}</b>{#if r.maxTurns}<span class="sub">/{r.maxTurns}</span>{/if}</span>
         <span class="c-time tnum r"><b>{dur(r.durationS)}</b><span class="sub">{perTurn(r.avgSPerTurn)}/t</span></span>
@@ -117,6 +121,8 @@
   .c-model { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
   .mname { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .meta { font-size: 11px; }
+  .meta .rel { color: var(--faint); }
+  .pct.dash { color: var(--faint); font-weight: 600; }
   .c-comp { display: flex; flex-direction: column; gap: 0; min-width: 0; }
   .pct { font-size: 13.5px; font-weight: 700; }
   .pct.full { color: var(--green); }
