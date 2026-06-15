@@ -1,5 +1,5 @@
 <script>
-  let { active = null, emulatorUp = false, queue = [], view = 'home', onnav, onspectate, onnew } = $props()
+  let { active = null, emulatorUp = false, queue = [], view = 'home', onnav, onspectate } = $props()
   // green/live = a run is active AND the emulator is up; grey/idle otherwise.
   const hasActive = $derived(!!active && emulatorUp)
 </script>
@@ -24,7 +24,6 @@
   <nav class="right">
     <button class="btn ghost" class:active={view === 'history'} onclick={() => onnav('/history')}>History</button>
     <button class="btn ghost" class:active={view === 'about'} onclick={() => onnav('/about')}>About</button>
-    <button class="btn primary" onclick={() => onnew()}>+ New run</button>
   </nav>
 </header>
 
