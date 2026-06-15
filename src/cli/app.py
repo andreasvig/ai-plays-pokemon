@@ -15,13 +15,116 @@ and idles — there is no run executor yet.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 import webbrowser
 from pathlib import Path
 
-from src.app.supervisor import AppSupervisor
+from src.app.supervisor import AppSupervisor, SupervisorStatus
 from src.cli.runner import prepare_config
+
+
+class _FakeSupervisor:
+    """A no-mGBA stand-in for :class:`AppSupervisor` (headless browser testing).
+
+    Reports ``process_up`` + ``connected`` so the Home spectate pill renders
+    "live" against seeded fixtures, but never launches a process or holds a real
+    emulator handle. Used only by ``pokemon app --fake-emulator`` (Plan §P5
+    headless serve mode) — NEVER on the live path.
+    """
+
+    def __init__(self) -> None:
+        self._busy = False
+        self.handle = None
+
+    def start(self) -> dict:
+        return {"fake": True}
+
+    def set_busy(self, busy: bool) -> None:
+        self._busy = bool(busy)
+
+    def status(self) -> SupervisorStatus:
+        return SupervisorStatus(process_up=True, connected=True, busy=self._busy)
+
+    def restart(self) -> dict:
+        return {"fake": True}
+
+    def shutdown(self) -> None:
+        pass
+
+
+def _seed_index(run_index, seed_path: Path) -> int:
+    """Seed ``run_index`` from a path for headless serving.
+
+    ``seed_path`` may be a ``runs_index.json`` file (a flat ``RunSummary`` list,
+    loaded as-is) or a directory of run folders (scanned + projected). Returns
+    the number of entries seeded. Errors are surfaced (a bad seed path should
+    fail loudly in test setup, not silently serve an empty board).
+    """
+    if seed_path.is_file():
+        # Point the index at the seed file and load it directly.
+        run_index.index_path = seed_path
+        return len(run_index.load())
+    if seed_path.is_dir():
+        run_index.runs_root = seed_path
+        return len(run_index.rebuild_from_scan())
+    raise SystemExit(f"ERROR: --seed-runs path not found: {seed_path}")
+
+
+def _run_headless(args) -> None:
+    """Boot the server with a FAKE supervisor + seeded index, NO mGBA.
+
+    For browser-testing the SPA + control routes without the emulator. Wires the
+    control plane (so /api/* serve), seeds the run index from ``--seed-runs`` (if
+    given), and idles. The executor drain loop is NOT started — there is no real
+    emulator to dispatch into; the queue is still mutable (enqueue/cancel/move
+    just edit ``queue.json``), which is all the Home view needs to verify.
+    """
+    from src.app.executor import RunExecutor
+    from src.app.queue_manager import QueueManager
+    from src.app.run_index import RunIndex
+    from src.dashboard import server as _dash_server
+
+    app_dir = Path(os.environ.get("POKEBENCH_APP_DIR", "local/app"))
+    runs_root = Path("local/runs")
+    app_dir.mkdir(parents=True, exist_ok=True)
+
+    queue_manager = QueueManager(app_dir / "queue.json")
+    queue_manager.load()
+    run_index = RunIndex(app_dir / "runs_index.json", runs_root)
+    run_index.load()
+
+    seed = args.seed_runs or os.environ.get("POKEBENCH_SEED_RUNS")
+    if seed:
+        n = _seed_index(run_index, Path(seed))
+        print(f"Seeded run index with {n} run(s) from {seed}")
+
+    supervisor = _FakeSupervisor()
+    supervisor.start()
+    executor = RunExecutor(
+        supervisor=supervisor,
+        queue_manager=queue_manager,
+        run_index=run_index,
+        runs_root=runs_root,
+        saves_dir=app_dir / "saves",
+    )
+    _dash_server.configure_control_plane(
+        queue_manager=queue_manager, executor=executor, run_index=run_index
+    )
+
+    _dash_server._start_server_if_needed(args.port)
+    url = f"http://localhost:{args.port}/"
+    print(f"Control center (FAKE emulator, no mGBA): {url}")
+    if not args.no_browser:
+        webbrowser.open(url)
+
+    print("Headless serve — server up, fake emulator, queue editable. Ctrl-C to stop.")
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\nStopping headless serve.")
 
 
 def _build_supervisor_config() -> dict:
@@ -60,7 +163,26 @@ def main() -> None:
         "--connect-timeout", type=float, default=300.0,
         help="Timeout (seconds) for the initial Lua connection. Default: 300.",
     )
+    parser.add_argument(
+        "--fake-emulator", action="store_true",
+        help=(
+            "Headless serve mode (Plan §P5): boot the server with a FAKE "
+            "supervisor + seeded index and NO mGBA, for browser-testing the SPA. "
+            "Also enabled via POKEBENCH_FAKE_EMULATOR=1."
+        ),
+    )
+    parser.add_argument(
+        "--seed-runs", default=None,
+        help=(
+            "Headless seed source: a runs_index.json file (flat RunSummary list) "
+            "or a directory of run folders to scan. Also via POKEBENCH_SEED_RUNS."
+        ),
+    )
     args = parser.parse_args()
+
+    if args.fake_emulator or os.environ.get("POKEBENCH_FAKE_EMULATOR") == "1":
+        _run_headless(args)
+        return
 
     config = _build_supervisor_config()
 

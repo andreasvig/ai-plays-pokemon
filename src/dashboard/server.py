@@ -28,6 +28,7 @@ from typing import Any, Optional
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from src.dashboard.event_bridge import EventBridge
 from src.dashboard.screen_stream import ScreenStreamer
@@ -88,6 +89,17 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 
 STATIC_DIR = Path(__file__).parent / "static"
 
+# The built Svelte SPA (Plan §P5). `npm run build` in src/dashboard/web emits
+# here. The dir is gitignored + regenerated, so it may be absent (e.g. on the
+# headless `pokemon run` path before a build) — every SPA helper degrades
+# gracefully when it doesn't exist.
+SPA_DIST_DIR = Path(__file__).parent / "web" / "dist"
+SPA_INDEX = SPA_DIST_DIR / "index.html"
+
+
+def _spa_built() -> bool:
+    return SPA_INDEX.is_file()
+
 
 def _require_session(run_id: str) -> RunSession:
     session = _REGISTRY.get(run_id)
@@ -125,7 +137,19 @@ def _render_run_html(
 
 @app.get("/")
 async def index_page():
-    """List all registered runs."""
+    """Serve the SPA when built (Plan §P5); else the legacy active-runs index.
+
+    When ``web/dist/index.html`` exists (the ``pokemon app`` control center),
+    ``/`` is the Svelte SPA home. When it's absent (the headless ``pokemon run``
+    path that never builds the SPA), this falls back to the original
+    list-of-registered-runs HTML — preserving legacy behaviour for that caller.
+    """
+    if _spa_built():
+        return FileResponse(
+            str(SPA_INDEX),
+            media_type="text/html",
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+        )
     sessions = sorted(_REGISTRY.all(), key=lambda s: s.registered_at)
     rows = []
     for s in sessions:
@@ -749,3 +773,49 @@ async def api_emulator_status():
         }
     payload["configured"] = True
     return JSONResponse(payload)
+
+
+# ───────────────────────── SPA serving (Plan §P5) ─────────────────────────
+#
+# Serve the built Svelte SPA at `/` with a history-API fallback so client-side
+# deep links (`/spectate`, `/history/<id>`, `/about`) load `index.html`. These
+# are registered LAST so every `/api/*`, `/runs/*`, `/current` route takes
+# precedence — the catch-all only matches paths nothing else claimed. All of it
+# is conditional on the build existing (gitignored + regenerated), so the
+# headless `pokemon run` path is unaffected when there's no `web/dist`.
+
+if SPA_DIST_DIR.is_dir():
+    _spa_assets = SPA_DIST_DIR / "assets"
+    if _spa_assets.is_dir():
+        # Vite emits hashed JS/CSS under /assets — serve them directly.
+        app.mount("/assets", StaticFiles(directory=str(_spa_assets)), name="spa-assets")
+
+
+@app.get("/{full_path:path}")
+async def spa_fallback(full_path: str):
+    """SPA catch-all: serve `index.html` for unmatched client routes.
+
+    Guards:
+      - 404 (not the SPA) for unmatched `/api/*` and `/runs/*` paths, so a
+        missing API route returns a clean 404 instead of silently shadowing it
+        with HTML.
+      - serves a real built asset/file if one exists at the path (favicon, etc.).
+      - 404 when the SPA isn't built (headless `pokemon run` path).
+    """
+    if full_path.startswith(("api/", "runs/")) or full_path in ("api", "runs"):
+        raise HTTPException(status_code=404, detail=f"not found: /{full_path}")
+    if not _spa_built():
+        raise HTTPException(status_code=404, detail="SPA not built")
+    # Serve a concrete static file if it exists (e.g. /favicon.ico, /vite.svg).
+    candidate = (SPA_DIST_DIR / full_path).resolve()
+    try:
+        candidate.relative_to(SPA_DIST_DIR.resolve())
+    except ValueError:
+        candidate = SPA_INDEX  # path traversal attempt → fall back to index
+    if full_path and candidate.is_file():
+        return FileResponse(str(candidate))
+    return FileResponse(
+        str(SPA_INDEX),
+        media_type="text/html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )

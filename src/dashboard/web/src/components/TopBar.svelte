@@ -1,6 +1,7 @@
 <script>
-  let { active = null, queue = [], view = 'home', onnav, onspectate, onnew } = $props()
-  const hasActive = $derived(!!active)
+  let { active = null, emulatorUp = false, queue = [], view = 'home', onnav, onspectate, onnew } = $props()
+  // green/live = a run is active AND the emulator is up; grey/idle otherwise.
+  const hasActive = $derived(!!active && emulatorUp)
 </script>
 
 <header class="topbar">

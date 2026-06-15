@@ -1,11 +1,14 @@
 <script>
-  import { MODELS, CONFIGS } from '../lib/mockData.js'
-  let { open = false, continueFrom = null, onclose, onsubmit } = $props()
+  // MODELS / CONFIGS are now fed from App (sourced from /api/models + /api/configs)
+  // instead of importing the mock module directly.
+  let { open = false, continueFrom = null, models = [], configs = [], onclose, onsubmit } = $props()
+  const MODELS = $derived(models)
+  const CONFIGS = $derived(configs)
 
   // continue mode forces casual + locks the model to the source run's model
   let kind = $state('official')
-  let model = $state(MODELS[0])
-  let config = $state(CONFIGS[0])
+  let model = $state('')
+  let config = $state('')
   let maxTurns = $state(1500)
 
   $effect(() => {
@@ -13,9 +16,11 @@
       kind = 'casual'
       model = continueFrom.model
       maxTurns = continueFrom.maxTurns ?? 1500
+      if (!config) config = CONFIGS[0] ?? ''
     } else if (open && !continueFrom) {
       kind = 'official'
-      model = MODELS[0]
+      model = MODELS[0] ?? ''
+      if (!config) config = CONFIGS[0] ?? ''
     }
   })
 
