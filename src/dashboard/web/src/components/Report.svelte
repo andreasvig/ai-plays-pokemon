@@ -119,6 +119,29 @@
     return { label: '🟡 Returned to TaskMaster', tone: 'partial' }
   }
 
+  // E9.5/E9.6 fix: `t.action` is BACKEND-PRE-STRINGIFIED (e.g. "[left, left, up]",
+  // or the bare "?" sentinel on a handback turn). Derive the REAL display from the
+  // SAME data the Output card uses — the player's final_result step args — so the
+  // turn HEADER + the bottom "Action" exp-row show emoji buttons for normal turns
+  // and the handback verdict for the turn that returned to the TaskMaster.
+  function finalResultArgs(t) {
+    const steps = t?.trace?.steps ?? []
+    const fr = steps.find((s) => s.type === 'final_result')
+    if (!fr) return null
+    return parseArgs(fr.args)
+  }
+  function turnActionDisplay(t) {
+    const a = finalResultArgs(t)
+    if (a && Array.isArray(a.inputs) && a.inputs.length) return actionEmoji(a.inputs)
+    if (a && a.return_to_taskmaster) {
+      const v = fmtVerdict(a.return_to_taskmaster.self_assessment)
+      return v?.label ?? '↩️ Returned to TaskMaster'
+    }
+    // fallback: raw action, but the bare "?" sentinel → a dash, never a stray "?"
+    if (t.action && t.action !== '?') return actionEmoji(t.action)
+    return '—'
+  }
+
   // The master's final_result carries `rating_of_previous_task` (its chrono-honest
   // verdict on the PREVIOUS task). Pull it out for the master output card.
   function masterRatingOfPrevious(mt) {
@@ -363,7 +386,7 @@
                   <button class="thead" onclick={() => toggleTurn(tk)}>
                     <span class="arr">{tOpen ? '▾' : '▸'}</span>
                     <span class="tn mono">Turn {t.turn}</span>
-                    <span class="tact">{actionEmoji(t.action)}</span>
+                    <span class="tact">{turnActionDisplay(t)}</span>
                     <span class="tsum faint">{t.reasoning}</span>
                     <span class="tuse faint mono">{turnUsage(t)}</span>
                   </button>
@@ -454,7 +477,7 @@
                       <div class="exp">
                         <div class="exp-row"><span class="el">Last turn</span><span class="ev">{turnGrade(t.last_turn_succeeded)}</span></div>
                         <div class="exp-row"><span class="el">Reasoning</span><span class="ev">{t.reasoning}</span></div>
-                        <div class="exp-row"><span class="el">Action</span><span class="ev">{actionEmoji(t.action)}</span></div>
+                        <div class="exp-row"><span class="el">Action</span><span class="ev">{turnActionDisplay(t)}</span></div>
                         {#if t.screenshot}
                           <div class="exp-row"><span class="el">Screenshot</span>
                             <img class="turn-shot" src={shotUrl(t)} alt={`Turn ${t.turn} screenshot`} loading="lazy" />
