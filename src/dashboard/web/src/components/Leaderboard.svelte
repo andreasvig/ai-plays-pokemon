@@ -2,11 +2,14 @@
   import { usd, dur, perTurn } from '../lib/format.js'
   let {
     rows = [], stats = {}, oninspect,
+    benchmarks = [], benchmark = '', onbench = () => {},
     oss = $bindable('all'), maxPrice = $bindable(0), priceMax = 1,
   } = $props()
 
   let expanded = $state(false)
   const medal = (r) => r === 1 ? 'var(--gold)' : r === 2 ? 'var(--silver)' : r === 3 ? 'var(--bronze)' : 'var(--faint)'
+  // goal text of the selected benchmark — the "overall goal" shown under the tabs
+  const selectedGoal = $derived(benchmarks.find((b) => b.id === benchmark)?.goal ?? '')
 
   const ranked = $derived(rows.map((r, i) => ({ ...r, displayRank: i + 1 })))
   const shown = $derived(expanded ? ranked : ranked.slice(0, 10))
@@ -26,6 +29,22 @@
 </section>
 
 <section class="board">
+  {#if benchmarks.length}
+    <div class="bench-pick">
+      <div class="bench-tabs" role="tablist" aria-label="Benchmark">
+        {#each benchmarks as b (b.id)}
+          <button
+            role="tab"
+            aria-selected={b.id === benchmark}
+            class:on={b.id === benchmark}
+            onclick={() => onbench(b.id)}
+          >{b.name}</button>
+        {/each}
+      </div>
+      {#if selectedGoal}<p class="bench-goal">{selectedGoal}</p>{/if}
+    </div>
+  {/if}
+
   <div class="board-head">
     <h2>Leaderboard</h2>
     <div class="filters">
@@ -93,6 +112,15 @@
   .chip b { color: var(--text); font-weight: 750; }
 
   .board { max-width: var(--maxw); margin: 18px auto 50px; padding: 0 24px; }
+
+  .bench-pick { margin-bottom: 18px; }
+  .bench-tabs { display: inline-flex; background: #eef1f5; border-radius: 10px; padding: 4px; gap: 3px; }
+  .bench-tabs button {
+    border: none; background: none; padding: 8px 16px; border-radius: 7px;
+    font-size: 13px; font-weight: 650; color: var(--muted); transition: all .12s;
+  }
+  .bench-tabs button.on { background: var(--surface); color: var(--accent-ink); box-shadow: var(--shadow); }
+  .bench-goal { margin: 10px 2px 0; font-size: 13px; line-height: 1.5; color: var(--muted); max-width: 680px; }
   .board-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; flex-wrap: wrap; }
   h2 { font-size: 18px; font-weight: 750; margin: 0; }
   .rule-note { font-size: 12px; margin: 0 0 14px; }

@@ -21,6 +21,10 @@ from pathlib import Path
 
 from src.app.models import RunKind, RunStatus, RunSummary
 
+# Benchmark legacy official runs (a benchmark_version but no benchmark id) map to.
+# They were scored on the full 20-gate ladder, so they belong to pokebench-full.
+_LEGACY_OFFICIAL_BENCHMARK = "pokebench-full"
+
 # Default ladder used when a run doesn't record which one it ran against, or the
 # recorded one no longer exists. Read at runtime — never hardcode the count.
 _DEFAULT_LADDER = Path("configs/checkpoints-firered-v1.yaml")
@@ -129,6 +133,15 @@ def project_run_dir(run_dir: Path) -> RunSummary | None:
     else:
         kind = RunKind.official if benchmark_version else RunKind.casual
 
+    # benchmark: which benchmark this run played (drives the per-benchmark
+    # leaderboard filter). Explicit when stamped by the executor; for LEGACY
+    # official runs predating the multi-benchmark split (a benchmark_version but
+    # no benchmark id) fall back to the full ladder — those runs were scored on
+    # the full 20-gate ladder, so they belong to pokebench-full.
+    benchmark = summary.get("benchmark")
+    if benchmark is None and kind == RunKind.official and benchmark_version:
+        benchmark = _LEGACY_OFFICIAL_BENCHMARK
+
     # referee scorecard fields (only a meaningful referee block has gates).
     has_gates = bool(referee) and bool(referee.get("gates"))
     termination_reason = summary.get("termination_reason")
@@ -184,6 +197,7 @@ def project_run_dir(run_dir: Path) -> RunSummary | None:
         model=model,
         model_resolved=model_resolved,
         config_stem=summary.get("config_stem") or _infer_config_stem(run_dir.name),
+        benchmark=benchmark,
         benchmark_version=benchmark_version,
         status=status,
         started_at=started_at,

@@ -256,6 +256,59 @@ def test_official_enqueue_forces_frozen_config_enforce_no_maxturns(harness):
     assert snapshot == executor.canonical_save  # canonical start save
 
 
+def test_official_default_benchmark_is_full_ladder(harness):
+    """An official item with NO benchmark falls back to the registry default
+    (pokebench-full) — the v1 ladder + the full goal text."""
+    from src.app.benchmarks import get_benchmark
+
+    queue = harness["queue"]
+    executor = harness["executor"]
+
+    item = queue.enqueue(kind=RunKind.official, model="m")  # no benchmark
+    config, _snapshot, _turns = executor.build_run_config(item)
+
+    full = get_benchmark("pokebench-full")
+    assert config["referee"]["checkpoints"] == full.ladder
+    assert config["referee"]["enforce"] is True
+    # Goal override: the frozen config's task.goal is replaced by the benchmark's.
+    assert config["task"]["goal"] == full.goal
+
+
+def test_official_benchmark_selects_ladder_and_overrides_goal(harness):
+    """A chosen benchmark drives BOTH the gate ladder and the goal override —
+    same frozen config, different objective + gates per benchmark."""
+    from src.app.benchmarks import get_benchmark
+
+    queue = harness["queue"]
+    executor = harness["executor"]
+
+    for bid in ("pokebench-easy", "pokebench-first-badge", "pokebench-full"):
+        item = queue.enqueue(kind=RunKind.official, model="m", benchmark=bid)
+        config, _snapshot, _turns = executor.build_run_config(item)
+        bench = get_benchmark(bid)
+        # Each benchmark injects its OWN ladder file...
+        assert config["referee"]["checkpoints"] == bench.ladder
+        assert config["referee"]["enforce"] is True
+        # ...and overrides the goal with its own objective text.
+        assert config["task"]["goal"] == bench.goal
+        # Frozen config is the SAME across benchmarks (comparability).
+        assert config["_config_path"] == executor.official_config_path
+
+
+def test_official_run_stamps_benchmark_id(harness):
+    """A completed official run records WHICH benchmark it played, so the
+    per-benchmark leaderboard filter can group it."""
+    queue = harness["queue"]
+    executor = harness["executor"]
+    index = harness["index"]
+
+    queue.enqueue(kind=RunKind.official, model="m", benchmark="pokebench-easy")
+    run_id = executor.drain_once()
+    entry = index.get(run_id)
+    assert entry.kind == RunKind.official
+    assert entry.benchmark == "pokebench-easy"
+
+
 def test_casual_uses_chosen_config_and_maxturns(harness):
     queue = harness["queue"]
     executor = harness["executor"]

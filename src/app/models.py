@@ -59,6 +59,7 @@ class RunSummary(BaseModel):
     model: str
     model_resolved: str | None = None
     config_stem: str | None = None
+    benchmark: str | None = None
     benchmark_version: str | None = None
     status: RunStatus
     started_at: str | None = None
@@ -93,13 +94,16 @@ class QueuedRun(BaseModel):
     """One item in the serial queue — the spec "add new run" produces.
 
     ``config``/``max_turns`` are casual-only (official uses the frozen pokebench
-    config + no max-turns). ``continue_from`` is set by Continue (casual only).
+    config + no max-turns). ``benchmark`` is official-only — which benchmark
+    (e.g. ``pokebench-easy``) this run plays; it selects the gate ladder + the
+    goal override. ``continue_from`` is set by Continue (casual only).
     """
 
     queue_id: str
     kind: RunKind
     model: str
     config: str | None = None
+    benchmark: str | None = None
     max_turns: int | None = None
     continue_from: str | None = None
     enqueued_at: str

@@ -36,6 +36,8 @@
   const activeRunId = $derived(emulator.active_run_id ?? null)
   let models = $state([])          // alias list for the Add-run dialog
   let configs = $state([])         // casual config stems for the dialog
+  let benchmarks = $state([])      // benchmark registry [{id,name,goal,...}]
+  let benchmark = $state('')       // selected benchmark id (scopes the leaderboard)
 
   // spectate pill is green when the emulator is up AND a run is active
   const emulatorUp = $derived(!!(emulator.process_up && emulator.connected))
@@ -50,16 +52,19 @@
       .filter((r) => r.avgCostPerTurn <= maxPrice + 1e-9)
   )
 
+  // name of the currently-selected benchmark (shown as the leaderboard chip)
+  const benchmarkName = $derived(benchmarks.find((b) => b.id === benchmark)?.name ?? benchmark)
+
   // stats chips (mockData exported these precomputed; derive from live rows)
   const stats = $derived({
     modelsRanked: leaderboard.length,
     completers: leaderboard.filter((r) => r.completion >= 100).length,
     totalRuns: runs.length,
-    benchmarkVersion: 'pokebench-v1',
+    benchmarkVersion: benchmarkName,
   })
 
   async function loadLeaderboard() {
-    const rows = await api.fetchLeaderboard()
+    const rows = await api.fetchLeaderboard(benchmark || null)
     leaderboard = rows
     const max = rows.length ? Math.max(...rows.map((r) => r.avgCostPerTurn)) : 1
     // keep the slider pinned to "show all" unless the user has narrowed it
@@ -99,19 +104,32 @@
   }
   async function loadEmulator() { emulator = await api.fetchEmulatorStatus() }
   async function loadCatalog() {
-    const [m, c] = await Promise.all([
+    const [m, c, b] = await Promise.all([
       api.fetchModels().catch(() => []),
       api.fetchConfigs().catch(() => []),
+      api.fetchBenchmarks().catch(() => []),
     ])
-    models = m; configs = c
+    models = m; configs = c; benchmarks = b
+    // Default the leaderboard filter to the registry-default benchmark (or the
+    // first) once, without clobbering a selection the user already made.
+    if (!benchmark && b.length) benchmark = (b.find((x) => x.default) ?? b[0]).id
+  }
+
+  // User picked a different benchmark on the leaderboard → re-scope it.
+  async function selectBenchmark(id) {
+    benchmark = id
+    await loadLeaderboard().catch(() => {})
   }
 
   async function loadHome() {
+    // Catalog first: it sets the default `benchmark`, which loadLeaderboard reads
+    // to scope the board. (Without this ordering the first board fetch would be
+    // unscoped — showing all benchmarks until the next refresh.)
+    await loadCatalog().catch(() => {})
     await Promise.all([
       loadLeaderboard().catch(() => {}),
       loadRuns().catch(() => {}),
       loadEmulator().catch(() => {}),
-      loadCatalog(),
     ])
     await loadQueue().catch(() => {})
   }
@@ -201,6 +219,7 @@
     <QueueBar {active} {queue} onkill={killRun} onremove={removeFromQueue} onreorder={reorder}
       onnew={openNew} onspectate={() => go('/spectate')} />
     <Leaderboard rows={filteredRows} {stats} oninspect={inspect}
+      {benchmarks} {benchmark} onbench={selectBenchmark}
       bind:oss={ossFilter} bind:maxPrice={maxPrice} {priceMax} />
     <Charts rows={filteredRows} onpick={(slug) => go(`/history/${slug}`)} />
   {:else if view === 'history'}
@@ -224,7 +243,7 @@
   {/if}
 </main>
 
-<AddRunDialog open={dialogOpen} continueFrom={dialogContinueFrom} {models} {configs}
+<AddRunDialog open={dialogOpen} continueFrom={dialogContinueFrom} {models} {configs} {benchmarks}
   onclose={() => { dialogOpen = false; dialogContinueFrom = null }} onsubmit={submitRun} />
 
 <style>

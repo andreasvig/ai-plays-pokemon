@@ -77,7 +77,7 @@ The UI is a Svelte single-page app served at `/`. Client-side routes:
 
 | Route | View | What it shows |
 |---|---|---|
-| `/` | **Home** | Leaderboard (best official run per model) + benchmark charts. |
+| `/` | **Home** | Per-benchmark leaderboard (tabs switch benchmark; best official run per model) + charts. |
 | `/spectate` | **Spectate** | The live run as a fit-to-screen 16:9 kiosk. |
 | `/history` | **History** | Filterable / sortable list of every run. |
 | `/history/<run_id>` | **Report** | One run's full report (KPIs + gate scorecard + trace). |
@@ -114,9 +114,10 @@ hand-back. The report renders natively from the run's on-disk `events.jsonl` and
 
 Two kinds (see [the benchmark doc](benchmark.md) for the full distinction):
 
-- **Official** — the frozen benchmark. You pick **only the model**; config
-  (`config-3.13`), the gate ladder, and the start save are locked. Counts on the
-  leaderboard.
+- **Benchmark** (official) — you pick the **model** + **which benchmark**
+  (`pokebench-easy` / `first-badge` / `full`). The benchmark selects the gate
+  ladder and the goal; config (`config-3.13`) and the start save are locked.
+  Counts on that benchmark's leaderboard.
 - **Casual** — you pick **model + config + max-turns**. No gates, never on the
   leaderboard. For experiments.
 
@@ -149,7 +150,7 @@ Each run writes a directory under `local/runs/<timestamp>_<config>__<model>/`
 | Path | Contents |
 |---|---|
 | `events.jsonl` | One JSON event per line — the full run log (turns, traces, tool calls, OCR, task events). The UI is built entirely from this. |
-| `run_summary.json` | Nested summary: session, cost (incl. per-turn), turns, and `referee` (gates, furthest, termination reason). The control plane stamps `run_id`, `kind`, `status`, `benchmark_version`, `continued_from` onto it when the run finalizes. |
+| `run_summary.json` | Nested summary: session, cost (incl. per-turn), turns, and `referee` (gates, furthest, termination reason). The control plane stamps `run_id`, `kind`, `status`, `benchmark` (which benchmark it played), `benchmark_version`, `continued_from` onto it when the run finalizes. |
 | `config.json` | The exact config the run used (so a continue can reuse it). |
 | `state.json` | The agent's persistent memory at end of run. |
 | `screenshots/` | Per-turn frames the agent saw. |

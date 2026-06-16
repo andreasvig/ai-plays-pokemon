@@ -1,12 +1,16 @@
-# Full PokeBench ladder — bedroom → Thunder Badge. This is the ladder behind the
-# `pokebench-full` benchmark (see configs/benchmarks.yaml). The easy / first-badge
-# benchmarks live in their own files as self-contained prefixes of this one.
-benchmark_version: pokebench-v1-draft
+benchmark_version: pokebench-easy
 game: firered-us
 rom_sha1:
   v1_0: 41cb23d8dccc8ebd7c649cd8fbb58eeace6e2fdc
   v1_1: dd5945db9b930750cb39d00c84da8571feebf417
 
+# PokeBench Easy — bedroom → Vermilion City. A self-contained PREFIX of the full
+# FireRed ladder (checkpoints-firered-v1.yaml): the same gates through
+# `vermilion_reached` (including the Misty / Bill's-errand multigate), ending on
+# arrival in Vermilion. Reaching the final rung WINS the run (status: completed);
+# a missed deadline terminates it. Edit these gates independently of the
+# first-badge / full ladders.
+#
 # Detector types and their signature fields:
 #   map:   {map_group, map_num}            stamped when the latch first sees this map
 #   flag:  {flag_id}                       stamped when this story-flag bit is set
@@ -141,16 +145,3 @@ checkpoints:
     type: map
     signature: {map_group: 3, map_num: 5}         # back south via Route 5 / underground path / Route 6
     deadline_turn: 1000
-
-  - id: ss_anne_boarded
-    name: "Boarded the S.S. Anne"
-    type: map
-    signature: {map_group: 1, map_num: 4}         # SSAnne_Exterior (Cut is obtained from the captain inside)
-    deadline_turn: 1100
-
-  - id: thunder_badge
-    name: "Defeated Lt. Surge (Thunder Badge)"   # implies Cut obtained — the gym is gated by a cuttable tree
-    type: flag
-    signature: {flag_id: 0x822}                   # FLAG_BADGE03_GET
-    cross_check: {type: flag, flag_id: 0x4B2}     # FLAG_DEFEATED_LT_SURGE
-    deadline_turn: 1200                           # S.S. Anne nav + Cut + trash-can puzzle + Surge

@@ -200,6 +200,7 @@
       <h2 class="mono">{run.model}</h2>
       <div class="meta faint">
         <span class="mono">{run.slug}</span> · {dateShort(run.startedAt)} · config <span class="mono">{run.config}</span>
+        {#if run.benchmark}· benchmark <span class="mono">{run.benchmark}</span>{/if}
         {#if run.continuedFrom}· continued from <span class="mono">{run.continuedFrom}</span>{/if}
       </div>
       <div class="kpis">

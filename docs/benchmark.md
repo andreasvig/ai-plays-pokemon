@@ -17,20 +17,54 @@ watches and scores.
 
 ## Official vs casual runs
 
-| | **Official** | **Casual** |
+| | **Official (a benchmark)** | **Casual** |
 |---|---|---|
 | Config | `config-3.13.yaml` (frozen) | you choose |
+| Benchmark | you choose (easy / first-badge / full) | n/a |
+| Goal | the benchmark's goal (overrides the config's) | the config's |
 | Model | you choose | you choose |
 | Max turns | none — gate deadlines bound it | you choose |
-| Gate ladder | enforced (`enforce: true`) | none |
-| Leaderboard | eligible (if completed/terminated) | never |
+| Gate ladder | the benchmark's, enforced (`enforce: true`) | none |
+| Leaderboard | eligible (if completed/terminated), per benchmark | never |
 | Continues | n/a | always casual |
 
-**Official** is the comparable benchmark: same config, same start save
-(`configs/saves/pokebench-v1`), same gate ladder, for every model. The only
-variable is the model. A cancelled official run is **voided** (it never reaches
-the leaderboard). **Casual** runs are for experimentation — pick any config and
-turn budget; they run free of gates and never score.
+**Official** is the comparable benchmark: same frozen config, same start save
+(`configs/saves/pokebench-v1`), for every model — the only variable is the
+model. You pick *which benchmark* the run plays (see below); that selects the
+gate ladder **and** the goal. A cancelled official run is **voided** (it never
+reaches the leaderboard). **Casual** runs are for experimentation — pick any
+config and turn budget; they run free of gates and never score.
+
+---
+
+## The benchmarks
+
+A **benchmark** bundles an *overall goal* (the meta-goal the agent plays toward,
+shown in the UI) with its own *gate ladder*. The registry is
+`configs/benchmarks.yaml`; three ship today, all on FireRed:
+
+| id | Goal (overall) | Ladder file | Final gate |
+|---|---|---|---|
+| `pokebench-easy` | Reach Vermilion City | `checkpoints-firered-easy.yaml` | `vermilion_reached` (18 rungs) |
+| `pokebench-first-badge` | Earn the Boulder Badge (beat Brock) | `checkpoints-firered-firstbadge.yaml` | `brock_defeated` (12 rungs) |
+| `pokebench-full` *(default)* | First three badges → Thunder Badge | `checkpoints-firered-v1.yaml` | `thunder_badge` (20 rungs) |
+
+The easy / first-badge ladders are **self-contained prefixes** of the full
+ladder, kept as **separate files** so each benchmark's gates can be edited
+independently. Reaching a benchmark's *final* rung **wins** the run
+(`status: completed`); missing any rung's deadline terminates it.
+
+**Goal override.** When an official run is queued, the executor loads the chosen
+benchmark and (a) injects its ladder as the run's enforced `referee` block, and
+(b) overwrites the frozen config's `task.goal` with the benchmark's `goal` — so
+the same `config-3.13` plays toward a different objective per benchmark. The
+benchmark id is stamped onto the run and drives the **per-benchmark leaderboard**
+(rankings aren't comparable across benchmarks, since the ladders differ).
+
+The main page filters to **one benchmark at a time** (tabs above the
+leaderboard); the new-run dialog picks the benchmark from the same registry.
+Legacy official runs (recorded before the split) map to `pokebench-full` — they
+were scored on the full ladder.
 
 ---
 

@@ -44,6 +44,7 @@ export function toRun(s) {
     model: s.model,
     openSource: isOpenSource(s.model),
     config: s.config_stem ?? (s.kind === 'casual' ? null : 'pokebench-v1'),
+    benchmark: s.benchmark ?? null,
     benchmarkVersion: s.benchmark_version ?? null,
     status: s.status,
     startedAt: s.started_at,
@@ -100,10 +101,17 @@ export async function fetchConfigs() {
   return getJSON('/api/configs')
 }
 
-export async function fetchLeaderboard() {
-  // GET /api/leaderboard → best official run per model, gates desc / turns asc.
-  // Add displayed rank + perfScore (the same derivations the mock baked in).
-  const rows = (await getJSON('/api/leaderboard')).map(toRun)
+export async function fetchBenchmarks() {
+  // GET /api/benchmarks → [{id, name, goal, ladder, default}, ...] (registry order).
+  return getJSON('/api/benchmarks')
+}
+
+export async function fetchLeaderboard(benchmark = null) {
+  // GET /api/leaderboard[?benchmark=] → best official run per model for that
+  // benchmark, gates desc / turns asc. Add displayed rank + perfScore (the same
+  // derivations the mock baked in).
+  const path = benchmark ? `/api/leaderboard?benchmark=${encodeURIComponent(benchmark)}` : '/api/leaderboard'
+  const rows = (await getJSON(path)).map(toRun)
   stampPerfScore(rows)
   return rows.map((r, i) => ({ ...r, rank: i + 1 }))
 }
@@ -258,6 +266,10 @@ export function enqueueRun(spec) {
     if (spec.config != null) body.config = spec.config
     if (spec.maxTurns != null) body.max_turns = spec.maxTurns
     if (spec.continueFrom != null) body.continue_from = spec.continueFrom
+  } else if (spec.benchmark != null) {
+    // Official: send WHICH benchmark (ladder + goal). config/max_turns are
+    // ignored server-side (frozen wiring).
+    body.benchmark = spec.benchmark
   }
   return send('POST', '/api/queue', body)
 }

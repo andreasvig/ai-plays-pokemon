@@ -10,17 +10,24 @@ from __future__ import annotations
 from src.app.models import RunStatus, RunSummary
 
 
-def leaderboard(summaries: list[RunSummary]) -> list[RunSummary]:
+def leaderboard(
+    summaries: list[RunSummary], *, benchmark: str | None = None
+) -> list[RunSummary]:
     """Best official run per model, ranked farthest-then-fastest.
 
     Pipeline:
       1. keep only ``leaderboard_eligible`` runs (official + completed/terminated;
          casual, continued-casual, and cancelled official runs are all excluded);
-      2. group by ``model`` and pick the BEST = highest ``gates_reached``,
+      2. when ``benchmark`` is given, keep only runs of THAT benchmark — each
+         benchmark (easy / first-badge / full) has its own ranking, since their
+         gate ladders differ and gate counts aren't comparable across them;
+      3. group by ``model`` and pick the BEST = highest ``gates_reached``,
          tiebreak FEWEST ``turns``;
-      3. sort the winners by (``gates_reached`` desc, ``turns`` asc).
+      4. sort the winners by (``gates_reached`` desc, ``turns`` asc).
     """
     eligible = [s for s in summaries if s.leaderboard_eligible]
+    if benchmark is not None:
+        eligible = [s for s in eligible if s.benchmark == benchmark]
 
     best_by_model: dict[str, RunSummary] = {}
     for s in eligible:
@@ -53,16 +60,18 @@ def history(
     *,
     kind=None,
     status=None,
+    benchmark: str | None = None,
     q: str | None = None,
     sort: str = "recent",
     order: str = "desc",
 ) -> list[RunSummary]:
     """Filter + sort the full run list for the history view.
 
-    Filters: ``kind`` (RunKind), ``status`` (RunStatus), and ``q`` (case-insensitive
-    substring matched against ``model`` and ``run_id``). Sort keys:
-    ``recent`` (started_at), ``completion`` (gates_reached), ``cost``
-    (total_cost_usd), ``duration`` (duration_s); ``order`` is "asc"/"desc".
+    Filters: ``kind`` (RunKind), ``status`` (RunStatus), ``benchmark`` (id —
+    keeps only runs of that benchmark), and ``q`` (case-insensitive substring
+    matched against ``model`` and ``run_id``). Sort keys: ``recent``
+    (started_at), ``completion`` (gates_reached), ``cost`` (total_cost_usd),
+    ``duration`` (duration_s); ``order`` is "asc"/"desc".
     """
     rows = list(summaries)
 
@@ -70,6 +79,8 @@ def history(
         rows = [s for s in rows if s.kind == kind]
     if status is not None:
         rows = [s for s in rows if s.status == status]
+    if benchmark is not None:
+        rows = [s for s in rows if s.benchmark == benchmark]
     if q:
         needle = q.lower()
         rows = [

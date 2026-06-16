@@ -143,6 +143,49 @@ def test_leaderboard_gates_tiebreak_fewer_turns(seeded):
     assert [r["run_id"] for r in rows] == ["y", "x"]  # 200 turns before 500
 
 
+# ───────────────────────────── benchmarks ─────────────────────────────
+
+
+def test_benchmarks_endpoint_lists_registry(seeded):
+    rows = seeded["tc"].get("/api/benchmarks").json()
+    ids = [r["id"] for r in rows]
+    assert ids == ["pokebench-easy", "pokebench-first-badge", "pokebench-full"]
+    # exactly one default, and it's full
+    defaults = [r["id"] for r in rows if r["default"]]
+    assert defaults == ["pokebench-full"]
+    # each carries its goal + ladder
+    assert all(r["goal"] and r["ladder"] for r in rows)
+
+
+def test_leaderboard_benchmark_filter(seeded):
+    # Each benchmark has its own ranking; the filter scopes to one.
+    index = seeded["index"]
+    index._entries = [
+        _summary(run_id="e1", model="a", benchmark="pokebench-easy",
+                 status=RunStatus.completed, gates_reached=18, turns=900),
+        _summary(run_id="f1", model="a", benchmark="pokebench-full",
+                 status=RunStatus.completed, gates_reached=12, turns=500),
+        _summary(run_id="f2", model="b", benchmark="pokebench-full",
+                 status=RunStatus.completed, gates_reached=20, turns=1100),
+    ]
+    easy = seeded["tc"].get("/api/leaderboard", params={"benchmark": "pokebench-easy"}).json()
+    assert [r["run_id"] for r in easy] == ["e1"]
+    full = seeded["tc"].get("/api/leaderboard", params={"benchmark": "pokebench-full"}).json()
+    assert [r["run_id"] for r in full] == ["f2", "f1"]  # 20 gates before 12
+
+
+def test_enqueue_official_rejects_unknown_benchmark(seeded):
+    # The enqueue path validates the benchmark id against the registry.
+    # Use a raw "provider/model" id so model-validation passes and the request
+    # reaches the benchmark check.
+    r = seeded["tc"].post(
+        "/api/queue",
+        json={"kind": "official", "model": "prov/model", "benchmark": "nope"},
+    )
+    assert r.status_code == 400
+    assert "unknown benchmark" in r.json()["detail"]
+
+
 # ───────────────────────────── history ─────────────────────────────
 
 

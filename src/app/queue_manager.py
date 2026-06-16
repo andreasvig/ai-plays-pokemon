@@ -68,20 +68,23 @@ class QueueManager:
         model: str,
         *,
         config: str | None = None,
+        benchmark: str | None = None,
         max_turns: int | None = None,
         continue_from: str | None = None,
         enqueued_at: str | None = None,
     ) -> QueuedRun:
         """Mint a :class:`QueuedRun`, append it, and save.
 
-        ``enqueued_at`` is overridable so tests can pin a deterministic timestamp;
-        it defaults to the current UTC ISO time.
+        ``benchmark`` is the official benchmark id (which ladder + goal); ``None``
+        for casual runs. ``enqueued_at`` is overridable so tests can pin a
+        deterministic timestamp; it defaults to the current UTC ISO time.
         """
         item = QueuedRun(
             queue_id=f"q_{uuid4().hex[:8]}",
             kind=RunKind(kind),
             model=model,
             config=config,
+            benchmark=benchmark,
             max_turns=max_turns,
             continue_from=continue_from,
             enqueued_at=enqueued_at or _now_iso(),

@@ -164,6 +164,7 @@ async def index_page():
 async def api_runs(
     kind: str | None = None,
     status: str | None = None,
+    benchmark: str | None = None,
     q: str | None = None,
     sort: str = "recent",
     order: str = "desc",
@@ -200,6 +201,7 @@ async def api_runs(
             index.all(),
             kind=kind_enum,
             status=status_enum,
+            benchmark=benchmark,
             q=q,
             sort=sort,
             order=order,
@@ -609,6 +611,27 @@ def _validate_model_alias(model: str) -> None:
         )
 
 
+def _validate_benchmark_id(benchmark: Any) -> str | None:
+    """Return a known benchmark id, or None (→ executor default).
+
+    ``None`` is allowed (the executor falls back to the registry default).
+    A non-empty value must match a registry id, else 400.
+    """
+    if benchmark is None:
+        return None
+    if not isinstance(benchmark, str) or not benchmark:
+        raise HTTPException(status_code=400, detail="benchmark must be a string id")
+    from src.app.benchmarks import load_benchmarks
+
+    known = {b.id for b in load_benchmarks()}
+    if benchmark not in known:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown benchmark {benchmark!r}; known: {', '.join(sorted(known))}",
+        )
+    return benchmark
+
+
 @app.get("/api/queue")
 async def api_queue_get():
     """`{active, items}` — the serial queue (active queue_id + ordered items)."""
@@ -626,8 +649,10 @@ async def api_queue_post(spec: dict):
     """Enqueue a QueuedRun spec.
 
     Official enqueue (locked #4/#7) FORCES the frozen config + enforced gates +
-    no max-turns — any config/max_turns in the request is IGNORED. Casual takes
-    the request's config + max_turns. The model is validated against models.yaml.
+    no max-turns — any config/max_turns in the request is IGNORED — but takes the
+    request's ``benchmark`` (which ladder + goal; defaults to the registry
+    default when omitted). Casual takes the request's config + max_turns. The
+    model is validated against models.yaml; the benchmark against the registry.
     """
     queue, _executor, _index = _require_control()
 
@@ -646,8 +671,12 @@ async def api_queue_post(spec: dict):
 
     if kind == RunKind.official:
         # Frozen: config + max_turns come from the executor's official wiring,
-        # not the request. Ignore whatever was sent.
-        item = queue.enqueue(kind=kind, model=model, config=None, max_turns=None)
+        # not the request. Ignore whatever was sent. The benchmark IS taken from
+        # the request (validated against the registry; None → executor default).
+        benchmark = _validate_benchmark_id(spec.get("benchmark"))
+        item = queue.enqueue(
+            kind=kind, model=model, config=None, benchmark=benchmark, max_turns=None
+        )
     else:
         item = queue.enqueue(
             kind=kind,
@@ -735,13 +764,35 @@ async def api_run_continue(run_id: str, body: dict | None = None):
 # even on the headless `pokemon run` path).
 
 
+@app.get("/api/benchmarks")
+async def api_benchmarks():
+    """The benchmark registry — ``[{id, name, goal, ladder, default}, ...]``.
+
+    Backs the new-run dialog's benchmark picker and the main-page benchmark
+    filter. Pure projection of ``configs/benchmarks.yaml``; no control plane
+    needed (the registry is on disk), so this stays usable on any server.
+    """
+    from src.app.benchmarks import load_benchmarks
+
+    try:
+        benchmarks = load_benchmarks()
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=500, detail=f"benchmark registry: {exc}")
+    return JSONResponse([b.to_dict() for b in benchmarks])
+
+
 @app.get("/api/leaderboard")
-async def api_leaderboard():
-    """Official winners — best per model, gates desc then turns asc (locked #3)."""
+async def api_leaderboard(benchmark: str | None = None):
+    """Official winners — best per model, gates desc then turns asc (locked #3).
+
+    ``benchmark`` (a registry id) scopes the board to one benchmark; each
+    benchmark has its own ranking since their gate ladders differ. Omitted →
+    all eligible official runs (legacy behaviour).
+    """
     from src.app import derivations
 
     _queue, _executor, index = _require_control()
-    winners = derivations.leaderboard(index.all())
+    winners = derivations.leaderboard(index.all(), benchmark=benchmark)
     return JSONResponse([s.model_dump(mode="json") for s in winners])
 
 

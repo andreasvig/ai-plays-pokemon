@@ -1,0 +1,37 @@
+# PokeBench benchmark registry.
+#
+# Each benchmark bundles an "overall goal" (the meta-goal the agent plays toward,
+# shown in the UI) with its OWN gate ladder file. When a benchmark run is queued,
+# the executor injects the benchmark's ladder (gates ENFORCED) AND overrides the
+# frozen config's `task.goal` with the benchmark's `goal` — so the same frozen
+# config (config-3.13) plays toward different objectives per benchmark.
+#
+# The ladders are separate, independently-editable files under configs/. The
+# easy / first-badge ladders are PREFIXES of the full ladder, but each is
+# self-contained — edit its gates without touching the others.
+#
+# Fields:
+#   id      stable identifier; stamped onto each run + used by the leaderboard filter
+#   name    display name (dialog + main-page filter + report)
+#   goal    overall goal text (overrides config task.goal; fed to the agent as meta-goal)
+#   ladder  path to this benchmark's checkpoint ladder (relative to the repo root)
+#
+# `default: true` marks the benchmark pre-selected in the new-run dialog and shown
+# first on the main page. Exactly one benchmark should set it.
+
+benchmarks:
+  - id: pokebench-easy
+    name: "PokeBench Easy"
+    goal: "Starting in Pallet Town, get your starter Pokémon and travel south through Viridian, Pewter and Cerulean to reach Vermilion City."
+    ladder: configs/checkpoints-firered-easy.yaml
+
+  - id: pokebench-first-badge
+    name: "PokeBench First Badge"
+    goal: "Earn the Boulder Badge by defeating Brock, the Pewter City Gym Leader."
+    ladder: configs/checkpoints-firered-firstbadge.yaml
+
+  - id: pokebench-full
+    name: "PokeBench Full"
+    goal: "Earn the first three Kanto Gym Badges, finishing with the Thunder Badge from Lt. Surge in Vermilion City."
+    ladder: configs/checkpoints-firered-v1.yaml
+    default: true

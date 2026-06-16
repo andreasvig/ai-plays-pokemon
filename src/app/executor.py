@@ -30,6 +30,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from src.app.benchmarks import get_benchmark
 from src.app.models import QueuedRun, RunKind, RunStatus
 from src.app.projection import project_run_dir
 
@@ -144,9 +145,11 @@ class RunExecutor:
     def build_run_config(self, item: QueuedRun) -> tuple[dict, str | None, int]:
         """Build (config, snapshot_dir, turns) for a queued item.
 
-        - Official (locked #4/#7): FROZEN ``config-3.13`` (TaskMaster on) + v1
-          ladder injected with ``enforce: true``, NO max-turns (a large sentinel
-          turn cap that the gate ladder bounds in practice), canonical start save.
+        - Official (locked #4/#7): FROZEN ``config-3.13`` (TaskMaster on) + the
+          chosen benchmark's gate ladder injected with ``enforce: true``, the
+          benchmark's overall goal overriding the config's ``task.goal``, NO
+          max-turns (a large sentinel turn cap that the gate ladder bounds in
+          practice), canonical start save.
         - Casual fresh: the item's chosen config + max-turns, canonical start save.
         - Casual continue: reuse the SOURCE run's config + model via
           ``continue_from_run`` (resolves the latest savepoint), the item's
@@ -168,12 +171,26 @@ class RunExecutor:
             return cfg, str(savepoint_dir), turns
 
         if item.kind == RunKind.official:
+            # Which benchmark this official run plays (easy / first-badge / full).
+            # None / unknown falls back to the registry default so a stale queue
+            # item still runs rather than wedging the drain.
+            benchmark = get_benchmark(item.benchmark)
             cfg = prepare_config(self.official_config_path, item.model)
-            # Inject the frozen gate ladder, ENFORCED (locked #4/#7). The
-            # official config carries no referee block of its own; we read the
+            # Override the frozen config's goal with the benchmark's overall goal
+            # — the meta-goal the agent (TaskMaster) plays toward. The frozen
+            # config stays the same across all benchmarks; only the objective +
+            # gate ladder change, so cross-model comparability holds per benchmark.
+            task = cfg.get("task")
+            if not isinstance(task, dict):
+                task = {}
+            task["goal"] = benchmark.goal
+            cfg["task"] = task
+            # Inject the benchmark's gate ladder, ENFORCED (locked #4/#7). Each
+            # benchmark has its OWN ladder file (a self-contained prefix of the
+            # full ladder); reaching its final rung WINS the run. We read the
             # ladder POINTER at runtime (never the gate numbers).
             cfg["referee"] = {
-                "checkpoints": self.official_ladder_path,
+                "checkpoints": benchmark.ladder,
                 "enforce": True,
             }
             # NO max-turns: pace is the only bound (locked #8). We still pass a
@@ -376,12 +393,16 @@ class RunExecutor:
             status = RunStatus.completed.value
         summary["status"] = status
 
-        # benchmark_version: pokebench-v1 for an official run that posts a verdict;
-        # a CANCELLED (voided, locked #9) official run gets NULL so it is never
-        # leaderboard-eligible. Casual = always null.
+        # benchmark / benchmark_version: for an official run that posts a verdict,
+        # stamp WHICH benchmark it played (drives the per-benchmark leaderboard
+        # filter) + the season version. A CANCELLED (voided, locked #9) official
+        # run gets NULL on both so it is never leaderboard-eligible. Casual =
+        # always null.
         if is_official and status != RunStatus.cancelled.value:
+            summary["benchmark"] = get_benchmark(item.benchmark).id
             summary["benchmark_version"] = OFFICIAL_BENCHMARK_VERSION
         else:
+            summary["benchmark"] = None
             summary["benchmark_version"] = None
 
         summary.setdefault(

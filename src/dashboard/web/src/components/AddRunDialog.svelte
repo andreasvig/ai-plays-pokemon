@@ -4,9 +4,12 @@
   // instead of importing the mock module directly.
   // MODELS is now an array of {alias, run_count} objects (api.fetchModels).
   // CONFIGS is a list of config stems, e.g. "config-3.13".
-  let { open = false, continueFrom = null, models = [], configs = [], onclose, onsubmit } = $props()
+  let { open = false, continueFrom = null, models = [], configs = [], benchmarks = [], onclose, onsubmit } = $props()
   const MODELS = $derived(models)
   const CONFIGS = $derived(configs)
+  const BENCHMARKS = $derived(benchmarks)
+  // The registry-default benchmark (or the first), pre-selected on open.
+  const defaultBenchmark = $derived(BENCHMARKS.find((b) => b.default)?.id ?? BENCHMARKS[0]?.id ?? '')
 
   // Latest config stem: parse the version number out of the stem (e.g.
   // "config-3.13" → 3.13) and pick the max. /api/configs isn't guaranteed
@@ -42,6 +45,7 @@
   let kind = $state('official')
   let model = $state('')           // always the ALIAS string (submit contract)
   let config = $state('')
+  let benchmark = $state('')        // selected benchmark id (official only)
   let maxTurns = $state(100)        // casual default: 100 turns
   let modelQuery = $state('')       // searchable model-picker filter text
 
@@ -64,6 +68,7 @@
           kind = 'official'
           model = MODELS[0]?.alias ?? ''
           if (!config) config = latestConfig(CONFIGS)
+          benchmark = defaultBenchmark
         }
       })
     }
@@ -72,6 +77,7 @@
 
   const isContinue = $derived(!!continueFrom)
   const isOfficial = $derived(kind === 'official')
+  const selectedBench = $derived(BENCHMARKS.find((b) => b.id === benchmark) ?? null)
 
   // Searchable, run-count-sorted model list. Models you've already run
   // (higher run_count) sort first so they're easy to find; alias breaks ties.
@@ -87,7 +93,8 @@
   function submit() {
     onsubmit({
       kind, model,
-      config: isOfficial ? 'pokebench-v1' : config,
+      benchmark: isOfficial ? benchmark : null,
+      config: isOfficial ? null : config,
       maxTurns: isOfficial ? null : maxTurns,
       continueFrom: continueFrom?.runId ?? null,
     })
@@ -110,7 +117,7 @@
       {:else}
         <div class="seg">
           <button class:on={isOfficial} onclick={() => kind = 'official'}>
-            <b>Official</b><small>benchmark · gated · leaderboard</small>
+            <b>Benchmark</b><small>gated · leaderboard</small>
           </button>
           <button class:on={!isOfficial} onclick={() => kind = 'casual'}>
             <b>Casual</b><small>free config · max-turns · no gates</small>
@@ -152,9 +159,18 @@
         </div>
 
         {#if isOfficial}
+          <label class="field">
+            <span class="flabel">Benchmark</span>
+            <select bind:value={benchmark}>
+              {#each BENCHMARKS as b}<option value={b.id}>{b.name}</option>{/each}
+            </select>
+          </label>
+          {#if selectedBench}
+            <p class="goal">{selectedBench.goal}</p>
+          {/if}
           <div class="field">
             <span class="flabel">Config</span>
-            <div class="frozen mono">pokebench-v1 <span class="faint">(frozen · gates enforced · no turn cap)</span></div>
+            <div class="frozen mono">config-3.13 <span class="faint">(frozen · gates enforced · no turn cap)</span></div>
           </div>
         {:else}
           <label class="field">
@@ -224,6 +240,7 @@
   select:focus, input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
   select:disabled, input:disabled { background: var(--surface-2); color: var(--muted); }
   .frozen { font-size: 13px; padding: 9px 11px; border: 1px dashed var(--border); border-radius: 8px; background: var(--surface-2); }
+  .goal { margin: -4px 0 0; font-size: 12px; line-height: 1.45; color: var(--muted); font-style: italic; }
 
   .model-search { margin-bottom: 6px; }
   .model-list {
