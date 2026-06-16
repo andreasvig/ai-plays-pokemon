@@ -28,7 +28,7 @@
   let queue = $state([])           // upcoming queue items (camelCase cards)
   let activeId = $state(null)      // queue_id of the running run (or null)
   let active = $state(null)        // RunSummary of the running run, joined below
-  let emulator = $state({ configured: false, process_up: false, connected: false, busy: false, active_run_id: null })
+  let emulator = $state({ configured: false, process_up: false, connected: false, busy: false, active_run_id: null, muted: true })
   let selectedRun = $state(null)   // resolved run for the report view (P6)
 
   // active run id for spectate streams (Plan §P6) — the run-dir id the executor
@@ -192,6 +192,17 @@
     }
     await Promise.all([loadQueue(), loadLeaderboard().catch(() => {}), loadRuns().catch(() => {})])
   }
+  async function toggleMute() {
+    const next = !emulator.muted
+    emulator = { ...emulator, muted: next }   // optimistic
+    try {
+      const r = await api.setEmulatorMute(next)
+      emulator = { ...emulator, muted: r.muted }   // reconcile with server truth
+    } catch (e) {
+      console.error('mute toggle failed', e)
+      emulator = { ...emulator, muted: !next }      // rollback
+    }
+  }
   async function removeFromQueue(id) {
     queue = queue.filter((q) => q.queueId !== id)   // optimistic
     try { await api.cancelQueued(id) } catch (e) { console.error('cancel failed', e) }
@@ -211,7 +222,7 @@
 </script>
 
 {#if view !== 'spectate'}
-  <TopBar {active} {emulatorUp} {queue} {view} onnav={go} onspectate={() => go('/spectate')} onnew={openNew} />
+  <TopBar {active} {emulatorUp} {queue} {view} muted={emulator.muted} ontogglemute={toggleMute} onnav={go} onspectate={() => go('/spectate')} onnew={openNew} />
 {/if}
 
 <main class:kiosk={view === 'spectate'}>
@@ -225,7 +236,7 @@
   {:else if view === 'history'}
     <History {runs} oninspect={inspect} oncontinue={openContinue} />
   {:else if view === 'spectate'}
-    <Spectate run={active} {activeRunId} onnew={openNew} onback={() => go('/')} />
+    <Spectate run={active} {activeRunId} muted={emulator.muted} ontogglemute={toggleMute} onnew={openNew} onback={() => go('/')} />
   {:else if view === 'report'}
     <Report run={selectedRun} onback={() => go('/history')} oncontinue={openContinue} />
   {:else if view === 'about'}

@@ -1,5 +1,5 @@
 <script>
-  let { active = null, emulatorUp = false, queue = [], view = 'home', onnav, onspectate } = $props()
+  let { active = null, emulatorUp = false, queue = [], view = 'home', muted = true, ontogglemute, onnav, onspectate } = $props()
   // green/live = a run is active AND the emulator is up; grey/idle otherwise.
   const hasActive = $derived(!!active && emulatorUp)
 </script>
@@ -22,6 +22,11 @@
   </div>
 
   <nav class="right">
+    <button class="btn ghost mute" class:muted onclick={() => ontogglemute && ontogglemute()}
+            title={muted ? 'Game audio muted — click to unmute' : 'Game audio on — click to mute'}
+            aria-label={muted ? 'Unmute game audio' : 'Mute game audio'}>
+      {muted ? '🔇' : '🔊'}
+    </button>
     <button class="btn ghost" class:active={view === 'history'} onclick={() => onnav('/history')}>History</button>
     <button class="btn ghost" class:active={view === 'about'} onclick={() => onnav('/about')}>About</button>
   </nav>
@@ -56,4 +61,6 @@
   .spectate.on:hover { box-shadow: 0 0 0 4px var(--green-soft); }
 
   .btn.ghost.active { color: var(--text); background: #eef1f5; }
+  .mute { font-size: 15px; line-height: 1; padding: 6px 10px; }
+  .mute.muted { opacity: .55; }
 </style>

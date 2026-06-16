@@ -23,7 +23,7 @@
 
   // `run` = the active RunSummary (for model + kind badge); `activeRunId` = the
   // run-dir id to open the live streams against. Either may be null (no run).
-  let { run = null, activeRunId = null, onnew, onback } = $props()
+  let { run = null, activeRunId = null, muted = true, ontogglemute, onnew, onback } = $props()
 
   // ── live state, populated by the event/screen sockets ──
   let stats = $state({ turns: 0, cost: 0, input_tokens: 0, output_tokens: 0 })
@@ -63,26 +63,14 @@
   const showGates = $derived(run?.kind !== 'casual')
   const reached = $derived(Object.keys(stamps).length)
   const totalGates = $derived(ladder.length || 0)
-  // next gate = first ladder rung NOT yet stamped
+  // next gate = first ladder rung NOT yet stamped; `tone` drives the Gates stat's
+  // urgency colour as that gate's deadline nears (red <25 turns left, amber <60).
   const nextGate = $derived(ladder.find((g) => !(g.id in stamps)) || null)
   const deadline = $derived(nextGate?.deadline_turn ?? null)
   const turnsLeft = $derived(deadline != null ? deadline - currentTurn : null)
-  const budgetPct = $derived(
-    deadline ? Math.min(100, (currentTurn / deadline) * 100) : 0
-  )
   const tone = $derived(
     turnsLeft == null ? 'ok' : turnsLeft < 25 ? 'red' : turnsLeft < 60 ? 'amber' : 'ok'
   )
-
-  // mini gate ladder window around the current rung (done/current/upcoming)
-  const ladderWindow = $derived(() => {
-    const rows = ladder.map((g) => ({
-      ...g,
-      status: g.id in stamps ? 'done' : g.id === nextGate?.id ? 'current' : 'upcoming',
-      turn: g.id in stamps ? stamps[g.id] : null,
-    }))
-    return rows.slice(Math.max(0, reached - 2), reached + 3)
-  })
 
   // Parse the run start time (local) out of the run-dir id, e.g.
   // "2026-06-16_09-35-12_config-3.13__gpt-5" → epoch ms. Returns null if the id
@@ -432,6 +420,9 @@
     <div class="bar">
       <button class="btn ghost" onclick={() => onback()}>← Leaderboard</button>
       <span class="pill"><span class="dot live"></span> live</span>
+      <button class="mutebtn" class:muted onclick={() => ontogglemute && ontogglemute()}
+              title={muted ? 'Game audio muted — click to unmute' : 'Game audio on — click to mute'}
+              aria-label={muted ? 'Unmute game audio' : 'Mute game audio'}>{muted ? '🔇' : '🔊'}</button>
       {#if run}<span class="badge {run.kind}">{run.kind === 'official' ? 'benchmark' : 'casual'}</span>{/if}
       <span class="model mono">{run?.model ?? activeRunId}</span>
       <span class="conn">
@@ -444,12 +435,22 @@
     <div class="layout">
       <!-- main: BIG emulator + HUD + stats + task + memory -->
       <div class="main">
-        <div class="stats" style={`grid-template-columns: repeat(${showGates ? 5 : 4}, 1fr)`}>
+        <div class="stats" style={`grid-template-columns: repeat(4, 1fr)${showGates ? ' 30%' : ''}`}>
           <div class="stat"><span class="sl">Turn</span><span class="sv tnum">{stats.turns || currentTurn}</span></div>
           <div class="stat"><span class="sl">Cost</span><span class="sv tnum">{usd(stats.cost)}</span></div>
           <div class="stat"><span class="sl">Tokens</span><span class="sv tnum">{tokensLabel}<span class="su">/{tokensSub}</span></span></div>
           <div class="stat"><span class="sl">Elapsed</span><span class="sv tnum">{dur(elapsedS)}</span></div>
-          {#if showGates}<div class="stat"><span class="sl">Gates</span><span class="sv tnum">{reached}/{totalGates || '—'}</span></div>{/if}
+          {#if showGates}
+            <div class="stat gates {tone}">
+              <span class="sl">Gates</span>
+              <span class="sv tnum">{reached}/{totalGates || '—'}</span>
+              {#if nextGate}
+                <span class="gnext">next gate to complete{#if deadline != null} before turn {deadline}{/if}: {nextGate.name}{#if turnsLeft != null} · {turnsLeft} turns left{/if}</span>
+              {:else}
+                <span class="gnext">all gates reached</span>
+              {/if}
+            </div>
+          {/if}
         </div>
 
         <div class="gba">
@@ -481,29 +482,6 @@
           </div>
         </div>
 
-        {#if showGates}
-        <div class="hud {tone}">
-          <div class="hud-top">
-            <span class="hl">Next gate</span>
-            <span class="hv">{nextGate?.name ?? '— all gates reached'}</span>
-            {#if deadline != null}
-              <span class="hv-left tnum">{turnsLeft} turns left · limit T{deadline}</span>
-            {/if}
-          </div>
-          {#if deadline != null}
-            <div class="hud-track"><span class="hud-fill" style={`width:${budgetPct}%`}></span></div>
-          {/if}
-          <div class="ladder">
-            {#each ladderWindow() as g}
-              <div class="lg {g.status}">
-                <span class="lg-i">{g.status === 'done' ? '✓' : g.status === 'current' ? '▶' : '·'}</span>
-                <span class="lg-n">{g.name}</span>
-                <span class="lg-t tnum faint">{g.turn != null ? 'T' + g.turn : g.deadline_turn != null ? 'T' + g.deadline_turn : '—'}</span>
-              </div>
-            {/each}
-          </div>
-        </div>
-        {/if}
       </div>
 
       <!-- side: live trace feed (own component) -->
@@ -534,6 +512,12 @@
   .big { font-size: 18px; font-weight: 700; margin: 0; }
   .bar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex: none; }
   .bar .model { font-size: 14px; font-weight: 650; }
+  .mutebtn {
+    border: 1px solid var(--border); background: var(--surface); border-radius: 6px;
+    font-size: 14px; line-height: 1; padding: 4px 8px; cursor: pointer; transition: opacity .12s, background .12s;
+  }
+  .mutebtn:hover { background: #eef1f5; }
+  .mutebtn.muted { opacity: .55; }
   .conn { margin-left: auto; display: flex; align-items: center; gap: 12px; }
   .c-ind { font-size: 11px; font-weight: 650; color: var(--green); display: inline-flex; align-items: center; gap: 5px; }
   .c-ind.off { color: var(--faint); }
@@ -552,26 +536,16 @@
   .screen { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; }
   .ph { color: #7b8696; text-align: center; font-size: 16px; line-height: 1.7; }
 
-  .hud { flex: none; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; box-shadow: var(--shadow); }
-  .hud.amber { border-color: #f0d9a0; } .hud.red { border-color: #f0c5c5; }
-  .hud-top { display: flex; align-items: baseline; gap: 12px; }
-  .hl { font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); font-weight: 700; }
-  .hv { font-size: 14px; font-weight: 700; }
-  .hv-left { margin-left: auto; font-size: 12.5px; color: var(--muted); font-weight: 650; }
-  .hud-track { height: 7px; background: #eef1f5; border-radius: 4px; overflow: hidden; margin: 10px 0; }
-  .hud-fill { display: block; height: 100%; background: var(--accent); }
-  .hud.amber .hud-fill { background: var(--amber); } .hud.red .hud-fill { background: var(--red); }
-  .ladder { display: flex; flex-direction: column; gap: 1px; border-top: 1px solid var(--border-2); padding-top: 8px; }
-  .lg { display: grid; grid-template-columns: 18px 1fr auto; gap: 8px; align-items: center; font-size: 12px; padding: 2px 0; }
-  .lg-i { text-align: center; font-weight: 800; color: var(--faint); }
-  .lg.done .lg-i { color: var(--green); }
-  .lg.current { font-weight: 700; }
-  .lg.current .lg-i { color: var(--accent); }
-  .lg.upcoming { color: var(--muted); }
-  .lg-t { font-size: 11px; }
-
-  .stats { flex: none; display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+  .stats { flex: none; display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; align-items: stretch; }
   .stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 11px 12px; box-shadow: var(--shadow); }
+  /* Gates stat carries the next-gate line + deadline urgency tone (the old big
+     HUD folded in here); it occupies ~30% of the stats row (set inline). */
+  .stat.gates { display: flex; flex-direction: column; }
+  .stat.gates.amber { border-color: #f0d9a0; }
+  .stat.gates.red { border-color: #f0c5c5; }
+  .gnext { font-size: 10px; line-height: 1.35; font-weight: 600; color: var(--muted); margin-top: 3px; }
+  .stat.gates.amber .gnext { color: #b8860b; }
+  .stat.gates.red .gnext { color: var(--red); }
   .sl { display: block; font-size: 9.5px; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); font-weight: 700; }
   .sv { font-size: 18px; font-weight: 750; }
   .su { font-size: 11px; color: var(--muted); font-weight: 600; }

@@ -290,3 +290,7 @@ export function continueRun(runId, maxTurns) {
   const body = maxTurns != null ? { max_turns: maxTurns } : undefined
   return send('POST', `/api/runs/${encodeURIComponent(runId)}/continue`, body)
 }
+
+export function setEmulatorMute(mute) {
+  return send('POST', '/api/emulator/mute', { mute })
+}
