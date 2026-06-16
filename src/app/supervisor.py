@@ -83,6 +83,9 @@ class AppSupervisor:
         self._handle: Optional[dict] = None
         self._connected: bool = False
         self._busy: bool = False
+        # Default muted: the emulator launches with `-C mute=1`, so audio never
+        # plays to an empty room until something explicitly unmutes it.
+        self.muted: bool = True
 
     # ───────────────────────────── lifecycle ─────────────────────────────
 
@@ -121,6 +124,25 @@ class AppSupervisor:
         so :meth:`status` reflects idle vs busy. Defaults to idle.
         """
         self._busy = bool(busy)
+
+    def set_mute(self, mute: bool) -> bool:
+        """Mute/unmute the emulator audio. Returns the resulting muted state.
+
+        Drives mGBA's native ``Audio/Video → Mute`` toggle via Accessibility
+        (the Lua socket has no audio control). When no emulator is live yet, just
+        records the intent so a later launch / the status endpoint reflects it.
+        Best-effort: an AppleScript failure leaves the previous flag and is
+        swallowed by the caller — never let it derail a run or the drain.
+        """
+        proc = self._handle.get("mgba_proc") if self._handle else None
+        if proc is None or not hasattr(proc, "pid"):
+            self.muted = bool(mute)  # no live process to drive — record intent
+            return self.muted
+        from src.cli.runner import set_mgba_mute_for_pid
+
+        if set_mgba_mute_for_pid(int(proc.pid), bool(mute)):
+            self.muted = bool(mute)
+        return self.muted
 
     def status(self) -> SupervisorStatus:
         """Current health snapshot (process up? connected? busy?)."""

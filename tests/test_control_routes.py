@@ -23,6 +23,7 @@ class FakeSupervisor:
     def __init__(self) -> None:
         self._busy = False
         self.handle = {}
+        self.muted = True
 
     class _Status:
         def __init__(self, busy):
@@ -33,6 +34,10 @@ class FakeSupervisor:
 
     def set_busy(self, busy):
         self._busy = bool(busy)
+
+    def set_mute(self, mute):
+        self.muted = bool(mute)
+        return self.muted
 
 
 @pytest.fixture
@@ -277,6 +282,20 @@ def test_delete_run_trashes_and_deindexes(client, tmp_path, monkeypatch):
 def test_delete_run_404_when_unknown(client):
     tc = client["tc"]
     assert tc.delete("/api/runs/does-not-exist").status_code == 404
+
+
+def test_emulator_mute_toggles_and_status_reflects(client):
+    tc = client["tc"]
+    # Default is muted (emulator boots with -C mute=1).
+    assert tc.get("/api/emulator/status").json()["muted"] is True
+    # Unmute.
+    r = tc.post("/api/emulator/mute", json={"mute": False})
+    assert r.status_code == 200 and r.json()["muted"] is False
+    assert tc.get("/api/emulator/status").json()["muted"] is False
+    # Mute again (default body → mute).
+    r = tc.post("/api/emulator/mute", json={})
+    assert r.status_code == 200 and r.json()["muted"] is True
+    assert tc.get("/api/emulator/status").json()["muted"] is True
 
 
 def test_routes_503_when_unconfigured():

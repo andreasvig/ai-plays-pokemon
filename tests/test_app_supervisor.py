@@ -128,6 +128,18 @@ def test_handle_raises_before_start_and_returns_after(supervisor):
     assert "emu" in sup.handle
 
 
+def test_set_mute_defaults_muted_and_records_intent(supervisor):
+    sup, _ = supervisor
+    # Default muted (matches the emulator's -C mute=1 launch).
+    assert sup.muted is True
+    # Before start() there's no live process to drive — set_mute just records
+    # the intent (no AppleScript) and returns the resulting state.
+    assert sup.set_mute(False) is False
+    assert sup.muted is False
+    assert sup.set_mute(True) is True
+    assert sup.muted is True
+
+
 def test_set_busy_reflected_in_status(supervisor):
     sup, _ = supervisor
     sup.start()

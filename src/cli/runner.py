@@ -106,6 +106,56 @@ def open_scripting_window_for_pid(pid: int) -> bool:
     return result.stdout.strip() == "ok"
 
 
+def set_mgba_mute_for_pid(pid: int, mute: bool) -> bool:
+    """Set mGBA's ``Audio/Video → Mute`` toggle to ``mute`` for the given pid.
+
+    mGBA exposes no runtime audio control over the Lua socket (its scripting API
+    is input/memory/savestate only), so the warm emulator is muted/unmuted by
+    driving its native macOS menu via Accessibility — the same mechanism used to
+    position the window + open the Scripting window. The menu item is a checkbox:
+    we read its mark and click ONLY when the current state differs, so this is an
+    idempotent set-to-state (not a blind toggle). Raises the game window first so
+    the menu bar is the game window's (the Scripting window collapses it to File).
+
+    macOS-only; a no-op returning True elsewhere. Returns True iff the desired
+    state was confirmed/achieved. Best-effort — callers should not depend on it.
+    """
+    if sys.platform != "darwin":
+        return True
+    want = "true" if mute else "false"
+    script = f'''
+        tell application "System Events"
+            set targetProc to first process whose unix id is {pid}
+            set wantMuted to {want}
+            repeat 5 times
+                try
+                    tell targetProc
+                        set gameWin to first window whose name starts with "mGBA -"
+                        perform action "AXRaise" of gameWin
+                    end tell
+                    delay 0.25
+                    tell targetProc
+                        set mi to menu item "Mute" of menu 1 of menu bar item "Audio/Video" of menu bar 1
+                        set isMuted to ((value of attribute "AXMenuItemMarkChar" of mi) is not missing value)
+                        if isMuted is not wantMuted then click mi
+                    end tell
+                    return "ok"
+                on error
+                    delay 0.4
+                end try
+            end repeat
+            return "fail"
+        end tell
+    '''
+    try:
+        result = subprocess.run(
+            ['osascript', '-e', script], capture_output=True, timeout=15, text=True,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+    return result.stdout.strip() == "ok"
+
+
 def _resolve_task_master_model(config: dict, tm_model_alias: str | None) -> None:
     """Resolve the --task-master-model alias into config, in place.
 

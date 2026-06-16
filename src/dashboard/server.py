@@ -799,6 +799,21 @@ async def api_run_continue(run_id: str, body: dict | None = None):
     return JSONResponse(item.model_dump(mode="json"), status_code=201)
 
 
+@app.post("/api/emulator/mute")
+async def api_emulator_mute(body: dict):
+    """Mute/unmute the emulator audio — ``{mute: bool}`` → ``{muted: bool}``.
+
+    Best-effort: drives mGBA's native Mute toggle via the executor/supervisor and
+    returns the resulting state. ``mute`` defaults to True. Pings ``notify_control``
+    so the other UI surface (Home / Spectate) reflects the change.
+    """
+    _queue, executor, _index = _require_control()
+    mute = bool(body.get("mute", True))
+    muted = executor.set_mute(mute)
+    notify_control()
+    return JSONResponse({"muted": muted})
+
+
 @app.delete("/api/runs/{run_id}")
 async def api_run_delete(run_id: str):
     """Delete a HISTORICAL run: move its folder to the Trash + drop the index entry.
@@ -1040,6 +1055,7 @@ async def api_emulator_status():
                 "connected": False,
                 "busy": False,
                 "active_run_id": None,
+                "muted": True,
             }
         )
 
@@ -1056,6 +1072,8 @@ async def api_emulator_status():
     # Expose the executor's active run id so the SPA can open the right
     # /runs/{id}/ws/* streams (Plan §P6). null in headless / between runs.
     payload["active_run_id"] = getattr(executor, "_active_run_id", None)
+    # Current audio mute state (drives the Home + Spectate mute toggles).
+    payload["muted"] = bool(getattr(getattr(executor, "supervisor", None), "muted", True))
     return JSONResponse(payload)
 
 

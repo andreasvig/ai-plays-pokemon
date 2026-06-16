@@ -314,7 +314,32 @@ class RunExecutor:
             # successful finalize) the leaderboard may have a new row. Ping the
             # control hub so Home refetches live (Plan §P6).
             self._notify_control()
+            # Auto-mute once the queue has drained: a run just ended and nothing
+            # is waiting, so return the emulator to its default silent state
+            # rather than play audio to an empty room. If another run is queued
+            # we leave the audio as-is (the next run starts immediately).
+            try:
+                if self.queue.peek_next() is None:
+                    self.set_mute(True)
+            except Exception:
+                pass
         return run_id
+
+    def set_mute(self, mute: bool) -> bool:
+        """Best-effort mute/unmute of the emulator via the supervisor.
+
+        Returns the resulting muted state. Never raises — a supervisor without a
+        ``set_mute`` (or an AppleScript failure) is swallowed, leaving the last
+        known state. Used by the /api/emulator/mute route and the auto-mute hook.
+        """
+        sup = self.supervisor
+        fn = getattr(sup, "set_mute", None)
+        if fn is not None:
+            try:
+                return bool(fn(mute))
+            except Exception:
+                pass
+        return bool(getattr(sup, "muted", mute))
 
     def drain_loop(self, poll_interval: float = 0.5) -> None:
         """Serial loop: drain the queue forever until :meth:`stop`.
