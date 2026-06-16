@@ -33,6 +33,7 @@ from typing import Any, Callable, Optional
 from src.app.benchmarks import get_benchmark
 from src.app.models import QueuedRun, RunKind, RunStatus
 from src.app.projection import project_run_dir
+from src.app.trace_build import build_and_cache_trace
 
 # Frozen official benchmark wiring (locked decisions #4 / #7). Read at runtime —
 # never hardcode gate numbers; the ladder + config stay WIP until launch.
@@ -419,6 +420,13 @@ class RunExecutor:
         projected = project_run_dir(run_dir)
         if projected is not None:
             self.index.upsert(projected)
+
+        # Cache the projected trace so the Report opens without re-parsing the
+        # whole events.jsonl on every request (stale-guarded by mtime in the API).
+        try:
+            build_and_cache_trace(run_dir)
+        except Exception:
+            pass
 
         # Clear a consumed stop request.
         if stop_requested:
