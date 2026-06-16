@@ -235,9 +235,14 @@ def run_prepare_phase(config: dict, saves_dir: Path) -> dict:
 
     rom_path = config["emulator"]["rom_path"]
     mgba_path = "/opt/homebrew/bin/mgba"
+    # NOTE: launch with audio ENABLED — do NOT pass `-C mute=1`. That core-option
+    # override mutes at a level the Audio/Video → Mute menu cannot clear, so it
+    # would defeat the runtime mute toggle (verified 2026-06-16: focused + menu
+    # unmuted but still silent under the override). Default-muted is instead
+    # achieved by toggling the menu Mute on right after connect (see the app
+    # supervisor + the headless `run` path), which the toggle can later reverse.
     mgba_cmd = [
         mgba_path,
-        "-C", "mute=1",
         "-C", f"savegamePath={saves_dir}",
         "-C", f"savestatePath={saves_dir}",
         rom_path,

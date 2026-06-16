@@ -339,6 +339,11 @@ def main() -> None:
     print("Launching emulator (mGBA + Lua connector)...")
     supervisor.start()
     print("Emulator connected. Starting web server...")
+    # Default-muted: mGBA now launches with audio ENABLED (the old `-C mute=1`
+    # override blocked the runtime toggle), so mute it via the menu now — the
+    # same lever the UI mute buttons + auto-mute-on-idle use. Best-effort.
+    if supervisor.set_mute(True):
+        print("Audio muted (default).")
 
     # Start the existing FastAPI dashboard server long-lived (no run registered
     # yet — runs register into it as the executor dispatches them in P3). We
