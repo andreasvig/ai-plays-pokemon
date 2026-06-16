@@ -4,7 +4,7 @@
 benchmark:
   id: pokebench-easy
   name: "PokeBench Easy"
-  goal: "Your goal is to reach Viridian City in as few turns as possible — you're measured on fewest player turns, excluding TaskMaster turns."
+  goal: "you are on a fresh safe file of pokemon firered. Your goal is to reach Viridian City in as few turns as possible — you're measured on fewest player turns, excluding TaskMaster turns."
   default: false
 
 benchmark_version: pokebench-easy
@@ -34,42 +34,42 @@ checkpoints:
     name: "Left the bedroom"
     type: map
     signature: {map_group: 4, map_num: 0}        # Player's House 1F
-    deadline_turn: 25
+    deadline_turn: 20
 
   - id: left_house
     name: "Stepped outside in Pallet Town"
     type: map
     signature: {map_group: 3, map_num: 0}
-    deadline_turn: 50                             # Andreas's original anchor
+    deadline_turn: 30                             # Andreas's original anchor
 
   - id: oaks_lab_entered
     name: "Entered Oak's Lab"
     type: map
     signature: {map_group: 4, map_num: 3}
     cross_check: {type: flag, flag_id: 0x2CF}     # FLAG_VISITED_OAKS_LAB
-    deadline_turn: 75                            # Andreas's original anchor (Oak encounter)
+    deadline_turn: 40                            # Andreas's original anchor (Oak encounter)
 
   - id: starter_chosen
     name: "Chose a starter"
     type: flag
     signature: {flag_id: 0x828}                   # FLAG_SYS_POKEMON_GET
     cross_check: {type: party, min_count: 1}
-    deadline_turn: 100
+    deadline_turn: 50
 
   - id: rival1_done
     name: "First rival battle done"               # scene-complete, win or lose (no victory flag exists)
     type: flag
     signature: {flag_id: 0x258}                   # FLAG_BEAT_RIVAL_IN_OAKS_LAB
-    deadline_turn: 125
+    deadline_turn: 70
 
   - id: route1_reached
     name: "Reached Route 1"
     type: map
     signature: {map_group: 3, map_num: 19}
-    deadline_turn: 150
+    deadline_turn: 80
 
   - id: viridian_reached
     name: "Reached Viridian City"
     type: map
     signature: {map_group: 3, map_num: 1}
-    deadline_turn: 200                            # Route 1 traversal + encounters
+    deadline_turn: 100                          # Route 1 traversal + encounters
