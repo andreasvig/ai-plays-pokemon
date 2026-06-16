@@ -1,13 +1,13 @@
 """Headless API tests for the P4 read routes.
 
 FastAPI TestClient against the additive read surface — ``/api/{leaderboard,runs,
-runs/{id},runs/{id}/report,models,configs,emulator/status}`` — backed by a real
-RunIndex (tmp dirs) seeded with fixture RunSummary objects + a light executor
-double. NEVER launches mGBA.
+runs/{id},models,configs,emulator/status}`` — backed by a real RunIndex (tmp
+dirs) seeded with fixture RunSummary objects + a light executor double. NEVER
+launches mGBA.
 
 Discipline (memory ``dont-pin-user-tuned-values-in-tests``): assert STRUCTURE —
-ordering, inclusion/exclusion, subsets, 404s, regeneration happened, no-500 —
-never a tuned gate/cost integer.
+ordering, inclusion/exclusion, subsets, 404s, no-500 — never a tuned gate/cost
+integer.
 """
 
 from __future__ import annotations
@@ -190,50 +190,6 @@ def test_run_get_returns_entry(seeded):
 
 def test_run_get_unknown_404(seeded):
     assert seeded["tc"].get("/api/runs/nope").status_code == 404
-
-
-# ───────────────────────────── report regen ─────────────────────────────
-
-
-def test_report_regenerates_when_missing(tmp_path):
-    runs_root = tmp_path / "runs"
-    run_id = "2026-06-15_12-00-00_config-3.13__alpha"
-    run_dir = runs_root / run_id
-    run_dir.mkdir(parents=True)
-    # Minimal events.jsonl + run_summary.json so generate_html can run.
-    events = [
-        {"type": "turn_start", "turn": 1, "agent_id": "a"},
-        {"type": "turn_explanation", "explanation": {"action": "press a"}},
-    ]
-    with open(run_dir / "events.jsonl", "w") as f:
-        for e in events:
-            f.write(json.dumps(e) + "\n")
-    with open(run_dir / "run_summary.json", "w") as f:
-        json.dump({"session": {"total_turns": 1, "duration_seconds": 10.0},
-                   "cost": {"total_usd": 0.1}}, f)
-    # Ensure no report yet.
-    assert not (run_dir / "report.html").exists()
-
-    index = FakeIndex([_summary(run_id=run_id)])
-    executor = FakeExecutor(runs_root=runs_root, supervisor=FakeSupervisor())
-    server.configure_control_plane(queue_manager=object(), executor=executor,
-                                   run_index=index)
-    try:
-        tc = TestClient(server.app)
-        r = tc.get(f"/api/runs/{run_id}/report")
-        assert r.status_code == 200
-        assert (run_dir / "report.html").exists()
-        body = r.text.lower()
-        assert "<!doctype html>" in body or "<html" in body
-    finally:
-        server._CONTROL["queue"] = None
-        server._CONTROL["executor"] = None
-        server._CONTROL["index"] = None
-
-
-def test_report_unknown_run_dir_404(seeded):
-    # seeded's executor.runs_root points at a path with no such dir.
-    assert seeded["tc"].get("/api/runs/ghost/report").status_code == 404
 
 
 # ───────────────────────────── models / configs ─────────────────────────────

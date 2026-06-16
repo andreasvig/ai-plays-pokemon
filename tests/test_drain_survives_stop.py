@@ -40,7 +40,7 @@ def make_run_fn(runs_root: Path, *, raise_on=frozenset(), recorder=None):
     """
     counter = {"n": 0}
 
-    def run_fn(handle, config, *, turns, snapshot, open_browser=False, open_report=False, on_run_dir=None, should_stop=None):
+    def run_fn(handle, config, *, turns, snapshot, open_browser=False, on_run_dir=None, should_stop=None):
         counter["n"] += 1
         n = counter["n"]
         run_name = config.get("run_name", f"run{n}")
@@ -196,7 +196,7 @@ def test_should_stop_predicate_actually_halts_the_running_loop(tmp_path):
     holder: dict = {}
     polled = {"turns": 0}
 
-    def run_fn(handle, config, *, turns, snapshot, open_browser=False, open_report=False, on_run_dir=None, should_stop=None):
+    def run_fn(handle, config, *, turns, snapshot, open_browser=False, on_run_dir=None, should_stop=None):
         run_dir = runs_root / "2026-06-16_00-00-01_c__m"
         run_dir.mkdir(parents=True, exist_ok=True)
         if on_run_dir is not None:

@@ -1,11 +1,10 @@
 <script>
-  // Native restyled report (Plan §P6 decision): meta KPIs + the REAL benchmark
-  // gate scorecard (from referee.gates) + the FULL master→player trace (from
-  // /api/runs/{id}/trace), restyled in the SPA's visual identity but at PARITY
-  // with the old report.py output — system prompts, per-step thinking, tool
-  // calls + responses, master strategy + verdict, player handback. (Round 9 E.)
-  // A "View full HTML report" link opens /api/runs/{id}/report — the exhaustive
-  // event-level report.py output — preserving it without iframing it as primary.
+  // Native report (Plan §P6 decision): meta KPIs + the REAL benchmark gate
+  // scorecard (from referee.gates) + the FULL master→player trace (from
+  // /api/runs/{id}/trace), in the SPA's visual identity — system prompts,
+  // per-step thinking, tool calls + responses, master strategy + verdict,
+  // player handback. (Round 9 E.) This IS the run report; the old standalone
+  // HTML report (src/cli/report.py) was retired in favour of this view.
   import { GATES } from '../lib/gates.js'
   import { usd, dur, perTurn, dateShort, actionEmoji } from '../lib/format.js'
   import { mdToHtml } from '../lib/md.js'
@@ -78,9 +77,7 @@
     openTurns = s
   }
 
-  const reportUrl = $derived(run?.runId ? `/api/runs/${encodeURIComponent(run.runId)}/report` : '#')
-
-  // --- Trace step helpers (parity with report.py _render_trace_html) ---------
+  // --- Trace step helpers ----------------------------------------------------
   // `args` may be a dict OR a JSON string OR free text. Pretty-print dicts as
   // 2-space JSON; show strings as-is. Used for tool-call args + final_result.
   function fmtArgs(args) {
@@ -195,8 +192,7 @@
     <div class="bar">
       <button class="btn ghost" onclick={() => onback()}>← Back</button>
       <span class="badge {run.kind}">{run.kind}</span>
-      <a class="btn ghost full-report" href={reportUrl} target="_blank" rel="noopener">⤢ View full HTML report</a>
-      <button class="btn cont" disabled={run.status === 'running'} onclick={() => oncontinue(run)}>⟳ Continue this run</button>
+      <button class="btn cont full-report" disabled={run.status === 'running'} onclick={() => oncontinue(run)}>⟳ Continue this run</button>
     </div>
 
     <!-- meta bar -->

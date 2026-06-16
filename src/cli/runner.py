@@ -226,18 +226,6 @@ def run_connect_phase(handle: dict, timeout: float = 300.0) -> None:
     print("Connected.")
 
 
-def _maybe_open_report(report_path: Path, *, open_report: bool) -> bool:
-    """Open the generated report in the OS viewer unless suppressed.
-
-    Returns True iff it actually invoked the opener. The app/executor passes
-    open_report=False (it uses the SPA); standalone `pokemon run` keeps True.
-    """
-    if open_report and sys.platform == "darwin":
-        subprocess.run(["open", str(report_path)], capture_output=True)
-        return True
-    return False
-
-
 def run_single_loop(
     handle: dict,
     config: dict,
@@ -245,7 +233,6 @@ def run_single_loop(
     turns: int,
     snapshot: str | None,
     open_browser: bool = True,
-    open_report: bool = True,
     on_run_dir=None,
     should_stop=None,
 ) -> Path:
@@ -253,7 +240,7 @@ def run_single_loop(
 
     Builds fresh RunLogger, StateManager, VisionPipeline, OCRRunner,
     and dashboard session for THIS run. Reloads the snapshot to reset
-    game state. Generates report HTML at the end. Returns run_dir.
+    game state. Returns run_dir.
 
     ``on_run_dir`` (optional): called with the run_dir Path the moment it is
     known — BEFORE the (blocking) turn loop — so a long-lived caller (the
@@ -391,19 +378,6 @@ def run_single_loop(
             ocr_runner.stop()
         logger.close()
         unregister_run(session.run_id)
-
-        try:
-            from src.cli.report import load_events, group_events_by_turn, generate_html
-            events = load_events(run_dir)
-            turns_data = group_events_by_turn(events)
-            html = generate_html(run_dir, events, turns_data)
-            report_path = run_dir / "report.html"
-            with open(report_path, "w") as f:
-                f.write(html)
-            print(f"Report: {report_path}")
-            _maybe_open_report(report_path, open_report=open_report)
-        except Exception as report_err:
-            print(f"\nReport generation failed: {report_err}")
 
         print(f"Run log: {run_dir}")
 

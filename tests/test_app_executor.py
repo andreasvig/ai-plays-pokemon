@@ -55,7 +55,7 @@ def make_run_fn(runs_root: Path, *, recorder: list[str] | None = None):
     """
     counter = {"n": 0}
 
-    def run_fn(handle, config, *, turns, snapshot, open_browser=False, open_report=False, on_run_dir=None, should_stop=None):
+    def run_fn(handle, config, *, turns, snapshot, open_browser=False, on_run_dir=None, should_stop=None):
         counter["n"] += 1
         # Derive a run-dir name from the run_name so order is observable.
         run_name = config.get("run_name", f"run{counter['n']}")

@@ -43,7 +43,7 @@ OFFICIAL_BENCHMARK_VERSION = "pokebench-v1"
 CANONICAL_SAVE = "configs/saves/pokebench-v1"
 
 
-# A run function: (handle, config, *, turns, snapshot, open_browser, open_report) -> run_dir.
+# A run function: (handle, config, *, turns, snapshot, open_browser) -> run_dir.
 RunFn = Callable[..., Path]
 
 
@@ -257,7 +257,6 @@ class RunExecutor:
                     turns=turns,
                     snapshot=snapshot,
                     open_browser=False,
-                    open_report=False,
                     on_run_dir=_publish,
                     # Cooperative stop: true once a stop is requested for the run
                     # that's currently active. The turn loop checks this each turn

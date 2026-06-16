@@ -4,7 +4,6 @@ Subcommands:
   app        Launch the long-lived control center (persistent emulator + web UI).
   run        Launch mGBA and run the agent for one or more (config, model) pairs.
   launch     Launch mGBA + connect to Lua and idle (no agent — manual play / debug).
-  report     Generate the standalone HTML report for a run directory.
   snapshot   Save / load / list game snapshots.
 
 Each subcommand delegates to a module-level `main()` and consumes its own --help.
@@ -17,7 +16,6 @@ SUBCOMMANDS = {
     "app":      "src.cli.app",
     "run":      "src.cli.runner",
     "launch":   "src.cli.launch",
-    "report":   "src.cli.report",
     "snapshot": "src.cli.snapshot",
 }
 
@@ -29,7 +27,6 @@ def _print_help() -> None:
     print("  app        Launch the long-lived control center (persistent emulator + web UI).")
     print("  run        Launch mGBA and run the agent (single or sequential).")
     print("  launch     Launch mGBA + Lua connection, no agent (manual play / debug).")
-    print("  report     Generate HTML report for a run directory.")
     print("  snapshot   Save / load / list game snapshots.")
     print()
     print("Run `pokemon <subcommand> --help` for subcommand-specific options.")

@@ -264,17 +264,6 @@ def test_run_single_loop_runs_against_injected_handle_without_launching(
         "src.dashboard.start_dashboard", fake_start_dashboard,
     )
     monkeypatch.setattr("src.dashboard.unregister_run", lambda rid: None)
-    # Avoid report generation / `open` subprocess on darwin.
-    monkeypatch.setattr(runner.sys, "platform", "linux")
-    monkeypatch.setattr(
-        "src.cli.report.load_events", lambda d: [],
-    )
-    monkeypatch.setattr(
-        "src.cli.report.group_events_by_turn", lambda e: {},
-    )
-    monkeypatch.setattr(
-        "src.cli.report.generate_html", lambda *a, **k: "<html></html>",
-    )
 
     handle = make_fake_handle()
     config = {"emulator": {}, "task": {"goal": "x"}, "llm_model": "fake", "ocr": {}}

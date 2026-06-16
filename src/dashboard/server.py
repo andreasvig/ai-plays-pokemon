@@ -828,31 +828,6 @@ async def api_run_get(run_id: str):
     return JSONResponse(entry.model_dump(mode="json"))
 
 
-@app.get("/api/runs/{run_id}/report")
-async def api_run_report(run_id: str):
-    """Serve the run's ``report.html``; regenerate from events if missing/stale.
-
-    404 only when the run DIR doesn't exist. Regeneration mirrors
-    ``pokemon report``'s main(): load_events → group_events_by_turn →
-    generate_html → write ``run_dir/report.html`` → serve.
-    """
-    _queue, executor, _index = _require_control()
-    run_dir = Path(executor.runs_root) / run_id
-    if not run_dir.is_dir():
-        raise HTTPException(status_code=404, detail=f"run dir not found: {run_id}")
-
-    report_path = run_dir / "report.html"
-    if not report_path.exists():
-        from src.cli import report as report_mod
-
-        events = report_mod.load_events(run_dir)
-        turns = report_mod.group_events_by_turn(events)
-        html = report_mod.generate_html(run_dir, events, turns)
-        report_path.write_text(html)
-
-    return FileResponse(str(report_path), media_type="text/html")
-
-
 @app.get("/api/runs/{run_id}/summary")
 async def api_run_summary(run_id: str):
     """Serve the run's RAW nested ``run_summary.json`` (Plan §P6, the report).
@@ -882,12 +857,12 @@ async def api_run_summary(run_id: str):
 
 # ───────────────────── task-grouped trace (Plan Round 8 / B1+B2) ────────────
 #
-# The SPA Report inspector (Phase 5) needs the TWO-LEVEL TaskMaster structure the
-# old HTML report builds: each task group's master trace/model/cost as the
-# top-level node, with the Player's turns nested under it (plus the screenshots
-# the master + each turn saw). We REUSE report.py's canonical grouping
-# (`group_events_by_turn` + `group_turns_by_task` + `_group_trace_into_steps`) so
-# the SPA and the HTML report never drift. The endpoint returns a SPA-friendly
+# The SPA Report inspector (Phase 5) needs a TWO-LEVEL TaskMaster structure:
+# each task group's master trace/model/cost as the top-level node, with the
+# Player's turns nested under it (plus the screenshots the master + each turn
+# saw). We build it from `src.core.event_parsing`'s canonical grouping
+# (`group_events_by_turn` + `group_turns_by_task` + `_group_trace_into_steps`),
+# the one home for these parsers. The endpoint returns a SPA-friendly
 # JSON projection of those groups — structured trace STEPS (not raw messages),
 # screenshot REFERENCES (filenames the SPA turns into `/screenshots/{name}` URLs),
 # and the master's input thumbnails inlined as data-URIs (they only exist in the
@@ -913,12 +888,12 @@ def _screenshot_ref(file_path: str | None) -> str | None:
 def _trace_steps(messages: list[dict]) -> dict:
     """Project a raw message trace into SPA-friendly structured steps.
 
-    Reuses ``report._group_trace_into_steps`` (the canonical parser the HTML
-    report uses) so the two never diverge, then caps the static system prompt.
+    Reuses ``event_parsing._group_trace_into_steps`` (the canonical trace
+    parser), then caps the static system prompt.
     """
-    from src.cli import report as report_mod
+    from src.core import event_parsing
 
-    grouped = report_mod._group_trace_into_steps(messages or [])
+    grouped = event_parsing._group_trace_into_steps(messages or [])
     sys_prompt = grouped.get("system_prompt") or ""
     if len(sys_prompt) > _TRACE_SYSTEM_PROMPT_CAP:
         grouped["system_prompt"] = sys_prompt[:_TRACE_SYSTEM_PROMPT_CAP] + "…"
@@ -944,29 +919,30 @@ def _project_turn(turn: dict) -> dict:
 
 
 def report_format_action(action) -> str:
-    """Thin reuse wrapper over ``report._format_action`` (list vs str action)."""
-    from src.cli import report as report_mod
+    """Thin reuse wrapper over ``event_parsing._format_action`` (list vs str)."""
+    from src.core import event_parsing
 
-    return report_mod._format_action(action if action is not None else "?")
+    return event_parsing._format_action(action if action is not None else "?")
 
 
 def _build_run_trace(run_dir: Path) -> dict:
     """Build the task-grouped trace JSON for a finished run (Round 8 B1+B2).
 
-    Reuses ``report.py``'s grouping verbatim. For a TaskMaster run, returns one
-    entry per task group (master decision + nested player turns). For a casual /
-    non-TaskMaster run (no ``task_started`` events), returns a SINGLE implicit
-    group holding all turns — a degenerate-but-valid shape so the SPA never 500s.
+    Reuses ``event_parsing``'s grouping verbatim. For a TaskMaster run, returns
+    one entry per task group (master decision + nested player turns). For a
+    casual / non-TaskMaster run (no ``task_started`` events), returns a SINGLE
+    implicit group holding all turns — a degenerate-but-valid shape so the SPA
+    never 500s.
     """
-    from src.cli import report as report_mod
+    from src.core import event_parsing
 
-    events = report_mod.load_events(run_dir)
-    turns = report_mod.group_events_by_turn(events)
+    events = event_parsing.load_events(run_dir)
+    turns = event_parsing.group_events_by_turn(events)
     has_tasks = any(e.get("type") == "task_started" for e in events)
 
     tasks_out: list[dict] = []
     if has_tasks:
-        groups = report_mod.group_turns_by_task(turns, events)
+        groups = event_parsing.group_turns_by_task(turns, events)
         for g in groups:
             tasks_out.append(
                 {
