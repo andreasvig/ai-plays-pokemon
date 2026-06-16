@@ -9,13 +9,11 @@ frozen, stop verdict, continue reuses model + savepoint — not tuned numbers.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from src.app.executor import RunExecutor
-from src.app.models import RunKind
 from src.app.queue_manager import QueueManager
 from src.app.run_index import RunIndex
 from src.dashboard import server
@@ -193,6 +191,92 @@ def test_continue_without_savepoint_400(client):
     (runs_root / source_id).mkdir(parents=True)
     r = tc.post(f"/api/runs/{source_id}/continue", json={})
     assert r.status_code == 400
+
+
+def test_batch_enqueue_all_or_nothing(client):
+    tc = client["tc"]
+    alias = _some_alias()
+    # One bad model in the batch → whole batch rejected, queue untouched.
+    bad = tc.post(
+        "/api/queue/batch",
+        json={"items": [{"kind": "casual", "model": alias}, {"kind": "casual", "model": "nope-not-real"}]},
+    )
+    assert bad.status_code == 400
+    assert tc.get("/api/queue").json()["items"] == []
+
+    # All-good batch → every spec enqueued, in order.
+    ok = tc.post(
+        "/api/queue/batch",
+        json={"items": [
+            {"kind": "casual", "model": alias, "max_turns": 1},
+            {"kind": "casual", "model": alias, "max_turns": 2},
+            {"kind": "casual", "model": alias, "max_turns": 3},
+        ]},
+    )
+    assert ok.status_code == 201
+    assert len(ok.json()["items"]) == 3
+    items = tc.get("/api/queue").json()["items"]
+    assert [it["max_turns"] for it in items] == [1, 2, 3]
+
+
+def test_batch_empty_rejected(client):
+    tc = client["tc"]
+    assert tc.post("/api/queue/batch", json={"items": []}).status_code == 400
+
+
+def test_reorder_permutation(client):
+    tc = client["tc"]
+    alias = _some_alias()
+    ids = [
+        tc.post("/api/queue", json={"kind": "casual", "model": alias, "max_turns": n}).json()["queue_id"]
+        for n in (1, 2, 3)
+    ]
+    # Reverse the order.
+    r = tc.post("/api/queue/reorder", json={"order": list(reversed(ids))})
+    assert r.status_code == 200
+    got = [it["queue_id"] for it in tc.get("/api/queue").json()["items"]]
+    assert got == list(reversed(ids))
+
+
+def test_reorder_rejects_non_permutation(client):
+    tc = client["tc"]
+    alias = _some_alias()
+    a = tc.post("/api/queue", json={"kind": "casual", "model": alias}).json()["queue_id"]
+    tc.post("/api/queue", json={"kind": "casual", "model": alias})
+    # Missing one id → 400, queue untouched (still 2 items).
+    assert tc.post("/api/queue/reorder", json={"order": [a]}).status_code == 400
+    assert len(tc.get("/api/queue").json()["items"]) == 2
+    # Unknown id → 400.
+    assert tc.post("/api/queue/reorder", json={"order": [a, "q_bogus"]}).status_code == 400
+
+
+def test_delete_run_trashes_and_deindexes(client, tmp_path, monkeypatch):
+    tc = client["tc"]
+    runs_root = client["runs_root"]
+    index = client["index"]
+    # Redirect "~/.Trash" to a tmp dir so the test never touches the real Trash.
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    monkeypatch.setattr("pathlib.Path.home", staticmethod(lambda: fake_home))
+
+    run_id = "2026-06-16_del_config-3.13__claude"
+    run_dir = runs_root / run_id
+    run_dir.mkdir(parents=True)
+    with open(run_dir / "run_summary.json", "w") as f:
+        json.dump({"session": {"llm_alias": "claude"}}, f)
+    index.rebuild_from_scan()
+    assert index.get(run_id) is not None
+
+    r = tc.delete(f"/api/runs/{run_id}")
+    assert r.status_code == 200
+    assert not run_dir.exists()                       # folder moved out of runs_root
+    assert (fake_home / ".Trash" / run_id).exists()   # ...into the Trash
+    assert index.get(run_id) is None                  # de-indexed
+
+
+def test_delete_run_404_when_unknown(client):
+    tc = client["tc"]
+    assert tc.delete("/api/runs/does-not-exist").status_code == 404
 
 
 def test_routes_503_when_unconfigured():

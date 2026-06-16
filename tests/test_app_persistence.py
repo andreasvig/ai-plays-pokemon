@@ -274,6 +274,23 @@ def test_index_upsert_replaces_by_run_id(tmp_path: Path):
     assert len(idx.all()) == 2
 
 
+def test_index_remove(tmp_path: Path):
+    idx = RunIndex(tmp_path / "i.json", tmp_path / "runs")
+    idx.upsert(RunSummary(run_id="r1", kind=RunKind.casual, model="m",
+                          status=RunStatus.completed))
+    idx.upsert(RunSummary(run_id="r2", kind=RunKind.casual, model="m",
+                          status=RunStatus.completed))
+    assert idx.remove("r1") is True
+    assert idx.get("r1") is None
+    assert [e.run_id for e in idx.all()] == ["r2"]
+    # removing a missing id is a no-op returning False
+    assert idx.remove("nope") is False
+    # the removal persisted
+    reloaded = RunIndex(tmp_path / "i.json", tmp_path / "runs")
+    reloaded.load()
+    assert [e.run_id for e in reloaded.all()] == ["r2"]
+
+
 # --- QueueManager -------------------------------------------------------------
 
 def test_enqueue_cancel_move_order(tmp_path: Path):
@@ -288,6 +305,32 @@ def test_enqueue_cancel_move_order(tmp_path: Path):
     # move c to the front
     qm.move(c.queue_id, 0)
     assert [i.queue_id for i in qm.items] == [c.queue_id, a.queue_id]
+
+
+def test_reorder_full_permutation(tmp_path: Path):
+    qm = QueueManager(tmp_path / "queue.json")
+    a = qm.enqueue(RunKind.casual, "m", enqueued_at="t1")
+    b = qm.enqueue(RunKind.casual, "m", enqueued_at="t2")
+    c = qm.enqueue(RunKind.official, "m", enqueued_at="t3")
+    qm.reorder([c.queue_id, a.queue_id, b.queue_id])
+    assert [i.queue_id for i in qm.items] == [c.queue_id, a.queue_id, b.queue_id]
+    # persisted
+    reloaded = QueueManager(tmp_path / "queue.json")
+    assert [i.queue_id for i in reloaded.items] == [c.queue_id, a.queue_id, b.queue_id]
+
+
+def test_reorder_rejects_non_permutation(tmp_path: Path):
+    qm = QueueManager(tmp_path / "queue.json")
+    a = qm.enqueue(RunKind.casual, "m", enqueued_at="t1")
+    b = qm.enqueue(RunKind.casual, "m", enqueued_at="t2")
+    with pytest.raises(ValueError):
+        qm.reorder([a.queue_id])  # missing b
+    with pytest.raises(ValueError):
+        qm.reorder([a.queue_id, b.queue_id, "q_extra"])  # unknown
+    with pytest.raises(ValueError):
+        qm.reorder([a.queue_id, a.queue_id])  # dupe
+    # queue order untouched after every failed reorder
+    assert [i.queue_id for i in qm.items] == [a.queue_id, b.queue_id]
 
 
 def test_enqueued_at_overridable(tmp_path: Path):

@@ -119,6 +119,28 @@ class QueueManager:
         self.items.insert(to_index, item)
         self.save()
 
+    def reorder(self, order: list[str]) -> None:
+        """Reorder the whole queue to ``order`` (a permutation of current ids), save.
+
+        ``order`` must list EXACTLY the current item ids — same set, no dupes,
+        none missing — so a bulk reorder can never silently drop or duplicate a
+        run. Raises :class:`ValueError` on any mismatch (the caller maps it to a
+        400). The single-active invariant is untouched: ``active`` still names
+        whichever item it named before, wherever it now sits.
+        """
+        by_id = {it.queue_id: it for it in self.items}
+        if len(order) != len(set(order)):
+            raise ValueError("order contains duplicate queue_ids")
+        if set(order) != set(by_id):
+            missing = set(by_id) - set(order)
+            unknown = set(order) - set(by_id)
+            raise ValueError(
+                f"order must be a permutation of the current queue; "
+                f"missing={sorted(missing)} unknown={sorted(unknown)}"
+            )
+        self.items = [by_id[qid] for qid in order]
+        self.save()
+
     def set_active(self, queue_id: str | None) -> None:
         """Set (or clear, with None) the single active run, then save.
 

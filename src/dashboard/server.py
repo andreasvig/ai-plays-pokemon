@@ -20,6 +20,7 @@ port; subsequent calls register additional runs into the same server.
 
 import asyncio
 import json
+import shutil
 import threading
 import time
 from dataclasses import dataclass, field
@@ -645,22 +646,20 @@ async def api_queue_get():
     )
 
 
-@app.post("/api/queue")
-async def api_queue_post(spec: dict):
-    """Enqueue a QueuedRun spec.
+def _enqueue_kwargs(spec: dict) -> dict:
+    """Validate one enqueue ``spec`` → kwargs for ``QueueManager.enqueue``.
 
-    Official enqueue (locked #4/#7) FORCES the frozen config + enforced gates +
-    no max-turns — any config/max_turns in the request is IGNORED — but takes the
-    request's ``benchmark`` (which ladder + goal; defaults to the registry
-    default when omitted). Casual takes the request's config + max_turns. The
-    model is validated against models.yaml; the benchmark against the registry.
+    Raises ``HTTPException(400)`` on a bad kind / missing-or-unknown model /
+    unknown benchmark. Official (locked #4/#7) FORCES the frozen config + no
+    max-turns (request config/max_turns ignored) and takes only the request's
+    ``benchmark``; casual keeps the request's config/max_turns/continue_from.
+    Pure validation — no enqueue, no side effects — so the single and batch
+    routes share exactly the same rules.
     """
-    queue, _executor, _index = _require_control()
+    from src.app.models import RunKind
 
     raw_kind = spec.get("kind")
     try:
-        from src.app.models import RunKind
-
         kind = RunKind(raw_kind)
     except Exception:
         raise HTTPException(status_code=400, detail=f"invalid kind: {raw_kind!r}")
@@ -671,23 +670,68 @@ async def api_queue_post(spec: dict):
     _validate_model_alias(model)
 
     if kind == RunKind.official:
-        # Frozen: config + max_turns come from the executor's official wiring,
-        # not the request. Ignore whatever was sent. The benchmark IS taken from
-        # the request (validated against the registry; None → executor default).
         benchmark = _validate_benchmark_id(spec.get("benchmark"))
-        item = queue.enqueue(
-            kind=kind, model=model, config=None, benchmark=benchmark, max_turns=None
-        )
-    else:
-        item = queue.enqueue(
-            kind=kind,
-            model=model,
-            config=spec.get("config"),
-            max_turns=spec.get("max_turns"),
-            continue_from=spec.get("continue_from"),
-        )
+        return {"kind": kind, "model": model, "config": None, "benchmark": benchmark, "max_turns": None}
+    return {
+        "kind": kind,
+        "model": model,
+        "config": spec.get("config"),
+        "max_turns": spec.get("max_turns"),
+        "continue_from": spec.get("continue_from"),
+    }
+
+
+@app.post("/api/queue")
+async def api_queue_post(spec: dict):
+    """Enqueue a single QueuedRun spec (validation per :func:`_enqueue_kwargs`)."""
+    queue, _executor, _index = _require_control()
+    kwargs = _enqueue_kwargs(spec)  # validate (may 400) BEFORE touching the queue
+    item = queue.enqueue(**kwargs)
     notify_control()
     return JSONResponse(item.model_dump(mode="json"), status_code=201)
+
+
+@app.post("/api/queue/batch")
+async def api_queue_batch(body: dict):
+    """Enqueue many specs at once — ``{items: [spec, ...]}`` → ``{items: [...]}``.
+
+    All-or-nothing: EVERY spec is validated (same rules as the single route)
+    before any is enqueued, so one bad model/benchmark in the batch rejects the
+    whole request (400) and leaves the queue untouched. Order is preserved.
+    Backs ``pokemon queue add`` with its list intake.
+    """
+    queue, _executor, _index = _require_control()
+    specs = body.get("items")
+    if not isinstance(specs, list) or not specs:
+        raise HTTPException(status_code=400, detail="items must be a non-empty list of specs")
+    kwargs_list = [_enqueue_kwargs(s) for s in specs]  # validate ALL first
+    created = [queue.enqueue(**kw) for kw in kwargs_list]
+    notify_control()
+    return JSONResponse(
+        {"items": [it.model_dump(mode="json") for it in created]}, status_code=201
+    )
+
+
+@app.post("/api/queue/reorder")
+async def api_queue_reorder(body: dict):
+    """Set the whole queue order — ``{order: [queue_id, ...]}``.
+
+    ``order`` must be a permutation of the current item ids (no missing, no
+    unknown, no dupes); anything else is a 400. Atomic — one write, no partial
+    reorder. Backs ``pokemon queue reorder``.
+    """
+    queue, _executor, _index = _require_control()
+    order = body.get("order")
+    if not isinstance(order, list) or not all(isinstance(x, str) for x in order):
+        raise HTTPException(status_code=400, detail="order must be a list of queue_ids")
+    try:
+        queue.reorder(order)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    notify_control()
+    return JSONResponse(
+        {"active": queue.active, "items": [it.model_dump(mode="json") for it in queue.items]}
+    )
 
 
 @app.delete("/api/queue/{queue_id}")
@@ -753,6 +797,47 @@ async def api_run_continue(run_id: str, body: dict | None = None):
     )
     notify_control()
     return JSONResponse(item.model_dump(mode="json"), status_code=201)
+
+
+@app.delete("/api/runs/{run_id}")
+async def api_run_delete(run_id: str):
+    """Delete a HISTORICAL run: move its folder to the Trash + drop the index entry.
+
+    Refuses the currently-running run (409) — stop it first. The folder is moved
+    to ``~/.Trash`` (recoverable) rather than hard-deleted; a name clash there is
+    de-duped with a numeric suffix. Then the in-memory index entry is removed and
+    ``leaderboard_dirty`` is broadcast so open clients refetch. 404 if the run is
+    neither indexed nor on disk. Backs ``pokemon runs delete``.
+    """
+    _queue, executor, index = _require_control()
+
+    if getattr(executor, "_active_run_id", None) == run_id:
+        raise HTTPException(status_code=409, detail=f"{run_id} is the active run; stop it first")
+
+    run_dir = Path(executor.runs_root) / run_id
+    indexed = index.get(run_id) is not None
+    if not indexed and not run_dir.is_dir():
+        raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
+
+    trashed_to: str | None = None
+    if run_dir.is_dir():
+        trash_root = Path.home() / ".Trash"
+        try:
+            trash_root.mkdir(parents=True, exist_ok=True)
+            dest = trash_root / run_dir.name
+            n = 1
+            while dest.exists():
+                dest = trash_root / f"{run_dir.name} ({n})"
+                n += 1
+            shutil.move(str(run_dir), str(dest))
+            trashed_to = str(dest)
+        except Exception as exc:
+            # Don't de-index a run whose folder we failed to move — keep them consistent.
+            raise HTTPException(status_code=500, detail=f"could not trash run dir: {exc}")
+
+    removed = index.remove(run_id)
+    notify_control()
+    return JSONResponse({"deleted": run_id, "trashed_to": trashed_to, "deindexed": removed})
 
 
 # ───────────────────────── read routes (Plan §P4) ─────────────────────────

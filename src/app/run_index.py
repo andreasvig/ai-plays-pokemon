@@ -73,6 +73,20 @@ class RunIndex:
             self._entries.append(summary)
         self.save()
 
+    def remove(self, run_id: str) -> bool:
+        """Drop the entry with ``run_id`` and save. Returns True if one was removed.
+
+        Index-only: callers that also want the run *folder* gone must delete it
+        separately (the dashboard's delete route moves it to the Trash first,
+        then calls this). A no-op when ``run_id`` isn't present.
+        """
+        before = len(self._entries)
+        self._entries = [e for e in self._entries if e.run_id != run_id]
+        removed = len(self._entries) != before
+        if removed:
+            self.save()
+        return removed
+
     def get(self, run_id: str) -> RunSummary | None:
         """Return the entry with ``run_id``, or None."""
         for entry in self._entries:
