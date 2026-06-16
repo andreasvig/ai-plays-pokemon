@@ -90,7 +90,7 @@ def test_enqueue_casual_then_get_in_order(client):
     alias = _some_alias()
     r1 = tc.post(
         "/api/queue",
-        json={"kind": "casual", "model": alias, "config": "configs/config-3.12.yaml", "max_turns": 50},
+        json={"kind": "casual", "model": alias, "config": "configs/config-3.13.yaml", "max_turns": 50},
     )
     r2 = tc.post("/api/queue", json={"kind": "casual", "model": alias, "max_turns": 99})
     assert r1.status_code == 201 and r2.status_code == 201

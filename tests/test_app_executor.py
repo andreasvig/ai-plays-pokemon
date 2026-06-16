@@ -261,10 +261,10 @@ def test_casual_uses_chosen_config_and_maxturns(harness):
     executor = harness["executor"]
 
     item = queue.enqueue(
-        kind=RunKind.casual, model="m", config="configs/config-3.12.yaml", max_turns=42
+        kind=RunKind.casual, model="m", config="configs/config-3.13.yaml", max_turns=42
     )
     config, snapshot, turns = executor.build_run_config(item)
-    assert config["_config_path"] == "configs/config-3.12.yaml"
+    assert config["_config_path"] == "configs/config-3.13.yaml"
     assert turns == 42
     assert "referee" not in config  # casual = no gates
     assert snapshot == executor.canonical_save

@@ -31,14 +31,14 @@ Launches mGBA, opens its Scripting window (so you can `File > Load recent script
 pokemon run --model "gemini-3.5-flash(medium)"
 
 # Specific config + 50 turns
-pokemon run --config configs/config-3.12.yaml --model "claude-opus-4.7(medium)" --turns 50
+pokemon run --config configs/config-3.13.yaml --model "claude-opus-4.7(medium)" --turns 50
 
 # Fan-out: one config across N models
-pokemon run --config configs/config-3.12.yaml \
+pokemon run --config configs/config-3.13.yaml \
             --model "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" --turns 50
 
 # Paired 1:1: N configs × N models
-pokemon run --config configs/config-3.11.yaml configs/config-3.12.yaml \
+pokemon run --config configs/config-3.13.yaml configs/config-tm-smoke.yaml \
             --model "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" --turns 50
 
 # Custom snapshot
@@ -48,7 +48,7 @@ pokemon run --model "gemini-3.5-flash(medium)" --snapshot local/snapshots/has_st
 pokemon run --model "gemini-3.5-flash(medium)" --kill-existing
 
 # Continue a prior run from its latest savepoint (fresh turn counter)
-pokemon run --continue local/runs/2026-05-26_..._config-3.12__claude-opus-4-7 --turns 30
+pokemon run --continue local/runs/2026-05-26_..._config-3.13__claude-opus-4-7 --turns 30
 ```
 
 ### Pairing rules between `--config` and `--model`
@@ -103,7 +103,7 @@ Launches mGBA, starts the TCP server, opens the Scripting window, and idles afte
 ```bash
 pokemon launch
 pokemon launch --snapshot local/snapshots/bedroom_start
-pokemon launch --config configs/config-3.12.yaml
+pokemon launch --config configs/config-3.13.yaml
 ```
 
 Press `Ctrl+C` to shut mGBA down cleanly.
@@ -165,7 +165,7 @@ pokemon snapshot save has_starter -d "Received starter Pokemon from Oak"
 
 ### Compare two models on the same snapshot
 ```bash
-pokemon run --config configs/config-3.12.yaml \
+pokemon run --config configs/config-3.13.yaml \
             --model "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" \
             --snapshot local/snapshots/has_starter --turns 50
 ```

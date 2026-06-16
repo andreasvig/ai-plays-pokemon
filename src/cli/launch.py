@@ -5,7 +5,7 @@ For agent runs, use `pokemon run` (which handles single + sequential pairs).
 Usage:
     pokemon launch
     pokemon launch --snapshot PATH
-    pokemon launch --config configs/config-3.5.yaml
+    pokemon launch --config configs/config-3.13.yaml
 """
 
 import argparse

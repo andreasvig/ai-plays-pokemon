@@ -141,18 +141,18 @@ Pick `lua/socketserver.lua` from this repo. mGBA now listens on TCP `127.0.0.1:8
 pokemon run --model "gemini-3.5-flash(medium)"
 
 # Pin a specific config + number of turns
-pokemon run --config configs/config-3.12.yaml --model "claude-opus-4.7(medium)" --turns 50
+pokemon run --config configs/config-3.13.yaml --model "claude-opus-4.7(medium)" --turns 50
 
 # Fan-out: one config across N models, sequential, sharing one mGBA
-pokemon run --config configs/config-3.12.yaml \
+pokemon run --config configs/config-3.13.yaml \
             --model "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" --turns 50
 
 # Paired 1:1: N configs × N models
-pokemon run --config configs/config-3.11.yaml configs/config-3.12.yaml \
+pokemon run --config configs/config-3.13.yaml configs/config-tm-smoke.yaml \
             --model "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" --turns 50
 
 # Continue a prior run from its latest savepoint (fresh turn counter + history)
-pokemon run --continue local/runs/2026-05-26_..._config-3.12__claude-opus-4-7 --turns 30
+pokemon run --continue local/runs/2026-05-26_..._config-3.13__claude-opus-4-7 --turns 30
 ```
 
 `pokemon run --help` lists every flag. Model aliases come from `configs/models.yaml`; raw `"provider/model"` ids also work and bypass the registry.
@@ -195,7 +195,7 @@ Configs live in `configs/` as versioned files (`config-X.Y.yaml`). Each one is a
 | `ocr.*` | Background OCR pipeline (Tesseract + LLM cleanup) settings |
 | `vision_mode` | `direct_multimodal` (LLM sees pixels) or `separate_vlm` (VLM → text → LLM) |
 
-The system prompt for each version lives inline in the config file. To experiment, copy the latest config to a new version (e.g. `config-3.1.yaml`) and edit there.
+The system prompt for each version lives inline in the config file. To experiment, copy the latest config to a new version (e.g. `config-3.14.yaml`) and edit there.
 
 ## Project structure notes
 

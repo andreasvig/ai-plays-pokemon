@@ -564,18 +564,18 @@ Examples:
   pokemon run --model "gemini-3.5-flash(medium)" --turns 50
 
   # Single run, specific config
-  pokemon run --config configs/config-3.12.yaml --model "claude-opus-4.7(medium)"
+  pokemon run --config configs/config-3.13.yaml --model "claude-opus-4.7(medium)"
 
   # Fan-out: one config across N models
-  pokemon run --config configs/config-3.12.yaml \\
+  pokemon run --config configs/config-3.13.yaml \\
               --model "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" --turns 50
 
   # Paired 1:1: N configs × N models
-  pokemon run --config configs/config-3.11.yaml configs/config-3.12.yaml \\
+  pokemon run --config configs/config-3.13.yaml configs/config-tm-smoke.yaml \\
               --model "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" --turns 50
 
   # Continue a prior run from its latest savepoint (fresh turn counter)
-  pokemon run --continue local/runs/2026-05-26_..._config-3.12__claude-opus-4-7 --turns 30
+  pokemon run --continue local/runs/2026-05-26_..._config-3.13__claude-opus-4-7 --turns 30
 """,
     )
     parser.add_argument(
