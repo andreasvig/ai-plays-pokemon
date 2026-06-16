@@ -1,11 +1,13 @@
-"""FastAPI server for the live dashboard.
+"""FastAPI server for the control center.
 
-Supports N concurrent runs via dynamic routing. Each run registers a
-RunSession in the RunRegistry; routes are namespaced under /runs/{run_id}.
+Serves the Svelte SPA (the sole UI) plus the JSON/WS data surface. Supports N
+concurrent runs via dynamic routing; each run registers a RunSession in the
+RunRegistry, and the per-run data endpoints are namespaced under /runs/{run_id}.
 
 URL layout:
-    GET  /                              → index of active runs
-    GET  /runs/{run_id}                 → run UI (same HTML, parameterized)
+    GET  /                              → the SPA (client-routed: /spectate,
+                                          /history/<id>, …); falls back to a
+                                          minimal active-runs list if unbuilt
     GET  /runs/{run_id}/api/state       → state JSON
     GET  /runs/{run_id}/api/config      → config JSON
     WS   /runs/{run_id}/ws/events       → event stream
@@ -94,7 +96,6 @@ async def _on_startup() -> None:
     # before any /api/ws/control client connects (Plan §P6).
     _capture_control_loop()
 
-STATIC_DIR = Path(__file__).parent / "static"
 
 # The built Svelte SPA (Plan §P5). `npm run build` in src/dashboard/web emits
 # here. The dir is gitignored + regenerated, so it may be absent (e.g. on the
@@ -113,33 +114,6 @@ def _require_session(run_id: str) -> RunSession:
     if session is None:
         raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
     return session
-
-
-def _render_run_html(
-    *,
-    run_prefix_override: Optional[str] = None,
-    is_current_view: bool = False,
-) -> str:
-    """Serve index.html with a cache-bust marker.
-
-    When served from /current, the page itself stays at /current but the
-    inner WebSocket / API calls need to target /runs/<latest_id>. We inject
-    a tiny script that sets two window-globals the dashboard JS reads:
-      - RUN_PREFIX_OVERRIDE  → forces RUN_PREFIX to the latest run's prefix
-      - IS_CURRENT_VIEW      → triggers reload() instead of reconnect when
-        a WebSocket closes with code 1008 (session unregistered)
-    """
-    html_path = STATIC_DIR / "index.html"
-    content = html_path.read_text()
-    inject_lines = []
-    if run_prefix_override:
-        inject_lines.append(f"window.RUN_PREFIX_OVERRIDE = {json.dumps(run_prefix_override)};")
-    if is_current_view:
-        inject_lines.append("window.IS_CURRENT_VIEW = true;")
-    if inject_lines:
-        inject = "<script>\n" + "\n".join(inject_lines) + "\n</script>\n"
-        content = content.replace("</head>", f"{inject}</head>")
-    return content.replace("</head>", f"<!-- cache-bust: {time.time()} -->\n</head>")
 
 
 @app.get("/")
@@ -241,48 +215,6 @@ async def api_runs(
         }
         for s in sessions
     ])
-
-
-@app.get("/runs/{run_id}")
-async def run_page(run_id: str):
-    _require_session(run_id)
-    return HTMLResponse(
-        content=_render_run_html(),
-        headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"},
-    )
-
-
-@app.get("/current")
-async def current_page():
-    """Stable URL that always serves the latest-registered active run.
-
-    Sequential orchestrator usage: open this once, leave it open. When the
-    current run ends and the next one registers, the inner WebSockets get
-    a 1008 close → the dashboard JS reloads /current → the server picks
-    the new latest run → seamless transition without changing the URL.
-    Between runs (no session registered), serves an auto-refreshing
-    waiting page until the next run comes online.
-    """
-    sessions = _REGISTRY.all()
-    if not sessions:
-        return HTMLResponse(
-            "<!doctype html><html><head>"
-            "<title>Waiting for next run…</title>"
-            "<meta http-equiv='refresh' content='2'>"
-            "<style>body{font-family:system-ui;max-width:480px;margin:80px auto;"
-            "padding:0 16px;text-align:center;color:#666}</style>"
-            "</head><body><h2>Waiting for next run…</h2>"
-            "<p>This page reloads every 2 seconds.</p></body></html>",
-            headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
-        )
-    latest = max(sessions, key=lambda s: s.registered_at)
-    return HTMLResponse(
-        content=_render_run_html(
-            run_prefix_override=f"/runs/{latest.run_id}",
-            is_current_view=True,
-        ),
-        headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"},
-    )
 
 
 @app.get("/runs/{run_id}/api/state")
@@ -509,19 +441,14 @@ def start_dashboard(
 
     _start_server_if_needed(bind_port)
 
-    # Direct URL = run-pinned. /current = stable URL that follows the
-    # latest run (best for sequential orchestrators).
-    run_url = f"http://localhost:{_SERVER_PORT}/runs/{run_id}"
-    current_url = f"http://localhost:{_SERVER_PORT}/current"
-    # NOTE (Round 8 / B3): the legacy auto-open of the OLD `/current` livestream
-    # dashboard was removed here. It fired an extra browser tab on every run
-    # register (the headless `pokemon run` path, where `open_browser=True`). The
-    # control center opens the SPA itself at `pokemon app` boot (`cli/app.py`),
-    # so the stale `/current` tab is unwanted. `open_browser` is still accepted
-    # for signature compatibility; the URLs are printed below for manual use.
-    _ = open_browser  # retained for callers; no longer triggers a browser open
-    print(f"  Dashboard: {run_url}")
-    print(f"  Stable URL (sequential): {current_url}")
+    # The control center (SPA) is the UI: the live run is at /spectate, finished
+    # runs at /history/<run_id>. `open_browser` is accepted for caller
+    # compatibility but never opens a tab — `pokemon app` opens the SPA itself at
+    # boot (`cli/app.py`); the old per-run livestream dashboard was retired.
+    _ = open_browser
+    base = f"http://localhost:{_SERVER_PORT}"
+    print(f"  Dashboard (live): {base}/spectate")
+    print(f"  Run detail: {base}/history/{run_id}")
     return session
 
 
@@ -1101,7 +1028,7 @@ async def api_emulator_status():
 #
 # Serve the built Svelte SPA at `/` with a history-API fallback so client-side
 # deep links (`/spectate`, `/history/<id>`, `/about`) load `index.html`. These
-# are registered LAST so every `/api/*`, `/runs/*`, `/current` route takes
+# are registered LAST so every `/api/*` and `/runs/*` data route takes
 # precedence — the catch-all only matches paths nothing else claimed. All of it
 # is conditional on the build existing (gitignored + regenerated), so the
 # headless `pokemon run` path is unaffected when there's no `web/dist`.
