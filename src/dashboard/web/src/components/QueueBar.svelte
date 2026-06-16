@@ -10,6 +10,15 @@
   // The active card's ✕ kill also needs an explicit confirm (Andreas) — arms an
   // inline "Stop this run?" prompt; onkill only fires on the explicit Stop button.
   let killArmed = $state(false)
+  // Optimistic "stopping…" feedback: a stop only takes effect at the next turn
+  // boundary (a clean savepoint — can be up to a full turn later for a slow
+  // model), so without this the card sits on "running" and the stop looks dead.
+  // We mark the run we asked to stop and show "stopping…" until it's gone.
+  let stoppingId = $state(null)
+  const isStopping = $derived(!!active && stoppingId !== null && active.runId === stoppingId)
+  // Clear the flag once the stopped run is no longer the active one (it ended, or
+  // the next run dequeued).
+  $effect(() => { if (stoppingId !== null && active?.runId !== stoppingId) stoppingId = null })
   function drop(i) {
     if (dragIndex !== null && dragIndex !== i) onreorder(dragIndex, i)
     dragIndex = null; overIndex = null
@@ -24,15 +33,21 @@
       <div class="card active" onclick={() => onspectate()} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onspectate() } }} role="button" tabindex="0">
         <div class="ctop">
           <span class="badge {active.kind}">{label(active.kind)}</span>
-          <span class="now"><span class="dot live"></span> running</span>
+          {#if isStopping}
+            <span class="now stopping"><span class="dot"></span> stopping…</span>
+          {:else}
+            <span class="now"><span class="dot live"></span> running</span>
+          {/if}
         </div>
         <div class="cmodel mono">{active.model}</div>
         <div class="cmeta faint">turn {active.currentTurn ?? 0}</div>
-        {#if killArmed}
+        {#if isStopping}
+          <div class="stopping-note faint">stopping after this turn — saving a savepoint…</div>
+        {:else if killArmed}
           <div class="confirm" onclick={(e) => e.stopPropagation()} role="presentation">
             <span class="confirm-q">Stop this run?</span>
             <div class="confirm-actions">
-              <button class="cf-yes" onclick={(e) => { e.stopPropagation(); onkill(); killArmed = false }}>Stop</button>
+              <button class="cf-yes" onclick={(e) => { e.stopPropagation(); stoppingId = active.runId; onkill(); killArmed = false }}>Stop</button>
               <button class="cf-no" onclick={(e) => { e.stopPropagation(); killArmed = false }}>Cancel</button>
             </div>
           </div>
@@ -92,6 +107,10 @@
 
   .ctop { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
   .now { font-size: 10.5px; font-weight: 650; color: var(--green); display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
+  .now.stopping { color: var(--amber); }
+  .now.stopping .dot { background: var(--amber); animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+  .stopping-note { margin-top: 7px; font-size: 10px; line-height: 1.35; color: var(--amber); }
   .grip { color: var(--faint); font-size: 11px; }
   .cont { font-size: 11px; }
   .rm { margin-left: auto; width: 18px; height: 18px; border: none; background: none; color: var(--faint); border-radius: 4px; font-size: 10px; }
