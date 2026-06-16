@@ -477,7 +477,7 @@
 
   /* The two-column grid fills the frame's leftover height; min-height:0 lets
      the grid children shrink (essential or the emulator pushes past the frame). */
-  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 500px; gap: 20px; align-items: stretch; flex: 1; min-height: 0; height: 100%; overflow: hidden; }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) clamp(300px, 30%, 500px); gap: 20px; align-items: stretch; flex: 1; min-height: 0; height: 100%; overflow: hidden; }
   .main { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow: hidden; }
   /* emulator flexes to fill leftover height and shrinks on short screens;
      .screen uses object-fit:contain so it never overflows. */
@@ -520,7 +520,10 @@
      frame to overflow; on short screens they scroll within their box. */
   .p-scroll { flex: 1; min-height: 0; max-height: 22vh; overflow-y: auto; overflow-x: auto; padding-right: 4px; }
 
-  /* the kiosk frame is wide enough for the two-column layout; collapse only on
-     genuinely narrow viewports as a safety net (still no page scroll). */
-  @media (max-width: 1080px) { .layout { grid-template-columns: 1fr; } .panels { grid-template-columns: 1fr; } }
+  /* The kiosk frame is ALWAYS landscape 16:9 (min(100vw,100vh*16/9) wide), so
+     the two-column hero+rail always fits inside it regardless of the outer
+     viewport. We deliberately do NOT collapse to one column on a narrow outer
+     viewport (the old max-width:1080px rule did, which shoved the emulator out
+     of the no-scroll frame at 4:3 / ≤1080px). The rail uses clamp() above so it
+     scales down on small frames instead, keeping the emulator column visible. */
 </style>
