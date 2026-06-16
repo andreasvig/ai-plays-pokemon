@@ -45,7 +45,7 @@ shown in the UI) with its own *gate ladder*. The registry is
 
 | id | Goal (overall) | Ladder file | Final gate |
 |---|---|---|---|
-| `pokebench-easy` | Reach Vermilion City | `checkpoints-firered-easy.yaml` | `vermilion_reached` (18 rungs) |
+| `pokebench-easy` | Reach Viridian City | `checkpoints-firered-easy.yaml` | `viridian_reached` (7 rungs) |
 | `pokebench-first-badge` | Earn the Boulder Badge (beat Brock) | `checkpoints-firered-firstbadge.yaml` | `brock_defeated` (12 rungs) |
 | `pokebench-full` *(default)* | First three badges → Thunder Badge | `checkpoints-firered-v1.yaml` | `thunder_badge` (20 rungs) |
 

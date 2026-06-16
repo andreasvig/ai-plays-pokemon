@@ -4,12 +4,12 @@ rom_sha1:
   v1_0: 41cb23d8dccc8ebd7c649cd8fbb58eeace6e2fdc
   v1_1: dd5945db9b930750cb39d00c84da8571feebf417
 
-# PokeBench Easy — bedroom → Vermilion City. A self-contained PREFIX of the full
+# PokeBench Easy — bedroom → Viridian City. A self-contained PREFIX of the full
 # FireRed ladder (checkpoints-firered-v1.yaml): the same gates through
-# `vermilion_reached` (including the Misty / Bill's-errand multigate), ending on
-# arrival in Vermilion. Reaching the final rung WINS the run (status: completed);
-# a missed deadline terminates it. Edit these gates independently of the
-# first-badge / full ladders.
+# `viridian_reached`, ending on arrival in Viridian (the first city, reached
+# north out of Pallet via Route 1). Reaching the final rung WINS the run
+# (status: completed); a missed deadline terminates it. Edit these gates
+# independently of the first-badge / full ladders.
 #
 # Detector types and their signature fields:
 #   map:   {map_group, map_num}            stamped when the latch first sees this map
@@ -64,84 +64,3 @@ checkpoints:
     type: map
     signature: {map_group: 3, map_num: 1}
     deadline_turn: 200                            # Route 1 traversal + encounters
-
-  - id: parcel_delivered
-    name: "Delivered Oak's Parcel"
-    type: var
-    signature: {var_id: 0x4057, min_value: 2}     # VAR_MAP_SCENE_VIRIDIAN_CITY_MART
-    deadline_turn: 250
-
-  - id: pokedex_received
-    name: "Received the Pokédex"
-    type: flag
-    signature: {flag_id: 0x829}                   # FLAG_SYS_POKEDEX_GET
-    cross_check: {type: var, var_id: 0x4055, min_value: 6}
-    deadline_turn: 300                            # backtrack Viridian -> Pallet lab
-
-  - id: viridian_forest_reached
-    name: "Entered Viridian Forest"
-    type: map
-    signature: {map_group: 1, map_num: 0}
-    deadline_turn: 350                            # north again: Viridian + Route 2
-
-  - id: pewter_reached
-    name: "Reached Pewter City"
-    type: map
-    signature: {map_group: 3, map_num: 2}
-    deadline_turn: 400
-
-  - id: brock_defeated
-    name: "Defeated Brock (Boulder Badge)"
-    type: flag
-    signature: {flag_id: 0x820}                   # FLAG_BADGE01_GET
-    cross_check: {type: flag, flag_id: 0x4B0}     # DEFEATED_BROCK (speedrun autosplitter's choice)
-    deadline_turn: 500
-
-  # --- Brock -> Misty: east through Route 3 + Mt. Moon to Cerulean ---
-  - id: route3_reached
-    name: "Reached Route 3"
-    type: map
-    signature: {map_group: 3, map_num: 21}        # east out of Pewter
-    deadline_turn: 550
-
-  - id: mt_moon_entered
-    name: "Entered Mt. Moon"
-    type: map
-    signature: {map_group: 1, map_num: 1}         # MtMoon_1F (B1F/B2F are transient — not gated)
-    deadline_turn: 600                            # long trainer route 3 first
-
-  - id: mt_moon_cleared
-    name: "Cleared Mt. Moon (reached Route 4)"
-    type: map
-    signature: {map_group: 3, map_num: 22}        # Route 4 = the west exit of Mt. Moon
-    cross_check: {type: flag, flag_id: 0x232}     # FLAG_GOT_FOSSIL_FROM_MT_MOON (must pass the Super Nerd)
-    deadline_turn: 700                           # 3-floor maze + Rocket fights
-
-  - id: cerulean_reached
-    name: "Reached Cerulean City"
-    type: map
-    signature: {map_group: 3, map_num: 3}
-    deadline_turn: 700
-
-  # --- Misty + Bill's errand: ANY ORDER ---
-  # Nugget Bridge opens the moment you reach Cerulean, so the agent may beat
-  # Misty first OR fetch Bill's S.S. Ticket first. Progressive pace: the FIRST
-  # of the two done by T875, BOTH done by T960 (multigate deadline_turns).
-  - multigate:
-      deadline_turns: [800, 900]
-      gates:
-        - id: cascade_badge
-          name: "Defeated Misty (Cascade Badge)"
-          type: flag
-          signature: {flag_id: 0x821}                 # FLAG_BADGE02_GET
-          cross_check: {type: flag, flag_id: 0x4B1}   # FLAG_DEFEATED_MISTY
-        - id: bills_errand_reached
-          name: "Reached Route 25 (Bill's house)"     # north over Nugget Bridge — the S.S. Ticket is here
-          type: map
-          signature: {map_group: 3, map_num: 44}      # Route 25
-
-  - id: vermilion_reached
-    name: "Reached Vermilion City"
-    type: map
-    signature: {map_group: 3, map_num: 5}         # back south via Route 5 / underground path / Route 6
-    deadline_turn: 1000

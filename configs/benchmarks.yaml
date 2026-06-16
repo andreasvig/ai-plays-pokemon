@@ -22,7 +22,7 @@
 benchmarks:
   - id: pokebench-easy
     name: "PokeBench Easy"
-    goal: "Starting in Pallet Town, get your starter Pokémon and travel south through Viridian, Pewter and Cerulean to reach Vermilion City."
+    goal: "Starting in Pallet Town, get your starter Pokémon and head north along Route 1 to reach Viridian City."
     ladder: configs/checkpoints-firered-easy.yaml
 
   - id: pokebench-first-badge
