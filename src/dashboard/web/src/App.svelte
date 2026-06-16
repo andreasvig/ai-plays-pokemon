@@ -143,6 +143,14 @@
     api.fetchRun(slug).then((r) => { selectedRun = r }).catch(() => { selectedRun = null })
   })
 
+  // Round 11: /spectate is a fit-to-screen kiosk view. Lock page scroll while on
+  // the spectate route (the frame owns the whole window); clean up on leave.
+  $effect(() => {
+    const lock = view === 'spectate'
+    document.body.classList.toggle('spectate-lock', lock)
+    return () => document.body.classList.remove('spectate-lock')
+  })
+
   const go = (p) => router.navigate(p)
   function inspect(r) { go(`/history/${r.slug}`) }
   function openNew() { dialogContinueFrom = null; dialogOpen = true }
@@ -184,9 +192,11 @@
   }
 </script>
 
-<TopBar {active} {emulatorUp} {queue} {view} onnav={go} onspectate={() => go('/spectate')} onnew={openNew} />
+{#if view !== 'spectate'}
+  <TopBar {active} {emulatorUp} {queue} {view} onnav={go} onspectate={() => go('/spectate')} onnew={openNew} />
+{/if}
 
-<main>
+<main class:kiosk={view === 'spectate'}>
   {#if view === 'home'}
     <QueueBar {active} {queue} onkill={killRun} onremove={removeFromQueue} onreorder={reorder}
       onnew={openNew} onspectate={() => go('/spectate')} />
@@ -219,6 +229,7 @@
 
 <style>
   main { min-height: calc(100vh - 57px); }
+  main.kiosk { height: 100vh; min-height: 0; overflow: hidden; }
   .about { max-width: 680px; margin: 0 auto; padding: 48px 24px; }
   .about h2 { font-size: 26px; font-weight: 780; letter-spacing: -.02em; margin: 0 0 16px; }
   .about p { font-size: 15px; line-height: 1.65; color: var(--muted); }

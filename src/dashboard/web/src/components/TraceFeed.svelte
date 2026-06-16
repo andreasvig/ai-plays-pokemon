@@ -105,9 +105,12 @@
 </div>
 
 <style>
-  .tracefeed { display: flex; flex-direction: column; position: sticky; top: 70px; max-height: calc(100vh - 90px); }
+  /* Round 11: TraceFeed lives inside the fixed kiosk frame (Spectate is its only
+     consumer). It fills its grid cell and the inner .scroll is the ONLY scroller —
+     dropped the page-scroll sticky/top + viewport max-height. */
+  .tracefeed { display: flex; flex-direction: column; height: 100%; max-height: none; min-height: 0; }
   .feed-h { font-size: 11px; font-weight: 750; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 2px 0 8px; flex: none; }
-  .scroll { overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 4px; }
+  .scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 4px; }
 
   /* TaskMaster card — amber "strategy" layer, visually heavier than turn cards */
   .master-block { background: var(--surface); border: 1px solid #f0d9a0; border-left: 3px solid #ffce54; border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; flex: none; }

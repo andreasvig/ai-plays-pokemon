@@ -354,7 +354,8 @@
   const tokensSub = $derived(`${Math.round((stats.output_tokens || 0) / 1000)}k`)
 </script>
 
-<section class="wrap">
+<section class="letterbox">
+  <div class="frame">
   {#if !activeRunId}
     <div class="empty">
       <p class="big">Waiting for a live run</p>
@@ -444,14 +445,29 @@
       <TraceFeed turns={feed} />
     </div>
   {/if}
+  </div>
 </section>
 
 <style>
-  .wrap { max-width: 1680px; margin: 0 auto; padding: 22px 24px; }
-  .empty { text-align: center; padding: 80px 0; display: flex; flex-direction: column; gap: 10px; align-items: center; }
+  /* Round 11 — fit-to-screen kiosk: a viewport-filling dark letterbox that
+     centers a 16:9 frame. The frame fills a real 16:9 TV and letterboxes
+     (centered, dark bars) on any other aspect ratio. Nothing scrolls but the
+     internal panels + trace feed. */
+  .letterbox {
+    width: 100vw; height: 100vh; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    background: #0d0f14;
+  }
+  .frame {
+    width: min(100vw, calc(100vh * 16 / 9));
+    height: min(100vh, calc(100vw * 9 / 16));
+    display: flex; flex-direction: column; overflow: hidden;
+    padding: 14px 18px; background: var(--bg);
+  }
+  .empty { flex: 1; min-height: 0; text-align: center; display: flex; flex-direction: column; gap: 10px; align-items: center; justify-content: center; }
   .empty .faint { max-width: 440px; line-height: 1.5; }
   .big { font-size: 18px; font-weight: 700; margin: 0; }
-  .bar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .bar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex: none; }
   .bar .model { font-size: 14px; font-weight: 650; }
   .conn { margin-left: auto; display: flex; align-items: center; gap: 12px; }
   .c-ind { font-size: 11px; font-weight: 650; color: var(--green); display: inline-flex; align-items: center; gap: 5px; }
@@ -459,13 +475,17 @@
   .c-ind.off .dot { background: var(--faint); }
   .c-evt { font-size: 11px; }
 
-  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 500px; gap: 20px; align-items: start; }
-  .main { display: flex; flex-direction: column; gap: 14px; }
-  .gba { aspect-ratio: 240/160; background: #11141b; border-radius: var(--radius); display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-lg); overflow: hidden; }
+  /* The two-column grid fills the frame's leftover height; min-height:0 lets
+     the grid children shrink (essential or the emulator pushes past the frame). */
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 500px; gap: 20px; align-items: stretch; flex: 1; min-height: 0; height: 100%; overflow: hidden; }
+  .main { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow: hidden; }
+  /* emulator flexes to fill leftover height and shrinks on short screens;
+     .screen uses object-fit:contain so it never overflows. */
+  .gba { flex: 1; min-height: 0; aspect-ratio: 240/160; background: #11141b; border-radius: var(--radius); display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-lg); overflow: hidden; }
   .screen { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; }
   .ph { color: #7b8696; text-align: center; font-size: 16px; line-height: 1.7; }
 
-  .hud { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow); }
+  .hud { flex: none; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; box-shadow: var(--shadow); }
   .hud.amber { border-color: #f0d9a0; } .hud.red { border-color: #f0c5c5; }
   .hud-top { display: flex; align-items: baseline; gap: 12px; }
   .hl { font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); font-weight: 700; }
@@ -483,20 +503,24 @@
   .lg.upcoming { color: var(--muted); }
   .lg-t { font-size: 11px; }
 
-  .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+  .stats { flex: none; display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
   .stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 11px 12px; box-shadow: var(--shadow); }
   .sl { display: block; font-size: 9.5px; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); font-weight: 700; }
   .sv { font-size: 18px; font-weight: 750; }
   .su { font-size: 11px; color: var(--muted); font-weight: 600; }
 
-  .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
-  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow); }
-  .p-h { font-size: 11px; font-weight: 750; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: 10px; }
+  .panels { flex: none; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: stretch; }
+  .panel { display: flex; flex-direction: column; min-height: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; box-shadow: var(--shadow); }
+  .p-h { flex: none; font-size: 11px; font-weight: 750; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: 10px; }
   .t-title { font-size: 14px; font-weight: 700; margin-bottom: 8px; }
   .t-done { font-weight: 500; }
   .t-lab { font-size: 10px; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); font-weight: 700; margin-top: 8px; }
   .t-body { font-size: 12.5px; line-height: 1.5; color: var(--muted); margin: 3px 0 0; }
-  .p-scroll { max-height: 210px; overflow-y: auto; overflow-x: auto; padding-right: 4px; }
+  /* internal scroll only — capped (vh-relative) so the panels never force the
+     frame to overflow; on short screens they scroll within their box. */
+  .p-scroll { flex: 1; min-height: 0; max-height: 22vh; overflow-y: auto; overflow-x: auto; padding-right: 4px; }
 
+  /* the kiosk frame is wide enough for the two-column layout; collapse only on
+     genuinely narrow viewports as a safety net (still no page scroll). */
   @media (max-width: 1080px) { .layout { grid-template-columns: 1fr; } .panels { grid-template-columns: 1fr; } }
 </style>

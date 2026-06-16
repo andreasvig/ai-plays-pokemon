@@ -44,6 +44,8 @@ body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
+/* Round 11: /spectate kiosk view locks page scroll (App toggles this class). */
+body.spectate-lock { overflow: hidden; }
 a { color: var(--accent); text-decoration: none; }
 button { font-family: inherit; cursor: pointer; }
 
