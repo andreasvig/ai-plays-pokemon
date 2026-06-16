@@ -1,5 +1,10 @@
 # AI Plays Pokemon - Initial Ideas Document
 
+> **Historical document.** The original vision/brainstorm, kept for genesis
+> context. Some ideas here were dropped or evolved — the current system is
+> documented in [control-center.md](control-center.md),
+> [benchmark.md](benchmark.md), and [cli.md](cli.md).
+
 ## Core Concept
 
 Build an AI agent harness that allows an LLM/VLM to play a Pokemon game.

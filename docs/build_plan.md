@@ -1,5 +1,10 @@
 # Build Plan
 
+> **Historical document.** This is the original phase-by-phase build plan, kept
+> for context on how the system came together. It is *not* a current API
+> reference — for that see [control-center.md](control-center.md),
+> [benchmark.md](benchmark.md), and [cli.md](cli.md).
+
 Each phase builds on the previous one and ends with a concrete evaluation to verify it works before moving on.
 
 ---

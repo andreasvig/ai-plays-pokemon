@@ -124,17 +124,34 @@ cp .env.example .env
 
 ## Running it
 
-### 1. Start mGBA with the Lua bridge
+### Recommended: the control center
 
-Open mGBA, load your ROM, then:
-
-```
-Tools → Scripting → Load script…
+```bash
+pokemon app
 ```
 
-Pick `lua/socketserver.lua` from this repo. mGBA now listens on TCP `127.0.0.1:8888` for screenshot captures and button commands.
+The control center is one long-lived process that owns the emulator, a run
+queue, and the full web UI. It launches mGBA for you and prints **the one manual
+step** — in the mGBA **Scripting** window: **File → Load recent script →
+`socketserver-1.lua`**. (That connects the Lua bridge on TCP `127.0.0.1:8888`.)
+Then it opens <http://localhost:3420/>, where you:
 
-### 2. Launch the agent
+- **queue runs** — *official* (the frozen benchmark — just pick a model) or
+  *casual* (pick model + config + max-turns),
+- **watch live** in a fit-to-screen `/spectate` view (game frame, current task,
+  agent memory, live reasoning/trace, gate ladder, cost),
+- **continue** a finished run from its latest savepoint,
+- **browse history** and the **leaderboard** — each run's report renders natively
+  (KPIs, gate scorecard, full master→player trace).
+
+Full guide: [`docs/control-center.md`](docs/control-center.md). The benchmark
+itself — the referee, the gate ladder, official vs casual, scoring — is in
+[`docs/benchmark.md`](docs/benchmark.md).
+
+### Alternative: a one-off scripted run
+
+`pokemon run` is the standalone path — no UI, no queue. It launches its own mGBA,
+runs one or more `(config, model)` pairs, and exits:
 
 ```bash
 # Single run — latest config, one model, default 10 turns
@@ -147,33 +164,15 @@ pokemon run --config configs/config-3.13.yaml --model "claude-opus-4.7(medium)" 
 pokemon run --config configs/config-3.13.yaml \
             --model "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" --turns 50
 
-# Paired 1:1: N configs × N models
-pokemon run --config configs/config-3.13.yaml configs/config-tm-smoke.yaml \
-            --model "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" --turns 50
-
 # Continue a prior run from its latest savepoint (fresh turn counter + history)
 pokemon run --continue local/runs/2026-05-26_..._config-3.13__claude-opus-4-7 --turns 30
 ```
 
-`pokemon run --help` lists every flag. Model aliases come from `configs/models.yaml`; raw `"provider/model"` ids also work and bypass the registry.
-
-Periodic in-run checkpoints are controlled by a `savepoints:` block in the config (`every_n_turns`, `at_end`, `on_crash`). See `docs/cli.md` for the full shape and the resume semantics — most importantly, **continued runs start with empty agent history**; the only memory carry-over is whatever the agent wrote into `state.json`.
-
-The agent will start sending button inputs to mGBA. Run output (events, screenshots, reports) lands in `local/runs/<timestamp>/` (gitignored).
-
-### 3. Watch it live
-
-While a run is going, open the dashboard:
-
-```
-http://localhost:3420
-```
-
-You'll see the live game frame, every turn's reasoning, button inputs, OCR captures, and per-turn cost breakdown. The richest experience is `pokemon app` — the long-lived control center that owns the emulator, a run queue, and the full Svelte UI (live `/spectate`, leaderboard, run history).
-
-### 4. Review a finished run
-
-Open the control center (`pokemon app`) and go to **History** → pick a run. Each run's report — meta KPIs, the benchmark gate scorecard, and the full master→player trace (system prompts, per-step thinking, tool calls + responses) — renders natively in the SPA from the on-disk `events.jsonl` / `run_summary.json`. (The old standalone `report.html` generator was retired in favour of this view.)
+It also launches mGBA and waits for the same `socketserver-1.lua` handshake.
+Model aliases come from `configs/models.yaml`; raw `"provider/model"` ids work
+too. Run output lands in `local/runs/<timestamp>/` (gitignored). Full flag
+reference, pairing rules, and savepoint/continue semantics:
+[`docs/cli.md`](docs/cli.md).
 
 ## Configuration
 
@@ -190,11 +189,22 @@ Configs live in `configs/` as versioned files (`config-X.Y.yaml`). Each one is a
 
 The system prompt for each version lives inline in the config file. To experiment, copy the latest config to a new version (e.g. `config-3.14.yaml`) and edit there.
 
+## Documentation
+
+| Doc | What's in it |
+|---|---|
+| [`docs/control-center.md`](docs/control-center.md) | The `pokemon app` control center — architecture, boot, the web UI (spectate / history / leaderboard), the queue, continue, cooperative stop, run output. |
+| [`docs/benchmark.md`](docs/benchmark.md) | PokeBench — the referee, the FireRed gate ladder, official vs casual runs, scoring + leaderboard, and the TaskMaster + Player agent loop. |
+| [`docs/cli.md`](docs/cli.md) | Full CLI reference for every `pokemon` subcommand (`app`, `run`, `launch`, `snapshot`), flags, pairing rules, savepoints. |
+| [`docs/analysis/`](docs/analysis/) | Deep-dives on other LLM-plays-Pokemon projects (background reading). |
+
+> `docs/build_plan.md` and `docs/initial_ideas.md` are kept as historical
+> design/genesis documents — they record the original plan, not the current API.
+
 ## Project structure notes
 
-- `local/` — runtime data (runs, snapshots, agent state). Gitignored.
+- `local/` — runtime data (runs, snapshots, agent state, the run index + queue). Gitignored.
 - `roms/` — your ROM files. Gitignored.
-- `docs/analysis/` — deep-dive analyses of other LLM-plays-Pokemon projects.
 - `CHANGELOG.md` — running log of session-by-session evolution.
 
 ## License

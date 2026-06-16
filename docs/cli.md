@@ -22,7 +22,47 @@ Every subcommand has its own `--help`.
 
 ---
 
+## `pokemon app` — The control center
+
+The primary entry point. One long-lived process that owns a warm emulator, a
+serial run queue, a run index/leaderboard, and the web UI — start it once and
+drive everything from the browser at <http://localhost:3420/>. Full guide:
+[control-center.md](control-center.md).
+
+```bash
+pokemon app                          # boot the control center on :3420
+pokemon app --port 8080              # different web port
+pokemon app --no-browser             # don't auto-open a tab
+pokemon app --fake-emulator --seed-runs local/runs   # headless UI dev, no mGBA
+```
+
+On boot it reclaims stale processes, launches mGBA, and **blocks for the one
+manual step** — in the mGBA Scripting window: **File → Load recent script →
+`socketserver-1.lua`** — then binds the server and starts draining the queue.
+
+### Flags
+
+| Flag                  | Default | Notes                                                       |
+|-----------------------|---------|-------------------------------------------------------------|
+| `--port N`            | `3420`  | Web server port.                                            |
+| `--no-browser`        | off     | Don't open a browser tab on boot.                           |
+| `--connect-timeout S` | `300`   | Seconds to wait for the Lua handshake.                      |
+| `--no-reclaim`        | off     | Don't auto-kill stale processes; print the manual fix instead.|
+| `--fake-emulator`     | off     | Headless dev mode — fake supervisor + seeded index, no mGBA.|
+| `--seed-runs PATH`    | —       | With `--fake-emulator`, seed the index from a runs dir / index file. |
+
+Runs are enqueued from the UI as **official** (frozen benchmark — pick a model)
+or **casual** (pick model + config + max-turns), and finished runs can be
+**continued** from their latest savepoint. See [benchmark.md](benchmark.md) for
+the official/casual distinction and the gate ladder.
+
+---
+
 ## `pokemon run` — Run the agent
+
+> `pokemon run` is the standalone, single-shot path: it launches its own mGBA,
+> runs one or more `(config, model)` pairs, and exits. For live spectating, a
+> queue, history, and the leaderboard, use `pokemon app` instead.
 
 Launches mGBA, opens its Scripting window (so you can `File > Load recent script` once), waits for the Lua client to connect, then runs the agent for `--turns` turns per `(config, model)` pair. Multiple pairs reuse the same mGBA + Lua connection.
 
