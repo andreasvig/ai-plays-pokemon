@@ -28,14 +28,35 @@
   const xs = (x) => xLog
     ? ML + (lg(x) - lg(xd.min)) / (lg(xd.max) - lg(xd.min)) * PW
     : ML + (x - xd.min) / (xd.max - xd.min) * PW
-  const ys = (y) => MT + (1 - (y - yd.min) / (yd.max - yd.min)) * PH
+
+  const bandVisible = $derived(yd.min < 100 && yd.max > 100)
+
+  // When both zones are present, the y-axis is PIECEWISE so the 100% line pins
+  // to the vertical centre (a clean 50/50 split): the bottom half spans 0–100%
+  // progress, the top half spans the 100%-clears band ranked by fewest turns.
+  // Padded top so the best clear sits below the band label. Falls back to a
+  // plain linear scale when only one zone shows.
+  const ydSupMax = $derived((() => {
+    const sup = points.filter((p) => p.y > 100).map((p) => p.y)
+    const m = sup.length ? Math.max(...sup) : 150
+    return m + Math.max((m - 100) * 0.25, 8)
+  })())
+  const ys = (y) => {
+    if (!bandVisible) return MT + (1 - (y - yd.min) / (yd.max - yd.min)) * PH
+    const mid = MT + PH / 2
+    if (y <= 100) return (MT + PH) - (y / 100) * (PH / 2)
+    return mid - Math.min((y - 100) / (ydSupMax - 100), 1) * (PH / 2)
+  }
 
   const xticks = $derived(Array.from({ length: 5 }, (_, i) =>
     xLog ? Math.pow(10, lg(xd.min) + (lg(xd.max) - lg(xd.min)) * i / 4)
          : xd.min + (xd.max - xd.min) * i / 4))
-  const yticks = $derived(Array.from({ length: 4 }, (_, i) => yd.min + (yd.max - yd.min) * i / 3))
+  // Band shown → fixed bottom-half ticks (0/50%); the 100% divider is drawn
+  // separately. Otherwise the usual 4 evenly-spaced ticks over the domain.
+  const yticks = $derived(bandVisible
+    ? [0, 50]
+    : Array.from({ length: 4 }, (_, i) => yd.min + (yd.max - yd.min) * i / 3))
   const ylabel = (v) => v <= 100.5 ? `${Math.round(v)}%` : ''
-  const bandVisible = $derived(yd.min < 100 && yd.max > 100)
 
   // Pareto frontier (lower x + higher y better): upper-left envelope
   const frontier = $derived((() => {
@@ -47,6 +68,11 @@
   const frontierPath = $derived(frontier.map((p) => `${xs(p.x)},${ys(p.y)}`).join(' '))
   const onFrontier = (p) => frontier.includes(p)
 
+  // Show the thinking/effort tier in the label: a model alias carries it as a
+  // parenthesised suffix, e.g. "gemini-3-flash(high)" → "gemini-3-flash · high".
+  // Aliases without a tier (e.g. "claude-haiku-4-5") are left untouched.
+  const fmtLabel = (s) => s.replace(/\(([^)]*)\)/, ' · $1')
+
   let hovered = $state(null)
 </script>
 
@@ -54,7 +80,7 @@
   <svg viewBox={`0 0 ${W} ${H}`} class="chart" role="img" aria-label={xLabel}>
     {#if bandVisible}
       <rect x={ML} y={MT} width={PW} height={ys(100) - MT} class="zone" />
-      <text x={W - MR - 4} y={MT + 13} class="zonelabel" text-anchor="end">100% clears · ↑ fewest turns to complete</text>
+      <text x={ML + 6} y={MT + 13} class="zonelabel" text-anchor="start">100% clears · ↑ fewest turns to complete</text>
     {/if}
 
     {#each yticks as t}
@@ -77,11 +103,13 @@
     {#if frontier.length > 1}<polyline points={frontierPath} class="frontier" />{/if}
 
     {#each points as p (p.label)}
+      {@const rightSide = xs(p.x) > ML + PW * 0.6}
       <g class="pt" class:oss={p.openSource} class:front={onFrontier(p)} class:hot={hovered === p}
          onmouseenter={() => hovered = p} onmouseleave={() => hovered = null}
          onclick={() => onpick && onpick(p.slug)} onkeydown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && onpick) { e.preventDefault(); onpick(p.slug) } }} role="button" tabindex="0">
         <circle cx={xs(p.x)} cy={ys(p.y)} r={onFrontier(p) ? 6 : 5} />
-        <text x={xs(p.x) + 9} y={ys(p.y) + 3.5} class="plabel">{p.label.replace(/\(.*/, '')}</text>
+        <text x={rightSide ? xs(p.x) - 9 : xs(p.x) + 9} y={ys(p.y) + 3.5}
+              class="plabel" text-anchor={rightSide ? 'end' : 'start'}>{fmtLabel(p.label)}</text>
       </g>
     {/each}
   </svg>
