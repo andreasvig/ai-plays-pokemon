@@ -44,13 +44,13 @@ src/
 │   ├── vision.py            # VLM screen analysis
 │   └── ocr.py               # Background Tesseract + LLM cleanup
 ├── dashboard/
-│   ├── server.py            # FastAPI + WebSocket live view
-│   └── static/index.html    # Vanilla-JS dashboard
+│   ├── server.py            # FastAPI + WebSocket API; serves the SPA
+│   └── web/                 # Svelte SPA (the control-center UI; built to web/dist/)
 └── cli/
     ├── main.py              # `pokemon` console-script dispatcher
+    ├── app.py               # `pokemon app` — long-lived control center (UI + queue)
     ├── runner.py            # `pokemon run` — single or sequential agent runs
     ├── launch.py            # `pokemon launch` — manual mGBA + Lua session
-    ├── report.py            # `pokemon report` — post-run HTML report generator
     ├── snapshot.py          # `pokemon snapshot` — snapshot save/load/list
     └── slots.py             # Per-slot mGBA + TCP port assignment
 ```
@@ -169,18 +169,11 @@ While a run is going, open the dashboard:
 http://localhost:3420
 ```
 
-You'll see the live game frame, every turn's reasoning, button inputs, OCR captures, and per-turn cost breakdown. The dashboard is auto-launched when you start a run.
+You'll see the live game frame, every turn's reasoning, button inputs, OCR captures, and per-turn cost breakdown. The richest experience is `pokemon app` — the long-lived control center that owns the emulator, a run queue, and the full Svelte UI (live `/spectate`, leaderboard, run history).
 
-### 4. Generate a post-run report
+### 4. Review a finished run
 
-A report is auto-generated at the end of each run. To regenerate manually:
-
-```bash
-pokemon report                              # latest run
-pokemon report local/runs/<run_folder>      # specific run
-```
-
-Produces a standalone HTML report with full turn-by-turn breakdown.
+Open the control center (`pokemon app`) and go to **History** → pick a run. Each run's report — meta KPIs, the benchmark gate scorecard, and the full master→player trace (system prompts, per-step thinking, tool calls + responses) — renders natively in the SPA from the on-disk `events.jsonl` / `run_summary.json`. (The old standalone `report.html` generator was retired in favour of this view.)
 
 ## Configuration
 

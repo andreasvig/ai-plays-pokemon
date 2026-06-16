@@ -13,9 +13,9 @@ Top-level subcommands:
 
 | Subcommand          | Purpose                                                         |
 |---------------------|-----------------------------------------------------------------|
+| `pokemon app`       | Long-lived control center: persistent emulator + queue + web UI.|
 | `pokemon run`       | Launch mGBA + Lua and run the agent for one or more pairs.      |
 | `pokemon launch`    | Launch mGBA + Lua and idle (no agent — manual play / debug).    |
-| `pokemon report`    | Regenerate the standalone HTML report for a run directory.      |
 | `pokemon snapshot`  | Save / load / list game snapshots.                              |
 
 Every subcommand has its own `--help`.
@@ -76,7 +76,7 @@ Aliases come from `configs/models.yaml`. Raw `"provider/model"` OpenRouter ids a
 | `--kill-existing`     | off                              | `pkill -f mgba` before launching.             |
 | `--continue PATH`     | off                              | Resume from the source run's latest savepoint. Single-run only. Mutex with `--config` / `--model`. |
 
-Run output lands in `local/runs/<timestamp>_<config-stem>__<model-slug>/` (gitignored): `events.jsonl`, `state.json`, `tasks.json`, screenshots, and a `report.html` generated at end-of-run.
+Run output lands in `local/runs/<timestamp>_<config-stem>__<model-slug>/` (gitignored): `events.jsonl`, `state.json`, `tasks.json`, `run_summary.json`, and screenshots. Reports are rendered natively in the `pokemon app` SPA (History view) from these files.
 
 ### Savepoints
 
@@ -92,7 +92,7 @@ savepoints:
 
 `pokemon run --continue <run_dir>` finds the highest `turn_<N>/` in that run's `savepoints/`, copies events.jsonl + screenshots + ocr + terminal.log into a new `<ts>_<run_name>_continued_from_turn_<N>/` run dir, then resumes the agent from there. **The agent's turn counter and text history start fresh** — the only narrative continuity is whatever the agent wrote into `state.json` during the original run. Cost counters also reset; the new run reports only its own spend. For a full cumulative view, read both run dirs' `run_summary.json`.
 
-The dashboard auto-opens at <http://localhost:3420/> for the first run; subsequent runs in a sequence register silently — switch tabs from the dashboard index.
+The control center serves the UI at <http://localhost:3420/>: live runs at `/spectate`, finished runs under `/history/<run_id>`. (`pokemon app` opens it at boot.)
 
 ---
 
@@ -128,18 +128,6 @@ pokemon snapshot load local/snapshots/bedroom_start
 
 ---
 
-## `pokemon report` — Regenerate run report
-
-Reports are auto-generated at the end of every `pokemon run`. Use this to regenerate after editing the report template, or to build a report for an interrupted run.
-
-```bash
-pokemon report                                 # latest run
-pokemon report local/runs/2026-04-06_22-25-08_phase5_test
-```
-
-The report auto-opens in the default browser on macOS.
-
----
 
 ## Test scripts (not part of the CLI)
 
@@ -168,9 +156,4 @@ pokemon snapshot save has_starter -d "Received starter Pokemon from Oak"
 pokemon run --config configs/config-3.13.yaml \
             --model "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" \
             --snapshot local/snapshots/has_starter --turns 50
-```
-
-### Generate a report for a specific run
-```bash
-pokemon report local/runs/2026-04-06_22-25-08_config-3-12__claude-opus-4-7-medium
 ```
