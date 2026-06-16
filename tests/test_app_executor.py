@@ -300,6 +300,37 @@ def test_continue_spec_reuses_model_and_savepoint_ignores_request_model(harness)
         executor.build_continue_spec(source_id, model="other")  # type: ignore[call-arg]
 
 
+def test_continue_dispatch_resolves_full_runs_root_path(harness):
+    """Dispatching a continue item must hand the resolver the FULL run dir under
+    runs_root — not the bare run_id. continue_from_run does Path(arg).resolve(),
+    so a bare id resolves against CWD and dies "not a directory" (live bug
+    2026-06-16). The build_continue_spec test above never caught this because it
+    only checks the ENQUEUE side, not the DISPATCH (build_run_config) — a
+    stub-at-the-seam miss. Here we inject a fake resolver and assert the path.
+    """
+    queue = harness["queue"]
+    executor = harness["executor"]
+    runs_root = harness["runs_root"]
+
+    source_id = "2026-06-16_09-30-27_config-3.13__gemini"
+    got = {}
+
+    def fake_continue_fn(arg):
+        got["arg"] = arg
+        return ({"run_name": "x", "_config_path": "configs/x.yaml"}, runs_root / source_id / "savepoints" / "turn_50")
+
+    executor._continue_fn = fake_continue_fn  # inject the seam
+    item = queue.enqueue(kind=RunKind.casual, model="gemini", config=None, max_turns=30)
+    item.continue_from = source_id
+
+    cfg, snapshot, turns = executor.build_run_config(item)
+
+    # The resolver got the absolute source dir under runs_root, NOT the bare id.
+    assert got["arg"] == str(runs_root / source_id)
+    assert got["arg"] != source_id  # the bug: bare id (resolves against CWD)
+    assert turns == 30
+
+
 def test_continue_spec_raises_without_savepoint(harness):
     executor = harness["executor"]
     runs_root = harness["runs_root"]

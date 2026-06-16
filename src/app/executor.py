@@ -158,7 +158,12 @@ class RunExecutor:
             # Casual continue — model + config come from the source run, not the
             # item (locked #10 reuses the source model; the API already enforced
             # this when enqueuing). Resolve the latest savepoint.
-            cfg, savepoint_dir = self._resolve_continue_fn()(item.continue_from)
+            # ``continue_from`` is the canonical run_id (a bare dir name); the
+            # resolver treats its argument as a PATH (Path(...).resolve()), so it
+            # must get the FULL run dir under runs_root — NOT the bare id, which
+            # would resolve against CWD and fail "not a directory".
+            source_dir = self.runs_root / item.continue_from
+            cfg, savepoint_dir = self._resolve_continue_fn()(str(source_dir))
             turns = item.max_turns or 1500
             return cfg, str(savepoint_dir), turns
 
