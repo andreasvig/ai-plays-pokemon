@@ -22,9 +22,24 @@ from src.app.models import RunKind, RunStatus, RunSummary
 # ───────────────────────────── registry ─────────────────────────────
 
 
-def _write_registry(path, body):
-    path.write_text(body)
-    return path
+def _make_manifest(tmp_path, entries):
+    """Build a tmp manifest + its ladder files in a configs/ subdir.
+
+    ``entries`` is a list of ``(filename, benchmark_block_yaml)``: each becomes
+    ``tmp_path/configs/<filename>`` and the manifest lists ``configs/<filename>``
+    (so the loader's repo-root resolution — manifest.parent.parent — finds them).
+    Returns the manifest path. Ladder files carry ONLY a ``benchmark:`` block;
+    load_benchmarks doesn't parse the gate ladder.
+    """
+    cfg = tmp_path / "configs"
+    cfg.mkdir(exist_ok=True)
+    ladders = []
+    for filename, block in entries:
+        (cfg / filename).write_text(block)
+        ladders.append(f"configs/{filename}")
+    manifest = cfg / "benchmarks.yaml"
+    manifest.write_text("ladders:\n" + "".join(f"  - {p}\n" for p in ladders))
+    return manifest
 
 
 def test_real_registry_loads_three_benchmarks():
@@ -48,44 +63,56 @@ def test_get_benchmark_unknown_falls_back_to_default():
 
 
 def test_registry_rejects_duplicate_ids(tmp_path):
-    reg = _write_registry(
-        tmp_path / "b.yaml",
-        "benchmarks:\n"
-        "  - {id: a, name: A, goal: g, ladder: x.yaml}\n"
-        "  - {id: a, name: B, goal: g, ladder: y.yaml}\n",
+    manifest = _make_manifest(
+        tmp_path,
+        [
+            ("a.yaml", "benchmark:\n  id: a\n  name: A\n  goal: g\n"),
+            ("b.yaml", "benchmark:\n  id: a\n  name: B\n  goal: g\n"),
+        ],
     )
     with pytest.raises(ValueError, match="duplicate benchmark id"):
-        load_benchmarks(reg)
+        load_benchmarks(manifest)
 
 
 def test_registry_rejects_two_defaults(tmp_path):
-    reg = _write_registry(
-        tmp_path / "b.yaml",
-        "benchmarks:\n"
-        "  - {id: a, name: A, goal: g, ladder: x.yaml, default: true}\n"
-        "  - {id: b, name: B, goal: g, ladder: y.yaml, default: true}\n",
+    manifest = _make_manifest(
+        tmp_path,
+        [
+            ("a.yaml", "benchmark:\n  id: a\n  name: A\n  goal: g\n  default: true\n"),
+            ("b.yaml", "benchmark:\n  id: b\n  name: B\n  goal: g\n  default: true\n"),
+        ],
     )
     with pytest.raises(ValueError, match="at most one"):
-        load_benchmarks(reg)
+        load_benchmarks(manifest)
 
 
 def test_registry_rejects_missing_field(tmp_path):
-    reg = _write_registry(
-        tmp_path / "b.yaml",
-        "benchmarks:\n  - {id: a, name: A, ladder: x.yaml}\n",  # no goal
+    manifest = _make_manifest(
+        tmp_path,
+        [("a.yaml", "benchmark:\n  id: a\n  name: A\n")],  # no goal
     )
     with pytest.raises(ValueError, match="'goal'"):
-        load_benchmarks(reg)
+        load_benchmarks(manifest)
+
+
+def test_registry_rejects_missing_benchmark_block(tmp_path):
+    manifest = _make_manifest(
+        tmp_path,
+        [("a.yaml", "benchmark_version: x\ngame: g\ncheckpoints: []\n")],  # no block
+    )
+    with pytest.raises(ValueError, match="benchmark"):
+        load_benchmarks(manifest)
 
 
 def test_default_benchmark_falls_back_to_first_when_none_flagged(tmp_path):
-    reg = _write_registry(
-        tmp_path / "b.yaml",
-        "benchmarks:\n"
-        "  - {id: first, name: F, goal: g, ladder: x.yaml}\n"
-        "  - {id: second, name: S, goal: g, ladder: y.yaml}\n",
+    manifest = _make_manifest(
+        tmp_path,
+        [
+            ("first.yaml", "benchmark:\n  id: first\n  name: F\n  goal: g\n"),
+            ("second.yaml", "benchmark:\n  id: second\n  name: S\n  goal: g\n"),
+        ],
     )
-    assert default_benchmark(reg).id == "first"
+    assert default_benchmark(manifest).id == "first"
 
 
 # ───────────────────────── leaderboard / history filter ─────────────────────

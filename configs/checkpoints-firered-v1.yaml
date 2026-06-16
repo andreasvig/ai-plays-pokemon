@@ -1,6 +1,14 @@
-# Full PokeBench ladder — bedroom → Thunder Badge. This is the ladder behind the
-# `pokebench-full` benchmark (see configs/benchmarks.yaml). The easy / first-badge
-# benchmarks live in their own files as self-contained prefixes of this one.
+# Full PokeBench ladder — bedroom → Thunder Badge. This file is a SELF-CONTAINED
+# benchmark: the `benchmark:` block below (id / name / goal — surfaced in the UI;
+# the goal overrides the run's config goal) plus its gate ladder. The easy /
+# first-badge benchmarks live in their own files as self-contained prefixes of
+# this one. configs/benchmarks.yaml just lists + orders these files.
+benchmark:
+  id: pokebench-full
+  name: "PokeBench Full"
+  goal: "Your goal is to earn the first three Kanto Gym Badges, finishing with the Thunder Badge from Lt. Surge in Vermilion City, in as few turns as possible — you're measured on fewest player turns, excluding TaskMaster turns."
+  default: true
+
 benchmark_version: pokebench-v1-draft
 game: firered-us
 rom_sha1:

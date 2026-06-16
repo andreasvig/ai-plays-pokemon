@@ -1,14 +1,17 @@
-"""Load + validate the PokeBench benchmark registry (``configs/benchmarks.yaml``).
+"""Load + validate the PokeBench benchmarks.
 
-A *benchmark* bundles an overall goal (the meta-goal the agent plays toward,
-shown in the UI) with its own gate-ladder file. The executor uses it to drive an
-official run: inject the benchmark's ladder (enforced) and override the frozen
-config's ``task.goal`` with the benchmark's ``goal``. The leaderboard + history
-views filter by benchmark ``id`` so each benchmark has its own ranking.
+A *benchmark* is a SELF-CONTAINED ladder file: each
+``configs/checkpoints-firered-*.yaml`` carries a top-level ``benchmark:`` block
+(id, name, goal, default) alongside its gate ladder. The overall ``goal`` is the
+meta-goal the agent plays toward (shown in the UI); the executor injects the
+ladder (enforced) and overrides the frozen config's ``task.goal`` with it. The
+leaderboard + history views filter by benchmark ``id`` so each has its own
+ranking.
 
-The ladders are separate, independently-editable YAML files under ``configs/``;
-this module owns only the small registry that names them + their goals. Pure
-reads, no caching — the file is the source of truth and re-read on each call.
+``configs/benchmarks.yaml`` is only a MANIFEST — an ordered list of the ladder
+file paths (display order). This module reads the manifest, then pulls each
+benchmark's identity + goal from its own ladder file. Pure reads, no caching —
+the files are the source of truth and re-read on each call.
 """
 
 from __future__ import annotations
@@ -21,10 +24,12 @@ import yaml
 
 from src.config import CONFIGS_DIR
 
-# The registry file. Injectable in tests. (Ladder paths inside it stay authored
-# as repo-root-relative strings — e.g. "configs/checkpoints-firered-easy.yaml" —
+# The manifest file. Injectable in tests. Its ``ladders`` entries are authored as
+# repo-root-relative strings — e.g. "configs/checkpoints-firered-easy.yaml" —
 # matching the executor's OFFICIAL_LADDER convention; they're loaded relative to
-# the process CWD, which is the repo root for `pokemon app`/`pokemon run`.)
+# the process CWD (the repo root for `pokemon app`/`pokemon run`). For reading
+# the files here, they're resolved relative to the manifest's repo root
+# (``manifest.parent.parent``) so an injected test manifest works the same way.
 BENCHMARKS_FILE = CONFIGS_DIR / "benchmarks.yaml"
 
 
@@ -54,72 +59,111 @@ class Benchmark:
         }
 
 
+def _benchmark_from_ladder(ladder_entry: str, ladder_file: Path) -> Benchmark:
+    """Read the ``benchmark:`` block out of one ladder file into a Benchmark.
+
+    ``ladder_entry`` is the path as authored in the manifest (kept verbatim on
+    the Benchmark so the executor injects the same repo-root-relative string);
+    ``ladder_file`` is the resolved path actually opened here. Only the
+    ``benchmark:`` block is read — the gate ladder itself is validated later by
+    ``src.referee.checkpoints.load_ladder`` at run time.
+    """
+    if not ladder_file.exists():
+        raise FileNotFoundError(
+            f"benchmarks.yaml: ladder file not found: {ladder_entry} "
+            f"(resolved to {ladder_file})"
+        )
+    with open(ladder_file) as f:
+        data = yaml.safe_load(f)
+    if not isinstance(data, dict):
+        raise ValueError(
+            f"{ladder_file.name}: top level must be a mapping, "
+            f"got {type(data).__name__}"
+        )
+    block = data.get("benchmark")
+    if not isinstance(block, dict):
+        raise ValueError(
+            f"{ladder_file.name}: missing or invalid 'benchmark' block"
+        )
+    for field in ("id", "name", "goal"):
+        value = block.get(field)
+        if not isinstance(value, str) or not value:
+            raise ValueError(
+                f"{ladder_file.name}: benchmark block missing or invalid {field!r}"
+            )
+    return Benchmark(
+        id=block["id"],
+        name=block["name"],
+        goal=block["goal"],
+        ladder=ladder_entry,
+        is_default=bool(block.get("default", False)),
+    )
+
+
 def load_benchmarks(path: Union[str, Path, None] = None) -> list[Benchmark]:
-    """Load + validate the ordered list of benchmarks from the registry YAML.
+    """Load + validate the ordered benchmarks named by the manifest YAML.
+
+    The manifest (``path``, default ``BENCHMARKS_FILE``) lists ladder file paths;
+    each benchmark's identity + goal is read from its ladder file's ``benchmark:``
+    block.
 
     Validation (raises ``ValueError`` on violation):
-      - top level is a mapping with a non-empty ``benchmarks`` list;
-      - each entry has a non-empty string ``id``, ``name``, ``goal``, ``ladder``;
-      - ``id`` values are unique;
-      - at most one entry sets ``default: true``.
+      - manifest top level is a mapping with a non-empty ``ladders`` list of strings;
+      - each ladder file exists and has a ``benchmark:`` mapping with a non-empty
+        string ``id``, ``name``, ``goal``;
+      - ``id`` values are unique across the manifest;
+      - at most one benchmark sets ``default: true``.
 
-    Order is preserved as written. ``path`` defaults to ``BENCHMARKS_FILE``.
+    Order is preserved as written in the manifest.
     """
-    registry_path = Path(path) if path is not None else BENCHMARKS_FILE
-    if not registry_path.exists():
-        raise FileNotFoundError(f"Benchmark registry not found: {registry_path}")
+    manifest_path = Path(path) if path is not None else BENCHMARKS_FILE
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"Benchmark manifest not found: {manifest_path}")
 
-    with open(registry_path) as f:
+    with open(manifest_path) as f:
         data = yaml.safe_load(f)
 
     if not isinstance(data, dict):
         raise ValueError(
-            f"{registry_path.name}: top level must be a mapping, "
+            f"{manifest_path.name}: top level must be a mapping, "
             f"got {type(data).__name__}"
         )
 
-    raw = data.get("benchmarks")
+    raw = data.get("ladders")
     if not isinstance(raw, list) or not raw:
         raise ValueError(
-            f"{registry_path.name}: 'benchmarks' must be a non-empty list"
+            f"{manifest_path.name}: 'ladders' must be a non-empty list"
         )
+
+    # Resolve ladder paths relative to the manifest's repo root, so the committed
+    # registry (configs/benchmarks.yaml → repo root) and an injected test manifest
+    # (tmp/configs/benchmarks.yaml → tmp) both resolve their sibling ladders.
+    repo_root = manifest_path.resolve().parent.parent
 
     out: list[Benchmark] = []
     seen_ids: set[str] = set()
     default_count = 0
     for i, entry in enumerate(raw):
-        if not isinstance(entry, dict):
+        if not isinstance(entry, str) or not entry:
             raise ValueError(
-                f"{registry_path.name}: benchmark #{i} must be a mapping, "
-                f"got {type(entry).__name__}"
+                f"{manifest_path.name}: ladder #{i} must be a non-empty string path"
             )
-        for field in ("id", "name", "goal", "ladder"):
-            value = entry.get(field)
-            if not isinstance(value, str) or not value:
-                raise ValueError(
-                    f"{registry_path.name}: benchmark #{i} missing or invalid "
-                    f"{field!r}"
-                )
-        bid = entry["id"]
-        if bid in seen_ids:
-            raise ValueError(f"{registry_path.name}: duplicate benchmark id {bid!r}")
-        seen_ids.add(bid)
-        is_default = bool(entry.get("default", False))
-        if is_default:
+        ladder_file = Path(entry)
+        if not ladder_file.is_absolute():
+            ladder_file = repo_root / entry
+        bench = _benchmark_from_ladder(entry, ladder_file)
+        if bench.id in seen_ids:
+            raise ValueError(
+                f"{manifest_path.name}: duplicate benchmark id {bench.id!r}"
+            )
+        seen_ids.add(bench.id)
+        if bench.is_default:
             default_count += 1
-        out.append(
-            Benchmark(
-                id=bid,
-                name=entry["name"],
-                goal=entry["goal"],
-                ladder=entry["ladder"],
-                is_default=is_default,
-            )
-        )
+        out.append(bench)
 
     if default_count > 1:
         raise ValueError(
-            f"{registry_path.name}: at most one benchmark may set 'default: true' "
+            f"{manifest_path.name}: at most one benchmark may set 'default: true' "
             f"(found {default_count})"
         )
 

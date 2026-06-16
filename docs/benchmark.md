@@ -39,9 +39,12 @@ config and turn budget; they run free of gates and never score.
 
 ## The benchmarks
 
-A **benchmark** bundles an *overall goal* (the meta-goal the agent plays toward,
-shown in the UI) with its own *gate ladder*. The registry is
-`configs/benchmarks.yaml`; three ship today, all on FireRed:
+A **benchmark** is a single self-contained ladder file: a top-level `benchmark:`
+block (`id`, `name`, `goal`, `default`) — the *overall goal* is the meta-goal the
+agent plays toward, shown in the UI — followed by its own *gate ladder*. One YAML
+= one whole benchmark. `configs/benchmarks.yaml` is just a **manifest**: the
+ordered list of ladder files (it sets display order, nothing else). Three ship
+today, all on FireRed:
 
 | id | Goal (overall) | Ladder file | Final gate |
 |---|---|---|---|
@@ -50,8 +53,8 @@ shown in the UI) with its own *gate ladder*. The registry is
 | `pokebench-full` *(default)* | First three badges → Thunder Badge | `checkpoints-firered-v1.yaml` | `thunder_badge` (20 rungs) |
 
 The easy / first-badge ladders are **self-contained prefixes** of the full
-ladder, kept as **separate files** so each benchmark's gates can be edited
-independently. Reaching a benchmark's *final* rung **wins** the run
+ladder, kept as **separate files** so each benchmark's goal *and* gates can be
+edited independently. Reaching a benchmark's *final* rung **wins** the run
 (`status: completed`); missing any rung's deadline terminates it.
 
 **Goal override.** When an official run is queued, the executor loads the chosen
@@ -62,7 +65,7 @@ benchmark id is stamped onto the run and drives the **per-benchmark leaderboard*
 (rankings aren't comparable across benchmarks, since the ladders differ).
 
 The main page filters to **one benchmark at a time** (tabs above the
-leaderboard); the new-run dialog picks the benchmark from the same registry.
+leaderboard); the new-run dialog picks the benchmark from the same manifest.
 Legacy official runs (recorded before the split) map to `pokebench-full` — they
 were scored on the full ladder.
 
