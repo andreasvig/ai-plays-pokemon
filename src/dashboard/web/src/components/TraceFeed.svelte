@@ -8,7 +8,10 @@
   // "current" turn and is expanded; the previous turn is also auto-opened. Older
   // turns collapse to a stacked header you click to open (mirrors the live
   // dashboard chat-scroll). Scrolls to the live turn.
-  let { turns = [] } = $props()
+  // hiddenTurns: count of older turns dropped below the live window (Spectate
+  // keeps only the last few tasks live); shown as a muted note so the operator
+  // knows the rail is windowed and the full trace lives in the run report.
+  let { turns = [], hiddenTurns = 0 } = $props()
 
   // handback + error are present in the real event stream (static/index.html)
   // but were omitted from the mock; wired in here for P6 parity.
@@ -42,6 +45,9 @@
 <div class="tracefeed">
   <div class="feed-h">Live trace</div>
   <div class="scroll" bind:this={scroller} onscroll={onScroll}>
+    {#if hiddenTurns > 0}
+      <div class="hidden-note">↑ {hiddenTurns} earlier turn{hiddenTurns === 1 ? '' : 's'} hidden — full trace in the run report</div>
+    {/if}
     {#each turns as entry (entry.id)}
       {#if entry.kind === 'master'}
         <div class="master-block">
@@ -117,6 +123,7 @@
   .tracefeed { display: flex; flex-direction: column; height: 100%; max-height: none; min-height: 0; }
   .feed-h { font-size: 11px; font-weight: 750; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 2px 0 8px; flex: none; }
   .scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 4px; }
+  .hidden-note { flex: none; font-size: 11px; color: var(--faint); text-align: center; padding: 6px 4px; }
 
   /* TaskMaster card — amber "strategy" layer, visually heavier than turn cards */
   .master-block { background: var(--surface); border: 1px solid #f0d9a0; border-left: 3px solid #ffce54; border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; flex: none; }

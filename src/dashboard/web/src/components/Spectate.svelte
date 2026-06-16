@@ -11,9 +11,15 @@
   // The active run id comes from /api/emulator/status (App passes it in).
   import { gate, GATE_INDEX } from '../lib/gates.js'
   import { usd, dur } from '../lib/format.js'
+  import { windowFeed } from '../lib/feed.js'
   import JsonTree from './JsonTree.svelte'
   import TraceFeed from './TraceFeed.svelte'
   import * as api from '../lib/api.js'
+
+  // Live feed windowing: render only the last MAX_LIVE_TASKS tasks (or, for
+  // casual/no-TaskMaster runs, the last FALLBACK_LIVE_TURNS turns) — see feed.js.
+  const MAX_LIVE_TASKS = 3
+  const FALLBACK_LIVE_TURNS = 40
 
   // `run` = the active RunSummary (for model + kind badge); `activeRunId` = the
   // run-dir id to open the live streams against. Either may be null (no run).
@@ -28,6 +34,7 @@
   let stamps = $state({})              // {checkpoint_id: turn} latched
   let currentTurn = $state(0)
   let feed = $state([])                // [{kind:'master'|'turn', ...}] chronological
+  let hiddenTurns = $state(0)          // turns below the live window (shown as a note)
   let eventCount = $state(0)
   let screenConnected = $state(false)
   let eventsConnected = $state(false)
@@ -45,6 +52,10 @@
   let masterCards = new Map()    // task_index → {taskIndex, firstTurn, model, cost, steps, title, description, success}
   let pendingTaskIndex = null    // task_index whose first turn we still need to bind
   let prevScreenUrl = null
+  // rebuilds are rAF-batched: a backlog storm (WS replay) collapses to ONE
+  // rebuild per frame instead of one per event. Plain vars (not $state).
+  let rebuildPending = false
+  let rebuildRaf = null
 
   // ── derivations for the gate HUD ──
   // Gates only apply to OFFICIAL runs. When we KNOW the run is casual, hide every
@@ -146,23 +157,43 @@
     const t = turn ?? currentTurn
     if (!turnBoxes.has(t)) turnBoxes.set(t, [])
     turnBoxes.get(t).push(box)
-    rebuildFeed()
+    scheduleRebuild()
+  }
+  // Coalesce a burst of events into a single rebuild per animation frame. The
+  // events WS replays the full backlog on connect, so a fresh open fires
+  // hundreds of events synchronously — without this each one triggered a full
+  // O(N) rebuildFeed(), making open ~O(N^2). The scheduler is plumbed through
+  // every call site instead of rebuildFeed() directly.
+  function scheduleRebuild() {
+    if (rebuildPending) return
+    rebuildPending = true
+    const raf = typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame : (cb) => setTimeout(cb, 0)
+    rebuildRaf = raf(() => {
+      rebuildPending = false
+      rebuildRaf = null
+      rebuildFeed()
+    })
   }
   function rebuildFeed() {
-    const turns = [...turnBoxes.keys()].sort((a, b) => a - b)
-    // master cards keyed by the first turn of their task, rendered just BEFORE
-    // that turn's block (chronological / task order).
-    const mastersByTurn = new Map()
-    for (const c of masterCards.values()) {
-      if (c.firstTurn != null) mastersByTurn.set(c.firstTurn, c)
+    const { feed: f, cutoffTurn, hiddenTurns: h } = windowFeed({
+      turnBoxes, masterCards, maxTasks: MAX_LIVE_TASKS, fallbackTurns: FALLBACK_LIVE_TURNS,
+    })
+    feed = f
+    hiddenTurns = h
+    // Prune accumulators below the cutoff so memory stays bounded on long runs.
+    // cutoffTurn === 0 means "keep everything" → prune nothing.
+    if (cutoffTurn > 0) {
+      for (const t of [...turnBoxes.keys()]) {
+        if (t < cutoffTurn) turnBoxes.delete(t)
+      }
+      for (const [idx, c] of [...masterCards.entries()]) {
+        // never drop the card whose firstTurn === cutoffTurn (it opens the window)
+        if (c.firstTurn != null && c.firstTurn < cutoffTurn) {
+          masterCards.delete(idx)
+          masterTraces.delete(idx)
+        }
+      }
     }
-    const out = []
-    for (const t of turns) {
-      const m = mastersByTurn.get(t)
-      if (m) out.push({ kind: 'master', id: 'm' + m.taskIndex, ...m })
-      out.push({ kind: 'turn', id: 't' + t, turn: t, boxes: turnBoxes.get(t) })
-    }
-    feed = out
   }
 
   // Build the master card once both halves are in: the trace (model/cost/images)
@@ -194,7 +225,7 @@
         if (card && card.firstTurn == null) card.firstTurn = evt.turn
         pendingTaskIndex = null
       }
-      rebuildFeed()
+      scheduleRebuild()
       return
     }
     if (t === 'task_master_trace') {
@@ -206,7 +237,7 @@
         steps: parseMasterMessages(evt.messages),
       })
       buildMasterCard(idx)
-      rebuildFeed()
+      scheduleRebuild()
       return
     }
     if (t === 'task_started') {
@@ -227,7 +258,7 @@
         buildMasterCard(idx)
         pendingTaskIndex = idx
       }
-      rebuildFeed()
+      scheduleRebuild()
       return
     }
     if (t === 'task_completed') {
@@ -311,6 +342,11 @@
     masterCards = new Map()
     pendingTaskIndex = null
     feed = []
+    hiddenTurns = 0
+    // cancel any in-flight rebuild so it doesn't fire against the reset state
+    if (rebuildRaf != null && typeof cancelAnimationFrame !== 'undefined') cancelAnimationFrame(rebuildRaf)
+    rebuildPending = false
+    rebuildRaf = null
   }
 
   // ── socket lifecycle: open on activeRunId, tear down on change/unmount ──
@@ -471,7 +507,7 @@
       </div>
 
       <!-- side: live trace feed (own component) -->
-      <TraceFeed turns={feed} />
+      <TraceFeed turns={feed} {hiddenTurns} />
     </div>
   {/if}
   </div>
