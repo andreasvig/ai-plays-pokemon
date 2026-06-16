@@ -7,6 +7,9 @@
   // the explicit Remove button. confirmId = the queueId currently awaiting
   // confirmation (one at a time).
   let confirmId = $state(null)
+  // The active card's ✕ kill also needs an explicit confirm (Andreas) — arms an
+  // inline "Stop this run?" prompt; onkill only fires on the explicit Stop button.
+  let killArmed = $state(false)
   function drop(i) {
     if (dragIndex !== null && dragIndex !== i) onreorder(dragIndex, i)
     dragIndex = null; overIndex = null
@@ -25,7 +28,17 @@
         </div>
         <div class="cmodel mono">{active.model}</div>
         <div class="cmeta faint">turn {active.currentTurn ?? 0}</div>
-        <button class="kill" onclick={(e) => { e.stopPropagation(); onkill() }} title="Kill run — starts next">✕ kill</button>
+        {#if killArmed}
+          <div class="confirm" onclick={(e) => e.stopPropagation()} role="presentation">
+            <span class="confirm-q">Stop this run?</span>
+            <div class="confirm-actions">
+              <button class="cf-yes" onclick={(e) => { e.stopPropagation(); onkill(); killArmed = false }}>Stop</button>
+              <button class="cf-no" onclick={(e) => { e.stopPropagation(); killArmed = false }}>Cancel</button>
+            </div>
+          </div>
+        {:else}
+          <button class="kill" onclick={(e) => { e.stopPropagation(); killArmed = true }} title="Stop run — starts next">✕ kill</button>
+        {/if}
       </div>
     {:else}
       <div class="card idle"><span class="faint">idle — nothing running</span></div>

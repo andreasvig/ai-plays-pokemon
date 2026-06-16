@@ -247,6 +247,7 @@ def run_single_loop(
     open_browser: bool = True,
     open_report: bool = True,
     on_run_dir=None,
+    should_stop=None,
 ) -> Path:
     """One agent run against the already-prepared mGBA + Lua connection.
 
@@ -345,6 +346,9 @@ def run_single_loop(
 
     turn_mgr = TurnManager(config)
     turn_mgr.setup(emu, state, vision, logger, ocr_runner)
+    # Cooperative stop hook (control-center executor passes a predicate that's
+    # true once a stop is requested for this run) — checked at each turn boundary.
+    turn_mgr._should_stop = should_stop
 
     # TaskMaster state restore (--continue path): when TaskMaster is enabled and
     # the snapshot carries task_master_state.json, reload current_task +

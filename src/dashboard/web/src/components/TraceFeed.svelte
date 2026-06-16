@@ -58,6 +58,12 @@
                       {#if s.k === 'thinking'}
                         <span class="m-step-h">💭 Thinking</span>
                         <div class="m-step-b">{@html mdToHtml(s.t)}</div>
+                      {:else if s.k === 'reasoning'}
+                        <span class="m-step-h">🧠 Reasoning</span>
+                        <div class="m-step-b">{@html mdToHtml(s.t)}</div>
+                      {:else if s.k === 'rating'}
+                        <span class="m-step-h">📊 Rating of previous task</span>
+                        <div class="m-step-b">{@html mdToHtml(s.t)}</div>
                       {:else if s.k === 'tool'}
                         {#if s.args}<div class="m-step-h">🔧 {s.name}</div><div class="m-step-b mono call">{s.name}({s.args})</div>
                         {:else if s.resp != null}<div class="m-step-b resp faint">→ {s.resp}</div>{/if}

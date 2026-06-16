@@ -254,6 +254,15 @@ class RunExecutor:
                     open_browser=False,
                     open_report=False,
                     on_run_dir=_publish,
+                    # Cooperative stop: true once a stop is requested for the run
+                    # that's currently active. The turn loop checks this each turn
+                    # and raises KeyboardInterrupt → savepoint → cancelled. Without
+                    # it, request_stop only recorded a verdict and never halted the
+                    # run, so the UI "kill" appeared to do nothing.
+                    should_stop=lambda: (
+                        self._stop_requested_run_id is not None
+                        and self._stop_requested_run_id == self._active_run_id
+                    ),
                 )
             except KeyboardInterrupt:
                 # run_single_loop RAISES KeyboardInterrupt when the turn loop was

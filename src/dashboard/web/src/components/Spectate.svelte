@@ -73,6 +73,16 @@
     return rows.slice(Math.max(0, reached - 2), reached + 3)
   })
 
+  // Parse the run start time (local) out of the run-dir id, e.g.
+  // "2026-06-16_09-35-12_config-3.13__gpt-5" → epoch ms. Returns null if the id
+  // doesn't lead with a timestamp. Used so Elapsed always counts from the real
+  // start, even when the RunSummary (run.startedAt) isn't loaded on re-entry.
+  function startMsFromRunId(id) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})/.exec(id || '')
+    if (!m) return null
+    return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]).getTime()
+  }
+
   // ── helpers to turn raw events into trace boxes ──
   function parseArgs(a) {
     if (typeof a === 'string') { try { return JSON.parse(a) } catch { return null } }
@@ -105,14 +115,29 @@
       if (role === 'thinking') {
         if (m.content) steps.push({ k: 'thinking', t: String(m.content) })
       } else if (role === 'tool_call') {
+        // The TaskMaster's structured output is emitted as a `final_result` tool
+        // call whose args are the decision JSON. Do NOT dump that raw JSON — the
+        // task title/plan/success are already shown as the card's rows above.
+        // Surface only the fields not shown elsewhere: the reasoning and any
+        // rating of the previous task.
+        if (m.tool_name === 'final_result') {
+          const a = parseArgs(m.args)
+          if (a && typeof a === 'object') {
+            if (a.reasoning) steps.push({ k: 'reasoning', t: String(a.reasoning) })
+            const rating = a.rating_of_previous_task
+            if (rating != null && String(rating).trim()) steps.push({ k: 'rating', t: String(rating) })
+          }
+          continue
+        }
         const args = parseArgs(m.args)
         const argStr = args == null ? '' : (typeof args === 'string' ? args : JSON.stringify(args))
         steps.push({ k: 'tool', name: m.tool_name || 'tool', args: argStr, resp: null })
       } else if (role === 'tool_result') {
+        if (m.tool_name === 'final_result') continue   // "Final result processed." — noise
         const c = typeof m.content === 'string' ? m.content : JSON.stringify(m.content)
         steps.push({ k: 'tool', name: '↳ response', args: '', resp: c })
       }
-      // system / user / assistant carry the prompt + final_result — not shown live.
+      // system / user / assistant carry the prompt — not shown live.
     }
     return steps
   }
@@ -305,7 +330,11 @@
     if (!id) { resetLiveState(); return }
 
     resetLiveState()
-    startedAtMs = run?.startedAt ? Date.parse(run.startedAt) : Date.now()
+    // Elapsed must be measured from the REAL run start every time spectate is
+    // (re)opened — not reset to "now" on re-entry. The run-dir id always encodes
+    // the start (`YYYY-MM-DD_HH-MM-SS_…`), so derive it from the id; only fall
+    // back to the RunSummary's startedAt / now if the id can't be parsed.
+    startedAtMs = startMsFromRunId(id) ?? (run?.startedAt ? Date.parse(run.startedAt) : Date.now())
 
     // the events WS replays the full backlog on connect → reset accumulators
     // first so a reconnect rebuilds cleanly instead of double-appending.
@@ -477,7 +506,9 @@
 
   /* The two-column grid fills the frame's leftover height; min-height:0 lets
      the grid children shrink (essential or the emulator pushes past the frame). */
-  .layout { display: grid; grid-template-columns: minmax(0, 1fr) clamp(300px, 30%, 500px); gap: 20px; align-items: stretch; flex: 1; min-height: 0; height: 100%; overflow: hidden; }
+  /* Trace rail gets ~55% more width than before (was clamp(300,30%,500)) — the
+     live trace is the thing you read on a TV; the emulator hero is still ample. */
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) clamp(360px, 44%, 780px); gap: 20px; align-items: stretch; flex: 1; min-height: 0; height: 100%; overflow: hidden; }
   .main { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow: hidden; }
   /* emulator flexes to fill leftover height and shrinks on short screens;
      .screen uses object-fit:contain so it never overflows. */
@@ -509,7 +540,8 @@
   .sv { font-size: 18px; font-weight: 750; }
   .su { font-size: 11px; color: var(--muted); font-weight: 600; }
 
-  .panels { flex: none; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: stretch; }
+  /* Current task gets more room than the memory dictionary — 60/40 split. */
+  .panels { flex: none; display: grid; grid-template-columns: 3fr 2fr; gap: 14px; align-items: stretch; }
   .panel { display: flex; flex-direction: column; min-height: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; box-shadow: var(--shadow); }
   .p-h { flex: none; font-size: 11px; font-weight: 750; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: 10px; }
   .t-title { font-size: 14px; font-weight: 700; margin-bottom: 8px; }

@@ -552,6 +552,13 @@ class TurnManager:
         self.config = config
         self.max_turns = config.get("max_turns_per_task", 50)
 
+        # Cooperative stop hook. A long-lived caller (the control-center executor)
+        # sets this to a predicate checked at the top of every turn; when it
+        # returns True the loop raises KeyboardInterrupt so the existing
+        # interrupt→savepoint→cancelled path fires. Without it the loop only stops
+        # on a real Ctrl-C, so a UI "stop" never actually halts the run.
+        self._should_stop: Optional[Any] = None
+
         # TaskMaster gate. When enabled the Player prompt gains a current-task +
         # task-progress block each turn and the budget validator (attached in
         # create_agent) is fed the per-task turn count via AgentDeps. When
@@ -1032,6 +1039,14 @@ class TurnManager:
             await self._cold_start()
 
         for _ in range(limit):
+            # Cooperative stop: a UI/executor stop request halts at the next turn
+            # boundary (a clean point — never mid-turn). Raising KeyboardInterrupt
+            # reuses run_single_loop's interrupt path: graceful savepoint + the
+            # run is finalised as `cancelled` (voided if official).
+            if self._should_stop is not None and self._should_stop():
+                print("\n  Stop requested — ending run at turn boundary.")
+                raise KeyboardInterrupt
+
             self.turn_number += 1
             print(f"\n{'─'*60}")
             print(f"  Turn {self.turn_number}")
