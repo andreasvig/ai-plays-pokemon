@@ -848,6 +848,53 @@
   observed:
     sample_turns: 0
 
+# --- OpenAI GPT-5.4 mini (added 2026-06-17, Andreas) ---
+# Mid-size GPT-5.4. Multimodal (text+image — confirmed on the OpenRouter model
+# page 2026-06-17 at openrouter.ai/openai/gpt-5.4-mini; $0.75/$4.50 per M). Was
+# absent from the bulk /models listing on first check but the model page is
+# live. Effort-tiered per the GPT-5 family convention (xhigh/high/medium/low/
+# minimal) + summary:auto; a first run will confirm the effort field is honored.
+# Slug is the floating alias.
+"gpt-5.4-mini(xhigh)":
+  openrouter_id: "openai/gpt-5.4-mini"
+  reasoning:
+    effort: "xhigh"
+    summary: "auto"
+  observed:
+    sample_turns: 0
+
+"gpt-5.4-mini(high)":
+  openrouter_id: "openai/gpt-5.4-mini"
+  reasoning:
+    effort: "high"
+    summary: "auto"
+  observed:
+    sample_turns: 0
+
+"gpt-5.4-mini(medium)":
+  openrouter_id: "openai/gpt-5.4-mini"
+  reasoning:
+    effort: "medium"
+    summary: "auto"
+  observed:
+    sample_turns: 0
+
+"gpt-5.4-mini(low)":
+  openrouter_id: "openai/gpt-5.4-mini"
+  reasoning:
+    effort: "low"
+    summary: "auto"
+  observed:
+    sample_turns: 0
+
+"gpt-5.4-mini(minimal)":
+  openrouter_id: "openai/gpt-5.4-mini"
+  reasoning:
+    effort: "minimal"
+    summary: "auto"
+  observed:
+    sample_turns: 0
+
 # --- Moonshot AI Kimi K2.6 ---
 # Multimodal flagship from Moonshot, 262K context, $0.74/$3.49 per M (mid-tier
 # — between MiMo V2.5 and Qwen3.6-Plus). Binary thinking toggle, no effort
