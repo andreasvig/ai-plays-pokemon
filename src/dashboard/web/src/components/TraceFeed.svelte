@@ -15,8 +15,8 @@
 
   // handback + error are present in the real event stream (static/index.html)
   // but were omitted from the mock; wired in here for P6 parity.
-  const boxIcon = { thinking: '💭', output: '💬', action: '🎮', tool: '🔧', memory: '🧠', ocr: '📝', settle: '⏱', handback: '↩️', error: '❌' }
-  const boxName = { thinking: 'Thinking', output: 'Output', action: 'Action', tool: 'Tool', memory: 'Memory', ocr: 'OCR', settle: 'Screen settling', handback: 'Return to TaskMaster', error: 'Error' }
+  const boxIcon = { thinking: '💭', output: '💬', action: '🎮', tool: '🔧', memory: '🧠', ocr: '📝', settle: '⏱', handback: '↩️', retry: '🔄', error: '❌' }
+  const boxName = { thinking: 'Thinking', output: 'Output', action: 'Action', tool: 'Tool', memory: 'Memory', ocr: 'OCR', settle: 'Screen settling', handback: 'Return to TaskMaster', retry: 'Retry', error: 'Error' }
 
   // TaskMaster's verdict on the PREVIOUS task → labeled chip + tone.
   const VERDICT = {
@@ -81,10 +81,12 @@
         {@const turn = entry}
         {@const isOpen = open.has(turn.turn)}
         {@const isCurrent = turn.turn === currentId}
-        <div class="turn-block" class:current={isCurrent} class:collapsed={!isOpen}>
+        {@const nRetry = turn.boxes.filter((b) => b.k === 'retry').length}
+        <div class="turn-block" class:current={isCurrent} class:collapsed={!isOpen} class:retried={nRetry > 0}>
           <button class="turn-head" onclick={() => toggle(turn.turn)}>
             <span class="arr">{isOpen ? '▾' : '▸'}</span>
             <span class="t-n mono">Turn {turn.turn}</span>
+            {#if nRetry}<span class="retry-tag">🔄 {nRetry} {nRetry === 1 ? 'retry' : 'retries'}</span>{/if}
             {#if isCurrent}<span class="cur-tag"><span class="dot live"></span>current</span>{/if}
             {#if !isOpen}<span class="t-sum faint">{turn.boxes.find((b) => b.k === 'thinking')?.t.slice(0, 52)}…</span>{/if}
           </button>
@@ -143,6 +145,8 @@
   .arr { color: var(--faint); font-size: 10px; flex: none; }
   .t-n { font-size: 12px; font-weight: 750; color: var(--accent); flex: none; }
   .cur-tag { font-size: 10px; font-weight: 700; color: var(--green); display: inline-flex; align-items: center; gap: 4px; }
+  .retry-tag { font-size: 10px; font-weight: 800; color: #c4670a; background: rgba(240, 147, 43, 0.16); border: 1px solid rgba(240, 147, 43, 0.45); border-radius: 999px; padding: 1px 7px; letter-spacing: .02em; }
+  .turn-block.retried { border-left: 3px solid #f0932b; }
   .t-sum { font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .boxes { padding: 2px 11px 10px; display: flex; flex-direction: column; gap: 7px; }
@@ -159,6 +163,8 @@
   .ebox.ocr      { border-color: #e8804a; }
   .ebox.settle   { border-color: #d8a93b; }
   .ebox.handback { border-color: #6ca4ff; }
+  .ebox.retry    { border-color: #f0932b; background: rgba(240, 147, 43, 0.12); }
+  .ebox.retry .ebox-h { color: #c4670a; }
   .ebox.error    { border-color: var(--red); background: var(--red-soft, #fdeeee); }
   .act { font-size: 18px; letter-spacing: 3px; }
   .call { font-size: 11.5px; }

@@ -304,7 +304,21 @@
       return
     }
     if (t === 'screen_settled') { pushBox(evt.turn, { k: 'settle', t: `Settled in ${evt.duration || 0}s` }); return }
-    if (t === 'output_retry') { pushBox(evt.turn, { k: 'error', t: evt.content || 'Validation failed — retrying.' }); return }
+    // Per-attempt LLM call retries (timeout / transient provider error). The
+    // backend re-rolls the provider with escalating routing; surface each
+    // attempt LOUDLY so a stalling turn is obvious live, not a silent freeze.
+    if (t === 'agent_retry') {
+      const n = evt.attempt, max = evt.max_attempts
+      const why = evt.error_type === 'TimeoutError'
+        ? `timed out after ${Math.round(evt.timeout_s || 0)}s`
+        : `${evt.error_type || 'error'}${evt.error ? ` (${String(evt.error).slice(0, 80)})` : ''}`
+      const next = (evt.retryable && n < max)
+        ? ` — re-rolling provider (sort: ${evt.provider_sort || 'default'})…`
+        : ' — no attempts left, falling through'
+      pushBox(evt.turn, { k: 'retry', t: `Attempt ${n}/${max} ${why}${next}` })
+      return
+    }
+    if (t === 'output_retry') { pushBox(evt.turn, { k: 'retry', t: evt.content ? `Output validation failed — retrying: ${evt.content}` : 'Output validation failed — retrying.' }); return }
     if (t === 'agent_error' || t === 'action_error') {
       pushBox(evt.turn, { k: 'error', t: evt.error || evt.message || JSON.stringify(evt) })
       return
