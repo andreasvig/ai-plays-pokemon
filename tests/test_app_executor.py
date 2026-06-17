@@ -248,17 +248,21 @@ def test_official_enqueue_forces_frozen_config_enforce_no_maxturns(harness):
     )
     config, snapshot, turns = executor.build_run_config(item)
 
+    from src.app.benchmarks import default_benchmark
+
     assert config["_config_path"] == executor.official_config_path  # frozen config
     assert config["referee"]["enforce"] is True
-    assert config["referee"]["checkpoints"] == executor.official_ladder_path
+    # No benchmark chosen → registry default's ladder.
+    assert config["referee"]["checkpoints"] == default_benchmark().ladder
     assert turns == executor._OFFICIAL_TURN_SENTINEL  # "no max-turns" sentinel
     assert turns != 5  # the smuggled max_turns was ignored
     assert snapshot == executor.canonical_save  # canonical start save
+    assert config["task_master"]["mode"] == "benchmark"  # official = benchmark
 
 
-def test_official_default_benchmark_is_full_ladder(harness):
+def test_official_default_benchmark_is_easy_ladder(harness):
     """An official item with NO benchmark falls back to the registry default
-    (pokebench-full) — the v1 ladder + the full goal text."""
+    (pokebench-easy) — the easy ladder + the easy goal text."""
     from src.app.benchmarks import get_benchmark
 
     queue = harness["queue"]
@@ -267,11 +271,12 @@ def test_official_default_benchmark_is_full_ladder(harness):
     item = queue.enqueue(kind=RunKind.official, model="m")  # no benchmark
     config, _snapshot, _turns = executor.build_run_config(item)
 
-    full = get_benchmark("pokebench-full")
-    assert config["referee"]["checkpoints"] == full.ladder
+    easy = get_benchmark("pokebench-easy")
+    assert easy.is_default  # registry default is now easy
+    assert config["referee"]["checkpoints"] == easy.ladder
     assert config["referee"]["enforce"] is True
     # Goal override: the frozen config's task.goal is replaced by the benchmark's.
-    assert config["task"]["goal"] == full.goal
+    assert config["task"]["goal"] == easy.goal
 
 
 def test_official_benchmark_selects_ladder_and_overrides_goal(harness):
@@ -321,6 +326,7 @@ def test_casual_uses_chosen_config_and_maxturns(harness):
     assert turns == 42
     assert "referee" not in config  # casual = no gates
     assert snapshot == executor.canonical_save
+    assert config["task_master"]["mode"] == "freeplay"  # casual = custom/freeplay
 
 
 def test_continue_spec_reuses_model_and_savepoint_ignores_request_model(harness):

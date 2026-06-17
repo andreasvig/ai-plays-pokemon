@@ -684,6 +684,16 @@ class TurnManager:
         # (locked decision #8) — the run loop breaks as a WIN and the summary is
         # stamped `completed`. Stays False on every other exit path.
         self._referee_completed: bool = False
+        # Finalisation guards. The loop's clean exit writes the summary +
+        # restores stdout, but a crash or a cooperative stop aborts before that;
+        # run_single_loop then calls finalize_run_summary() so a killed/failed
+        # run still produces a readable report (Andreas 2026-06-17). The guard
+        # makes the call idempotent whichever path reaches it first; the
+        # stdout/log handles default to None so finalisation is safe even if the
+        # loop crashed before they were opened.
+        self._summary_finalized: bool = False
+        self._orig_stdout = None
+        self._terminal_log = None
         self.agent, self.model_settings, self.fallback_models = create_agent(config)
         self.max_steps_per_turn = config.get("max_steps_per_turn", 10)
         self.max_turns_before_trim = config.get("max_turns_before_trim")
@@ -1278,17 +1288,14 @@ class TurnManager:
         print(f"  Tokens: {self.total_input_tokens} in / {self.total_output_tokens} out")
         print(f"{'═'*60}")
 
-        # Write structured run summary. A referee success-exit (final ladder
-        # rung reached) is a WIN → stamp `completed`; other exits leave status
-        # to the writer's own inference (referee missed-gate → `terminated`,
-        # else the executor/caller decides).
-        self._write_run_summary(
+        # Clean exit. A referee success-exit (final ladder rung reached) is a
+        # WIN → stamp `completed`; other clean exits leave status None so the
+        # writer/executor infers it (referee missed-gate → `terminated`, casual
+        # max-turns → `completed`). Crash/stop exits finalise via
+        # run_single_loop instead (see finalize_run_summary).
+        self.finalize_run_summary(
             status="completed" if self._referee_completed else None
         )
-
-        # Restore stdout and close terminal log
-        sys.stdout = self._orig_stdout
-        self._terminal_log.close()
 
     def _referee_should_break(self) -> bool:
         """Poll the referee at the current turn and act on its verdict.
@@ -1305,14 +1312,24 @@ class TurnManager:
         """
         if self.referee is None:
             return False
-        # Missed-gate enforcement.
+        # Missed-gate enforcement. Gate deadlines are measured against TOTAL
+        # turns — player/game turns PLUS TaskMaster invocations (Andreas
+        # 2026-06-17) — so a run that misses a gate stops the instant the
+        # combined count reaches that gate's cutoff. This keeps the budget
+        # honest (the strategy layer's turns count too) AND makes the
+        # leaderboard's total_turns land exactly on a gate deadline whenever a
+        # run is terminated short of 100%. The summary's total_turns uses the
+        # same player+master sum, so the two always agree.
+        total_turns = self.turn_number + self.task_master_turns
         try:
-            if bool(self.referee.poll(self.turn_number)):
+            if bool(self.referee.poll(total_turns)):
                 reason = self.referee.termination_reason
                 print(f"  [Turn {self.turn_number}] Referee gate enforcement: "
                       f"{reason}. Stopping run cleanly.")
                 self.logger.log_custom("referee_terminate", {
-                    "turn": self.turn_number, "reason": reason,
+                    "turn": self.turn_number,
+                    "total_turns": total_turns,
+                    "reason": reason,
                 })
                 return True
         except Exception as e:
@@ -1942,12 +1959,10 @@ class TurnManager:
                 task_text += f"\n{desc}"
             if criteria:
                 task_text += f"\n\n**Success criteria:** {criteria}"
-            # Progress line: turns used / budget on the CURRENT task (not the
-            # global run) — so the Player can self-eject before the budget
-            # validator forces it.
-            used = self.current_task_turn
-            budget = self.max_turns
-            task_text += f"\n\n_task_progress: {used}/{budget} turns used for this task_"
+            # The Player is intentionally NOT shown the per-task turn budget — it
+            # should play the task on its merits, not pace to a turn count. The
+            # budget is still enforced server-side (the output validator forces a
+            # handoff at the boundary), the Player just isn't told about it.
             return task_text
 
         # Legacy (TaskMaster disabled): tasks.json overrides config task.
@@ -1970,6 +1985,31 @@ class TurnManager:
                 return ", ".join(action)
             return str(action)
         return "?"
+
+    def finalize_run_summary(self, status: Optional[str] = None) -> None:
+        """Write run_summary.json + restore stdout. Idempotent end-of-run hook.
+
+        Called once on a clean loop exit, and also by run_single_loop's crash/stop
+        handler — whichever reaches it first wins (the ``_summary_finalized``
+        guard makes the second call a no-op). This guarantees a killed run
+        (cooperative stop) or a crashed run (mid-run fault) still gets a FULL,
+        readable summary instead of vanishing or masquerading as ``completed``
+        (Andreas 2026-06-17). ``status``: ``"crashed"`` for a fault, ``None`` for
+        a stop/clean-non-win (the executor then stamps ``cancelled`` for a stop
+        or infers ``terminated``/``completed``), ``"completed"`` for a referee
+        win. stdout restore + terminal-log close are best-effort so a partial
+        run started before stdout was even teed still finalises cleanly."""
+        if self._summary_finalized:
+            return
+        self._summary_finalized = True
+        self._write_run_summary(status=status)
+        if self._orig_stdout is not None:
+            sys.stdout = self._orig_stdout
+        if self._terminal_log is not None:
+            try:
+                self._terminal_log.close()
+            except Exception:
+                pass
 
     def _write_run_summary(
         self,

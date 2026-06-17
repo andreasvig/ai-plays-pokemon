@@ -30,7 +30,7 @@ export function dateShort(iso) {
 // (case-insensitive) and joins with a space. Unknown tokens pass through.
 const ACTION_EMOJI = {
   left: '⬅️', right: '➡️', up: '⬆️', down: '⬇️',
-  a: '🅰️', b: '🅱️', start: '▶️', select: '⏹️',
+  a: '🅰️', b: '🅱️', start: '▶️', select: '⏹️', wait: '⏳',
 }
 export function actionEmoji(action) {
   if (action == null) return ''
@@ -38,6 +38,17 @@ export function actionEmoji(action) {
   return tokens
     .map((tok) => ACTION_EMOJI[String(tok).toLowerCase()] ?? tok)
     .join(' ')
+}
+// A killed (cancelled) or failed (crashed) run both read as "incomplete" in the
+// UI (Andreas 2026-06-17): voided from the leaderboard but kept in history with a
+// readable report. completed / terminated / running keep their own labels.
+const _INCOMPLETE = new Set(['cancelled', 'crashed'])
+export function statusLabel(status) {
+  if (status === 'running') return '● running'
+  return _INCOMPLETE.has(status) ? 'incomplete' : status
+}
+export function statusClass(status) {
+  return _INCOMPLETE.has(status) ? 'incomplete' : status
 }
 // "100%" for a full clear, else "86% · Cascade Badge" with the furthest gate.
 export function completionLabel(r) {

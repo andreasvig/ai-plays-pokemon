@@ -153,23 +153,6 @@ mimo-v2.5:
       sample_turns: 8
       last_updated: 2026-04-24
 
-# Xiaomi MiMo V2.5 Pro — TEXT-ONLY on OpenRouter (input_modalities ["text"], re-confirmed 2026-06-17). Cannot drive the vision Player; kept for documented cost/intel only. Not a config bug.
-mimo-v2.5-pro:
-  openrouter_id: xiaomi/mimo-v2.5-pro
-  reasoning_type: binary
-  thinking_levels:
-  - thinking
-  - non-thinking
-  temperature: 0.3
-  top_p: 0.95
-  observed:
-    thinking:
-      sample_turns: 0
-      incompatible: 'text-only — no image input (OpenRouter 404 on vision_mode: direct_multimodal)'
-    non-thinking:
-      sample_turns: 0
-      incompatible: 'text-only — no image input (OpenRouter 404 on vision_mode: direct_multimodal)'
-
 # Google Gemma 4 31B IT — binary thinking, open-weights, 262K ctx, $0.13/$0.38 per M (cheapest). output_mode prompted + provider throughput-sort: providers have mixed tool/structured-output support, so prompted + fastest-provider routing is the robust combo. thinking is slow (74.9s/turn, slow-provider tail to 220s).
 gemma-4-31b:
   openrouter_id: google/gemma-4-31b-it

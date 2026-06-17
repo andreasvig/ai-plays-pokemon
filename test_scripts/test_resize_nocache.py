@@ -106,7 +106,7 @@ def main() -> int:
             print(f"  {w}x{h:<5} ({nbytes:>6,}b, prompt={r.get('prompt_tokens')}): "
                   f"{r.get('reply', r.get('error'))!r}")
 
-    out = PROJECT_ROOT / "scripts/test_resize_nocache_results.json"
+    out = PROJECT_ROOT / "test_scripts/test_resize_nocache_results.json"
     out.write_text(json.dumps(results, indent=2))
     print(f"\nSaved: {out}")
     return 0

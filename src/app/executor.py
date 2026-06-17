@@ -168,6 +168,7 @@ class RunExecutor:
             # would resolve against CWD and fail "not a directory".
             source_dir = self.runs_root / item.continue_from
             cfg, savepoint_dir = self._resolve_continue_fn()(str(source_dir))
+            cfg.setdefault("task_master", {})["mode"] = "freeplay"  # casual continue
             turns = item.max_turns or 1500
             return cfg, str(savepoint_dir), turns
 
@@ -194,14 +195,17 @@ class RunExecutor:
                 "checkpoints": benchmark.ladder,
                 "enforce": True,
             }
+            # Official = benchmark mode: TaskMaster gets benchmark_guidelines.
+            cfg.setdefault("task_master", {})["mode"] = "benchmark"
             # NO max-turns: pace is the only bound (locked #8). We still pass a
             # large sentinel turn cap to the loop (it never owns termination —
             # the referee's gate deadlines do).
             turns = self._OFFICIAL_TURN_SENTINEL
             return cfg, self.canonical_save, turns
 
-        # Casual fresh.
+        # Casual fresh = custom/freeplay mode: TaskMaster gets freeplay_guidelines.
         cfg = prepare_config(self._resolve_config_path(item.config), item.model)
+        cfg.setdefault("task_master", {})["mode"] = "freeplay"
         turns = item.max_turns or 1500
         return cfg, self.canonical_save, turns
 
@@ -421,10 +425,14 @@ class RunExecutor:
 
         # benchmark / benchmark_version: for an official run that posts a verdict,
         # stamp WHICH benchmark it played (drives the per-benchmark leaderboard
-        # filter) + the season version. A CANCELLED (voided, locked #9) official
-        # run gets NULL on both so it is never leaderboard-eligible. Casual =
-        # always null.
-        if is_official and status != RunStatus.cancelled.value:
+        # filter) + the season version. A CANCELLED (voided, locked #9) or
+        # CRASHED (incomplete — mid-run fault, Andreas 2026-06-17) official run
+        # gets NULL on both so it is never leaderboard-eligible. Casual = always
+        # null.
+        if is_official and status not in (
+            RunStatus.cancelled.value,
+            RunStatus.crashed.value,
+        ):
             summary["benchmark"] = get_benchmark(item.benchmark).id
             summary["benchmark_version"] = OFFICIAL_BENCHMARK_VERSION
         else:

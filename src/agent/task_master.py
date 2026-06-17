@@ -25,10 +25,11 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from pydantic_ai import Agent, ModelRetry, NativeOutput, PromptedOutput, RunContext, Tool
 from pydantic_ai.models.openai import OpenAIModel
 
+from src.agent.coerce import coerce_stringified_object
 from src.agent.tools.ask_perplexity import DEFAULT_SEARCH_MODEL
 from src.agent.tools.ask_perplexity import ask_perplexity as _ask_perplexity
 from src.core.prompts import fill_prompt
@@ -77,6 +78,15 @@ class TaskMasterOutput(BaseModel):
         description="Verdict on the previous task; null ONLY on the very first (cold-start) invocation.",
     )
     task: TaskSpec = Field(description="The next task for the Player to execute.")
+
+    # Some models (e.g. xiaomi/mimo-v2.5) stringify nested tool-call object args
+    # and emit "None"/"null" for a null optional — decode losslessly so strict
+    # validation accepts the correct value instead of dying after ModelRetry.
+    # See src/agent/coerce.py.
+    _coerce_rating = field_validator("rating_of_previous_task", mode="before")(
+        coerce_stringified_object
+    )
+    _coerce_task = field_validator("task", mode="before")(coerce_stringified_object)
 
 
 class TaskMasterInput(BaseModel):
@@ -265,6 +275,21 @@ async def tool_ask_perplexity(ctx: RunContext[TaskMasterDeps], query: str) -> st
 # --- Agent construction (mirrors Player's create_agent) ----------------------
 
 
+def _mode_guidelines(tm_cfg: dict[str, Any]) -> str:
+    """Text for the ``{{mode_guidelines}}`` placeholder in the TaskMaster prompt.
+
+    The executor stamps ``task_master.mode`` per run kind: ``"benchmark"`` for
+    official runs, ``"freeplay"`` for casual/custom runs. ``mode == "freeplay"``
+    selects ``freeplay_guidelines``; anything else (including an unset mode on a
+    direct config load) selects ``benchmark_guidelines`` — config-3.13 is the
+    official benchmark config, so benchmark is the safe default. Missing
+    guidelines keys yield an empty string (placeholder collapses to nothing).
+    """
+    mode = str(tm_cfg.get("mode") or "benchmark").lower()
+    key = "freeplay_guidelines" if mode == "freeplay" else "benchmark_guidelines"
+    return tm_cfg.get(key, "")
+
+
 def create_task_master_agent(config: dict[str, Any]) -> tuple[Agent, Any]:
     """Create the TaskMaster pydantic-ai agent configured for OpenRouter.
 
@@ -343,6 +368,11 @@ def create_task_master_agent(config: dict[str, Any]) -> tuple[Agent, Any]:
     # module-level SYSTEM_PROMPT is the default when the config omits it.
     tm_cfg = config.get("task_master") or {}
     system_prompt = tm_cfg.get("system_prompt") or SYSTEM_PROMPT
+
+    # Fill the {{mode_guidelines}} placeholder from the run's mode (see
+    # _mode_guidelines). If the template has no {{mode_guidelines}} placeholder
+    # this is a harmless no-op.
+    system_prompt = fill_prompt(system_prompt, mode_guidelines=_mode_guidelines(tm_cfg))
 
     agent = Agent(
         model=model,

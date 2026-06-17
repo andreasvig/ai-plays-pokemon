@@ -419,12 +419,21 @@ def run_single_loop(
         user_interrupted = True
         if turn_mgr.savepoint_on_crash:
             turn_mgr.save_savepoint("crash")
+        # A cooperative stop aborts the loop before its clean finalize. Write the
+        # full summary now so the killed run still has a readable report; status
+        # stays None and the executor stamps `cancelled` (voided if official).
+        turn_mgr.finalize_run_summary(status=None)
     except Exception as e:
         print(f"\nError: {e}")
         import traceback
         traceback.print_exc()
         if turn_mgr.savepoint_on_crash:
             turn_mgr.save_savepoint("crash")
+        # A mid-run fault (e.g. a model erroring out — the Gemma run, 2026-06-17).
+        # Record the run as `crashed` so it lands in History as INCOMPLETE with
+        # its report intact and never posts to the leaderboard, instead of
+        # defaulting to `completed` and masquerading as a real result.
+        turn_mgr.finalize_run_summary(status="crashed")
     finally:
         if ocr_runner:
             ocr_runner.stop()

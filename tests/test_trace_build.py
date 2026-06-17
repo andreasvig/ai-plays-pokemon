@@ -119,6 +119,18 @@ def test_endpoint_serves_cache_when_fresh(client, run_dir: Path):
     assert r.json()["turn_count"] == 2
 
 
+def test_system_prompt_kept_verbatim_not_truncated():
+    """The Player / TaskMaster system prompt is projected VERBATIM — it used to
+    be capped to a 2000-char preview with an ellipsis, but Andreas reads the full
+    prompt in the Report, so it must never be truncated (2026-06-17)."""
+    from src.app.trace_build import _trace_steps
+
+    long_prompt = "SYSTEM:\n" + ("x" * 5000)  # well past the old 2000-char cap
+    grouped = _trace_steps([{"role": "system", "content": long_prompt}])
+    assert grouped["system_prompt"] == long_prompt
+    assert "…" not in grouped["system_prompt"]
+
+
 def test_endpoint_rebuilds_when_cache_stale(client, run_dir: Path):
     # Write a BOGUS cache, then make it OLDER than events.jsonl. A fresh cache
     # would be served verbatim (turn_count 999); a stale one must trigger a

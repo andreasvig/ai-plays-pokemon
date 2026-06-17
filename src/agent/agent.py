@@ -3,11 +3,13 @@
 import json
 from dataclasses import dataclass
 from typing import Any, Literal, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from pydantic_ai import Agent, ModelRetry, NativeOutput, PromptedOutput, RunContext
 from pydantic_ai.models.openai import OpenAIModel
 
-Button = Literal["up", "down", "left", "right", "a", "b", "start", "select"]
+from src.agent.coerce import coerce_stringified_object
+
+Button = Literal["up", "down", "left", "right", "a", "b", "start", "select", "wait"]
 
 # Apply patches before creating any models
 from src.core.patches import apply_patches
@@ -27,15 +29,10 @@ class ReturnToTaskMaster(BaseModel):
     Player wants the next task. This block is fed to TaskMaster verbatim.
     """
     self_assessment: Literal["succeeded", "failed", "partial", "other"] = Field(
-        description="Your own grade of how the current task went — TaskMaster makes the final call and may disagree.",
+        description="Your grade of how the task went: succeeded / failed / partial / other.",
     )
     task_summary: str = Field(
-        description=(
-            "A single factual summary of the task for TaskMaster to evaluate: what you actually did, "
-            "the resulting game state, and anything else it should know — blockers you hit, things you "
-            "learned, and suggestions for the next task. Incorporate all of that here in prose; do not "
-            "hold anything back as separate notes."
-        ),
+        description="Factual prose summary of the task for TaskMaster. See the system prompt for what to include.",
     )
 
 
@@ -55,37 +52,37 @@ class GameAction(BaseModel):
     behavior are byte-for-byte unchanged.
     """
     inputs: list[Button] = Field(
-        description="Button presses to send to the game. Aim for 4-8 for predictable actions (walking, dialogue). Use fewer (1-5) when the outcome is uncertain (entering a new room, using a move in battle).",
+        description="The buttons to press this turn.",
     )
     reasoning: str = Field(
-        description=(
-            "Free-form prose where you observe the screen, plan your action, and predict the outcome. "
-        ),
+        description="Your reasoning for this turn. See the system prompt.",
         max_length=5000,
     )
     last_turn_succeeded: Optional[bool] = Field(
-        description=(
-            "Strict grade of the previous turn. true ONLY if the current screen matches what last turn's "
-            "prediction said. false otherwise — including when the prediction was too vague to grade. "
-        ),
+        description="Your grade of the previous turn: true / false / null. See the system prompt.",
     )
     memory_updates: str = Field(
         description=(
-            "JSON object with keys to update in the memory dictionary (dot notation for nesting). "
-            "Only include changed keys — others stay. Set a key to \"\" to delete it. "
-            "Example: '{\"current_location\": \"Viridian City\", \"party.pikachu.hp\": \"28/40\"}'. "
-            "Only update after you have confirmed the new information on screen, NOT when you expect a change to happen. "
-            "Write \"none\" only if absolutely nothing changed this turn."
+            "JSON object of memory keys to update (dot notation for nesting), or \"none\". "
+            "See the system prompt."
         ),
     )
     return_to_taskmaster: Optional[ReturnToTaskMaster] = Field(
         default=None,
         description=(
-            "Set this ONLY to hand control back to TaskMaster — when the current task is complete, "
-            "impossible, or you're out of useful moves. Leave it null for a normal game turn. "
-            "When set, your self-assessment is passed to TaskMaster, which decides the next task."
+            "Optional handoff field. Null for a normal game turn (drive the turn with `inputs`); "
+            "set it (and leave `inputs` empty) to hand the task back to TaskMaster. When and why to "
+            "do so is explained in the system prompt."
         ),
     )
+
+    # Some models stringify this nested object / emit "None" for the null case;
+    # decode losslessly so strict validation accepts it. See src/agent/coerce.py.
+    # check_fields=False: _LegacyGameAction (TM-disabled path) inherits this then
+    # drops the field, which is the documented inherit-and-drop case.
+    _coerce_handoff = field_validator(
+        "return_to_taskmaster", mode="before", check_fields=False
+    )(coerce_stringified_object)
 
 
 # Model-facing schema for the legacy (TaskMaster-disabled) path. Mirrors
@@ -318,11 +315,10 @@ def create_agent(config: dict[str, Any]) -> tuple[Agent, Any, list[str]]:
                 and getattr(output, "return_to_taskmaster", None) is None
             ):
                 raise ModelRetry(
-                    f"You have used the full per-task turn budget "
-                    f"({used}/{budget} turns on this task). You must hand control "
-                    f"back to TaskMaster now: set `return_to_taskmaster` with your "
-                    f"self_assessment and a task_summary. An interact-with-game "
-                    f"output (button presses) is not allowed at the budget boundary."
+                    "You cannot take another in-game action on this task right now. "
+                    "Hand control back to TaskMaster: set `return_to_taskmaster` with "
+                    "your self_assessment and a task_summary. Button presses are not "
+                    "accepted here."
                 )
             return output
 

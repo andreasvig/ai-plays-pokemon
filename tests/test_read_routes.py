@@ -150,9 +150,9 @@ def test_benchmarks_endpoint_lists_registry(seeded):
     rows = seeded["tc"].get("/api/benchmarks").json()
     ids = [r["id"] for r in rows]
     assert ids == ["pokebench-easy", "pokebench-first-badge", "pokebench-full"]
-    # exactly one default, and it's full
+    # exactly one default, and it's easy
     defaults = [r["id"] for r in rows if r["default"]]
-    assert defaults == ["pokebench-full"]
+    assert defaults == ["pokebench-easy"]
     # each carries its goal + ladder
     assert all(r["goal"] and r["ladder"] for r in rows)
 

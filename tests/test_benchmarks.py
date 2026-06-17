@@ -44,11 +44,11 @@ def _make_manifest(tmp_path, entries):
 
 def test_real_registry_loads_three_benchmarks():
     """The committed configs/benchmarks.yaml has the three expected benchmarks,
-    full is the default, and each points at its own ladder file."""
+    easy is the default, and each points at its own ladder file."""
     bs = load_benchmarks()
     ids = [b.id for b in bs]
     assert ids == ["pokebench-easy", "pokebench-first-badge", "pokebench-full"]
-    assert default_benchmark().id == "pokebench-full"
+    assert default_benchmark().id == "pokebench-easy"
     assert {b.ladder for b in bs} == {
         "configs/checkpoints-firered-easy.yaml",
         "configs/checkpoints-firered-firstbadge.yaml",
@@ -57,8 +57,8 @@ def test_real_registry_loads_three_benchmarks():
 
 
 def test_get_benchmark_unknown_falls_back_to_default():
-    assert get_benchmark(None).id == "pokebench-full"
-    assert get_benchmark("does-not-exist").id == "pokebench-full"
+    assert get_benchmark(None).id == "pokebench-easy"
+    assert get_benchmark("does-not-exist").id == "pokebench-easy"
     assert get_benchmark("pokebench-easy").id == "pokebench-easy"
 
 

@@ -25,7 +25,7 @@ def _run(run_id, model, *, kind=RunKind.official, status=RunStatus.completed,
 
 # --- leaderboard --------------------------------------------------------------
 
-def test_leaderboard_excludes_casual_continue_cancelled():
+def test_leaderboard_excludes_casual_continue_cancelled_crashed():
     rows = [
         _run("r1", "model-a", gates=8),                                  # eligible
         _run("r2", "model-b", kind=RunKind.casual,
@@ -35,6 +35,11 @@ def test_leaderboard_excludes_casual_continue_cancelled():
              continued_from="r1"),                                       # continue → out
         _run("r4", "model-d", kind=RunKind.official,
              status=RunStatus.cancelled, gates=19),                      # voided → out
+        # A crashed official run is INCOMPLETE (Andreas 2026-06-17): it must
+        # never post to the leaderboard, even though a mid-run fault used to
+        # leave it stamped `completed` (and thus eligible).
+        _run("r5", "model-e", kind=RunKind.official,
+             status=RunStatus.crashed, gates=17),                        # crashed → out
     ]
     lb = leaderboard(rows)
     assert [r.run_id for r in lb] == ["r1"]

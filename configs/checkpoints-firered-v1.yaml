@@ -7,7 +7,7 @@ benchmark:
   id: pokebench-full
   name: "PokeBench Full"
   goal: "Your goal is to earn the first three Kanto Gym Badges, finishing with the Thunder Badge from Lt. Surge in Vermilion City, in as few turns as possible — you're measured on fewest player turns, excluding TaskMaster turns."
-  default: true
+  default: false
 
 benchmark_version: pokebench-v1-draft
 game: firered-us

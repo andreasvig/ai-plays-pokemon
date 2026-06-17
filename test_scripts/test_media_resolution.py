@@ -222,7 +222,7 @@ def main() -> int:
             continue
         print(f"  {r['prompt_tokens']:>5}  {r['label']}")
 
-    out_path = PROJECT_ROOT / "scripts/test_media_resolution_results.json"
+    out_path = PROJECT_ROOT / "test_scripts/test_media_resolution_results.json"
     out_path.write_text(json.dumps(results, indent=2))
     print(f"\nFull results saved to: {out_path}")
     return 0

@@ -27,6 +27,9 @@ class EmulatorClient:
         self.gap_frames = emu_config.get("frames_between_inputs", 30)
         self.ab_hold_frames = emu_config.get("ab_hold_frames", 50)  # longer hold for A/B (speeds up text)
         self.ab_gap_frames = emu_config.get("ab_gap_frames", 30)   # gap after A/B (next dialogue box)
+        # Duration of the "WAIT" pseudo-input: presses nothing, just lets the
+        # game run (e.g. battle animations/dialogue) for this many seconds.
+        self.wait_seconds = emu_config.get("wait_input_seconds", 5.0)
 
         screenshot_config = config.get("screenshot", {})
         self.upscale_factor = screenshot_config.get("upscale_factor", 3)
@@ -319,30 +322,43 @@ class EmulatorClient:
         calculated duration. No waiting for TCP responses — the screen
         stability check after this confirms execution completed.
 
+        The pseudo-input "WAIT" presses nothing — it pauses for ``wait_seconds``
+        (default 5s) so the game keeps running (battle animations, dialogue)
+        without input. WAITs may be interleaved with real presses; the sequence
+        is sent in order, flushing the buttons queued before each WAIT.
+
         Args:
-            buttons: e.g. ["left", "left", "up", "a"]
+            buttons: e.g. ["left", "left", "up", "a"] or ["a", "wait", "b"]
         """
         normalized = self.normalize_button_list(buttons)
 
-        seq_str = ";".join(normalized)
-        self._send(f"SEQ:{seq_str}")
-
-        # Sleep for the expected execution time + small buffer
-        # A/B buttons use longer hold (speeds up text) + different gap
+        # A/B buttons use longer hold (speeds up text) + different gap.
         ab_buttons = {"A", "B"}
-        total_frames = 0
-        for btn in normalized:
-            is_ab = btn in ab_buttons
-            hold = self.ab_hold_frames if is_ab else self.hold_frames
-            gap = self.ab_gap_frames if is_ab else self.gap_frames
-            total_frames += hold + gap
-        expected_seconds = total_frames / 60.0
-        sleep_time = expected_seconds + 0.5  # 0.5s buffer
-        time.sleep(sleep_time)
+        pending: list[str] = []
 
-        # Drain any pending responses (QUEUED, SEQUENCE_DONE) from the buffer
-        # so they don't interfere with the next recv call (e.g. screenshot)
-        self._drain_buffer()
+        def _flush() -> None:
+            if not pending:
+                return
+            self._send("SEQ:" + ";".join(pending))
+            total_frames = 0
+            for btn in pending:
+                is_ab = btn in ab_buttons
+                hold = self.ab_hold_frames if is_ab else self.hold_frames
+                gap = self.ab_gap_frames if is_ab else self.gap_frames
+                total_frames += hold + gap
+            time.sleep(total_frames / 60.0 + 0.5)  # 0.5s buffer
+            # Drain pending responses (QUEUED, SEQUENCE_DONE) so they don't
+            # interfere with the next recv call (e.g. screenshot).
+            self._drain_buffer()
+            pending.clear()
+
+        for btn in normalized:
+            if btn == "WAIT":
+                _flush()
+                time.sleep(self.wait_seconds)
+            else:
+                pending.append(btn)
+        _flush()
 
         # Update facing based on last directional input in the sequence
         DIRECTION_BUTTONS = {"U": "up", "D": "down", "L": "left", "R": "right"}

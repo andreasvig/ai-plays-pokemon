@@ -73,6 +73,13 @@
     if (wasAtMax) maxPrice = max
   }
   async function loadRuns() { runs = await api.fetchRuns() }
+
+  // History delete (typed-DELETE confirmation lives in History.svelte). Trashes
+  // the run server-side, then refreshes the slices it can affect.
+  async function removeRun(run) {
+    await api.deleteRun(run.runId)
+    await Promise.all([loadRuns().catch(() => {}), loadLeaderboard().catch(() => {})])
+  }
   async function loadQueue() {
     const { active: a, items } = await api.fetchQueue()
     activeId = a
@@ -234,7 +241,7 @@
       bind:oss={ossFilter} bind:maxPrice={maxPrice} {priceMax} />
     <Charts rows={filteredRows} onpick={(slug) => go(`/history/${slug}`)} />
   {:else if view === 'history'}
-    <History {runs} oninspect={inspect} oncontinue={openContinue} />
+    <History {runs} oninspect={inspect} oncontinue={openContinue} ondelete={removeRun} />
   {:else if view === 'spectate'}
     <Spectate run={active} {activeRunId} muted={emulator.muted} ontogglemute={toggleMute} onnew={openNew} onback={() => go('/')} />
   {:else if view === 'report'}

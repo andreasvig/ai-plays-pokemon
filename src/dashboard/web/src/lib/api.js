@@ -298,6 +298,12 @@ export function stopRun(runId) {
   return send('POST', `/api/runs/${encodeURIComponent(runId)}/stop`)
 }
 
+// Delete a historical run: moves its folder to ~/.Trash (recoverable) and drops
+// the index entry. The server refuses the currently-running run (409).
+export function deleteRun(runId) {
+  return send('DELETE', `/api/runs/${encodeURIComponent(runId)}`)
+}
+
 export function continueRun(runId, maxTurns) {
   const body = maxTurns != null ? { max_turns: maxTurns } : undefined
   return send('POST', `/api/runs/${encodeURIComponent(runId)}/continue`, body)

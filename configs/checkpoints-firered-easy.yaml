@@ -5,7 +5,7 @@ benchmark:
   id: pokebench-easy
   name: "PokeBench Easy"
   goal: "you are on a fresh safe file of pokemon firered. Your goal is to reach Viridian City in as few turns as possible — you're measured on fewest player turns, excluding TaskMaster turns."
-  default: false
+  default: true
 
 benchmark_version: pokebench-easy
 game: firered-us

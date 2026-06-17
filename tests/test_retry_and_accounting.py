@@ -8,7 +8,9 @@ Three independent fixes, one file:
 * Phase 5 — gate off-by-one: a deadline gate that falls due on a TaskMaster
   HANDOFF turn must terminate AT that turn, not one turn later. Before the fix
   the handoff path `continue`d past the referee poll, so the deadline was
-  evaluated a turn late.
+  evaluated a turn late. NB (Andreas 2026-06-17): deadlines are now measured
+  against TOTAL turns (player + TaskMaster), so the poll values below are the
+  running player+master sum, not the bare player-turn index.
 * Phase 6 — TaskMaster turns + cost: each TaskMaster invocation counts as +1
   reported turn and its cost is attached to a per-turn entry (it was previously
   invisible in any per-turn view).
@@ -142,9 +144,17 @@ def _read_summary(run_dir) -> dict:
 
 def test_deadline_on_handoff_turn_terminates_that_turn_not_next(tmp_path):
     """Off-by-one fix: a deadline gate falling due on a handoff turn terminates
-    at that turn. The referee must be polled on the handoff turn (turn 2) and
-    NOT proceed to turn 3 — pre-fix the handoff `continue` skipped the poll, so
-    the max polled turn was 3."""
+    at that turn. The referee must be polled on the handoff turn and NOT proceed
+    to a third player turn — pre-fix the handoff `continue` skipped the poll, so
+    the deadline was evaluated a turn late.
+
+    Poll values are TOTAL turns (player + TaskMaster) (Andreas 2026-06-17):
+      - cold start invokes TaskMaster → task_master_turns = 1 before turn 1;
+      - player turn 1 polls at total 1+1 = 2;
+      - player turn 2 hands back → _handle_handoff invokes TaskMaster
+        (task_master_turns = 2) → its poll sees total 2+2 = 4.
+    With deadline 4 the run survives turn 1 (2 < 4) and terminates on the handoff
+    turn (4 >= 4); a third player turn would have polled at total 5."""
     cfg = _base_config(tmp_path, enabled=True, max_turns_per_task=50)
     # turn 1 normal; turn 2 hands back voluntarily (a handoff turn); turn 3 would
     # be played only if the run didn't stop at the deadline.
@@ -160,15 +170,15 @@ def test_deadline_on_handoff_turn_terminates_that_turn_not_next(tmp_path):
     ]
     runner = StubTaskMasterRunner(invocations)
     mgr, logger = _make_mgr(cfg, player_actions, runner)
-    ref = _StubReferee(deadline=2)
+    ref = _StubReferee(deadline=4)
     mgr.referee = ref
 
     mgr.run_loop()
 
     assert ref.termination_reason == "missed_gate:test_gate"
-    # The crux: polled ON the handoff turn (2) and stopped there — never 3.
-    assert 2 in ref.polled_turns
-    assert max(ref.polled_turns) == 2, ref.polled_turns
+    # Polled in total-turn units: turn 1 at 2, the handoff turn at 4 — and
+    # stopped there (never the third player turn, which would poll at 5).
+    assert ref.polled_turns == [2, 4], ref.polled_turns
     summary = _read_summary(logger.run_dir)
     assert summary["session"]["player_turns"] == 2
 
@@ -208,3 +218,29 @@ def test_taskmaster_invocations_count_as_turns_and_attach_cost(tmp_path):
     # And still rolled into the separate strategy bucket + grand total.
     assert abs(cost["task_master_usd"] - 0.05) < 1e-9
     assert cost["total_usd"] >= 0.05
+
+
+def test_crashed_run_writes_readable_summary_and_is_idempotent(tmp_path):
+    """A mid-run fault still leaves a FULL, readable run_summary.json stamped
+    `crashed` (Andreas 2026-06-17) — so a failed run lands in History as
+    INCOMPLETE with its report intact instead of vanishing or masquerading as
+    `completed`. finalize_run_summary is idempotent: the loop's clean-exit
+    finalize and run_single_loop's crash handler can both call it; the first
+    wins, the second is a no-op (no double-write, no status clobber)."""
+    cfg = _base_config(tmp_path, enabled=True)
+    mgr, logger = _make_mgr(
+        cfg, [_ga("noop")], StubTaskMasterRunner([_inv("T", "d", "c")])
+    )
+
+    # Stand in for run_single_loop's `except Exception` handler (no loop run).
+    mgr.finalize_run_summary(status="crashed")
+
+    summary = _read_summary(logger.run_dir)
+    assert summary["status"] == "crashed"
+    # Full report payload present — not an empty stub the executor had to backfill.
+    assert "session" in summary and "cost" in summary and "turns" in summary
+    assert summary["session"]["player_turns"] == 0  # faulted before any turn ran
+
+    # A second finalize (e.g. the loop's own clean-exit call) is a no-op.
+    mgr.finalize_run_summary(status="completed")
+    assert _read_summary(logger.run_dir)["status"] == "crashed"

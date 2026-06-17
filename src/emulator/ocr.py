@@ -27,8 +27,8 @@ DEFAULT_CLEANUP_SYSTEM_PROMPT = (
     "in with real text. "
     "Your job: return the coherent in-game text (dialogue, menu labels, Pokemon names, stats, "
     "HP, levels, moves, numbers) with the gibberish removed. "
-    "Fix obvious OCR misreads when confident (e.g. 'SMERRGEE' → 'SMEARGLE', 'unsate' → 'unsafe', "
-    "'POK&MON' → 'POKéMON', 'BRASSWHISTLE' → 'GRASSWHISTLE'). "
+    "Fix obvious OCR misreads when confident (e.g. 'unsate' → 'unsafe', 'qrass' → 'grass', "
+    "'ltem' → 'Item', 'wrold' → 'world'). "
     "Drop tokens that are clearly pixel-art noise: isolated symbols like '|', '—', random letter "
     "salads like 'eS ES oe', short non-word fragments. "
     "Preserve meaningful line breaks. Merge duplicate/overlapping captures into single coherent text. "
@@ -100,6 +100,9 @@ class OCRRunner:
         self.max_buffer_size = ocr_config.get("max_buffer_size", 30)
         self.cleanup_enabled = ocr_config.get("cleanup_enabled", True)
         self.cleanup_model = ocr_config.get("cleanup_model", "google/gemma-4-31b-it")
+        self.cleanup_temperature = ocr_config.get("cleanup_temperature", 0.1)
+        self.cleanup_top_p = ocr_config.get("cleanup_top_p", 0.95)
+        self.cleanup_provider = ocr_config.get("cleanup_provider", {"sort": "latency"})
         # dHash dedup: a new capture is treated as a duplicate if its Hamming
         # distance to any of the recent hashes is ≤ this value. 0 = exact,
         # 64 = always-dup. ~5 catches animation flicker (cursor blink, sprite
@@ -351,7 +354,7 @@ class OCRRunner:
     # ── LLM cleanup ───────────────────────────────────────────────────
 
     def _llm_cleanup(self, raw: dict) -> tuple:
-        """Send buffer dict to Gemma via OpenRouter.
+        """Send buffer dict to cleanup LLM via OpenRouter.
 
         Returns:
             (cleaned_text, usage_dict) where usage_dict has
@@ -383,6 +386,9 @@ class OCRRunner:
                     {"role": "system", "content": self.cleanup_system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
+                "temperature": self.cleanup_temperature,
+                "top_p": self.cleanup_top_p,
+                "provider": self.cleanup_provider,
                 "usage": {"include": True},
                 "response_format": {
                     "type": "json_schema",

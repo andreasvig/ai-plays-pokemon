@@ -189,7 +189,7 @@ def main() -> int:
             continue
         print(f"  [{r['label']}]\n    {r['reply']}\n")
 
-    out_path = PROJECT_ROOT / "scripts/test_resize_spatial_results.json"
+    out_path = PROJECT_ROOT / "test_scripts/test_resize_spatial_results.json"
     out_path.write_text(json.dumps(results, indent=2))
     print(f"Full results: {out_path}")
     return 0

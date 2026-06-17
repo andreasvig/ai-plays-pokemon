@@ -16,10 +16,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-# Cap the master/player system-prompt block in the trace payload: it's a large
-# static prompt the SPA doesn't render verbatim — a preview keeps the JSON lean.
-_TRACE_SYSTEM_PROMPT_CAP = 2000
-
 
 def _screenshot_ref(file_path: str | None) -> str | None:
     """Reduce a stored screenshot path to its basename (the SPA composes the URL).
@@ -37,15 +33,15 @@ def _trace_steps(messages: list[dict]) -> dict:
     """Project a raw message trace into SPA-friendly structured steps.
 
     Reuses ``event_parsing._group_trace_into_steps`` (the canonical trace
-    parser), then caps the static system prompt.
+    parser). The system prompt is kept VERBATIM — it used to be capped to a 2000
+    char preview, but Andreas reads the full Player / TaskMaster system prompts
+    in the Report, so it must never be truncated (2026-06-17). Existing
+    ``trace.json`` caches were built with the old cap; they are deleted on the
+    finalize path / can be force-rebuilt by removing the file.
     """
     from src.core import event_parsing
 
-    grouped = event_parsing._group_trace_into_steps(messages or [])
-    sys_prompt = grouped.get("system_prompt") or ""
-    if len(sys_prompt) > _TRACE_SYSTEM_PROMPT_CAP:
-        grouped["system_prompt"] = sys_prompt[:_TRACE_SYSTEM_PROMPT_CAP] + "…"
-    return grouped
+    return event_parsing._group_trace_into_steps(messages or [])
 
 
 def _project_turn(turn: dict) -> dict:

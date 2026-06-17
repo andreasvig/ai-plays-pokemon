@@ -106,8 +106,9 @@
   // Turn raw pydantic-ai trace messages (master) into compact displayable steps,
   // mirroring the player turn box shapes (thinking / tool call / tool response).
   function parseMasterMessages(messages) {
-    if (!Array.isArray(messages)) return []
+    if (!Array.isArray(messages)) return { steps: [], rating: null }
     const steps = []
+    let rating = null
     for (const m of messages) {
       if (!m || typeof m !== 'object') continue
       const role = m.role
@@ -116,15 +117,19 @@
       } else if (role === 'tool_call') {
         // The TaskMaster's structured output is emitted as a `final_result` tool
         // call whose args are the decision JSON. Do NOT dump that raw JSON — the
-        // task title/plan/success are already shown as the card's rows above.
-        // Surface only the fields not shown elsewhere: the reasoning and any
-        // rating of the previous task.
+        // task title/plan/success already show as the card's rows. We also do NOT
+        // surface `a.reasoning` (the strategic prose) in the live trace — it's not
+        // strictly necessary. We DO capture the rating of the previous task so the
+        // card can show the verdict above the upcoming task.
         if (m.tool_name === 'final_result') {
           const a = parseArgs(m.args)
           if (a && typeof a === 'object') {
-            if (a.reasoning) steps.push({ k: 'reasoning', t: String(a.reasoning) })
-            const rating = a.rating_of_previous_task
-            if (rating != null && String(rating).trim()) steps.push({ k: 'rating', t: String(rating) })
+            const r = a.rating_of_previous_task
+            if (r != null && typeof r === 'object') {
+              rating = { status: String(r.status || '').trim(), reasoning: String(r.reasoning || '').trim() }
+            } else if (typeof r === 'string' && r.trim()) {
+              rating = { status: '', reasoning: r.trim() }
+            }
           }
           continue
         }
@@ -138,7 +143,7 @@
       }
       // system / user / assistant carry the prompt — not shown live.
     }
-    return steps
+    return { steps, rating }
   }
 
   function pushBox(turn, box) {
@@ -195,6 +200,7 @@
     card.model = trace.model_used || ''
     card.cost = trace.cost_usd
     card.steps = trace.steps || []
+    card.rating = trace.rating || null   // verdict on the PREVIOUS task (shown above the new task)
     // NB: input images are intentionally NOT surfaced in the live feed (B9.7);
     // they live only in the history Report.
   }
@@ -219,10 +225,12 @@
     if (t === 'task_master_trace') {
       // arrives BEFORE task_started{N}; buffer the trace half by task_index.
       const idx = evt.task_index
+      const parsed = parseMasterMessages(evt.messages)
       masterTraces.set(idx, {
         model_used: evt.model_used,
         cost_usd: evt.cost_usd,
-        steps: parseMasterMessages(evt.messages),
+        steps: parsed.steps,
+        rating: parsed.rating,
       })
       buildMasterCard(idx)
       scheduleRebuild()
@@ -236,7 +244,7 @@
         if (!masterCards.has(idx)) {
           masterCards.set(idx, {
             taskIndex: idx, firstTurn: null,
-            model: '', cost: null, steps: [],
+            model: '', cost: null, steps: [], rating: null,
             title: task.title, description: task.description, success: task.success,
           })
         } else {

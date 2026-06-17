@@ -399,7 +399,7 @@ ocr:
   cleanup_system_prompt: |
     You clean up noisy OCR output from Pokemon GBA screenshots. This is the accumulated OCR buffer from multiple screen captures during a single game turn — so it may contain repeated fragments, overlapping dialogue as it scrolls, and garbled pixel-art noise mixed in with real text.
     Your job: return the coherent in-game text (dialogue, menu labels, Pokemon names, stats, HP, levels, moves, numbers) with the gibberish removed.
-    Fix obvious OCR misreads when confident (e.g. 'SMERRGEE' → 'SMEARGLE', 'unsate' → 'unsafe', 'POK&MON' → 'POKéMON', 'BRASSWHISTLE' → 'GRASSWHISTLE').
+    Fix obvious OCR misreads when confident (e.g. 'unsate' → 'unsafe', 'qrass' → 'grass', 'ltem' → 'Item', 'wrold' → 'world').
     Drop tokens that are clearly pixel-art noise: isolated symbols like '|', '—', random letter salads like 'eS ES oe', short non-word fragments.
     Preserve meaningful line breaks. Merge duplicate/overlapping captures into single coherent text.
     Do NOT invent text that isn't supported by the OCR input.

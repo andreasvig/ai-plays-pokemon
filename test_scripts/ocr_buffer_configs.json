@@ -1,0 +1,31 @@
+[
+  {
+    "name": "gpt-oss-120b",
+    "model": "openai/gpt-oss-120b"
+  },
+  {
+    "name": "gpt-oss-20b",
+    "model": "openai/gpt-oss-20b"
+  },
+  {
+    "name": "gemma-26b",
+    "model": "google/gemma-4-26b-a4b-it",
+    "extra": {
+      "reasoning": { "enabled": false }
+    }
+  },
+  {
+    "name": "gemma-31b",
+    "model": "google/gemma-4-31b-it",
+    "extra": {
+      "reasoning": { "enabled": false }
+    }
+  },
+  {
+    "name": "qwen-3.5-9b",
+    "model": "qwen/qwen3.5-9b",
+    "extra": {
+      "reasoning": { "enabled": false }
+    }
+  }
+]

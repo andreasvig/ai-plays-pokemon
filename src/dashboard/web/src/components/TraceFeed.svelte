@@ -18,6 +18,17 @@
   const boxIcon = { thinking: '💭', output: '💬', action: '🎮', tool: '🔧', memory: '🧠', ocr: '📝', settle: '⏱', handback: '↩️', error: '❌' }
   const boxName = { thinking: 'Thinking', output: 'Output', action: 'Action', tool: 'Tool', memory: 'Memory', ocr: 'OCR', settle: 'Screen settling', handback: 'Return to TaskMaster', error: 'Error' }
 
+  // TaskMaster's verdict on the PREVIOUS task → labeled chip + tone.
+  const VERDICT = {
+    succeeded: { label: '✅ Succeeded', tone: 'ok' },
+    failed: { label: '❌ Failed', tone: 'no' },
+    partial: { label: '🟡 Partial', tone: 'partial' },
+    other: { label: '⚪ Other', tone: 'partial' },
+  }
+  function verdict(status) {
+    return VERDICT[String(status || '').toLowerCase()] || { label: status || 'Rated', tone: 'partial' }
+  }
+
   // turn ids (numbers), oldest→newest, ignoring master cards
   const turnIds = $derived(turns.filter((e) => e.kind === 'turn').map((e) => e.turn))
   const currentId = $derived(turnIds.length ? turnIds[turnIds.length - 1] : null)
@@ -53,22 +64,24 @@
         <div class="master-block">
           <div class="master-head">🧭 TaskMaster{#if entry.model}<span class="m-meta mono">{entry.model}</span>{/if}{#if entry.cost != null}<span class="m-meta mono">{usd(entry.cost)}</span>{/if}</div>
           <div class="master-body">
+            {#if entry.rating}
+              {@const verd = verdict(entry.rating.status)}
+              <div class="m-row m-rating {verd.tone}">
+                <span class="m-lab">📊 Verdict on previous task</span>
+                <span class="m-verdict">{verd.label}</span>
+                {#if entry.rating.reasoning}<div class="m-desc">{entry.rating.reasoning}</div>{/if}
+              </div>
+            {/if}
             {#if entry.title}<div class="m-row"><span class="m-lab">📋 Task</span>{entry.title}</div>{/if}
             {#if entry.description}<div class="m-row"><span class="m-lab">🧭 Plan</span><div class="m-desc">{entry.description}</div></div>{/if}
             {#if entry.success}<div class="m-row"><span class="m-lab">🎯 Success criteria</span><span class="mono">{entry.success}</span></div>{/if}
             {#if entry.steps && entry.steps.length}
-              <div class="m-row"><span class="m-lab">🛠 TaskMaster reasoning</span>
+              <div class="m-row"><span class="m-lab">🛠 TaskMaster steps</span>
                 <div class="m-steps">
                   {#each entry.steps as s}
                     <div class="m-step {s.k}">
                       {#if s.k === 'thinking'}
                         <span class="m-step-h">💭 Thinking</span>
-                        <div class="m-step-b">{@html mdToHtml(s.t)}</div>
-                      {:else if s.k === 'reasoning'}
-                        <span class="m-step-h">🧠 Reasoning</span>
-                        <div class="m-step-b">{@html mdToHtml(s.t)}</div>
-                      {:else if s.k === 'rating'}
-                        <span class="m-step-h">📊 Rating of previous task</span>
                         <div class="m-step-b">{@html mdToHtml(s.t)}</div>
                       {:else if s.k === 'tool'}
                         {#if s.args}<div class="m-step-h">🔧 {s.name}</div><div class="m-step-b mono call">{s.name}({s.args})</div>
@@ -134,6 +147,11 @@
   .m-row { font-size: 13px; line-height: 1.55; }
   .m-lab { display: block; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: #c79a18; margin-bottom: 3px; }
   .m-desc { white-space: pre-wrap; color: var(--muted); }
+  /* Verdict on the previous task — shown ABOVE the new task. */
+  .m-verdict { font-size: 13px; font-weight: 750; }
+  .m-rating.ok .m-verdict { color: var(--green); }
+  .m-rating.no .m-verdict { color: var(--red); }
+  .m-rating.partial .m-verdict { color: #c79a18; }
   /* master's own trace: thinking + tool calls + responses, compact in the card */
   .m-steps { display: flex; flex-direction: column; gap: 7px; margin-top: 2px; }
   .m-step { border-left: 2px solid #f0d9a0; padding: 3px 0 3px 9px; }

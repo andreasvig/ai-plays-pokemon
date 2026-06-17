@@ -98,6 +98,8 @@ button { font-family: inherit; cursor: pointer; }
 .status.running    { color: var(--accent); }
 .status.cancelled  { color: var(--faint); }
 .status.crashed    { color: var(--amber); }
+/* A killed or failed run both surface as "incomplete" (Andreas 2026-06-17). */
+.status.incomplete { color: var(--amber); }
 
 .muted { color: var(--muted); }
 .faint { color: var(--faint); }
