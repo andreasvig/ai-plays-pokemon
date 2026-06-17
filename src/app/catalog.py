@@ -12,40 +12,61 @@ import re
 from pathlib import Path
 from typing import Any
 
-from src.config import CONFIGS_DIR, _load_models_registry
+from src.config import (
+    CONFIGS_DIR,
+    _load_models_registry,
+    model_default_level,
+    model_thinking_levels,
+)
+
+
+def _observed_pair(observed_raw: Any) -> dict[str, Any] | None:
+    """``{avg_turn_cost_usd, avg_turn_latency_s}`` when both are present, else None."""
+    if isinstance(observed_raw, dict):
+        cost = observed_raw.get("avg_turn_cost_usd")
+        latency = observed_raw.get("avg_turn_latency_s")
+        if cost is not None and latency is not None:
+            return {"avg_turn_cost_usd": cost, "avg_turn_latency_s": latency}
+    return None
 
 
 def list_models() -> list[dict[str, Any]]:
-    """Project ``models.yaml`` into ``[{alias, openrouter_id, observed|None}, ...]``.
+    """Project the collapsed ``models.yaml`` into the picker shape (one row/model).
 
-    ``observed`` is ``{avg_turn_cost_usd, avg_turn_latency_s}`` when BOTH numbers
-    are recorded for the alias, else ``None`` — so entries lacking an ``observed``
-    block (or carrying only ``sample_turns: 0``) yield ``observed: null`` rather
-    than crashing the dialog. Only the two numeric fields the dialog uses are
-    surfaced (the registry's ``last_updated`` date is intentionally dropped so the
-    payload stays JSON-clean).
+    Each row carries the model name, its OpenRouter id, ``reasoning_type``, the
+    ordered ``levels`` (each with its own ``observed`` telemetry), and the
+    ``default_level`` (highest). The run identity submitted by the picker is
+    ``model(level)`` — so each level is still benchmarked separately — except for
+    ``reasoning_type: none`` models (e.g. grok-4.3) which have no levels and submit
+    the bare model name. ``observed`` at the top level mirrors the default level so
+    the picker can show a headline cost/latency.
     """
     registry = _load_models_registry()
     out: list[dict[str, Any]] = []
-    for alias in sorted(registry):
-        entry = registry.get(alias)
+    for base in sorted(registry):
+        entry = registry.get(base)
         if not isinstance(entry, dict):
             continue
-        observed_raw = entry.get("observed")
-        observed: dict[str, Any] | None = None
-        if isinstance(observed_raw, dict):
-            cost = observed_raw.get("avg_turn_cost_usd")
-            latency = observed_raw.get("avg_turn_latency_s")
-            if cost is not None and latency is not None:
-                observed = {
-                    "avg_turn_cost_usd": cost,
-                    "avg_turn_latency_s": latency,
-                }
+        observed_map = entry.get("observed") or {}
+        levels = model_thinking_levels(entry)
+        level_rows = [
+            {"level": lvl, "observed": _observed_pair(observed_map.get(lvl))}
+            for lvl in levels
+        ]
+        default_level = model_default_level(entry)
+        # Headline observed = the default level's, or the lone "_" block (type none).
+        if level_rows:
+            headline = level_rows[0]["observed"]
+        else:
+            headline = _observed_pair(observed_map.get("_"))
         out.append(
             {
-                "alias": alias,
+                "model": base,
                 "openrouter_id": entry.get("openrouter_id"),
-                "observed": observed,
+                "reasoning_type": entry.get("reasoning_type", "none"),
+                "default_level": default_level,
+                "levels": level_rows,
+                "observed": headline,
             }
         )
     return out

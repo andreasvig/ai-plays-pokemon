@@ -89,11 +89,23 @@ function stampPerfScore(rows) {
 // ───────────────────────────── reads ─────────────────────────────
 
 export async function fetchModels() {
-  // GET /api/models → [{alias, openrouter_id, observed|null, run_count:int}, ...].
-  // Return the OBJECTS (the dialog's searchable picker needs alias + run_count;
-  // App passes this array straight through as `models`).
+  // GET /api/models → collapsed rows, one per model with a thinking-level axis:
+  // [{model, openrouter_id, reasoning_type, default_level,
+  //   levels:[{level, observed, run_count}], observed, run_count}, ...].
+  // The dialog picks a model, then a thinking level (default = highest); the
+  // submitted identity is `model(level)` (or bare `model` for type none).
   const models = await getJSON('/api/models')
-  return models.map((m) => ({ alias: m.alias, run_count: m.run_count ?? 0 }))
+  return models.map((m) => ({
+    model: m.model,
+    openrouter_id: m.openrouter_id ?? null,
+    reasoning_type: m.reasoning_type ?? 'none',
+    default_level: m.default_level ?? null,
+    levels: Array.isArray(m.levels)
+      ? m.levels.map((l) => ({ level: l.level, observed: l.observed ?? null, run_count: l.run_count ?? 0 }))
+      : [],
+    observed: m.observed ?? null,
+    run_count: m.run_count ?? 0,
+  }))
 }
 
 export async function fetchConfigs() {

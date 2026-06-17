@@ -37,54 +37,171 @@ def _is_raw_model_id(name: str) -> bool:
     return "/" in name
 
 
-def _resolve_llm_alias(config: dict[str, Any], registry: dict[str, Any]) -> None:
-    """Resolve config['llm_model'] against the registry, in place.
+# --- Collapsed-registry helpers (2026-06-17) --------------------------------
+# The registry stores ONE record per model with a `thinking_levels` axis; the
+# run identity is still "model(level)" (e.g. gpt-5.5(high)), so each level
+# benchmarks separately. These helpers parse/resolve that identity and are
+# shared by config resolution, the CLI, the catalog API, and request validation.
 
-    If the value is a raw OpenRouter ID (contains '/'), leave it alone.
-    Otherwise look it up, expand into llm_model + thinking + llm_fallback_models,
-    and stash the original alias + full resolved entry for logging.
+_ALIAS_RE = re.compile(r"^(.*?)\(([^)]+)\)\s*$")
+
+
+def parse_model_alias(alias: str) -> Tuple[str, Optional[str]]:
+    """Split ``"model(level)"`` → ``("model", "level")``; ``"model"`` → ``("model", None)``."""
+    m = _ALIAS_RE.match(alias or "")
+    if m:
+        return m.group(1).strip(), m.group(2).strip()
+    return (alias or "").strip(), None
+
+
+def model_thinking_levels(entry: dict[str, Any]) -> list[str]:
+    """Ordered thinking levels for a collapsed model entry (highest first; [] for type none)."""
+    return list(entry.get("thinking_levels") or [])
+
+
+def model_default_level(entry: dict[str, Any]) -> Optional[str]:
+    """Default (highest) level — first in the list, or None for reasoning_type none."""
+    levels = model_thinking_levels(entry)
+    return levels[0] if levels else None
+
+
+def _reasoning_for_level(entry: dict[str, Any], level: Optional[str]) -> Optional[dict]:
+    """Derive the OpenRouter reasoning block for a (model, level) from reasoning_type."""
+    rtype = entry.get("reasoning_type", "none")
+    if rtype == "none":
+        return None
+    if rtype == "effort":
+        if level is None:
+            return None
+        block: dict[str, Any] = {"effort": level}
+        if entry.get("reasoning_summary"):
+            block["summary"] = entry["reasoning_summary"]
+        return block
+    if rtype == "binary":
+        return {"enabled": level == "thinking"}
+    raise ValueError(f"Unknown reasoning_type {rtype!r} in registry entry")
+
+
+def _slow_for_level(entry: dict[str, Any], level: Optional[str]) -> bool:
+    """Resolve the per-(model,level) slow flag (bool → all levels; dict → per level)."""
+    slow = entry.get("slow")
+    if slow is True:
+        return True
+    if isinstance(slow, dict):
+        return bool(slow.get(level))
+    return False
+
+
+def resolve_model_selection(alias: str, registry: dict[str, Any]) -> dict[str, Any]:
+    """Reconstruct the flat per-(model,level) entry from the collapsed registry.
+
+    ``alias`` is ``"model"`` (→ default/highest level) or ``"model(level)"``.
+    Returns a dict shaped like the old per-level entry — openrouter_id, reasoning
+    (block or None), output_mode/temperature/top_p/max_tokens/provider/fallbacks
+    (when set), a resolved boolean ``slow`` — plus ``_alias`` (canonical
+    ``model(level)``), ``_base`` and ``_level``. Raises ValueError on an unknown
+    model or an invalid level.
+    """
+    base, level = parse_model_alias(alias)
+    entry = registry.get(base)
+    if entry is None or not isinstance(entry, dict):
+        known = ", ".join(sorted(registry)) or "(registry empty)"
+        raise ValueError(
+            f"Unknown model {base!r}. Known models: {known}. "
+            f"Either add it to {MODELS_REGISTRY_PATH.name} or use a raw 'provider/model' id."
+        )
+    openrouter_id = entry.get("openrouter_id")
+    if not openrouter_id:
+        raise ValueError(f"Registry entry {base!r} is missing required field 'openrouter_id'")
+
+    levels = model_thinking_levels(entry)
+    if levels:
+        if level is None:
+            level = levels[0]  # default = highest
+        elif level not in levels:
+            raise ValueError(
+                f"Unknown thinking level {level!r} for {base!r}. "
+                f"Valid levels: {', '.join(levels)}."
+            )
+    elif level is not None:
+        raise ValueError(
+            f"Model {base!r} has no thinking levels (always-on); got level {level!r}."
+        )
+
+    canonical = f"{base}({level})" if level is not None else base
+    resolved: dict[str, Any] = {
+        "openrouter_id": openrouter_id,
+        "reasoning": _reasoning_for_level(entry, level),
+        "slow": _slow_for_level(entry, level),
+        "_alias": canonical,
+        "_base": base,
+        "_level": level,
+    }
+    for key in ("output_mode", "temperature", "top_p", "max_tokens", "provider", "fallbacks"):
+        if key in entry:
+            resolved[key] = entry[key]
+    return resolved
+
+
+def _alias_to_openrouter_id(alias: str, registry: dict[str, Any]) -> str:
+    """Slug for a fallback alias: raw ids pass through, else resolve via registry."""
+    if _is_raw_model_id(alias):
+        return alias
+    return resolve_model_selection(alias, registry)["openrouter_id"]
+
+
+def list_competitor_aliases(registry: dict[str, Any]) -> list[str]:
+    """Every benchmarkable ``model(level)`` identity (bare ``model`` for type none)."""
+    out: list[str] = []
+    for base in sorted(registry):
+        entry = registry[base]
+        if not isinstance(entry, dict):
+            continue
+        levels = model_thinking_levels(entry)
+        if levels:
+            out.extend(f"{base}({lvl})" for lvl in levels)
+        else:
+            out.append(base)
+    return out
+
+
+def is_valid_model_selection(alias: str, registry: dict[str, Any]) -> bool:
+    """True if ``alias`` resolves to a known model + valid level (or is a raw id)."""
+    if _is_raw_model_id(alias):
+        return True
+    try:
+        resolve_model_selection(alias, registry)
+        return True
+    except ValueError:
+        return False
+
+
+def _resolve_llm_alias(config: dict[str, Any], registry: dict[str, Any]) -> None:
+    """Resolve config['llm_model'] against the collapsed registry, in place.
+
+    If the value is a raw OpenRouter ID (contains '/'), leave it alone. Otherwise
+    parse it as ``model`` / ``model(level)``, reconstruct the per-level settings,
+    and expand into llm_model + thinking + llm_fallback_models, stashing the
+    canonical alias + resolved entry for logging.
     """
     name = config.get("llm_model", "")
     if not name or _is_raw_model_id(name):
         return
 
-    entry = registry.get(name)
-    if entry is None:
-        known = ", ".join(sorted(registry)) or "(registry empty)"
-        raise ValueError(
-            f"Unknown llm_model alias: {name!r}. Known aliases: {known}. "
-            f"Either add it to {MODELS_REGISTRY_PATH.name} or use a raw 'provider/model' id."
-        )
-
-    openrouter_id = entry.get("openrouter_id")
-    if not openrouter_id:
-        raise ValueError(
-            f"Registry entry {name!r} is missing required field 'openrouter_id'"
-        )
-
-    config["_llm_alias"] = name
-    config["_llm_resolved"] = entry
-    config["llm_model"] = openrouter_id
-
-    # Registry is the source of truth for thinking when using an alias.
-    if "reasoning" in entry:
-        config["thinking"] = entry["reasoning"]
+    resolved = resolve_model_selection(name, registry)  # raises ValueError if unknown
+    config["_llm_alias"] = resolved["_alias"]
+    config["_llm_resolved"] = resolved
+    config["llm_model"] = resolved["openrouter_id"]
+    # Registry is the source of truth for thinking when using an alias (None for
+    # reasoning_type none → no reasoning param sent).
+    config["thinking"] = resolved.get("reasoning")
 
     # Fallbacks: only apply registry default if the main config didn't set its own.
     if not config.get("llm_fallback_models"):
-        fallbacks = entry.get("fallbacks", []) or []
-        resolved_fallbacks = []
-        for fb in fallbacks:
-            if _is_raw_model_id(fb):
-                resolved_fallbacks.append(fb)
-            else:
-                fb_entry = registry.get(fb)
-                if fb_entry is None or not fb_entry.get("openrouter_id"):
-                    raise ValueError(
-                        f"Fallback alias {fb!r} (from {name!r}) not found in registry"
-                    )
-                resolved_fallbacks.append(fb_entry["openrouter_id"])
-        config["llm_fallback_models"] = resolved_fallbacks
+        fallbacks = resolved.get("fallbacks", []) or []
+        config["llm_fallback_models"] = [
+            _alias_to_openrouter_id(fb, registry) for fb in fallbacks
+        ]
 
 
 def find_latest_config() -> Path:

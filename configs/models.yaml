@@ -1,1441 +1,528 @@
 # ============================================================================
-# Model Registry
+# Model Registry (collapsed schema — Andreas 2026-06-17)
 # ============================================================================
-# Central registry for LLM aliases. Each entry defines the OpenRouter model ID
-# plus any per-model settings (reasoning, sampling, fallbacks) and observed
-# empirical performance data from actual runs.
+# ONE record per model. The thinking level is a SECOND axis: pick a model, then
+# a level. Run identity stays "model(level)" (e.g. gpt-5.5(high)) so each level
+# still benchmarks SEPARATELY on the leaderboard. config.py reconstructs the
+# per-(model,level) settings at resolve time.
 #
-# Usage in config-X.Y.yaml:
-#     llm_model: "gemini-3-flash(high)"   # alias — resolved from this file
-# or
-#     llm_model: "google/gemini-3-flash-preview"   # raw OpenRouter ID — bypasses registry
-#
-# Scope: LLM only. vlm_model and ocr.cleanup_model still read raw IDs directly.
-#
-# Entry schema (all fields optional except openrouter_id):
-#     openrouter_id:  exact slug (verify on openrouter.ai)
-#     reasoning:      OpenRouter reasoning param. Shape varies by model family:
-#                       - Effort-tiered (OpenAI, Gemini 3, Grok): {effort: "high"|"medium"|"low"|"minimal"}
-#                       - Binary-thinking (MiMo V2.5, Gemma 4): {enabled: true|false}
-#                       Omit entirely to leave reasoning unset (model's default wins).
-#     temperature:    float, OpenAI-compatible sampling temperature
-#     top_p:          float, nucleus sampling cutoff
-#     max_tokens:     int, completion token budget
-#     fallbacks:      list of alias names to try if primary fails
-#     provider:       OpenRouter provider-routing block, passed through verbatim
-#                     into the request's extra_body.provider. Use this to override
-#                     OpenRouter's default price-balanced routing. Common shapes:
-#                       {sort: "throughput"}    # fastest provider first
-#                       {sort: "price"}         # cheapest first (default-ish)
-#                       {sort: "latency"}       # lowest TTFT first
-#                       {order: ["xai", ...]}   # explicit allowlist+order
-#                       {ignore: ["fireworks"]} # blocklist slow providers
-#                     Only meaningful for multi-provider models (open-weights
-#                     like qwen/*, gemma/*, deepseek/*). No-op for single-
-#                     provider models (xAI, Xiaomi, Google Gemini).
-#     output_mode:    Pydantic AI structured-output strategy. Optional, defaults
-#                     to "tool" (tool_choice="required" — strongest schema
-#                     enforcement, broadest support). Override to "native_json"
-#                     for models whose OpenRouter providers don't expose
-#                     tool_choice but do support response_format json_schema
-#                     (e.g. qwen/qwen3.6-plus). "prompted" is text+parse
-#                     last-resort for models without either.
-#     observed:       empirical performance from actual runs
-#                       avg_turn_cost_usd: float (total run cost / turns)
-#                       avg_turn_latency_s: float (wall-clock seconds per turn)
-#                       sample_turns:      int (0 = untested)
-#                       last_updated:      YYYY-MM-DD
+# Schema (all optional except openrouter_id + reasoning_type):
+#   openrouter_id:    exact slug (floating alias ok; verify on openrouter.ai)
+#   reasoning_type:   effort | binary | none
+#                       effort  -> reasoning {effort: <level>}  (+ summary if set)
+#                       binary  -> reasoning {enabled: level=='thinking'}
+#                       none    -> no reasoning sent (always-on / not configurable)
+#   thinking_levels:  ordered list, HIGHEST FIRST. [0] is the picker default.
+#                       effort: xhigh/high/medium/low/minimal (or a subset)
+#                       binary: [thinking, non-thinking].  none: omit.
+#   reasoning_summary: 'auto' to reliably surface OpenAI reasoning summaries.
+#   output_mode:      tool (default) | native_json | prompted.
+#   temperature/top_p/max_tokens/provider/fallbacks: model-wide passthrough.
+#   slow:             true (all levels) | {level: true} — doubles per-attempt
+#                     LLM timeouts (known-slow end-to-end latency).
+#   observed:         {level: {avg_turn_cost_usd, avg_turn_latency_s,
+#                     sample_turns, last_updated, notes}} — per-level telemetry.
 # ============================================================================
 
-# --- Google Gemini 3 family (native effort tiers: high/medium/low/minimal) ---
-# OpenRouter maps reasoning.effort directly to Google's thinkingLevel.
-# No sampling overrides — let Gemini use its own tuned defaults.
-"gemini-3-flash(high)":
-  # $0.50/$3.00 per M, 1M context.
-  # Numbers below are post-config-3.0 (reasoning + last_turn_succeeded schema,
-  # 2026-04-25). The leaner schema cut per-turn cost ~40% vs the old
-  # i_saw/i_did/i_expect baseline (which was $0.0090/27s @ 20T on 2026-04-24).
-  # Sample = 20T across two runs: 10T no-trim ($0.0049/9.1s) + 10T trim=5
-  # ($0.0056/10.7s). Plaintext reasoning visible at this effort tier (vs
-  # encrypted blob at low effort under tool_choice — see openrouter.md).
-  openrouter_id: "google/gemini-3-flash-preview"
-  reasoning:
-    effort: "high"
+# Google Gemini 3 Flash — effort-tiered (high/medium/low/minimal). $0.50/$3.00 per M, 1M ctx. Multimodal. Default tool output. Let Gemini use its own sampling defaults.
+gemini-3-flash:
+  openrouter_id: google/gemini-3-flash-preview
+  reasoning_type: effort
+  thinking_levels:
+  - high
+  - medium
+  - low
+  - minimal
   observed:
-    avg_turn_cost_usd: 0.0053
-    avg_turn_latency_s: 9.9
-    sample_turns: 20
-    last_updated: 2026-04-25
+    high:
+      avg_turn_cost_usd: 0.0053
+      avg_turn_latency_s: 9.9
+      sample_turns: 20
+      last_updated: 2026-04-25
+    medium:
+      sample_turns: 0
+    low:
+      avg_turn_cost_usd: 0.0031
+      avg_turn_latency_s: 3.7
+      sample_turns: 10
+      last_updated: 2026-04-25
+    minimal:
+      avg_turn_cost_usd: 0.0038
+      avg_turn_latency_s: 13.8
+      sample_turns: 20
+      last_updated: 2026-04-24
 
-"gemini-3-flash(medium)":
-  openrouter_id: "google/gemini-3-flash-preview"
-  reasoning:
-    effort: "medium"
+# Google Gemini 3.1 Flash Lite — cheap-at-scale reasoning (AA ~34). $0.25/$1.50 per M, 1M ctx. Spatial reasoning weak for this task.
+gemini-3.1-flash-lite:
+  openrouter_id: google/gemini-3.1-flash-lite-preview
+  reasoning_type: effort
+  thinking_levels:
+  - high
+  - medium
+  - low
+  - minimal
   observed:
-    sample_turns: 0
+    high:
+      avg_turn_cost_usd: 0.0035
+      avg_turn_latency_s: 11.7
+      sample_turns: 20
+      last_updated: 2026-04-24
+    medium:
+      sample_turns: 0
+    low:
+      sample_turns: 0
+    minimal:
+      sample_turns: 0
 
-"gemini-3-flash(low)":
-  # Observed (2026-04-25, 10T verification run after the prompted-output
-  # architecture work). Cheapest + fastest of any Flash variant: $0.0031/turn,
-  # 3.7s/turn LLM latency, zero retries. 10T sample is small — latency may
-  # vary in scenes with battles/dialogue. Used to verify tool-mode path
-  # still works after registry-driven output_mode + robust JSON extractor
-  # changes; passed cleanly with no regressions.
-  openrouter_id: "google/gemini-3-flash-preview"
-  reasoning:
-    effort: "low"
+# Google Gemini 3.1 Pro — frontier (AA ~57). $2.00/$12.00 per M, 1M ctx. Strong actual game progress (Pro low/medium cleared the early arc).
+gemini-3.1-pro:
+  openrouter_id: google/gemini-3.1-pro-preview
+  reasoning_type: effort
+  thinking_levels:
+  - high
+  - medium
+  - low
+  - minimal
   observed:
-    avg_turn_cost_usd: 0.0031
-    avg_turn_latency_s: 3.7
-    sample_turns: 10
-    last_updated: 2026-04-25
+    high:
+      sample_turns: 0
+    medium:
+      avg_turn_cost_usd: 0.0191
+      avg_turn_latency_s: 11.0
+      sample_turns: 20
+      last_updated: 2026-05-01
+      notes: Reached Oak's Lab + got Charmander starter at T20. Best in-game progress of any 2026-05-01 run. Lower self-grade rate (45%) than GPT-5.5(medium)'s 70% but actually played the game while GPT-5.5 stayed in the house.
+    low:
+      avg_turn_cost_usd: 0.0158
+      avg_turn_latency_s: 11.4
+      sample_turns: 50
+      last_updated: 2026-04-25
+    minimal:
+      avg_turn_cost_usd: 0.0145
+      avg_turn_latency_s: 18.1
+      sample_turns: 10
+      last_updated: 2026-04-24
 
-"gemini-3-flash(minimal)":
-  # Observed behaviour (2026-04-24, 20T): reached Oak's Lab + identified starter
-  # layout by turn 14, then oscillated near the door turns 15-20. Decent agent
-  # capability, cheaper+faster than (high) but less deliberate on edge cases.
-  openrouter_id: "google/gemini-3-flash-preview"
-  reasoning:
-    effort: "minimal"
+# Google Gemini 3.5 Flash — $1.50/$9.00 per M, 1M ctx, slug has no -preview. Best capability-per-dollar in registry on this task; recommended default. medium is Google's documented default level.
+gemini-3.5-flash:
+  openrouter_id: google/gemini-3.5-flash
+  reasoning_type: effort
+  thinking_levels:
+  - high
+  - medium
+  - low
+  - minimal
   observed:
-    avg_turn_cost_usd: 0.0038
-    avg_turn_latency_s: 13.8
-    sample_turns: 20
-    last_updated: 2026-04-24
+    high:
+      sample_turns: 0
+    medium:
+      avg_turn_cost_usd: 0.0129
+      avg_turn_latency_s: 6.7
+      sample_turns: 50
+      last_updated: 2026-05-20
+      notes: 'Reached Route 1 + Bulbasaur lvl 6 mid-Rattata-battle at T50 — best in-registry progress on this task, beating Pro(low) 50T''s ''back in Pallet Town at T46''. 68% grade rate, 0 retries. $0.65 / 13.8min for full 50T. Config-3.4 K=1 probe (same model, +1 historic image/turn): +15.2% cost, +27.2% input tokens, −2% grades (noise), 0 explicit historic-image references in reasoning across 50 turns — paid bill didn''t earn it back.'
+    low:
+      sample_turns: 0
+    minimal:
+      avg_turn_cost_usd: 0.0125
+      avg_turn_latency_s: 11.1
+      sample_turns: 20
+      last_updated: 2026-05-22
+      notes: 20T clean run, 0 retries. Cost near-identical to medium (3% cheaper) because input tokens dominate the bill — no cost-saving rationale to pick minimal over medium for multimodal-agent workloads. Latency 11.1s median / 23.0s max — slightly slower than medium's 6.7s but small sample. 42% grade rate.
 
-"gemini-3.1-flash-lite(high)":
-  # Cheap-at-scale reasoning model: AA Intelligence 34, 320 tok/s, 1M context,
-  # $0.25/$1.50 per M. Still a thinking model despite the "Lite" name.
-  # Observed behaviour (2026-04-24, 20T): stuck in bedroom by turn 14,
-  # explicitly self-reported "Stuck in 2F bedroom, unable to trigger stair
-  # transition." Spatial reasoning too weak for this task at AA Intelligence 34.
-  openrouter_id: "google/gemini-3.1-flash-lite-preview"
-  reasoning:
-    effort: "high"
+# Xiaomi MiMo V2.5 — binary thinking, ~1T params, 1M ctx, $0.40/$2.00 per M. MULTIMODAL (text/audio/image/video, confirmed OpenRouter API 2026-06-17). thinking is slow (~58s/turn) — slow flag doubles its timeouts; it is NOT broken (the 2026-06-16 turn-0 death was the old 60s timeout). Sampling 0.3/0.95 (Xiaomi function-call profile).
+mimo-v2.5:
+  openrouter_id: xiaomi/mimo-v2.5
+  reasoning_type: binary
+  thinking_levels:
+  - thinking
+  - non-thinking
+  temperature: 0.3
+  top_p: 0.95
+  slow:
+    thinking: true
   observed:
-    avg_turn_cost_usd: 0.0035
-    avg_turn_latency_s: 11.7
-    sample_turns: 20
-    last_updated: 2026-04-24
+    thinking:
+      avg_turn_cost_usd: 0.0035
+      avg_turn_latency_s: 58.6
+      sample_turns: 3
+      last_updated: 2026-04-24
+    non-thinking:
+      avg_turn_cost_usd: 0.0011
+      avg_turn_latency_s: 11.9
+      sample_turns: 8
+      last_updated: 2026-04-24
 
-"gemini-3.1-flash-lite(medium)":
-  openrouter_id: "google/gemini-3.1-flash-lite-preview"
-  reasoning:
-    effort: "medium"
-  observed:
-    sample_turns: 0
-
-"gemini-3.1-flash-lite(low)":
-  openrouter_id: "google/gemini-3.1-flash-lite-preview"
-  reasoning:
-    effort: "low"
-  observed:
-    sample_turns: 0
-
-"gemini-3.1-flash-lite(minimal)":
-  openrouter_id: "google/gemini-3.1-flash-lite-preview"
-  reasoning:
-    effort: "minimal"
-  observed:
-    sample_turns: 0
-
-"gemini-3.1-pro(high)":
-  # Frontier tier (AA Intelligence ~57, same cluster as Opus 4.7 / GPT-5.4).
-  # $2.00/$12.00 per M, 1M context.
-  openrouter_id: "google/gemini-3.1-pro-preview"
-  reasoning:
-    effort: "high"
-  observed:
-    sample_turns: 0
-
-"gemini-3.1-pro(medium)":
-  # Observed (2026-05-01, 20T run on config-3.0): **best in registry on
-  # actual game progress.** Final state.json: in Oak's Lab, Pallet Town,
-  # with Charmander as starter, with `pallet_town` mapped. The agent
-  # actually left the house, walked to Oak, and got the starter — none
-  # of the other 2026-05-01 runs cleared step 1 of the task.
-  #
-  # Self-grade rate (9/20 = 45%) is misleadingly low compared to
-  # GPT-5.5(medium)'s 70% — the difference is that Pro made ambitious
-  # predictions ("I'll be in Oak's Lab") and sometimes missed, vs
-  # GPT-5.5 making conservative predictions and trivially matching.
-  # Game state is the real benchmark (see project memory:
-  # feedback_pokemon-success-metric).
-  #
-  # Cost ($0.0191/turn) is 21% higher than (low)'s $0.0158, latency
-  # 11.0s (matches low's 11.4s), output 755 tokens/turn (vs 553 on
-  # GPT-5.5 medium — Pro reasons more verbosely). Total run: $0.38 / 20T.
-  #
-  # Recommended next: 50T run to see how far Pro(medium) progresses
-  # past Oak's lab. (low)'s 50T sample reached "back in Pallet Town
-  # overworld by T46 with Squirtle leveled to 6" — medium should do
-  # at least as well.
-  openrouter_id: "google/gemini-3.1-pro-preview"
-  reasoning:
-    effort: "medium"
-  observed:
-    avg_turn_cost_usd: 0.0191
-    avg_turn_latency_s: 11.0
-    sample_turns: 20
-    last_updated: 2026-05-01
-    notes: "Reached Oak's Lab + got Charmander starter at T20. Best in-game progress of any 2026-05-01 run. Lower self-grade rate (45%) than GPT-5.5(medium)'s 70% but actually played the game while GPT-5.5 stayed in the house."
-
-"gemini-3.1-pro(low)":
-  # Observed (2026-04-25, 50T full run on config-3.0 schema): made it through
-  # bedroom → 1F → Pallet Town → Oak's Lab → got Squirtle starter → won the
-  # rival battle (Squirtle leveled to 6) → back in Pallet Town overworld by
-  # T46. 25/50 self-graded successes. Slow start (7 consecutive fails T2-T10
-  # in the bedroom — same encrypted-reasoning-at-low-effort failure mode seen
-  # with Flash Lite high and Qwen3.6-Plus). Per-turn cost ~3× Flash high but
-  # made it deeper into the game than any prior 10T run.
-  openrouter_id: "google/gemini-3.1-pro-preview"
-  reasoning:
-    effort: "low"
-  observed:
-    avg_turn_cost_usd: 0.0158
-    avg_turn_latency_s: 11.4
-    sample_turns: 50
-    last_updated: 2026-04-25
-
-"gemini-3.1-pro(minimal)":
-  openrouter_id: "google/gemini-3.1-pro-preview"
-  reasoning:
-    effort: "minimal"
-  observed:
-    avg_turn_cost_usd: 0.0145
-    avg_turn_latency_s: 18.1
-    sample_turns: 10
-    last_updated: 2026-04-24
-
-# --- Google Gemini 3.5 Flash (added 2026-05-20) ---
-# Same effort-tier shape as the rest of the Gemini 3 family
-# (high/medium/low/minimal); medium is Google's documented default.
-# Pricing: $1.50/$9.00 per M — 3× the cost of gemini-3-flash ($0.50/$3.00)
-# and ~75% of gemini-3.1-pro ($2.00/$12.00). Sits between Flash and Pro on
-# cost; first runs will tell us where it sits on capability.
-# OpenRouter slug has no `-preview` suffix (unlike 3-flash / 3.1-pro).
-"gemini-3.5-flash(high)":
-  openrouter_id: "google/gemini-3.5-flash"
-  reasoning:
-    effort: "high"
-  observed:
-    sample_turns: 0
-
-"gemini-3.5-flash(medium)":
-  # Google's documented default thinking level for this model.
-  #
-  # Observed (2026-05-20, 50T run on config-3.2): **new best in registry on
-  # actual game progress.** Final state.json: on Route 1 with Bulbasaur
-  # lvl 6 (22/22 HP, moves: tackle/growl), mid-battle with a wild Rattata
-  # at T50. Cleared the full early-game arc — bedroom → 1F → Pallet Town
-  # → Oak's lab → starter (Bulbasaur) → leveled to 6 → exited north → Route 1.
-  # One step further than Pro(low)'s 50T run (which ended back in Pallet Town
-  # overworld at T46 with Squirtle lvl 6) and far past Pro(medium)'s 20T
-  # (only Oak's Lab + Charmander by T20).
-  #
-  # Cost $0.0129/turn — 32% cheaper than Pro(low)'s $0.0158, 18% cheaper
-  # than gemini-3-flash(low)'s comparable budget (when factoring frontier
-  # capability). Total run cost $0.65 / 50T / 13.8 min wall-clock.
-  # Latency 6.7s/turn — faster than both Pro tiers (~11s) and Grok 4.3
-  # (71s). 0 LLM retries across all 50 turns. 68% grade rate (34/15/1
-  # true/false/null) — high without the conservative-prediction self-grade-
-  # gaming that GPT-5.5(medium) showed. Output 586 tokens/turn (29307 total)
-  # — terse for a frontier reasoning model.
-  #
-  # Verdict: best capability-per-dollar entry in the registry for this
-  # task. Recommended default for new benchmark configs.
-  #
-  # Observed (2026-05-20, 50T run on config-3.4 — same model, K=1 historic
-  # image probe): mechanically works, qualitatively a wash. Same end-state
-  # as config-3.2 K=0 baseline (Route 1, Bulbasaur lvl 6, 22/22 HP). 33/16/1
-  # grades (66%) vs K=0's 34/15/1 (68%) — −1 grade = noise. Per-turn cost
-  # $0.0150 vs K=0's $0.0129 (+15.2%); per-turn input tokens 6503 vs K=0's
-  # 5114 (+27.2%, +1389/turn — matches the +1435 prediction from the 10T
-  # probe within noise). Output tokens went DOWN −2.1% — model reasoned
-  # slightly more concisely with the extra image.
-  #
-  # The notable finding: in 50 turns of reasoning + thinking text, the
-  # model wrote ZERO explicit references to the historic image ("Screenshot
-  # 1", "first screenshot", "previous screen", "before actions", "compared
-  # to", "two images" — all 0 hits). 17 "last turn" mentions all looked at
-  # text history, not the image. The 10T probe got exactly 1 explicit
-  # reference ("Screenshot 1, taken before the second turn") that didn't
-  # reproduce at 50T scale. Either the model uses the historic image
-  # purely implicitly via visual attention without verbalizing the
-  # comparison, or it largely ignores it.
-  #
-  # Verdict on K=1 for this model + task: paid the bill, didn't earn it
-  # back. Stick with K=0 as default for gemini-3.5-flash. K>0 may still
-  # be worth trying with models that have different multimodal architectures
-  # (Claude / GPT-5) where the joint-vision-transformer assumption doesn't
-  # hold and explicit image labeling may carry more weight.
-  openrouter_id: "google/gemini-3.5-flash"
-  reasoning:
-    effort: "medium"
-  observed:
-    avg_turn_cost_usd: 0.0129
-    avg_turn_latency_s: 6.7
-    sample_turns: 50
-    last_updated: 2026-05-20
-    notes: "Reached Route 1 + Bulbasaur lvl 6 mid-Rattata-battle at T50 — best in-registry progress on this task, beating Pro(low) 50T's 'back in Pallet Town at T46'. 68% grade rate, 0 retries. $0.65 / 13.8min for full 50T. Config-3.4 K=1 probe (same model, +1 historic image/turn): +15.2% cost, +27.2% input tokens, −2% grades (noise), 0 explicit historic-image references in reasoning across 50 turns — paid bill didn't earn it back."
-
-"gemini-3.5-flash(low)":
-  openrouter_id: "google/gemini-3.5-flash"
-  reasoning:
-    effort: "low"
-  observed:
-    sample_turns: 0
-
-"gemini-3.5-flash(minimal)":
-  # Observed (2026-05-22, 20T run on config-3.9): cost $0.0125/turn — only
-  # ~3% cheaper than medium's $0.0129/turn. The cost is dominated by input
-  # tokens (~6700/turn: system prompt + screenshot + history); reasoning
-  # output is a small slice of the bill, so dropping effort from medium to
-  # minimal barely moves total spend. There's no cost-saving reason to pick
-  # minimal over medium on Gemini 3.5 Flash for this multimodal-agent shape.
-  # Latency 11.1s median (slightly slower than medium's 6.7s — small-sample
-  # provider-routing noise). 0 LLM retries / 0 errors. 42% LLM self-grade
-  # true-rate. Game progress not recorded in this entry (config-3.9, 20T
-  # didn't reach Brock; full path is a stress-test, not a horizon comparison).
-  openrouter_id: "google/gemini-3.5-flash"
-  reasoning:
-    effort: "minimal"
-  observed:
-    avg_turn_cost_usd: 0.0125
-    avg_turn_latency_s: 11.1
-    sample_turns: 20
-    last_updated: 2026-05-22
-    notes: "20T clean run, 0 retries. Cost near-identical to medium (3% cheaper) because input tokens dominate the bill — no cost-saving rationale to pick minimal over medium for multimodal-agent workloads. Latency 11.1s median / 23.0s max — slightly slower than medium's 6.7s but small sample. 42% grade rate."
-
-# --- Xiaomi MiMo V2.5 family ---
-# Closed dense reasoning models, 1M context. Binary thinking toggle only —
-# no effort tiers exist in Xiaomi's native API (confirmed from
-# platform.xiaomimimo.com docs, 2026-04-24). thinking defaults to enabled
-# server-side; setting it explicitly makes the behaviour obvious in logs.
-#
-# Sampling: temperature 0.3 + top_p 0.95 is Xiaomi's own "Function Call"
-# recommendation for mimo-v2-flash. Our agent produces structured
-# Pydantic-validated GameAction output, which is the same shape, so we
-# apply the low-temp Function Call profile rather than the v2.5 blanket
-# general-purpose recommendation (1.0 / 0.95).
-"mimo-v2.5(thinking)":
-  # ~1T total params, AA Intelligence ~54, $0.40/$2.00 per M. MULTIMODAL —
-  # confirmed image input via OpenRouter API 2026-06-17 (input_modalities
-  # text/audio/image/video), unlike the -pro variant which is text-only.
-  openrouter_id: "xiaomi/mimo-v2.5"
-  # slow: end-to-end ~58.6s/turn (observed below). NOT broken — the 2026-06-16
-  # run that died at turn 0 was the old 60s first-attempt timeout giving up on a
-  # genuinely slow model. The retry rework + this flag (2× timeouts) restore it.
-  slow: true
-  reasoning:
-    enabled: true
+# Xiaomi MiMo V2.5 Pro — TEXT-ONLY on OpenRouter (input_modalities ["text"], re-confirmed 2026-06-17). Cannot drive the vision Player; kept for documented cost/intel only. Not a config bug.
+mimo-v2.5-pro:
+  openrouter_id: xiaomi/mimo-v2.5-pro
+  reasoning_type: binary
+  thinking_levels:
+  - thinking
+  - non-thinking
   temperature: 0.3
   top_p: 0.95
   observed:
-    avg_turn_cost_usd: 0.0035
-    avg_turn_latency_s: 58.6
-    sample_turns: 3
-    last_updated: 2026-04-24
+    thinking:
+      sample_turns: 0
+      incompatible: 'text-only — no image input (OpenRouter 404 on vision_mode: direct_multimodal)'
+    non-thinking:
+      sample_turns: 0
+      incompatible: 'text-only — no image input (OpenRouter 404 on vision_mode: direct_multimodal)'
 
-# mimo-v2.5(non-thinking) sample is from a 10-turn run aborted at turn 8.
-# Quality was observably poor on spatial tasks: every turn emitted a single
-# direction at max input length with no directional combination or correction.
-# The numbers below are honest but the agent was not functional.
-"mimo-v2.5(non-thinking)":
-  openrouter_id: "xiaomi/mimo-v2.5"
-  reasoning:
-    enabled: false
+# Google Gemma 4 31B IT — binary thinking, open-weights, 262K ctx, $0.13/$0.38 per M (cheapest). output_mode prompted + provider throughput-sort: providers have mixed tool/structured-output support, so prompted + fastest-provider routing is the robust combo. thinking is slow (74.9s/turn, slow-provider tail to 220s).
+gemma-4-31b:
+  openrouter_id: google/gemma-4-31b-it
+  reasoning_type: binary
+  thinking_levels:
+  - thinking
+  - non-thinking
+  output_mode: prompted
   temperature: 0.3
   top_p: 0.95
-  observed:
-    avg_turn_cost_usd: 0.0011
-    avg_turn_latency_s: 11.9
-    sample_turns: 8
-    last_updated: 2026-04-24
-
-# mimo-v2.5-pro is TEXT-ONLY on OpenRouter — no endpoints support image
-# input (confirmed 2026-04-24 via 404 "No endpoints found that support
-# image input"; RE-CONFIRMED 2026-06-17 via the OpenRouter models API —
-# input_modalities is ["text"] only, vs mimo-v2.5's text/audio/image/video).
-# It genuinely cannot drive the vision Player; not a config bug. The Player
-# sends screenshots as ImageUrl (direct
-# multimodal), so this model cannot drive the agent — and the old
-# separate-VLM (caption-to-text) fallback has been removed. Leaving both
-# entries in the registry so the cost/intel numbers stay documented, but
-# they won't work as the Player model in this project.
-"mimo-v2.5-pro(thinking)":
-  # Flagship tier, $1.00/$3.00 per M (~2.5× mimo-v2.5 base). TEXT-ONLY.
-  openrouter_id: "xiaomi/mimo-v2.5-pro"
-  reasoning:
-    enabled: true
-  temperature: 0.3
-  top_p: 0.95
-  observed:
-    sample_turns: 0
-    incompatible: "text-only — no image input (OpenRouter 404 on vision_mode: direct_multimodal)"
-
-"mimo-v2.5-pro(non-thinking)":
-  # TEXT-ONLY, same caveat as thinking variant.
-  openrouter_id: "xiaomi/mimo-v2.5-pro"
-  reasoning:
-    enabled: false
-  temperature: 0.3
-  top_p: 0.95
-  observed:
-    sample_turns: 0
-    incompatible: "text-only — no image input (OpenRouter 404 on vision_mode: direct_multimodal)"
-
-# --- Google Gemma 4 31B IT ---
-# Open-weights dense reasoning model, AA Intelligence 39, 262k context,
-# $0.13/$0.38 per M (cheapest reasoning entry). Binary thinking toggle
-# only — no effort tiers in Gemma 4's native chat template (confirmed
-# from ai.google.dev/gemma/docs/capabilities/thinking, 2026-04-24).
-# Full agent kit on OpenRouter: tools, tool_choice, structured_outputs,
-# response_format all supported.
-#
-# Caveat: Google docs warn that reasoning_content must be preserved
-# across multi-turn tool calls — Pydantic AI does this by default via
-# message history, but worth knowing if validation retries misbehave.
-# Throughput sort + prompted output: 10 providers list this model on
-# OpenRouter (DeepInfra ×2, Chutes, Ambient, SiliconFlow, Novita, Parasail,
-# Venice, Together ×2) with mixed capability sets — some are missing
-# tools/tool_choice/structured_outputs, one Together endpoint is 32K
-# context. `provider.sort: "throughput"` makes the router pick the fastest
-# at request time, which can land on any of them. `output_mode: "prompted"`
-# bypasses the tool_choice/structured_outputs surface entirely (schema in
-# system prompt + client-side JSON parse), guaranteeing the request works
-# regardless of which provider throughput-sort selects.
-#
-# Direct API probe (2026-05-22) verified that effort tiers
-# (high/medium/low/minimal) do NOT discriminate budget on Gemma 4:
-# reasoning_tokens varied non-monotonically across tiers (low: 420,
-# medium: 275, high: 213) — pure provider-routing noise, not a real
-# effort knob. Only `enabled: true|false` actually changes behavior.
-# Stick with the binary toggle.
-"gemma-4-31b(thinking)":
-  openrouter_id: "google/gemma-4-31b-it"
-  slow: true  # 74.9s avg/turn (observed below), slow-provider tail to 220s → 2× timeouts
-  reasoning:
-    enabled: true
-  temperature: 0.3
-  top_p: 0.95
-  # provider.sort: "throughput" — verified 2026-05-22 via scripts/probe_throughput.py
-  # (24 direct OpenRouter calls, all succeeded). Throughput-sort lands on
-  # {Ambient, Novita, Together, Chutes} for multimodal requests. OpenRouter
-  # auto-narrows to image-capable providers before applying the sort. The
-  # prior 2026-05-22 attempt that crashed with `finish_reason: null` is no
-  # longer reproducible — either the offending provider was demoted from
-  # the pool or the upstream bug was fixed.
-  #
-  # Latency picture is wider than the probe suggests though. Probe (small
-  # 288-token request) average per provider:
-  #   - Novita:    ~4.8s    (fastest)
-  #   - Ambient:   ~5.1s
-  #   - Together:  ~16.8s
-  #   - Chutes:    ~22.4s
-  # In the real agent loop (3800-tok input, 400-1300 tok output) the slow
-  # providers blow up: 3T agent verification 2026-05-22 ran
-  # 26.7s/114.8s/150.1s (avg 97.2s) — best case is 3× better than default
-  # routing's 89.9s but the slow tail makes avg comparable. Tightening to
-  # provider.order=[Novita, Ambient] would pin to the fast pair; accepted
-  # the variance for now since the goal was "fix the crash", not "minimize
-  # latency". Revisit if a long benchmark needs predictable throughput.
   provider:
-    sort: "throughput"
-  output_mode: "prompted"
+    sort: throughput
+  slow:
+    thinking: true
   observed:
-    avg_turn_cost_usd: 0.0013
-    avg_turn_latency_s: 74.9
-    sample_turns: 46
-    last_updated: 2026-05-22
-    notes: "50T attempt 2026-05-22 PRE-retry-fix: 46/50 turns then crashed at T47 with NoneType subscript (wrapped-5xx). Cost $0.0584 / 46 turns / $0.0013/turn — cheapest model in the registry by 10×. Turn-to-turn wall: median 55.6s, mean 74.9s, range 8.9-220.9s. 49% LLM self-grade true-rate (22/23/1). Game progress: got Bulbasaur lvl 5, exited bedroom + lab, dialogue-looped by Oak's wild-Pokemon warning, never exited Pallet Town. Slow-tail providers (Chutes/Together) drag mean up; T19=220.9s, T46=208.4s. The retry-with-timeout layer in src/agent/turn.py (60s/60s/180s) was added after this run to survive the wrapped-5xx case — would have recovered T47. Provider name surfaces in turn output via pydantic-ai model_name fallback ('google/gemma-4-31b-it-20260402') — actual OpenRouter provider not exposed via msg.provider_details."
+    thinking:
+      avg_turn_cost_usd: 0.0013
+      avg_turn_latency_s: 74.9
+      sample_turns: 46
+      last_updated: 2026-05-22
+      notes: '50T attempt 2026-05-22 PRE-retry-fix: 46/50 turns then crashed at T47 with NoneType subscript (wrapped-5xx). Cost $0.0584 / 46 turns / $0.0013/turn — cheapest model in the registry by 10×. Turn-to-turn wall: median 55.6s, mean 74.9s, range 8.9-220.9s. 49% LLM self-grade true-rate (22/23/1). Game progress: got Bulbasaur lvl 5, exited bedroom + lab, dialogue-looped by Oak''s wild-Pokemon warning, never exited Pallet Town. Slow-tail providers (Chutes/Together) drag mean up; T19=220.9s, T46=208.4s. The retry-with-timeout layer in src/agent/turn.py (60s/60s/180s) was added after this run to survive the wrapped-5xx case — would have recovered T47. Provider name surfaces in turn output via pydantic-ai model_name fallback (''google/gemma-4-31b-it-20260402'') — actual OpenRouter provider not exposed via msg.provider_details.'
+    non-thinking:
+      sample_turns: 0
 
-"gemma-4-31b(non-thinking)":
-  openrouter_id: "google/gemma-4-31b-it"
-  reasoning:
-    enabled: false
+# Google Gemma 4 26B A4B IT — binary thinking, 262K ctx, $0.07/$0.34 per M. Also the project's OCR cleanup model. output_mode prompted (mixed provider capability). thinking was 'unusable on default throughput-sort' (>60s/turn) under the old 3-attempt/60s retry — the slow flag + 6-attempt rework target exactly this.
+gemma-4-26b-a4b:
+  openrouter_id: google/gemma-4-26b-a4b-it
+  reasoning_type: binary
+  thinking_levels:
+  - thinking
+  - non-thinking
+  output_mode: prompted
   temperature: 0.3
   top_p: 0.95
-  output_mode: "prompted"
+  slow:
+    thinking: true
   observed:
-    sample_turns: 0
+    thinking:
+      sample_turns: 3
+      last_updated: 2026-05-22
+      notes: Aborted T4 of 50T run 2026-05-22 (config-3.9, retry-with-timeout enabled). T1-T3 each needed 1 retry (60s timeout on attempt 1, succeeded on attempt 2 via re-rolled provider); T4 timed out attempt 1 (60s) + attempt 2 (60s) + attempt 3 (180s) and fatally failed. T1=69s, T2=99s, T3=112s wall (including retry overhead). 100% of attempted turns needed retry — model is too slow on whatever providers throughput-sort routes to.
+    non-thinking:
+      sample_turns: 0
 
-# --- Google Gemma 4 26B A4B IT (added 2026-05-22) ---
-# Already used as the OCR cleanup model project-wide (every config 2.x+ sets
-# `ocr.cleanup_model: "google/gemma-4-26b-a4b-it"`). Adding agent-side
-# aliases so we can probe whether the A4B variant is faster or sharper than
-# the 31B as the main reasoning LLM.
-#
-# Specs: 30B-class active-routing dense model, 262K context, $0.07/$0.34
-# per M on cheapest provider (DekaLLM) — half the 31B's price floor. Same
-# multimodal envelope (text + image + video → text).
-#
-# Provider stack: 6+ providers on OpenRouter (DekaLLM, DeepInfra, Cloudflare,
-# SiliconFlow, Parasail, Novita) with mixed capability sets — DekaLLM has
-# no tools/tool_choice/structured_outputs at all (only response_format-less
-# base), while DeepInfra/Cloudflare/Novita have the full tool stack. Same
-# pattern as 31B: `provider.sort: "throughput"` + `output_mode: "prompted"`
-# gives a setup that works regardless of which provider the router picks.
-#
-# Reasoning shape: same binary toggle as 31B (confirmed Gemma family-wide
-# from ai.google.dev/gemma/docs/capabilities/thinking — `enable_thinking`
-# is a single boolean, no effort tiers, no numeric budget). Sampling 0.3/0.95
-# matches the function-call profile used for all other reasoning models in
-# this registry.
-"gemma-4-26b-a4b(thinking)":
-  openrouter_id: "google/gemma-4-26b-a4b-it"
-  slow: true  # "unusable on default throughput-sort" (>60s/turn) — exactly what 2× timeouts target
-  reasoning:
-    enabled: true
-  temperature: 0.3
-  top_p: 0.95
-  # No `provider` block on purpose — see the gemma-4-31b(thinking) note.
-  # Confirmed multimodal-capable providers (from a 2026-05-22 error trace
-  # with image input): dekallm, siliconflow, parasail, novita, nextbit,
-  # google-vertex, venice. Cloudflare is text-only for this model and gets
-  # filtered out automatically when images are present.
-  #
-  # **Verdict: unusable on default throughput-sort (2026-05-22).** 50T attempt
-  # aborted at T4 — every turn (T1, T2, T3) needed retry on attempt 1 (60s
-  # timeout); T4 burned all 3 attempts (60+60+180=300s) and gave up. Typical
-  # response time for this model in the multimodal throughput pool is >60s,
-  # so the retry layer protects against crashes but can't substitute for the
-  # model genuinely being slow. If revisiting: try (a) `enabled: false` to
-  # see if thinking is the bottleneck, (b) `provider.order: [Novita, ...]` to
-  # constrain to known-fast providers, or (c) accept the 300s/turn worst-case.
-  output_mode: "prompted"
-  observed:
-    sample_turns: 3
-    last_updated: 2026-05-22
-    notes: "Aborted T4 of 50T run 2026-05-22 (config-3.9, retry-with-timeout enabled). T1-T3 each needed 1 retry (60s timeout on attempt 1, succeeded on attempt 2 via re-rolled provider); T4 timed out attempt 1 (60s) + attempt 2 (60s) + attempt 3 (180s) and fatally failed. T1=69s, T2=99s, T3=112s wall (including retry overhead). 100% of attempted turns needed retry — model is too slow on whatever providers throughput-sort routes to."
-
-"gemma-4-26b-a4b(non-thinking)":
-  openrouter_id: "google/gemma-4-26b-a4b-it"
-  reasoning:
-    enabled: false
-  temperature: 0.3
-  top_p: 0.95
-  output_mode: "prompted"
-  observed:
-    sample_turns: 0
-
-# --- Alibaba Qwen3.6-Plus ---
-# Hybrid linear-attention + sparse MoE. AA Intelligence 50, 1M context,
-# $0.325/$1.95 per M on OpenRouter (cheaper than AA's listed $0.50/$3.00).
-# Text + image + video input (AA confirms multimodal — safe for our default
-# vision_mode: direct_multimodal, unlike MiMo V2.5 Pro).
-#
-# Thinking controls: native API is BINARY (enable_thinking boolean) plus
-# optional thinking_budget integer. No native effort tiers. OpenRouter accepts
-# reasoning.effort and normalizes to thinking_budget under the hood, but we
-# stick with the binary convention for parity with MiMo V2.5 / Gemma 4.
-#
-# Cost caveat: AA flags this model as "very verbose" — 100M output tokens
-# during their eval vs 35M median for peers. On an agent loop that already
-# produces long structured outputs, this will inflate turn cost beyond what
-# the $/M pricing suggests. Watch avg_turn_cost_usd closely after first run.
-#
-# Sampling: Qwen's general-purpose recs are 0.6/0.95 (thinking) and 0.7/0.8
-# (non-thinking). We use 0.3/0.95 to match the structured-output / function-
-# call profile used elsewhere in this registry (MiMo, Gemma). Reconsider if
-# early runs feel too deterministic or miss good actions.
-# Qwen3.6-Plus needs output_mode: "prompted". Two layers of "no":
-#   1. OpenRouter providers fronting qwen/qwen3.6-plus don't support
-#      tool_choice (verified 2026-04-25, 404 "No endpoints found that
-#      support the provided 'tool_choice' value") — rules out output_type=GameAction.
-#   2. Pydantic AI's model profile for this model doesn't declare
-#      supports_json_schema_output: true, so NativeOutput(GameAction) is
-#      rejected client-side ("Native structured output is not supported by
-#      the model"). Could be patched via custom ModelProfile but that's
-#      brittle to maintain per-model.
-# PromptedOutput injects the schema into the system prompt and parses the
-# model's JSON text client-side — works for any model. Reasoning models
-# like Qwen3.6-Plus (AA 50) are reliable at producing well-formed JSON
-# under PromptedOutput. See src/agent/agent.py output_mode branching.
-"qwen3.6-plus(thinking)":
-  # Observed behaviour (2026-04-25, partial 15T run aborted at turn 14): cheaper
-  # per-turn than Gemini 3 Flash high ($0.0069 vs $0.0090) and similar latency
-  # (28.2s vs 27.0s) — verbosity warning didn't materialise as expected. BUT:
-  # 5 of 15 turns (33%) hit at least one PromptedOutput retry due to model
-  # emitting truncated/missing-prefix JSON despite our robust extractor. Each
-  # retry adds ~30% turn cost. Effective cost is closer to ~$0.009/turn once
-  # retries are factored in. Spatial reasoning was weak — agent stayed stuck
-  # in/near the bedroom across 14 turns, similar failure mode to Flash Lite high.
-  openrouter_id: "qwen/qwen3.6-plus"
-  reasoning:
-    enabled: true
-  output_mode: "prompted"
+# Alibaba Qwen3.6-Plus — binary thinking, hybrid linear+MoE, 1M ctx, $0.325/$1.95 per M. Multimodal. output_mode prompted: providers don't expose tool_choice AND Pydantic AI rejects native json_schema for it. AA flags it 'very verbose' — watch turn cost.
+qwen3.6-plus:
+  openrouter_id: qwen/qwen3.6-plus
+  reasoning_type: binary
+  thinking_levels:
+  - thinking
+  - non-thinking
+  output_mode: prompted
   temperature: 0.3
   top_p: 0.95
   observed:
-    avg_turn_cost_usd: 0.0069
-    avg_turn_latency_s: 28.2
-    sample_turns: 15
-    last_updated: 2026-04-25
-    notes: "33% retry rate from prompted-output JSON quirks. Spatial reasoning weak — got stuck in bedroom like Flash Lite high. Aborted at turn 14."
+    thinking:
+      avg_turn_cost_usd: 0.0069
+      avg_turn_latency_s: 28.2
+      sample_turns: 15
+      last_updated: 2026-04-25
+      notes: 33% retry rate from prompted-output JSON quirks. Spatial reasoning weak — got stuck in bedroom like Flash Lite high. Aborted at turn 14.
+    non-thinking:
+      sample_turns: 0
 
-"qwen3.6-plus(non-thinking)":
-  openrouter_id: "qwen/qwen3.6-plus"
-  reasoning:
-    enabled: false
-  output_mode: "prompted"
+# Alibaba Qwen3.7-Plus (added 2026-06-17) — binary thinking, multimodal (text+image, OpenRouter API 2026-06-17). UNLIKE 3.6 its providers DO support tool_choice + structured_outputs (verified 2026-06-17) → default tool output mode. Floating slug (pinned: qwen/qwen3.7-plus-20260602).
+qwen3.7-plus:
+  openrouter_id: qwen/qwen3.7-plus
+  reasoning_type: binary
+  thinking_levels:
+  - thinking
+  - non-thinking
   temperature: 0.3
   top_p: 0.95
   observed:
-    sample_turns: 0
+    thinking:
+      sample_turns: 0
+    non-thinking:
+      sample_turns: 0
 
-# --- Alibaba Qwen3.7-Plus (added 2026-06-17) ---
-# Successor to qwen3.6-plus. Multimodal (text+image — confirmed via OpenRouter
-# API 2026-06-17). Binary thinking toggle (native enable_thinking; no effort
-# tiers — `reasoning` is in supported_parameters but `reasoning_effort` is not).
-# UNLIKE qwen3.6-plus, the OpenRouter providers DO list tool_choice +
-# structured_outputs (verified 2026-06-17), so we use the default tool output
-# mode (tool_choice="required") rather than 3.6's prompted-output workaround.
-# Sampling 0.3/0.95 to match the registry's structured-output profile.
-# Slug is the floating alias (canonical pinned id: qwen/qwen3.7-plus-20260602).
-"qwen3.7-plus(thinking)":
-  openrouter_id: "qwen/qwen3.7-plus"
-  reasoning:
-    enabled: true
+# MiniMax M3 (added 2026-06-17) — binary thinking, multimodal (text+image+video, OpenRouter API 2026-06-17). Providers support tool_choice + structured_outputs → default tool mode. Latency unknown — mark slow:true if a first run shows a slow tail. Floating slug (pinned: minimax/minimax-m3-20260531).
+minimax-m3:
+  openrouter_id: minimax/minimax-m3
+  reasoning_type: binary
+  thinking_levels:
+  - thinking
+  - non-thinking
   temperature: 0.3
   top_p: 0.95
   observed:
-    sample_turns: 0
+    thinking:
+      sample_turns: 0
+    non-thinking:
+      sample_turns: 0
 
-"qwen3.7-plus(non-thinking)":
-  openrouter_id: "qwen/qwen3.7-plus"
-  reasoning:
-    enabled: false
+# xAI Grok 4.3 — ALWAYS-ON reasoning (reasoning_type none; no levels). Multimodal, 1M ctx, $1.25/$2.50 per M. Slow (71.7s/turn) + spatial-grounding-bound on this task.
+grok-4.3:
+  openrouter_id: x-ai/grok-4.3
+  reasoning_type: none
+  slow: true
+  observed:
+    _:
+      avg_turn_cost_usd: 0.0162
+      avg_turn_latency_s: 71.7
+      sample_turns: 35
+      last_updated: 2026-05-01
+      notes: 3/35 grade=true (8.3%). Stuck in 1F Player's House — never reached overworld. ~6× slower per turn than Pro low at similar cost. Latency variance huge (24s–250s).
+
+# xAI Grok Build 0.1 — effort-tiered (high/medium/low/minimal, probed 2026-05-21). 256K ctx, $1.00/$2.00 per M, multimodal, full structured-output stack. Slow (118.6s/turn, climbs with context). Reasoning summary returned natively (no summary:auto needed).
+grok-build-0.1:
+  openrouter_id: x-ai/grok-build-0.1
+  reasoning_type: effort
+  thinking_levels:
+  - high
+  - medium
+  - low
+  - minimal
+  slow:
+    medium: true
+  observed:
+    medium:
+      avg_turn_cost_usd: 0.0184
+      avg_turn_latency_s: 118.6
+      sample_turns: 4
+      last_updated: 2026-05-21
+      notes: Aborted at T4 — stuck in 2F bedroom. Latency 78s→165s monotonic climb, extrapolated 50T = >2hr. T4 false-positive self-grade like GPT-5.5(medium) on config-3.0. Same spatial-grounding failure family as Grok 4.3 / Flash Lite (high) / Qwen3.6-Plus / Perceptron Mk1 / Haiku 4.5 (medium). config-3.7.
+
+# OpenAI GPT-5.5 — effort-tiered (xhigh/high/medium/low/minimal) + summary:auto. Frontier, 1.05M ctx, $5/$30 per M. low is fastest in registry (4.9s/turn); medium gamed the self-grade metric on config-3.0 (use in-game state, not grade rate).
+gpt-5.5:
+  openrouter_id: openai/gpt-5.5
+  reasoning_type: effort
+  thinking_levels:
+  - xhigh
+  - high
+  - medium
+  - low
+  - minimal
+  reasoning_summary: auto
+  observed:
+    low:
+      avg_turn_cost_usd: 0.019
+      avg_turn_latency_s: 4.9
+      sample_turns: 20
+      last_updated: 2026-05-01
+      notes: 2/20 grade=true (10%). Fastest in registry (4.9s/turn, 2-15× faster than peers). Very terse outputs (193 output tokens/turn). Bedroom-stuck — low effort underpowered for spatial grounding.
+    medium:
+      avg_turn_cost_usd: 0.0315
+      avg_turn_latency_s: 15.5
+      sample_turns: 20
+      last_updated: 2026-05-20
+      notes: 'config-3.5 20T (upscale=3): reached Oak''s lab but did NOT pick up the starter. Big jump from 2026-05-01 baseline (stuck in 2F bedroom) — attributable to `historic_images_count=1`, `summary: auto`, and updated prompt, NOT the model itself. Sibling A/B run config-3.6 (upscale=6) reached Oak''s lab AND picked up Squirtle for +47% input tokens / +29% USD per turn — directional win for higher upscale at n=1, worth replicating.'
+    xhigh:
+      sample_turns: 0
+    high:
+      sample_turns: 0
+    minimal:
+      sample_turns: 0
+
+# OpenAI GPT-5.5 Pro (added 2026-06-17) — multimodal (file/image/text). CAVEAT: OpenRouter lists `reasoning` but NOT `reasoning_effort`; 'pro' models sometimes pin max effort and reject a tier. Effort tiers follow the family convention but are UNCONFIRMED — a live smoke must verify; if it 400s on effort, switch reasoning_type to none. Floating slug (pinned: openai/gpt-5.5-pro-20260423).
+gpt-5.5-pro:
+  openrouter_id: openai/gpt-5.5-pro
+  reasoning_type: effort
+  thinking_levels:
+  - xhigh
+  - high
+  - medium
+  - low
+  - minimal
+  reasoning_summary: auto
+  observed:
+    high:
+      sample_turns: 0
+    medium:
+      sample_turns: 0
+    low:
+      sample_turns: 0
+
+# OpenAI GPT-5.4 mini (added 2026-06-17) — multimodal (text+image, model page 2026-06-17), $0.75/$4.50 per M. Effort-tiered per family convention + summary:auto; first run confirms the effort field is honored.
+gpt-5.4-mini:
+  openrouter_id: openai/gpt-5.4-mini
+  reasoning_type: effort
+  thinking_levels:
+  - xhigh
+  - high
+  - medium
+  - low
+  - minimal
+  reasoning_summary: auto
+  observed:
+    xhigh:
+      sample_turns: 0
+    high:
+      sample_turns: 0
+    medium:
+      sample_turns: 0
+    low:
+      sample_turns: 0
+    minimal:
+      sample_turns: 0
+
+# Moonshot Kimi K2.6 — binary thinking, multimodal, 262K ctx, $0.74/$3.49 per M. Default tool output. thinking is the slowest in registry (110-458s/turn; reasoning grows with history, throughput-sort can't fix it) — slow flag doubles timeouts. Sampling 0.3/0.95.
+kimi-k2.6:
+  openrouter_id: moonshotai/kimi-k2.6
+  reasoning_type: binary
+  thinking_levels:
+  - thinking
+  - non-thinking
   temperature: 0.3
   top_p: 0.95
+  slow:
+    thinking: true
   observed:
-    sample_turns: 0
+    thinking:
+      sample_turns: 0
+      notes: 'Aborted across 3 attempts. With provider.sort=throughput: T1-T3 latencies 47s/224s/458s and 134s/110s (T1-T2). With default routing: 60s/214s/182s. Pattern is identical regardless of sort — reasoning length grows when prior turns exist (T1 ~700-900 output tokens, T2-T3 3000-9000+). Latency tracks output tokens, so routing can''t fix it. Conclusion: Kimi K2.6 not viable for this project''s loop until reasoning verbosity is bounded.'
+    non-thinking:
+      sample_turns: 0
 
-# --- MiniMax M3 (added 2026-06-17) ---
-# MiniMax's M3 flagship. Multimodal (text+image+video — confirmed via OpenRouter
-# API 2026-06-17). Binary thinking toggle (`reasoning` supported, no
-# `reasoning_effort`). OpenRouter providers list tool_choice + structured_outputs
-# (verified 2026-06-17) → default tool output mode. Sampling 0.3/0.95 to match
-# the structured-output profile used across the registry. Latency unknown (no
-# run yet) — add `slow: true` if a first run shows a slow end-to-end tail.
-# Slug is the floating alias (canonical pinned id: minimax/minimax-m3-20260531).
-"minimax-m3(thinking)":
-  openrouter_id: "minimax/minimax-m3"
-  reasoning:
-    enabled: true
-  temperature: 0.3
-  top_p: 0.95
+# OpenAI GPT-5.4 nano — cheap-at-scale, 400K ctx, $0.20/$1.25 per M. Effort-tiered + summary:auto. 'Do small models at max effort beat large models at low effort?' probe.
+gpt-5.4-nano:
+  openrouter_id: openai/gpt-5.4-nano
+  reasoning_type: effort
+  thinking_levels:
+  - xhigh
+  - high
+  - medium
+  - low
+  - minimal
+  reasoning_summary: auto
   observed:
-    sample_turns: 0
+    xhigh:
+      sample_turns: 0
 
-"minimax-m3(non-thinking)":
-  openrouter_id: "minimax/minimax-m3"
-  reasoning:
-    enabled: false
-  temperature: 0.3
-  top_p: 0.95
+# Perceptron Mk1 — binary thinking VLM (text+image+video), 32K ctx (smallest in registry — watch truncation past ~20-30T), $0.15/$1.50 per M. output_mode prompted (native json_schema rejected client-side, no tool_choice). Single provider.
+perceptron-mk1:
+  openrouter_id: perceptron/perceptron-mk1
+  reasoning_type: binary
+  thinking_levels:
+  - thinking
+  - non-thinking
+  output_mode: prompted
   observed:
-    sample_turns: 0
+    thinking:
+      avg_turn_cost_usd: 0.0024
+      avg_turn_latency_s: 33.9
+      sample_turns: 19
+      last_updated: 2026-05-13
+      notes: 'Stuck on 1F Player''s house — aborted at T19. 2/15/2 grade rate. Cheapest per-turn in registry but spatial-grounding-bound like Flash Lite (high) / Grok 4.3. Marketed for ''embodied reasoning'' but didn''t translate to FireRed navigation. Required output_mode: prompted (native_json rejected client-side) and reasoning: { enabled: true } (binary toggle, confirmed from OpenRouter model card).'
+    non-thinking:
+      sample_turns: 0
 
-# --- xAI Grok 4.3 ---
-# Always-on reasoning — no effort tiers, no binary toggle. OpenRouter docs:
-# "Reasoning is always active and cannot be disabled or configured by effort
-# level." Third reasoning shape in this registry alongside effort-tiered
-# (Gemini 3, OpenAI) and binary (MiMo, Gemma, Qwen). Multimodal (text+image),
-# 1M context, $1.25/$2.50 per M. Tiered pricing above 200k total tokens.
-#
-# Observed (2026-05-01, partial 36T run on config-3.0, aborted at T36): bad
-# fit for this task. Stuck in 1F Player's House for the entire run — got out
-# of the bedroom but never made it to Pallet Town overworld. 3/35 grade=true
-# (8.3%) vs Gemini 3 Pro low's 25/50 (50%) on the identical task. Cost-per-
-# turn ($0.0162) is comparable to Pro low ($0.0158), but per-turn latency
-# (71.7s, range 24-250s, p99 outliers) is 6× worse than Pro low (11.4s).
-# Output tokens averaged 3815/turn — roughly 2× the other registry entries
-# at this scene complexity, consistent with the always-on reasoning producing
-# verbose traces. No retries observed (validation worked first-try most turns,
-# one retry at T17). Per-turn cost-per-success is ~$0.19 here vs Pro low's
-# ~$0.032 — ~6× worse on this task.
-#
-# Why so bad: spatial reasoning failure mode, similar to Flash Lite (high)
-# and Qwen3.6-Plus — agent identifies the door, plans a sweep, presses
-# directional inputs, but never lands on the door tile. Grok's reasoning
-# trace shows it knows what it's trying to do; the bottleneck is screen-
-# state grounding, not task planning. Worth retrying once direct_multimodal
-# vision improves or with a snapshot that starts in Pallet Town overworld
-# (skip the 1F navigation entirely).
-#
-# No reasoning block below — omitted per the schema convention so neither
-# effort nor enabled is sent to OpenRouter.
-"grok-4.3":
-  openrouter_id: "x-ai/grok-4.3"
-  slow: true  # 71.7s avg/turn, range 24–250s (always-on reasoning, verbose) → 2× timeouts
+# Anthropic Claude Haiku 4.5 — effort-tiered (high/medium/low/minimal) on Anthropic extended_thinking budget. 200K ctx, $1.00/$5.00 per M, multimodal. output_mode prompted REQUIRED: tool_choice=required silently strips extended thinking on Anthropic routes (verified 2026-05-20).
+claude-haiku-4.5:
+  openrouter_id: anthropic/claude-haiku-4.5
+  reasoning_type: effort
+  thinking_levels:
+  - high
+  - medium
+  - low
+  - minimal
+  output_mode: prompted
   observed:
-    avg_turn_cost_usd: 0.0162
-    avg_turn_latency_s: 71.7
-    sample_turns: 35
-    last_updated: 2026-05-01
-    notes: "3/35 grade=true (8.3%). Stuck in 1F Player's House — never reached overworld. ~6× slower per turn than Pro low at similar cost. Latency variance huge (24s–250s)."
+    high:
+      sample_turns: 0
+    medium:
+      avg_turn_cost_usd: 0.0303
+      avg_turn_latency_s: 43.0
+      sample_turns: 10
+      last_updated: 2026-05-20
+      notes: Stuck on 2F Player's house — never reached 1F. 0/9/1 grades. Thinking confirmed active (5038 output tokens/turn, 6.1× the broken tool-mode run). 0 prompted-output retries (cleanest JSON of any prompted-mode model in registry). Same spatial-grounding failure mode as Flash Lite high / Grok 4.3 / GPT-5.5 medium / Perceptron Mk1. config-3.3.
+    low:
+      sample_turns: 0
+    minimal:
+      sample_turns: 0
 
-# --- xAI Grok Build 0.1 (added 2026-05-21) ---
-# xAI's fast agentic-coding-focused Grok variant. 256K context (smaller than
-# Grok 4.3's 1M), $1.00/$2.00 per M (cheaper than Grok 4.3's $1.25/$2.50).
-# Multimodal (text + image), single provider (xAI), supports the full
-# structured-output stack (tool_choice + structured_outputs + response_format
-# all listed in OpenRouter `supported_parameters`).
-#
-# Reasoning shape: EFFORT-TIERED (high/medium/low/minimal), confirmed via
-# direct OpenRouter probe 2026-05-21 — all four tiers accepted without
-# error, each returned a reasoning.summary block. This is a departure from
-# Grok 4.3 (always-on, no toggle) and matches the GPT-5 / Gemini 3 shape.
-# Binary `enabled: true` also works, but effort tiers are the richer
-# control surface so we use them.
-#
-# Reasoning summary text is returned natively without needing `summary: "auto"`
-# (unlike OpenAI's GPT-5 family) — `reasoning_details[0].type` is
-# `reasoning.summary` plus an encrypted blob for cache.
-"grok-build-0.1(medium)":
-  # Observed (2026-05-21, aborted after 4T on config-3.7 — Andreas: "it very
-  # bad please stop it"). Two failure modes in only 4 turns:
-  #   1. Latency disaster, trending worse: 78s → 83s → 147s → 165s per turn.
-  #      Extrapolated 50T = >2 hours wall clock. Same family as Grok 4.3
-  #      (71s/turn avg) but with monotonic degradation as message history
-  #      grew — suggests reasoning length scales with context, like Kimi
-  #      K2.6's stuck pattern.
-  #   2. Spatial grounding fail. End state: still in 2F bedroom, Player's
-  #      House, Pallet Town — same failure mode as Grok 4.3, GPT-5.5
-  #      (medium) on config-3.0, Flash Lite (high), Qwen3.6-Plus,
-  #      Perceptron Mk1, Claude Haiku 4.5 (medium). Worse: T4 self-graded
-  #      `last_turn_succeeded: true` while still in the bedroom, repeating
-  #      GPT-5.5(medium)'s "conservative prediction trivially matched"
-  #      pattern — gamed the metric without playing the game.
-  # Cost was in line with expectations ($0.0184/turn avg, would extrapolate
-  # to ~$0.92/50T) but irrelevant given the capability + latency fail.
-  # Marketed as "fast agentic-coding" — that framing did not translate to
-  # FireRed navigation. Not recommended for this task.
-  openrouter_id: "x-ai/grok-build-0.1"
-  slow: true  # 118.6s avg/turn, monotonic climb 78s→165s with context → 2× timeouts
-  reasoning:
-    effort: "medium"
+# Anthropic Claude Sonnet 4.6 — effort-tiered, 200K ctx, frontier (~3x Haiku/token), multimodal. output_mode prompted REQUIRED (same Anthropic tool_choice/thinking constraint). Preserves prior-turn thinking (unlike Haiku). Most honest self-grader in the bedroom-stuck cluster but most expensive.
+claude-sonnet-4.6:
+  openrouter_id: anthropic/claude-sonnet-4.6
+  reasoning_type: effort
+  thinking_levels:
+  - high
+  - medium
+  - low
+  - minimal
+  output_mode: prompted
   observed:
-    avg_turn_cost_usd: 0.0184
-    avg_turn_latency_s: 118.6
-    sample_turns: 4
-    last_updated: 2026-05-21
-    notes: "Aborted at T4 — stuck in 2F bedroom. Latency 78s→165s monotonic climb, extrapolated 50T = >2hr. T4 false-positive self-grade like GPT-5.5(medium) on config-3.0. Same spatial-grounding failure family as Grok 4.3 / Flash Lite (high) / Qwen3.6-Plus / Perceptron Mk1 / Haiku 4.5 (medium). config-3.7."
+    high:
+      sample_turns: 0
+    medium:
+      avg_turn_cost_usd: 0.0557
+      avg_turn_latency_s: 47.7
+      sample_turns: 10
+      last_updated: 2026-05-21
+      notes: Stuck on 2F bedroom — 0/18 self-grade true (0%, fully honest, never claimed false success). T9 latency spike 160s / 8362 output tokens (extended-thinking spiral). T10 reasoning self-diagnosed stuck state explicitly. Total $0.557/10T. Most expensive in registry by ~2× over Haiku 4.5 (medium) / GPT-5.5 (medium). 5× faster per turn than Grok Build 0.1 (medium). config-3.8.
+    low:
+      sample_turns: 0
+    minimal:
+      sample_turns: 0
 
-# --- OpenAI GPT-5 family ---
-# Effort-tiered reasoning matching Gemini 3's shape: xhigh / high / medium /
-# low / minimal (per OpenRouter docs, "Reasoning Effort Values"). xhigh
-# allocates ~95% of max_tokens to reasoning, low ~20%, minimal ~10%.
-# Multimodal (text+image input). Frontier-tier pricing on GPT-5.5
-# ($5/$30 per M) — 3× Gemini 3.1 Pro on input, 2.5× on output. Nano is
-# the cheap-at-scale entry ($0.20/$1.25 per M, similar tier to Grok 4 Fast).
-"gpt-5.5(low)":
-  # Frontier tier, 1.05M context (922K input / 128K output).
-  # Low-effort variant: ~20% of max_tokens for reasoning.
-  #
-  # Observed (2026-05-01, 20T run on config-3.0): fastest model in the
-  # registry — 4.9s/turn (range 3.8–6.1, very tight variance) vs Pro low's
-  # 11.4s and Grok 4.3's 71.7s. Cost ($0.0190/turn) is comparable to
-  # everything else despite frontier pricing, because output tokens are
-  # very low (193/turn — 10-20× less verbose than other reasoning models).
-  # That's the low-effort tier doing what it says on the tin: ~20% of
-  # max_tokens for reasoning, and the prose output stays terse.
-  #
-  # Success: 2/20 (10%), same bedroom-stuck failure mode as Flash Lite
-  # high / Qwen3.6-Plus / Grok 4.3. Low effort isn't enough reasoning
-  # budget for the spatial grounding bottleneck. (medium) is the natural
-  # next probe — same speed/cost neighborhood plus ~50% reasoning budget.
-  openrouter_id: "openai/gpt-5.5"
-  reasoning:
-    effort: "low"
-    summary: "auto"  # surface reasoning summary text reliably (OpenAI returns it intermittently without this)
+# Anthropic Claude Opus 4.7 — effort-tiered (xhigh maps to nearest native adaptive level), 1M ctx, $5/$25 per M, multimodal. output_mode prompted REQUIRED. First non-Gemini to clear the spatial-grounding bottleneck (medium reached Pallet Town). xhigh ≈ medium on this task (within noise) — prefer medium for cost.
+claude-opus-4.7:
+  openrouter_id: anthropic/claude-opus-4.7
+  reasoning_type: effort
+  thinking_levels:
+  - xhigh
+  - high
+  - medium
+  - low
+  - minimal
+  output_mode: prompted
   observed:
-    avg_turn_cost_usd: 0.0190
-    avg_turn_latency_s: 4.9
-    sample_turns: 20
-    last_updated: 2026-05-01
-    notes: "2/20 grade=true (10%). Fastest in registry (4.9s/turn, 2-15× faster than peers). Very terse outputs (193 output tokens/turn). Bedroom-stuck — low effort underpowered for spatial grounding."
+    xhigh:
+      avg_turn_cost_usd: 0.0551
+      avg_turn_latency_s: 8.7
+      sample_turns: 20
+      last_updated: 2026-05-21
+      notes: 'Reached Inside Oak''s Lab at T20 with pallet_town + oaks_lab mapped in detail. 32/38 true (84%). xhigh ≈ medium on this task within run-to-run noise: $0.0551 vs $0.0523 per turn (+5%), 319 vs 300 output tokens/turn (+6%), 8.7s vs 8.3s/turn (+5%). Either OpenRouter clamps xhigh→high (since Anthropic native adaptive only supports low/medium/high) or adaptive thinking ignores the effort hint and picks its own budget. Use (medium) for cost — the 5% xhigh premium buys ~noise. config-3.10.'
+    high:
+      sample_turns: 0
+    medium:
+      avg_turn_cost_usd: 0.0523
+      avg_turn_latency_s: 8.3
+      sample_turns: 10
+      last_updated: 2026-05-21
+      notes: 'Reached Pallet Town (out of the house) by T10 with map memory written — first non-Gemini model in registry to clear the spatial-grounding bottleneck. 14/18 true (78%) genuine grade rate. ~300 output tokens/turn (8× more terse than Sonnet 4.6 medium''s 2338). $0.0523/turn — LOWER per-turn cost than Sonnet despite higher rate card. 8.3s latency — fastest Anthropic in registry. config-3.9. Recommended next: 50T to compare against Gemini 3.5 Flash (medium) at Route 1.'
+    low:
+      sample_turns: 0
+    minimal:
+      sample_turns: 0
 
-"gpt-5.5(medium)":
-  # Same model, ~50% of max_tokens for reasoning.
-  #
-  # Observed (2026-05-01, 20T run on config-3.0): **gamed the
-  # last_turn_succeeded metric — does NOT actually play the game well.**
-  # Final state.json: still in 2F Player's House (went *up* the stairs
-  # instead of down), no Pokemon, no badges, no map memory written.
-  # 14/20 grade=true (70%) is misleading — the model gets a high self-
-  # grade by predicting conservatively ("I'll still be in this room")
-  # and trivially matching the screen. Compare: Gemini 3.1 Pro (medium)
-  # had 45% grade rate on the same task but reached Oak's Lab and got
-  # Charmander as starter.
-  #
-  # Cost-per-turn $0.0298 (~2× Pro low's $0.0158), latency 13.9s, output
-  # 553 tokens/turn — terse reasoning, not enough exploration.
-  #
-  # Verdict: do not use grade rate to compare models in this project.
-  # Real benchmark is in-game state at end of run (see project memory:
-  # feedback_pokemon-success-metric).
-  openrouter_id: "openai/gpt-5.5"
-  reasoning:
-    effort: "medium"
-    summary: "auto"  # surface reasoning summary text reliably (OpenAI returns it intermittently without this)
+# Anthropic Claude Opus 4.8 — effort-tiered (xhigh/high/medium/low/minimal), 1M ctx, multimodal. output_mode prompted REQUIRED (Anthropic tool_choice/thinking constraint).
+claude-opus-4.8:
+  openrouter_id: anthropic/claude-opus-4.8
+  reasoning_type: effort
+  thinking_levels:
+  - xhigh
+  - high
+  - medium
+  - low
+  - minimal
+  output_mode: prompted
   observed:
-    avg_turn_cost_usd: 0.0315
-    avg_turn_latency_s: 15.5
-    sample_turns: 20
-    last_updated: 2026-05-20
-    notes: "config-3.5 20T (upscale=3): reached Oak's lab but did NOT pick up the starter. Big jump from 2026-05-01 baseline (stuck in 2F bedroom) — attributable to `historic_images_count=1`, `summary: auto`, and updated prompt, NOT the model itself. Sibling A/B run config-3.6 (upscale=6) reached Oak's lab AND picked up Squirtle for +47% input tokens / +29% USD per turn — directional win for higher upscale at n=1, worth replicating."
+    xhigh:
+      sample_turns: 0
+    high:
+      avg_turn_cost_usd: 0.0727
+      avg_turn_latency_s: 14.3
+      sample_turns: 50
+      last_updated: 2026-05-29
+      notes: 'Reached the starter table inside Oak''s Lab by T50 — deepest non-Gemini progress in registry (past Opus 4.7 medium''s Pallet Town) but stalled T47-50 unable to land the Poke-Ball pick (right blocked by table, A-from-side not registering). Self-diagnosed the stall honestly. Short of leader Gemini 3.5 Flash medium (got Bulbasaur + Route 1 at 50T). 31/18/1 grades (62% true, honest). 3 prompted-output retries (6%). $3.64/50T = $0.0727/turn — most expensive 50T in registry; 760 output tokens/turn (high effort ~2.5× more verbose than 4.7 medium''s ~300). 14.3s/turn avg, 17.8min total. config-3.12. Next: 50T (medium) for ~40% cheaper output + starter-table approach-angle prompt nudge.'
+    medium:
+      sample_turns: 0
+    low:
+      sample_turns: 0
+    minimal:
+      sample_turns: 0
 
-# gpt-5.5 thinking tiers beyond the low/medium probed above (added 2026-06-17,
-# Andreas). Same model + summary:auto convention; effort is the GPT-5 family
-# control surface (xhigh ~95% / high / medium / low / minimal ~10% of max_tokens
-# for reasoning). Untested here (sample_turns 0) — selectable competitors.
-"gpt-5.5(xhigh)":
-  openrouter_id: "openai/gpt-5.5"
-  reasoning:
-    effort: "xhigh"
-    summary: "auto"
-  observed:
-    sample_turns: 0
-
-"gpt-5.5(high)":
-  openrouter_id: "openai/gpt-5.5"
-  reasoning:
-    effort: "high"
-    summary: "auto"
-  observed:
-    sample_turns: 0
-
-"gpt-5.5(minimal)":
-  openrouter_id: "openai/gpt-5.5"
-  reasoning:
-    effort: "minimal"
-    summary: "auto"
-  observed:
-    sample_turns: 0
-
-# --- OpenAI GPT-5.5 Pro (added 2026-06-17, Andreas) ---
-# Frontier "pro" reasoning tier. Multimodal (file/image/text — confirmed via
-# OpenRouter API 2026-06-17). CAVEAT: the OpenRouter model lists `reasoning` in
-# supported_parameters but NOT `reasoning_effort`, and "pro" reasoning models
-# (o1-pro lineage) sometimes pin maximum effort and reject an explicit tier. We
-# send effort tiers via reasoning.effort following the GPT-5 family convention;
-# if a live smoke 400s on the effort field, collapse these to a single
-# no-effort entry (always-on, like grok-4.3). Needs a one-turn live check.
-# Slug is the floating alias (canonical pinned id: openai/gpt-5.5-pro-20260423).
-"gpt-5.5-pro(high)":
-  openrouter_id: "openai/gpt-5.5-pro"
-  reasoning:
-    effort: "high"
-    summary: "auto"
-  observed:
-    sample_turns: 0
-
-"gpt-5.5-pro(medium)":
-  openrouter_id: "openai/gpt-5.5-pro"
-  reasoning:
-    effort: "medium"
-    summary: "auto"
-  observed:
-    sample_turns: 0
-
-"gpt-5.5-pro(low)":
-  openrouter_id: "openai/gpt-5.5-pro"
-  reasoning:
-    effort: "low"
-    summary: "auto"
-  observed:
-    sample_turns: 0
-
-# --- OpenAI GPT-5.4 mini (added 2026-06-17, Andreas) ---
-# Mid-size GPT-5.4. Multimodal (text+image — confirmed on the OpenRouter model
-# page 2026-06-17 at openrouter.ai/openai/gpt-5.4-mini; $0.75/$4.50 per M). Was
-# absent from the bulk /models listing on first check but the model page is
-# live. Effort-tiered per the GPT-5 family convention (xhigh/high/medium/low/
-# minimal) + summary:auto; a first run will confirm the effort field is honored.
-# Slug is the floating alias.
-"gpt-5.4-mini(xhigh)":
-  openrouter_id: "openai/gpt-5.4-mini"
-  reasoning:
-    effort: "xhigh"
-    summary: "auto"
-  observed:
-    sample_turns: 0
-
-"gpt-5.4-mini(high)":
-  openrouter_id: "openai/gpt-5.4-mini"
-  reasoning:
-    effort: "high"
-    summary: "auto"
-  observed:
-    sample_turns: 0
-
-"gpt-5.4-mini(medium)":
-  openrouter_id: "openai/gpt-5.4-mini"
-  reasoning:
-    effort: "medium"
-    summary: "auto"
-  observed:
-    sample_turns: 0
-
-"gpt-5.4-mini(low)":
-  openrouter_id: "openai/gpt-5.4-mini"
-  reasoning:
-    effort: "low"
-    summary: "auto"
-  observed:
-    sample_turns: 0
-
-"gpt-5.4-mini(minimal)":
-  openrouter_id: "openai/gpt-5.4-mini"
-  reasoning:
-    effort: "minimal"
-    summary: "auto"
-  observed:
-    sample_turns: 0
-
-# --- Moonshot AI Kimi K2.6 ---
-# Multimodal flagship from Moonshot, 262K context, $0.74/$3.49 per M (mid-tier
-# — between MiMo V2.5 and Qwen3.6-Plus). Binary thinking toggle, no effort
-# tiers — Kimi falls in the same family as MiMo / Gemma / Qwen on OpenRouter
-# (effort-tier docs explicitly list only OpenAI + Grok as effort-tiered;
-# everyone else is binary or max_tokens-based).
-#
-# Image input: marketed as "multimodal" / "visual coding capability" by
-# Moonshot. Not 100% confirmed safe with the Player's direct-multimodal
-# screenshots yet — if it 404s on image input like mimo-v2.5-pro did, it
-# can't be used as the Player model (there is no text-only fallback).
-#
-# Sampling: 0.3 / 0.95, matching the function-call profile used elsewhere
-# in this registry for reasoning models with structured-output schemas.
-"kimi-k2.6(thinking)":
-  # Observed (2026-05-01, aborted after 2T due to extreme latency): T1 took
-  # 134.5s, T2 took 110.3s — slowest model in the registry by a wide margin
-  # (worse than Grok 4.3's 71s avg). Cost is cheap ($0.012/turn, 3K input,
-  # 2K output) and multimodal works (T1 graded null normally, no 404), but
-  # the wall-clock cost makes 20T+ runs impractical at ~35-45min. Throughput
-  # sort (provider.sort: "throughput") did NOT help — likely because all
-  # Kimi K2.6 providers on OpenRouter are slow, not because the routing
-  # field was ignored (config.py confirmed it resolved correctly). If you
-  # need Kimi for this project, expect long wait times regardless of sort.
-  openrouter_id: "moonshotai/kimi-k2.6"
-  slow: true  # slowest in registry — 110–458s/turn (reasoning grows with history) → 2× timeouts
-  reasoning:
-    enabled: true
-  temperature: 0.3
-  top_p: 0.95
-  observed:
-    sample_turns: 0
-    notes: "Aborted across 3 attempts. With provider.sort=throughput: T1-T3 latencies 47s/224s/458s and 134s/110s (T1-T2). With default routing: 60s/214s/182s. Pattern is identical regardless of sort — reasoning length grows when prior turns exist (T1 ~700-900 output tokens, T2-T3 3000-9000+). Latency tracks output tokens, so routing can't fix it. Conclusion: Kimi K2.6 not viable for this project's loop until reasoning verbosity is bounded."
-
-"kimi-k2.6(non-thinking)":
-  openrouter_id: "moonshotai/kimi-k2.6"
-  reasoning:
-    enabled: false
-  temperature: 0.3
-  top_p: 0.95
-  observed:
-    sample_turns: 0
-
-"gpt-5.4-nano(xhigh)":
-  # Cheap-at-scale OpenAI nano. 400K context (smaller than the rest of the
-  # registry), $0.20/$1.25 per M. xhigh effort = ~95% of max_tokens for
-  # reasoning — pushing a small model to its reasoning ceiling. Interesting
-  # comparison point for "do small reasoning models with max effort beat
-  # large models with low effort?". If it works, it's the cheapest entry
-  # in the registry for this task; if it doesn't, the ceiling is too low.
-  openrouter_id: "openai/gpt-5.4-nano"
-  reasoning:
-    effort: "xhigh"
-    summary: "auto"  # surface reasoning summary text reliably (OpenAI returns it intermittently without this)
-  observed:
-    sample_turns: 0
-
-# --- Perceptron Mk1 ---
-# Brand-new vision-language model from Perceptron, listed on OpenRouter
-# 2026-05-12. Marketed as "highest-quality VLM for video and embodied
-# reasoning" — explicitly aimed at the kind of perception-and-act loop this
-# project runs. Multimodal (text+image+video → text), $0.15/$1.50 per M
-# (cheapest multimodal entry in the registry alongside gpt-5.4-nano).
-#
-# CONTEXT CAVEAT: 32,768 tokens — by far the smallest in the registry
-# (others are 262K–1M). Message history + screenshots per turn may saturate
-# the window past ~20-30 turns. If 50T run hits truncation, may need
-# turn-history trim tuning in config.
-#
-# Single provider (Perceptron themselves) on OpenRouter — no provider
-# routing meaningful. OpenRouter endpoint reports `structured_outputs`
-# supported but NOT `tool_choice`. Tried output_mode: "native_json" first
-# (2026-05-13, T1 of 50T run) — rejected client-side by Pydantic AI:
-# "Native structured output is not supported by the model" (the model's
-# Pydantic AI profile doesn't declare `supports_json_schema_output: true`,
-# regardless of what OpenRouter advertises). Same wall as Qwen3.6-Plus.
-# Fell back to output_mode: "prompted" — schema-in-system-prompt + client-
-# side JSON parse, works for any model.
-#
-# Reasoning: BINARY toggle (enabled true/false), confirmed from Perceptron's
-# OpenRouter model card on 2026-05-13 ("Use the `reasoning` parameter in
-# your request to enable reasoning"). Same family as MiMo / Gemma / Qwen.
-# First probe (no reasoning param) showed the model emitting fast,
-# shallow outputs — Andreas flagged "model is not thinking at all" within
-# a few turns. Switching to enabled: true for the real benchmark.
-# Sampling: leaving unset (model's null defaults), matching Gemini family.
-"perceptron-mk1(thinking)":
-  # Observed (2026-05-13, 19T run on config-3.1, aborted at T19 by Andreas
-  # after stuck-on-1F was clear). Cheapest per-turn in the registry by a
-  # wide margin ($0.0024/turn — half of Gemini 3 Flash's $0.0053), with
-  # reasoning visibly active (~1.1K output tokens/turn, real prose).
-  #
-  # Failure mode: stuck on 1F Player's house the entire run — never reached
-  # the Pallet Town overworld. Same spatial-grounding bottleneck as Flash
-  # Lite (high), Grok 4.3, GPT-5.5 (medium): the model identifies the
-  # red front door, plans a sweep, presses directional inputs, but never
-  # lands on the door tile (T13-T18 oscillated near the door). Made it
-  # past the 2F→1F stair transition (T3-T4 grade=true) which is more than
-  # GPT-5.5(medium) managed — that one went *up* instead of down.
-  #
-  # Grades: 2/15/2 (true/false/null across 19T) = 10.5% — bottom-quartile
-  # alongside Grok 4.3's 8.3%. Per registry policy (see Pro(medium) note),
-  # actual game state is the real benchmark, and final state.json was just
-  # {"current_location": "1F, Player's house, Pallet Town"} — no party,
-  # no badges, no map memory.
-  #
-  # First call also revealed two integration gotchas, both fixed:
-  #   1. `output_mode: native_json` rejected by Pydantic AI ("Native
-  #      structured output is not supported by the model") — fell back
-  #      to "prompted" like Qwen3.6-Plus.
-  #   2. Reasoning shape was unknown on first probe; left unset, model
-  #      ran fast and shallow. Set `reasoning: { enabled: true }` after
-  #      checking the OpenRouter model card.
-  openrouter_id: "perceptron/perceptron-mk1"
-  reasoning:
-    enabled: true
-  output_mode: "prompted"
-  observed:
-    avg_turn_cost_usd: 0.0024
-    avg_turn_latency_s: 33.9
-    sample_turns: 19
-    last_updated: 2026-05-13
-    notes: "Stuck on 1F Player's house — aborted at T19. 2/15/2 grade rate. Cheapest per-turn in registry but spatial-grounding-bound like Flash Lite (high) / Grok 4.3. Marketed for 'embodied reasoning' but didn't translate to FireRed navigation. Required output_mode: prompted (native_json rejected client-side) and reasoning: { enabled: true } (binary toggle, confirmed from OpenRouter model card)."
-
-"perceptron-mk1(non-thinking)":
-  openrouter_id: "perceptron/perceptron-mk1"
-  reasoning:
-    enabled: false
-  output_mode: "prompted"
-  observed:
-    sample_turns: 0
-
-# --- Anthropic Claude Haiku 4.5 (added 2026-05-20) ---
-# First Anthropic entry in this registry. Marketed as "near-frontier
-# intelligence at a fraction of the cost" — $1.00/$5.00 per M, 200K
-# context (smaller than Gemini's 1M but plenty for ~10K system prompt +
-# ~5K turn input), multimodal (text + image — required for our default
-# vision_mode: direct_multimodal).
-#
-# Reasoning shape: effort-tiered on OpenRouter (xhigh/high/medium/low/
-# minimal), same convention as the Gemini 3 family. Backed by
-# Anthropic's extended_thinking budget under the hood — OpenRouter
-# translates effort tier to max_tokens ratio: 0.95/0.8/0.5/0.2/0.1
-# of completion budget for xhigh/high/medium/low/minimal. To disable
-# thinking entirely, OpenRouter convention is `reasoning.effort: "none"`
-# (NOT the `enabled: false` shape used by MiMo/Gemma/Qwen/Perceptron).
-# Minimum thinking budget is 1024 tokens when extended thinking is on.
-#
-# Known agent-loop quirks (researched 2026-05-20, sources in CHANGELOG):
-#   1. **Repetitive-loop failure mode**: Haiku 4.5 can stall in an
-#      agent loop by re-calling the same tool/action even after the
-#      tool's output indicates the action already succeeded — model
-#      fails to update its plan from tool feedback. Risk for this
-#      project: our turn loop calls a structured-output tool every
-#      turn (GameAction). If Haiku misreads "screen settled, next turn"
-#      feedback, it may re-emit identical button sequences. Watch for
-#      this in the first 10-20T; abort and try a higher effort tier
-#      or stricter prompt if the agent gets stuck pressing the same
-#      input repeatedly without progress.
-#   2. **Last-turn-only thinking blocks**: All Haiku models through
-#      4.5 only preserve thinking blocks from the LAST turn (vs Sonnet
-#      and Opus which preserve all prior thinking). Affects multi-step
-#      reasoning continuity — earlier turns' "why I chose this plan"
-#      reasoning evaporates from context. Less of a concern for us
-#      since our `previous turns` section carries reasoning prose
-#      forward explicitly, but worth knowing.
-#   3. **"Stubborn" in long sessions**: anecdotal reports of less
-#      responsive behavior and shorter-than-expected outputs as the
-#      session grows. For a 50T+ run this is worth monitoring.
-#   4. **Prompt size limits**: real-world MCP setups can blow Haiku's
-#      effective prompt limit (200K hard cap but practical limits lower
-#      with heavy tool surface area). NOT a concern for this project —
-#      single output schema, ~10K system prompt.
-#
-# Sampling: leaving unset (Anthropic's tuned defaults), matching the
-# Gemini family convention.
-#
-# output_mode REQUIREMENT: must be "prompted" for all Haiku entries.
-# Anthropic explicitly rejects extended thinking when tool_choice forces
-# tool use ("Thinking may not be enabled when tool_choice forces tool
-# use" — Pydantic AI issues #2425, #3092). The project's default
-# output_mode "tool" sets tool_choice="required" for schema enforcement,
-# which silently strips reasoning on OpenRouter routes to Anthropic
-# (verified 2026-05-20 — 10T probe completed at $0.108 with zero
-# thinking tokens billed and zero [Thinking] lines in the output).
-# "prompted" bypasses tool_choice entirely (schema in system prompt +
-# client-side JSON parse), same workaround already used for Qwen3.6-Plus
-# and Perceptron Mk1. Native JSON (response_format json_schema) would
-# also work in principle but Pydantic AI rejects it client-side without
-# a model-profile declaration of supports_json_schema_output.
-"claude-haiku-4.5(high)":
-  openrouter_id: "anthropic/claude-haiku-4.5"
-  reasoning:
-    effort: "high"
-  output_mode: "prompted"
-  observed:
-    sample_turns: 0
-
-"claude-haiku-4.5(medium)":
-  # Observed (2026-05-20, 10T probe on config-3.3): thinking confirmed
-  # active (10 [Thinking] lines, 5038 output tokens/turn — 6.1× the
-  # tool-mode run that silently stripped reasoning). 0 retries on
-  # prompted-output JSON (cleaner than Qwen3.6-Plus's 33% retry rate).
-  #
-  # Failure mode: stuck on 2F Player's house the entire 10T probe — same
-  # spatial-grounding bottleneck as Flash Lite (high) / Grok 4.3 / GPT-5.5
-  # (medium) / Perceptron Mk1. Agent self-aware about being stuck (T10
-  # memory: "Attempting down 4 + right 4 to enter stairwell. Previous turn
-  # left character 1-2 tiles left of stairwell entrance.") — knew what
-  # to do, couldn't land the tile.
-  #
-  # Grades: 0/9/1 (true/false/null). Cost $0.0303/turn, latency 43.0s/turn,
-  # $0.30 / 10T / 7.2 min. Per-turn cost similar to Pro(medium)'s $0.0298
-  # but with 4× latency — extended thinking is expensive at medium effort
-  # on Haiku. Worth probing (high) before giving up on Haiku for this task,
-  # OR dropping to (low) to see if a cheaper Haiku tier matches Flash 3.5
-  # without the cost overhead.
-  openrouter_id: "anthropic/claude-haiku-4.5"
-  reasoning:
-    effort: "medium"
-  output_mode: "prompted"
-  observed:
-    avg_turn_cost_usd: 0.0303
-    avg_turn_latency_s: 43.0
-    sample_turns: 10
-    last_updated: 2026-05-20
-    notes: "Stuck on 2F Player's house — never reached 1F. 0/9/1 grades. Thinking confirmed active (5038 output tokens/turn, 6.1× the broken tool-mode run). 0 prompted-output retries (cleanest JSON of any prompted-mode model in registry). Same spatial-grounding failure mode as Flash Lite high / Grok 4.3 / GPT-5.5 medium / Perceptron Mk1. config-3.3."
-
-"claude-haiku-4.5(low)":
-  openrouter_id: "anthropic/claude-haiku-4.5"
-  reasoning:
-    effort: "low"
-  output_mode: "prompted"
-  observed:
-    sample_turns: 0
-
-"claude-haiku-4.5(minimal)":
-  openrouter_id: "anthropic/claude-haiku-4.5"
-  reasoning:
-    effort: "minimal"
-  output_mode: "prompted"
-  observed:
-    sample_turns: 0
-
-# --- Anthropic Claude Sonnet 4.6 (added 2026-05-21) ---
-# Frontier-tier Sonnet from Anthropic. Multimodal (text + image + file →
-# text), 200K context, same effort-tier reasoning shape as Haiku 4.5
-# (xhigh/high/medium/low/minimal — OpenRouter maps to Anthropic's
-# extended_thinking budget). Pricing higher than Haiku 4.5 — frontier
-# tier, ~3× Haiku per token.
-#
-# output_mode REQUIREMENT: must be "prompted" — same Anthropic-family
-# constraint as Haiku 4.5. tool_choice="required" silently strips
-# extended_thinking on Anthropic routes via OpenRouter. See Haiku 4.5
-# entry above for the full incident write-up.
-#
-# Known agent-loop quirks (same family as Haiku 4.5; differences worth
-# watching):
-#   - Sonnet PRESERVES thinking blocks from prior turns (unlike Haiku
-#     models which only preserve the last turn's thinking). Better
-#     multi-step reasoning continuity, less context erosion across the
-#     50T window.
-#   - Less prone to the "stubborn / repetitive-loop" failure mode that
-#     Haiku has been reported to fall into.
-#   - Cost will be ~3× Haiku 4.5 — at upscale=6 with K=1, extrapolated
-#     10T cost is rough order $0.30-0.80.
-"claude-sonnet-4.6(high)":
-  openrouter_id: "anthropic/claude-sonnet-4.6"
-  reasoning:
-    effort: "high"
-  output_mode: "prompted"
-  observed:
-    sample_turns: 0
-
-"claude-sonnet-4.6(medium)":
-  # Observed (2026-05-21, 10T probe on config-3.8): stuck on 2F bedroom for
-  # all 10 turns — never went down the stairs. Same spatial-grounding
-  # failure mode as Grok 4.3 / Flash Lite (high) / Qwen3.6-Plus / Perceptron
-  # Mk1 / Haiku 4.5 (medium) / Grok Build 0.1 (medium).
-  #
-  # What was BETTER than peers in the same failure family:
-  #   - Honest self-grading: 0/18 true (0%) — never gamed last_turn_succeeded
-  #     the way GPT-5.5(medium) on config-3.0 did or Grok Build did at T4.
-  #     Sonnet correctly graded every stuck-in-place turn as false.
-  #   - Self-diagnosis at T10: "screenshots have been identical for 9+ turns
-  #     despite many varied button presses including all directions. This
-  #     almost certainly means something is blocking input — possibly a
-  #     hidden dialogue/event." Tried `[b, b, b, a, up, up, up, right, right]`
-  #     to recover. No other model in this failure family has surfaced the
-  #     stuck-state explicitly in reasoning prose.
-  #   - 5× faster than Grok Build 0.1 (medium) on the same task (47.7s/turn
-  #     vs 118.6s/turn).
-  #
-  # What was WORSE: cost. $0.557/10T = $0.0557/turn — most expensive entry
-  # in the registry by ~2× over Haiku 4.5 (medium) ($0.0303) and GPT-5.5
-  # (medium) ($0.0298). T9 alone burned $0.15 with 8362 output tokens
-  # (extended thinking spiral, 160s latency). Cost extrapolates to ~$2.80
-  # for 50T.
-  #
-  # Verdict: same capability tier as the bedroom-stuck cluster, but the
-  # honest grading + explicit stuck-detection make it the highest-trust
-  # entry in that cluster. If we eventually break the spatial-grounding
-  # bottleneck (e.g. higher upscale, better tile-coordinate prompting,
-  # vision_mode tweak), Sonnet's reasoning quality may pay off. Not
-  # recommended at current cost without that fix.
-  openrouter_id: "anthropic/claude-sonnet-4.6"
-  reasoning:
-    effort: "medium"
-  output_mode: "prompted"
-  observed:
-    avg_turn_cost_usd: 0.0557
-    avg_turn_latency_s: 47.7
-    sample_turns: 10
-    last_updated: 2026-05-21
-    notes: "Stuck on 2F bedroom — 0/18 self-grade true (0%, fully honest, never claimed false success). T9 latency spike 160s / 8362 output tokens (extended-thinking spiral). T10 reasoning self-diagnosed stuck state explicitly. Total $0.557/10T. Most expensive in registry by ~2× over Haiku 4.5 (medium) / GPT-5.5 (medium). 5× faster per turn than Grok Build 0.1 (medium). config-3.8."
-
-"claude-sonnet-4.6(low)":
-  openrouter_id: "anthropic/claude-sonnet-4.6"
-  reasoning:
-    effort: "low"
-  output_mode: "prompted"
-  observed:
-    sample_turns: 0
-
-"claude-sonnet-4.6(minimal)":
-  openrouter_id: "anthropic/claude-sonnet-4.6"
-  reasoning:
-    effort: "minimal"
-  output_mode: "prompted"
-  observed:
-    sample_turns: 0
-
-# --- Anthropic Claude Opus 4.7 (added 2026-05-21) ---
-# Frontier-of-frontier Anthropic — "built for long-running, asynchronous
-# agents." Multimodal (text+image+file→text), 1M context (4× Sonnet 4.6's
-# 200K), $5.00/$25.00 per M (~1.7× Sonnet 4.6 input, ~1.7× output).
-# Same effort-tier shape (xhigh/high/medium/low/minimal) + same `output_mode:
-# "prompted"` constraint as the other Anthropic entries (tool_choice="required"
-# silently strips extended thinking — see Haiku 4.5 entry for the incident).
-#
-# 1M context is the standout spec — preserves all prior thinking across very
-# long agent loops without trim pressure. For this project (max 50T, ~7K
-# input/turn, ~5K output/turn = ~600K total budget) we never approach the
-# ceiling, but Opus's full-history retention should help multi-turn planning
-# more than Sonnet's 200K.
-#
-# Cost extrapolation: Sonnet 4.6 (medium) was $0.0557/turn — Opus 4.7
-# (medium) will likely land in the $0.08-0.12/turn range. 10T probe ~$1,
-# 50T ~$5. Highest-cost entry in registry by a wide margin if confirmed.
-"claude-opus-4.7(xhigh)":
-  # Anthropic's native API for Opus 4.7 uses `thinking: {type: "adaptive",
-  # effort: "low"|"medium"|"high"}` only — there is no native xhigh tier.
-  # OpenRouter accepts xhigh at the API surface and per their docs maps
-  # "to the nearest supported level."
-  #
-  # Observed (2026-05-21, 20T probe on config-3.10): xhigh and medium are
-  # functionally indistinguishable on this task.
-  #
-  # | metric              | (medium) 10T | (xhigh) 20T | Δ        |
-  # |---------------------|-------------:|------------:|---------:|
-  # | Cost / turn         | $0.0523      | $0.0551     | +5%      |
-  # | Latency / turn      | 8.3s         | 8.7s        | +5%      |
-  # | Output tokens / turn| ~300         | ~319        | +6%      |
-  # | Grade rate (true)   | 78%          | 84%         | +6pp     |
-  # | End state           | Pallet Town  | Oak's Lab   | +1 scene |
-  #
-  # All numeric deltas are within run-to-run noise. The deeper end-state
-  # is most likely explained by 2× the turn budget rather than the
-  # effort tier. Two consistent explanations:
-  #   1. OpenRouter clamps xhigh→high before sending to Anthropic (since
-  #      Anthropic's native adaptive API only supports low/medium/high).
-  #   2. Adaptive thinking on Opus 4.7 picks its own budget dynamically
-  #      regardless of the effort hint passed.
-  # Either way: don't expect xhigh to materially outperform medium on
-  # Opus 4.7. Save the registry slot but prefer (medium) for cost; the
-  # 5% premium of xhigh buys ~noise.
-  #
-  # T17 single-outlier: 30.9s / 1415 output tokens / $0.085 — extended-
-  # thinking spike on one turn, otherwise the band stayed at 5-10s/turn.
-  # Total run: $1.10 / 20T / ~4 min wall clock.
-  openrouter_id: "anthropic/claude-opus-4.7"
-  reasoning:
-    effort: "xhigh"
-  output_mode: "prompted"
-  observed:
-    avg_turn_cost_usd: 0.0551
-    avg_turn_latency_s: 8.7
-    sample_turns: 20
-    last_updated: 2026-05-21
-    notes: "Reached Inside Oak's Lab at T20 with pallet_town + oaks_lab mapped in detail. 32/38 true (84%). xhigh ≈ medium on this task within run-to-run noise: $0.0551 vs $0.0523 per turn (+5%), 319 vs 300 output tokens/turn (+6%), 8.7s vs 8.3s/turn (+5%). Either OpenRouter clamps xhigh→high (since Anthropic native adaptive only supports low/medium/high) or adaptive thinking ignores the effort hint and picks its own budget. Use (medium) for cost — the 5% xhigh premium buys ~noise. config-3.10."
-
-"claude-opus-4.7(high)":
-  openrouter_id: "anthropic/claude-opus-4.7"
-  reasoning:
-    effort: "high"
-  output_mode: "prompted"
-  observed:
-    sample_turns: 0
-
-"claude-opus-4.7(medium)":
-  # Observed (2026-05-21, 10T probe on config-3.9): **first non-Gemini model
-  # in the registry to clear the spatial-grounding bottleneck.** End state:
-  # Pallet Town (out of the house!) with map memory written ("Small town.
-  # Player's house at north-west. Professor Oak's lab to the south-east.
-  # Exit to Route 1 at north."). 14/18 grade=true (78%), grading reads as
-  # genuine progress, not the gamed-conservative-prediction pattern from
-  # GPT-5.5(medium).
-  #
-  # Output tokens per turn (~300) are an order of magnitude lower than
-  # Sonnet 4.6(medium)'s ~2338. Opus reasons compactly — same task, same
-  # config, ~8× more terse. Net effect: per-turn cost ($0.0523) slightly
-  # LOWER than Sonnet ($0.0557) despite Opus's higher rate card ($5/$25
-  # per M vs Sonnet's $3/$15). The "expensive frontier model" framing
-  # didn't materialise — Opus cost-per-success on this task is the best
-  # in registry.
-  #
-  # Latency 8.3s/turn — fastest Anthropic in registry (Haiku 4.5 medium
-  # 43.0s, Sonnet 4.6 medium 47.7s) and 5× faster than its peers in the
-  # bedroom-stuck cluster (Grok 4.3 71.7s, Grok Build 0.1 medium 118.6s).
-  # Total run: $0.523 / 10T / ~93s wall clock.
-  #
-  # Verdict: best capability-per-dollar Anthropic entry in registry on
-  # this task, and a frontline candidate against Gemini 3.5 Flash(medium)
-  # (current registry leader at 50T). Recommended next: 50T run on
-  # config-3.9 to see how far Opus goes past Pallet Town — Gemini 3.5
-  # Flash reached Route 1 + Bulbasaur lvl 6 by T50; can Opus match or
-  # exceed that?
-  openrouter_id: "anthropic/claude-opus-4.7"
-  reasoning:
-    effort: "medium"
-  output_mode: "prompted"
-  observed:
-    avg_turn_cost_usd: 0.0523
-    avg_turn_latency_s: 8.3
-    sample_turns: 10
-    last_updated: 2026-05-21
-    notes: "Reached Pallet Town (out of the house) by T10 with map memory written — first non-Gemini model in registry to clear the spatial-grounding bottleneck. 14/18 true (78%) genuine grade rate. ~300 output tokens/turn (8× more terse than Sonnet 4.6 medium's 2338). $0.0523/turn — LOWER per-turn cost than Sonnet despite higher rate card. 8.3s latency — fastest Anthropic in registry. config-3.9. Recommended next: 50T to compare against Gemini 3.5 Flash (medium) at Route 1."
-
-"claude-opus-4.7(low)":
-  openrouter_id: "anthropic/claude-opus-4.7"
-  reasoning:
-    effort: "low"
-  output_mode: "prompted"
-  observed:
-    sample_turns: 0
-
-"claude-opus-4.7(minimal)":
-  openrouter_id: "anthropic/claude-opus-4.7"
-  reasoning:
-    effort: "minimal"
-  output_mode: "prompted"
-  observed:
-    sample_turns: 0
-
-# --- Anthropic Claude Opus 4.8 (added 2026-05-29) ---
-# Successor to Opus 4.7. Same headline specs on OpenRouter: 1M context,
-# $5.00/$25.00 per M (identical rate card to 4.7 — confirmed via the models
-# endpoint 2026-05-29), multimodal (text+image+file→text). Same effort-tier
-# shape (xhigh/high/medium/low/minimal) and the same `output_mode: "prompted"`
-# constraint as every other Anthropic entry — tool_choice="required" silently
-# strips extended thinking on Anthropic routes via OpenRouter (see the Haiku
-# 4.5 entry for the full incident write-up).
-#
-# Opus 4.7(medium) was the first non-Gemini model in the registry to clear the
-# spatial-grounding bottleneck (reached Pallet Town out of the house at T10,
-# best Anthropic capability-per-dollar on this task) and xhigh ≈ medium within
-# run-to-run noise. 4.8 is the natural re-probe of that frontline candidate.
-# Starting with (high) per Andreas's request; 3T smoke test first to confirm
-# the slug + prompted-output path work before committing to a full run.
-"claude-opus-4.8(xhigh)":
-  openrouter_id: "anthropic/claude-opus-4.8"
-  reasoning:
-    effort: "xhigh"
-  output_mode: "prompted"
-  observed:
-    sample_turns: 0
-
-"claude-opus-4.8(high)":
-  # Observed (2026-05-29, 50T run on config-3.12): **cleared the house→lab
-  # navigation arc that stumped every prior non-Gemini model, then stalled at
-  # the starter table.** End state: inside Oak's Lab, Pallet Town, standing at
-  # the green 3-Poke-Ball starter table — but never grabbed a starter. Turns
-  # 47-50 stuck: the rightward step into the table was blocked and A-from-the-
-  # side didn't register the Poke Ball pick. The model self-diagnosed the stall
-  # cleanly ("screen unchanged from turns 47-49, right/a presses keep failing,
-  # right step blocked by the green starter table") — same land-the-interaction-
-  # tile bottleneck that the house-exit used to be, just one full scene deeper.
-  #
-  # This is the deepest any Anthropic entry has reached: Opus 4.7(medium) 10T
-  # only made Pallet Town (out of the house); 4.8(high) navigated bedroom → 1F
-  # → Pallet Town → into Oak's Lab → the starter table. Still short of the
-  # registry leader Gemini 3.5 Flash(medium) 50T, which GOT the starter
-  # (Bulbasaur) + leveled to 6 + reached Route 1 by T50. Gemini still leads on
-  # raw game progress; Opus 4.8 is the strongest non-Gemini result.
-  #
-  # Grades 31/18/1 true/false/null = 62% — honest calibration, correctly graded
-  # the stuck T47-50 turns as false (no metric-gaming like GPT-5.5(medium) or
-  # Grok Build). 3 prompted-output retries across 50T (6%, cleaner than
-  # Qwen3.6-Plus's 33%).
-  #
-  # Cost: $3.64 / 50T = $0.0727/turn — MOST EXPENSIVE 50T in the registry,
-  # past Sonnet 4.6(medium)'s $0.0557. Output 760 tokens/turn (vs ~300 for
-  # 4.7 medium) — high effort reasons ~2.5× more verbosely, which drives the
-  # per-turn cost above the 4.7 tiers despite identical $5/$25 rate card.
-  # Latency avg 14.3s/turn (median 9.4s, range 5.3-51.2s); total 17.8 min.
-  #
-  # Next probe: (medium) at 50T — 4.7's medium ≈ xhigh within noise, so 4.8
-  # medium may match this run at ~40% lower output cost. And a starter-table
-  # prompt nudge (approach-angle hint for the Poke Ball pick) could be the
-  # cheap unlock past this new bottleneck.
-  openrouter_id: "anthropic/claude-opus-4.8"
-  reasoning:
-    effort: "high"
-  output_mode: "prompted"
-  observed:
-    avg_turn_cost_usd: 0.0727
-    avg_turn_latency_s: 14.3
-    sample_turns: 50
-    last_updated: 2026-05-29
-    notes: "Reached the starter table inside Oak's Lab by T50 — deepest non-Gemini progress in registry (past Opus 4.7 medium's Pallet Town) but stalled T47-50 unable to land the Poke-Ball pick (right blocked by table, A-from-side not registering). Self-diagnosed the stall honestly. Short of leader Gemini 3.5 Flash medium (got Bulbasaur + Route 1 at 50T). 31/18/1 grades (62% true, honest). 3 prompted-output retries (6%). $3.64/50T = $0.0727/turn — most expensive 50T in registry; 760 output tokens/turn (high effort ~2.5× more verbose than 4.7 medium's ~300). 14.3s/turn avg, 17.8min total. config-3.12. Next: 50T (medium) for ~40% cheaper output + starter-table approach-angle prompt nudge."
-
-"claude-opus-4.8(medium)":
-  openrouter_id: "anthropic/claude-opus-4.8"
-  reasoning:
-    effort: "medium"
-  output_mode: "prompted"
-  observed:
-    sample_turns: 0
-
-"claude-opus-4.8(low)":
-  openrouter_id: "anthropic/claude-opus-4.8"
-  reasoning:
-    effort: "low"
-  output_mode: "prompted"
-  observed:
-    sample_turns: 0
-
-"claude-opus-4.8(minimal)":
-  openrouter_id: "anthropic/claude-opus-4.8"
-  reasoning:
-    effort: "minimal"
-  output_mode: "prompted"
-  observed:
-    sample_turns: 0

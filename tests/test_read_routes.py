@@ -241,17 +241,20 @@ def test_run_get_unknown_404(seeded):
 def test_models_reflect_registry(seeded):
     rows = seeded["tc"].get("/api/models").json()
     assert isinstance(rows, list) and rows
-    # config-3.13's model resolves through the registry; assert config-3.13 is a
-    # known config (below) and that models carry the expected shape.
-    aliases = {r["alias"] for r in rows}
-    # A known alias from models.yaml.
-    assert "gemini-3-flash(high)" in aliases
+    # Collapsed shape: one row per model with a thinking-level axis.
+    models = {r["model"] for r in rows}
+    assert "gemini-3-flash" in models
     for r in rows:
-        assert "alias" in r and "openrouter_id" in r and "observed" in r
-        # observed is either None or carries the two numeric dialog fields.
+        assert {"model", "openrouter_id", "reasoning_type", "default_level",
+                "levels", "observed"} <= set(r)
         if r["observed"] is not None:
             assert "avg_turn_cost_usd" in r["observed"]
             assert "avg_turn_latency_s" in r["observed"]
+    # gemini-3-flash is effort-tiered; default level is the highest (high).
+    gf = next(r for r in rows if r["model"] == "gemini-3-flash")
+    assert gf["reasoning_type"] == "effort"
+    assert gf["default_level"] == "high"
+    assert [lv["level"] for lv in gf["levels"]] == ["high", "medium", "low", "minimal"]
 
 
 def test_models_tolerate_missing_observed(seeded):

@@ -1,8 +1,9 @@
 <script>
   import { untrack } from 'svelte'
-  // MODELS / CONFIGS are now fed from App (sourced from /api/models + /api/configs)
-  // instead of importing the mock module directly.
-  // MODELS is now an array of {alias, run_count} objects (api.fetchModels).
+  // MODELS / CONFIGS are fed from App (sourced from /api/models + /api/configs).
+  // MODELS is the collapsed registry: [{model, openrouter_id, reasoning_type,
+  // default_level, levels:[{level, observed, run_count}], observed, run_count}].
+  // Pick a model, then a thinking level (default = highest); submit "model(level)".
   // CONFIGS is a list of config stems, e.g. "config-3.13".
   let { open = false, continueFrom = null, models = [], configs = [], benchmarks = [], onclose, onsubmit } = $props()
   const MODELS = $derived(models)
@@ -43,7 +44,8 @@
 
   // continue mode forces casual + locks the model to the source run's model
   let kind = $state('official')
-  let model = $state('')           // always the ALIAS string (submit contract)
+  let modelBase = $state('')        // selected model name (e.g. "gpt-5.5")
+  let level = $state('')            // selected thinking level (e.g. "high"); '' = none
   let config = $state('')
   let benchmark = $state('')        // selected benchmark id (official only)
   let maxTurns = $state(100)        // casual default: 100 turns
@@ -61,12 +63,17 @@
       untrack(() => {
         if (continueFrom) {
           kind = 'casual'
-          model = continueFrom.model
+          // Continue reuses the source run's full identity verbatim (already
+          // a "model(level)" string) — no picker.
+          modelBase = ''
+          level = ''
           maxTurns = continueFrom.maxTurns ?? 100
           if (!config) config = latestConfig(CONFIGS)
         } else {
           kind = 'official'
-          model = MODELS[0]?.alias ?? ''
+          const first = sortedModels[0]
+          modelBase = first?.model ?? ''
+          level = first?.default_level ?? ''   // default = highest level
           if (!config) config = latestConfig(CONFIGS)
           benchmark = defaultBenchmark
         }
@@ -79,14 +86,34 @@
   const isOfficial = $derived(kind === 'official')
   const selectedBench = $derived(BENCHMARKS.find((b) => b.id === benchmark) ?? null)
 
+  // The picked model row + its thinking levels (second-axis dropdown).
+  const selectedModel = $derived(MODELS.find((m) => m.model === modelBase) ?? null)
+  const availableLevels = $derived(selectedModel?.levels ?? [])
+
+  // Final submit identity: continue reuses the source alias; otherwise
+  // "model(level)", or the bare model when it has no thinking levels (type none).
+  const model = $derived(
+    isContinue
+      ? (continueFrom?.model ?? '')
+      : (level ? `${modelBase}(${level})` : modelBase)
+  )
+
+  // Pick a model: set it AND snap the level to that model's default (highest).
+  // Done in the click handler (not an $effect) so changing model can't get into
+  // a reactive loop re-applying the default over a manual level edit.
+  function pickModel(m) {
+    modelBase = m.model
+    level = m.default_level ?? ''
+  }
+
   // Searchable, run-count-sorted model list. Models you've already run
-  // (higher run_count) sort first so they're easy to find; alias breaks ties.
+  // (higher run_count) sort first so they're easy to find; name breaks ties.
   const sortedModels = $derived(
-    [...MODELS].sort((a, b) => (b.run_count ?? 0) - (a.run_count ?? 0) || a.alias.localeCompare(b.alias))
+    [...MODELS].sort((a, b) => (b.run_count ?? 0) - (a.run_count ?? 0) || a.model.localeCompare(b.model))
   )
   const filteredModels = $derived(
     modelQuery.trim()
-      ? sortedModels.filter((m) => m.alias.toLowerCase().includes(modelQuery.trim().toLowerCase()))
+      ? sortedModels.filter((m) => m.model.toLowerCase().includes(modelQuery.trim().toLowerCase()))
       : sortedModels
   )
 
@@ -139,16 +166,16 @@
               autocomplete="off"
             />
             <div class="model-list" role="listbox" aria-label="Model">
-              {#each filteredModels as m (m.alias)}
+              {#each filteredModels as m (m.model)}
                 <button
                   type="button"
                   class="model-row"
-                  class:on={m.alias === model}
+                  class:on={m.model === modelBase}
                   role="option"
-                  aria-selected={m.alias === model}
-                  onclick={() => model = m.alias}
+                  aria-selected={m.model === modelBase}
+                  onclick={() => pickModel(m)}
                 >
-                  <span class="m-alias">{m.alias}</span>
+                  <span class="m-alias">{m.model}</span>
                   <span class="m-runs">{m.run_count} {m.run_count === 1 ? 'run' : 'runs'}</span>
                 </button>
               {:else}
@@ -157,6 +184,17 @@
             </div>
           {/if}
         </div>
+
+        {#if !isContinue && availableLevels.length}
+          <label class="field">
+            <span class="flabel">Thinking level <span class="faint">· benchmarked separately</span></span>
+            <select bind:value={level}>
+              {#each availableLevels as lv}
+                <option value={lv.level}>{lv.level}{#if lv.run_count} · {lv.run_count} {lv.run_count === 1 ? 'run' : 'runs'}{/if}</option>
+              {/each}
+            </select>
+          </label>
+        {/if}
 
         {#if isOfficial}
           <label class="field">

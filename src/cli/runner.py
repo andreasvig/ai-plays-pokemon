@@ -171,7 +171,7 @@ def _resolve_task_master_model(config: dict, tm_model_alias: str | None) -> None
     """
     if not tm_model_alias:
         return
-    from src.config import _load_models_registry, _is_raw_model_id
+    from src.config import _is_raw_model_id, _load_models_registry, resolve_model_selection
 
     if _is_raw_model_id(tm_model_alias):
         # Raw provider/model id — use verbatim, no registry entry to resolve.
@@ -179,16 +179,13 @@ def _resolve_task_master_model(config: dict, tm_model_alias: str | None) -> None
         config["_task_master_alias"] = tm_model_alias
         return
     registry = _load_models_registry()
-    entry = registry.get(tm_model_alias)
-    if entry is None or not entry.get("openrouter_id"):
-        known = ", ".join(sorted(registry)) or "(registry empty)"
-        sys.exit(
-            f"ERROR: --task-master-model alias {tm_model_alias!r} not found in "
-            f"models.yaml. Known aliases: {known}."
-        )
-    config["task_master_model"] = entry["openrouter_id"]
-    config["_task_master_llm_resolved"] = entry
-    config["_task_master_alias"] = tm_model_alias
+    try:
+        resolved = resolve_model_selection(tm_model_alias, registry)
+    except ValueError as e:
+        sys.exit(f"ERROR: --task-master-model {tm_model_alias!r}: {e}")
+    config["task_master_model"] = resolved["openrouter_id"]
+    config["_task_master_llm_resolved"] = resolved
+    config["_task_master_alias"] = resolved["_alias"]
 
 
 def prepare_config(

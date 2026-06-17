@@ -239,10 +239,12 @@ def test_api_models_carries_run_count(control):
     assert r.status_code == 200
     models = r.json()
     assert isinstance(models, list) and models
-    # Backward-compatible: existing fields still present, run_count added.
+    # Collapsed shape: one row per model, run_count on the model + each level.
     for entry in models:
-        assert "alias" in entry
+        assert "model" in entry
         assert "run_count" in entry
         assert isinstance(entry["run_count"], int)
         # Empty index → every count is 0.
         assert entry["run_count"] == 0
+        for lvl in entry["levels"]:
+            assert lvl["run_count"] == 0

@@ -599,17 +599,19 @@ def _require_control() -> tuple[Any, Any, Any]:
 
 
 def _validate_model_alias(model: str) -> None:
-    """Reject a model that's neither a known models.yaml alias nor a raw id."""
-    from src.config import _is_raw_model_id, _load_models_registry
+    """Reject a model that's neither a known ``model(level)`` selection nor a raw id."""
+    from src.config import (
+        _load_models_registry,
+        is_valid_model_selection,
+        list_competitor_aliases,
+    )
 
-    if _is_raw_model_id(model):
-        return
     registry = _load_models_registry()
-    if model not in registry:
-        known = ", ".join(sorted(registry)) or "(registry empty)"
+    if not is_valid_model_selection(model, registry):
+        known = ", ".join(list_competitor_aliases(registry)) or "(registry empty)"
         raise HTTPException(
             status_code=400,
-            detail=f"unknown model {model!r}; known aliases: {known}",
+            detail=f"unknown model {model!r}; known selections: {known}",
         )
 
 
@@ -1009,14 +1011,15 @@ async def api_run_screenshot(run_id: str, name: str):
 
 @app.get("/api/models")
 async def api_models():
-    """Aliases from ``models.yaml`` (+ observed cost/latency, + run_count).
+    """Collapsed model registry for the picker (one row per model + levels).
 
-    Backward-compatible (Round 8 / C3): each entry keeps its existing
-    ``alias`` / ``openrouter_id`` / ``observed`` fields and gains a ``run_count``
-    int — how many runs exist for that alias in the history index. When the
-    control plane isn't configured (headless ``pokemon run`` path) the index is
-    absent, so every ``run_count`` is 0. The shape stays a list of objects; only
-    a new field was added.
+    Each row is ``{model, openrouter_id, reasoning_type, default_level, levels,
+    observed, run_count}``. ``levels`` is an ordered list of
+    ``{level, observed, run_count}`` — the picker shows a model dropdown plus a
+    thinking-level dropdown (default = the highest level). ``run_count`` is the
+    number of history runs for that ``model(level)`` identity (the model-level
+    ``run_count`` sums across levels). When the control plane isn't configured
+    (headless ``pokemon run`` path) the index is absent, so counts are 0.
     """
     from src.app import derivations
     from src.app.catalog import list_models
@@ -1025,7 +1028,17 @@ async def api_models():
     index = _CONTROL["index"]
     counts = derivations.run_counts_by_model(index.all()) if index is not None else {}
     for entry in models:
-        entry["run_count"] = counts.get(entry.get("alias"), 0)
+        model = entry["model"]
+        if entry["levels"]:
+            total = 0
+            for lvl in entry["levels"]:
+                rc = counts.get(f"{model}({lvl['level']})", 0)
+                lvl["run_count"] = rc
+                total += rc
+            entry["run_count"] = total
+        else:
+            # reasoning_type none — the bare model name is the run identity.
+            entry["run_count"] = counts.get(model, 0)
     return JSONResponse(models)
 
 
