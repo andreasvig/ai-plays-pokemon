@@ -58,11 +58,18 @@ _LLM_CALL_TIMEOUTS_S = (120.0, 120.0, 180.0, 240.0, 300.0, 360.0)
 # Analysis). Same attempt count, just twice the patience per attempt.
 _SLOW_MODEL_TIMEOUT_MULT = 2.0
 
-# Backoff between transient retries: exponential (base x2) capped, with full
-# jitter. The old loop retried instantly and hammered a struggling provider; a
-# short randomized pause lets a transient blip clear before the next attempt.
-_RETRY_BACKOFF_BASE_S = 1.0
-_RETRY_BACKOFF_CAP_S = 30.0
+# Backoff between transient retries. Exponential growth (base * factor**idx)
+# with a HIGH cap so the LATER attempts wait minutes, not seconds — a flapping
+# provider gets real time to recover before we burn another attempt (Andreas
+# 2026-06-17: "add more safety… exponentially more wait time so the longer waits
+# get past 120s"). Equal jitter (half fixed + half random) gives a guaranteed
+# GROWING FLOOR (the safety) while keeping half-range randomization to
+# decorrelate many runs hammering the same provider at once. Resulting schedule
+# of ceilings ≈ 2, 6, 18, 54, 162, 300s; the longest USED backoff (before the
+# final attempt) clears ~120s.
+_RETRY_BACKOFF_BASE_S = 2.0
+_RETRY_BACKOFF_FACTOR = 3.0
+_RETRY_BACKOFF_CAP_S = 300.0
 
 # Transient errors that justify retrying the SAME model. The NoneType subscript
 # is the OpenRouter "HTTP 200 with error body" wrapped-5xx case — pydantic-ai
@@ -90,14 +97,21 @@ def _is_transient_llm_error(exc: BaseException) -> bool:
 
 
 def _retry_backoff_s(attempt_idx: int) -> float:
-    """Exponential backoff with full jitter before the next transient retry.
+    """Equal-jitter exponential backoff before the next transient retry.
 
-    ``attempt_idx`` is 0-based: 0 → up to 1s, 1 → up to 2s, ... capped at
-    _RETRY_BACKOFF_CAP_S. Full jitter (uniform 0..ceiling) decorrelates many
-    runs retrying the same struggling provider at once.
+    ``attempt_idx`` is 0-based. The ceiling grows ``base * factor**idx``, capped
+    at _RETRY_BACKOFF_CAP_S → ceilings ≈ 2, 6, 18, 54, 162, 300s. The actual
+    wait is the upper half of that ceiling plus jitter (``ceiling/2 + U[0,
+    ceiling/2]``): a guaranteed growing FLOOR for safety, with half-range
+    randomization to decorrelate many runs retrying one struggling provider. So
+    early attempts re-roll within seconds, but the later waits climb past two
+    minutes — giving a flapping provider real time to recover.
     """
-    ceiling = min(_RETRY_BACKOFF_CAP_S, _RETRY_BACKOFF_BASE_S * (2 ** attempt_idx))
-    return random.uniform(0.0, ceiling)
+    ceiling = min(
+        _RETRY_BACKOFF_CAP_S,
+        _RETRY_BACKOFF_BASE_S * (_RETRY_BACKOFF_FACTOR ** attempt_idx),
+    )
+    return ceiling / 2.0 + random.uniform(0.0, ceiling / 2.0)
 
 
 def _provider_routing_for_attempt(

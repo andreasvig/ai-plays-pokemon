@@ -38,6 +38,9 @@ import asyncio
 
 from src.agent.turn import (
     _LLM_CALL_TIMEOUTS_S,
+    _RETRY_BACKOFF_BASE_S,
+    _RETRY_BACKOFF_CAP_S,
+    _RETRY_BACKOFF_FACTOR,
     _SLOW_MODEL_TIMEOUT_MULT,
     _is_transient_llm_error,
     _provider_routing_for_attempt,
@@ -127,12 +130,24 @@ def test_retry_schedule_is_six_attempts_and_escalates():
     assert _SLOW_MODEL_TIMEOUT_MULT == 2.0
 
 
-def test_retry_backoff_is_bounded_and_grows():
-    # Full jitter → bounded by min(cap, base*2**idx). Sample many draws.
-    for idx, cap in [(0, 1.0), (1, 2.0), (2, 4.0), (10, 30.0)]:
-        draws = [_retry_backoff_s(idx) for _ in range(200)]
-        assert all(0.0 <= d <= cap + 1e-9 for d in draws)
-        assert max(draws) > 0.0  # not degenerate
+def test_retry_backoff_grows_exponentially_and_clears_two_minutes():
+    # Equal jitter → each draw sits in [ceiling/2, ceiling] where ceiling is
+    # base*factor**idx, capped. Schedule of ceilings ≈ 2, 6, 18, 54, 162, 300s.
+    expected_ceilings = {0: 2.0, 1: 6.0, 2: 18.0, 3: 54.0, 4: 162.0, 10: 300.0}
+    for idx, ceil in expected_ceilings.items():
+        draws = [_retry_backoff_s(idx) for _ in range(400)]
+        assert all(ceil / 2.0 - 1e-9 <= d <= ceil + 1e-9 for d in draws)
+    # Monotonic growth (compare the guaranteed floors across attempts).
+    floors = [
+        _RETRY_BACKOFF_BASE_S * (_RETRY_BACKOFF_FACTOR ** i) / 2.0 for i in range(5)
+    ]
+    assert floors == sorted(floors) and floors[0] < floors[-1]
+    # The safety ask (Andreas 2026-06-17): the longer waits clear two minutes.
+    # By attempt idx 4 the floor alone (81s) is large and the ceiling (162s)
+    # routinely exceeds 120s.
+    assert max(_retry_backoff_s(4) for _ in range(400)) > 120.0
+    # Still capped — never runs away.
+    assert all(_retry_backoff_s(20) <= _RETRY_BACKOFF_CAP_S + 1e-9 for _ in range(200))
 
 
 # --- Phase 5 + 6: drive the real loop with stubs -----------------------------
