@@ -247,18 +247,25 @@ minimax-m3:
     non-thinking:
       sample_turns: 0
 
-# xAI Grok 4.3 — ALWAYS-ON reasoning (reasoning_type none; no levels). Multimodal, 1M ctx, $1.25/$2.50 per M. Slow (71.7s/turn) + spatial-grounding-bound on this task.
+# xAI Grok 4.3 — effort-tiered: reasoning.effort ∈ none/low/medium/high (xAI docs https://docs.x.ai/developers/model-capabilities/text/reasoning, confirmed 2026-06-17; API default low, "none" disables reasoning entirely). This SUPERSEDES the earlier "always-on, no levels" entry — per-effort control is the headline Grok 4.3 feature; the old read was Grok-4-era behavior. OpenRouter lists `reasoning` but NOT `reasoning_effort` for xAI, same signature as grok-build-0.1 whose effort tiers were live-probed working 2026-05-21, so effort routing is confirmed despite the missing param. Multimodal (text+image), 1M ctx, $1.25/$2.50 per M. slow flagged on the higher efforts (legacy always-on ≈ high ran 71.7s/turn); low/none unmeasured — drop the flag once a run shows a fast tail.
 grok-4.3:
   openrouter_id: x-ai/grok-4.3
-  reasoning_type: none
-  slow: true
+  reasoning_type: effort
+  thinking_levels:
+  - high
+  - medium
+  - low
+  - none
+  slow:
+    high: true
+    medium: true
   observed:
-    _:
+    high:
       avg_turn_cost_usd: 0.0162
       avg_turn_latency_s: 71.7
       sample_turns: 35
       last_updated: 2026-05-01
-      notes: 3/35 grade=true (8.3%). Stuck in 1F Player's House — never reached overworld. ~6× slower per turn than Pro low at similar cost. Latency variance huge (24s–250s).
+      notes: 'LEGACY always-on observation (pre-4.3 effort split), mapped to high as the closest effort. 3/35 grade=true (8.3%). Stuck in 1F Player''s House — never reached overworld. ~6× slower per turn than Pro low at similar cost. Latency variance huge (24s–250s). Re-benchmark per-effort under the current config.'
 
 # xAI Grok Build 0.1 — effort-tiered (high/medium/low/minimal, probed 2026-05-21). 256K ctx, $1.00/$2.00 per M, multimodal, full structured-output stack. Slow (118.6s/turn, climbs with context). Reasoning summary returned natively (no summary:auto needed).
 grok-build-0.1:
