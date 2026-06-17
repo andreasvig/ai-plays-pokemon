@@ -106,6 +106,43 @@ def test_player_gameaction_coerces_stringified_handoff():
     assert g2.return_to_taskmaster is None
 
 
+@pytest.mark.parametrize("token", ["None", "null", "", " none "])
+def test_player_last_turn_succeeded_string_null_coerces_to_none(token):
+    """mimo emits the literal string "None"/"null"/"" for the null case of the
+    Optional[bool] last_turn_succeeded; pydantic's bool parser rejects all of
+    them and the Player run dies at Turn 1. These are the VERBATIM tokens caught
+    from a live mimo Player call on 2026-06-17."""
+    g = GameAction.model_validate(
+        {
+            "inputs": ["down"],
+            "reasoning": "go down",
+            "last_turn_succeeded": token,
+            "memory_updates": "none",
+        }
+    )
+    assert g.last_turn_succeeded is None
+
+
+@pytest.mark.parametrize("token,expected", [("True", True), ("true", True), ("false", False)])
+def test_player_last_turn_succeeded_string_bool_still_parses(token, expected):
+    g = GameAction.model_validate(
+        {"inputs": ["down"], "reasoning": "r", "last_turn_succeeded": token, "memory_updates": "none"}
+    )
+    assert g.last_turn_succeeded is expected
+
+
+def test_player_stringified_inputs_list_decodes():
+    g = GameAction.model_validate(
+        {
+            "inputs": json.dumps(["down", "a"]),
+            "reasoning": "r",
+            "last_turn_succeeded": True,
+            "memory_updates": "none",
+        }
+    )
+    assert g.inputs == ["down", "a"]
+
+
 def test_legacy_gameaction_unaffected_and_has_no_handoff_field():
     """The TM-disabled schema drops return_to_taskmaster; the inherited
     validator (check_fields=False) must not break its build."""

@@ -76,12 +76,18 @@ class GameAction(BaseModel):
         ),
     )
 
-    # Some models stringify this nested object / emit "None" for the null case;
-    # decode losslessly so strict validation accepts it. See src/agent/coerce.py.
-    # check_fields=False: _LegacyGameAction (TM-disabled path) inherits this then
-    # drops the field, which is the documented inherit-and-drop case.
-    _coerce_handoff = field_validator(
-        "return_to_taskmaster", mode="before", check_fields=False
+    # Some models (e.g. xiaomi/mimo-v2.5) can't emit a JSON null or a nested
+    # object in a tool call: they send the string "None"/"null"/"" for a null
+    # optional, and stringify lists/objects. pydantic then rejects the
+    # (semantically correct) value — bool_parsing on last_turn_succeeded,
+    # "Input should be a valid list/object" on inputs/return_to_taskmaster — and
+    # the run dies after exhausting ModelRetry. Decode losslessly. See
+    # src/agent/coerce.py. check_fields=False: _LegacyGameAction (TM-disabled
+    # path) inherits this then drops return_to_taskmaster — the documented
+    # inherit-and-drop case; the other two fields exist on both models.
+    _coerce_fields = field_validator(
+        "inputs", "last_turn_succeeded", "return_to_taskmaster",
+        mode="before", check_fields=False,
     )(coerce_stringified_object)
 
 
