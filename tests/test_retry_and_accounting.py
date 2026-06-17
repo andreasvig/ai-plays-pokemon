@@ -34,9 +34,12 @@ from tests.test_taskmaster_loop import (
 
 from src.agent.agent import ReturnToTaskMaster
 from src.agent.task_master import Rating
+import asyncio
+
 from src.agent.turn import (
     _LLM_CALL_TIMEOUTS_S,
     _SLOW_MODEL_TIMEOUT_MULT,
+    _is_transient_llm_error,
     _provider_routing_for_attempt,
     _retry_backoff_s,
     _settings_for_attempt,
@@ -88,6 +91,33 @@ def test_settings_for_attempt_none_base_returns_none_when_empty():
     assert _settings_for_attempt(None, {"sort": "throughput"}) == {
         "extra_body": {"provider": {"sort": "throughput"}}
     }
+
+
+def test_transient_classifier_covers_timeout_jsondecode_and_wrapped_5xx():
+    # Timeouts re-roll (verified live on the same run that surfaced the bug).
+    assert _is_transient_llm_error(asyncio.TimeoutError()) is True
+    # A malformed/truncated provider body raises JSONDecodeError mid-call. This
+    # is the EXACT failure that killed a gpt-5.5 run at T31 (it was non-transient
+    # and skipped the re-roll). Both the real shape and the name-match path.
+    real = None
+    try:
+        json.loads("not json\nline two")
+    except json.JSONDecodeError as exc:
+        real = exc
+    assert real is not None
+    assert _is_transient_llm_error(real) is True
+
+    class _ForeignJSONDecodeError(ValueError):
+        pass
+    _ForeignJSONDecodeError.__name__ = "JSONDecodeError"
+    assert _is_transient_llm_error(_ForeignJSONDecodeError("boom")) is True
+
+    # The OpenRouter wrapped-5xx NoneType subscript stays transient.
+    assert _is_transient_llm_error(
+        TypeError("'NoneType' object is not subscriptable")
+    ) is True
+    # A genuine deterministic fault must NOT be retried (would burn the budget).
+    assert _is_transient_llm_error(ValueError("schema mismatch: field x required")) is False
 
 
 def test_retry_schedule_is_six_attempts_and_escalates():

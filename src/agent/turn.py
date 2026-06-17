@@ -75,6 +75,16 @@ _TRANSIENT_ERROR_PATTERNS = (
 def _is_transient_llm_error(exc: BaseException) -> bool:
     if isinstance(exc, asyncio.TimeoutError):
         return True
+    # A JSONDecodeError raised mid-call is the provider returning a malformed or
+    # truncated response body (SSE stream cut mid-chunk, an HTML error page, a
+    # partial JSON object) — not a deterministic fault on our side. It's the same
+    # provider-side-glitch family as the timeouts and the wrapped-5xx NoneType
+    # case, and re-rolling the provider recovers it. (2026-06-17: a gpt-5.5 run
+    # died at T31 on "Expecting value: line 225 column 1" purely because this was
+    # classed non-transient and skipped the 6-attempt re-roll.) Match by name too
+    # in case the decoder swaps the concrete class (e.g. orjson/simplejson).
+    if isinstance(exc, json.JSONDecodeError) or type(exc).__name__ == "JSONDecodeError":
+        return True
     msg = str(exc)
     return any(p in msg for p in _TRANSIENT_ERROR_PATTERNS)
 
