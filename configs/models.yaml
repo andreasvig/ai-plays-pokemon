@@ -370,6 +370,26 @@ kimi-k2.6:
     non-thinking:
       sample_turns: 0
 
+# Moonshot Kimi K2.7 Code (added 2026-06-17) — binary thinking, multimodal (text+image, OpenRouter API 2026-06-17), 262K ctx. Providers support tool_choice + structured_outputs → default tool output. Pricing: $0.74/$3.50 cheapest (DeepInfra); Moonshot's own first-party endpoint has TWO tiers — standard `moonshotai/int4` ($0.95/$4.00) and `moonshotai/highspeed` ($1.90/$8.00). The Highspeed tier is EXCLUDED via provider.ignore per Andreas (2026-06-17), so routing falls to the standard/cheaper endpoints. slow:thinking defensive — the Kimi line's reasoning grows with history (K2.6 was the slowest in registry, 110-458s/turn); drop the flag if a first run shows a fast tail. Sampling 0.3/0.95. Floating slug (pinned: moonshotai/kimi-k2.7-code-20260612).
+kimi-k2.7-code:
+  openrouter_id: moonshotai/kimi-k2.7-code
+  reasoning_type: binary
+  thinking_levels:
+  - thinking
+  - non-thinking
+  temperature: 0.3
+  top_p: 0.95
+  provider:
+    ignore:
+    - moonshotai/highspeed
+  slow:
+    thinking: true
+  observed:
+    thinking:
+      sample_turns: 0
+    non-thinking:
+      sample_turns: 0
+
 # OpenAI GPT-5.4 nano — cheap-at-scale, 400K ctx, $0.20/$1.25 per M. Effort-tiered + summary:auto. 'Do small models at max effort beat large models at low effort?' probe.
 gpt-5.4-nano:
   openrouter_id: openai/gpt-5.4-nano
