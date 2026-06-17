@@ -75,23 +75,6 @@
             {#if entry.title}<div class="m-row"><span class="m-lab">📋 Task</span>{entry.title}</div>{/if}
             {#if entry.description}<div class="m-row"><span class="m-lab">🧭 Plan</span><div class="m-desc">{entry.description}</div></div>{/if}
             {#if entry.success}<div class="m-row"><span class="m-lab">🎯 Success criteria</span><span class="mono">{entry.success}</span></div>{/if}
-            {#if entry.steps && entry.steps.length}
-              <div class="m-row"><span class="m-lab">🛠 TaskMaster steps</span>
-                <div class="m-steps">
-                  {#each entry.steps as s}
-                    <div class="m-step {s.k}">
-                      {#if s.k === 'thinking'}
-                        <span class="m-step-h">💭 Thinking</span>
-                        <div class="m-step-b">{@html mdToHtml(s.t)}</div>
-                      {:else if s.k === 'tool'}
-                        {#if s.args}<div class="m-step-h">🔧 {s.name}</div><div class="m-step-b mono call">{s.name}({s.args})</div>
-                        {:else if s.resp != null}<div class="m-step-b resp faint">→ {s.resp}</div>{/if}
-                      {/if}
-                    </div>
-                  {/each}
-                </div>
-              </div>
-            {/if}
           </div>
         </div>
       {:else}
@@ -152,13 +135,6 @@
   .m-rating.ok .m-verdict { color: var(--green); }
   .m-rating.no .m-verdict { color: var(--red); }
   .m-rating.partial .m-verdict { color: #c79a18; }
-  /* master's own trace: thinking + tool calls + responses, compact in the card */
-  .m-steps { display: flex; flex-direction: column; gap: 7px; margin-top: 2px; }
-  .m-step { border-left: 2px solid #f0d9a0; padding: 3px 0 3px 9px; }
-  .m-step-h { display: block; font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; color: #c79a18; margin-bottom: 2px; }
-  .m-step-b { font-size: 12px; line-height: 1.5; color: var(--muted); }
-  .m-step-b.call { font-size: 11px; color: var(--text); }
-  .m-step-b.resp { font-size: 11px; margin-top: 2px; }
 
   .turn-block { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; flex: none; }
   .turn-block.current { border-color: #c7c8f7; }
@@ -199,9 +175,6 @@
   .md :global(p) { margin: 0 0 8px; line-height: 1.5; }
   .md :global(p:last-child) { margin-bottom: 0; }
   .md :global(strong) { font-weight: 750; color: var(--text); }
-  .m-step-b :global(p) { margin: 0 0 7px; }
-  .m-step-b :global(p:last-child) { margin-bottom: 0; }
-  .m-step-b :global(strong) { font-weight: 750; color: var(--text); }
 
   /* B9.9 — handback rendered as a clear verdict, not raw text. */
   .hb-verdict { font-size: 13px; font-weight: 750; margin-bottom: 6px; }

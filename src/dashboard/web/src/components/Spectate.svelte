@@ -103,47 +103,34 @@
     return { verdict, tone, summary: r.task_summary || '' }
   }
 
-  // Turn raw pydantic-ai trace messages (master) into compact displayable steps,
-  // mirroring the player turn box shapes (thinking / tool call / tool response).
+  // Extract ONLY the TaskMaster's verdict on the previous task from the raw
+  // pydantic-ai trace. The thinking + intermediate tool calls/responses
+  // (ask_perplexity etc.) are intentionally NOT surfaced in the LIVE spectate
+  // view — they're far too verbose (Andreas 2026-06-17). The task
+  // title/plan/success criteria and the verdict already render as the card's
+  // own rows from the `final_result` decision; the strategic reasoning prose is
+  // likewise omitted live. (The post-run Report still shows the full trace.)
   function parseMasterMessages(messages) {
     if (!Array.isArray(messages)) return { steps: [], rating: null }
-    const steps = []
     let rating = null
     for (const m of messages) {
       if (!m || typeof m !== 'object') continue
-      const role = m.role
-      if (role === 'thinking') {
-        if (m.content) steps.push({ k: 'thinking', t: String(m.content) })
-      } else if (role === 'tool_call') {
-        // The TaskMaster's structured output is emitted as a `final_result` tool
-        // call whose args are the decision JSON. Do NOT dump that raw JSON — the
-        // task title/plan/success already show as the card's rows. We also do NOT
-        // surface `a.reasoning` (the strategic prose) in the live trace — it's not
-        // strictly necessary. We DO capture the rating of the previous task so the
-        // card can show the verdict above the upcoming task.
-        if (m.tool_name === 'final_result') {
-          const a = parseArgs(m.args)
-          if (a && typeof a === 'object') {
-            const r = a.rating_of_previous_task
-            if (r != null && typeof r === 'object') {
-              rating = { status: String(r.status || '').trim(), reasoning: String(r.reasoning || '').trim() }
-            } else if (typeof r === 'string' && r.trim()) {
-              rating = { status: '', reasoning: r.trim() }
-            }
+      // The TaskMaster's structured output is emitted as a `final_result` tool
+      // call whose args are the decision JSON. We only mine it for the rating of
+      // the previous task, so the card can show the verdict above the next task.
+      if (m.role === 'tool_call' && m.tool_name === 'final_result') {
+        const a = parseArgs(m.args)
+        if (a && typeof a === 'object') {
+          const r = a.rating_of_previous_task
+          if (r != null && typeof r === 'object') {
+            rating = { status: String(r.status || '').trim(), reasoning: String(r.reasoning || '').trim() }
+          } else if (typeof r === 'string' && r.trim()) {
+            rating = { status: '', reasoning: r.trim() }
           }
-          continue
         }
-        const args = parseArgs(m.args)
-        const argStr = args == null ? '' : (typeof args === 'string' ? args : JSON.stringify(args))
-        steps.push({ k: 'tool', name: m.tool_name || 'tool', args: argStr, resp: null })
-      } else if (role === 'tool_result') {
-        if (m.tool_name === 'final_result') continue   // "Final result processed." — noise
-        const c = typeof m.content === 'string' ? m.content : JSON.stringify(m.content)
-        steps.push({ k: 'tool', name: '↳ response', args: '', resp: c })
       }
-      // system / user / assistant carry the prompt — not shown live.
     }
-    return { steps, rating }
+    return { steps: [], rating }
   }
 
   function pushBox(turn, box) {
