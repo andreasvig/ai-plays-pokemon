@@ -473,6 +473,7 @@ def test_turn_loop_win_stamps_completed_status(tmp_path):
     tm._run_start_time = _time.time()
     tm.total_cost_usd = 1.0
     tm.task_master_cost_usd = 0.0
+    tm.task_master_turns = 0
     tm.ocr = None
     tm.total_input_tokens = 0
     tm.total_output_tokens = 0

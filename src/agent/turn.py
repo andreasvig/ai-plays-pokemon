@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import random
 import sys
 import time
 from dataclasses import dataclass, field
@@ -44,10 +45,24 @@ _THINKING_ERROR_MARKERS = (
     "reasoning", "thinking", "not supported", "unsupported parameter",
 )
 
-# Per-attempt timeouts for the LLM call: two short retries then one patient one.
-# Throughput-sort re-rolls the provider on each call, so a timeout often lands
-# on a faster backend the next attempt.
-_LLM_CALL_TIMEOUTS_S = (60.0, 60.0, 180.0)
+# Per-attempt timeouts for the LLM call (6 attempts, ~2x the old 3-attempt
+# budget — Andreas 2026-06-17, so flaky providers don't poison a model's score).
+# Escalating: short early attempts re-roll the provider fast, later attempts grow
+# patient. DOUBLED again for models flagged `slow: true` in the registry (Gemma
+# et al.). Provider routing also escalates per attempt (throughput → latency →
+# OpenRouter default) — see _provider_routing_for_attempt.
+_LLM_CALL_TIMEOUTS_S = (120.0, 120.0, 180.0, 240.0, 300.0, 360.0)
+
+# Multiplier applied to every per-attempt timeout for a model marked `slow: true`
+# (known-slow end-to-end latency, e.g. Gemma — cross-checked vs Artificial
+# Analysis). Same attempt count, just twice the patience per attempt.
+_SLOW_MODEL_TIMEOUT_MULT = 2.0
+
+# Backoff between transient retries: exponential (base x2) capped, with full
+# jitter. The old loop retried instantly and hammered a struggling provider; a
+# short randomized pause lets a transient blip clear before the next attempt.
+_RETRY_BACKOFF_BASE_S = 1.0
+_RETRY_BACKOFF_CAP_S = 30.0
 
 # Transient errors that justify retrying the SAME model. The NoneType subscript
 # is the OpenRouter "HTTP 200 with error body" wrapped-5xx case — pydantic-ai
@@ -62,6 +77,58 @@ def _is_transient_llm_error(exc: BaseException) -> bool:
         return True
     msg = str(exc)
     return any(p in msg for p in _TRANSIENT_ERROR_PATTERNS)
+
+
+def _retry_backoff_s(attempt_idx: int) -> float:
+    """Exponential backoff with full jitter before the next transient retry.
+
+    ``attempt_idx`` is 0-based: 0 → up to 1s, 1 → up to 2s, ... capped at
+    _RETRY_BACKOFF_CAP_S. Full jitter (uniform 0..ceiling) decorrelates many
+    runs retrying the same struggling provider at once.
+    """
+    ceiling = min(_RETRY_BACKOFF_CAP_S, _RETRY_BACKOFF_BASE_S * (2 ** attempt_idx))
+    return random.uniform(0.0, ceiling)
+
+
+def _provider_routing_for_attempt(
+    attempt_idx: int, base_provider: Optional[dict]
+) -> Optional[dict]:
+    """OpenRouter provider routing for a 0-based attempt index.
+
+    Escalation (Andreas 2026-06-17): attempt 1 sorts by throughput (fastest
+    backend), attempt 2 by latency (lowest TTFT), attempt 3+ drops the sort so
+    OpenRouter's default uptime/price-weighted routing chooses the provider. A
+    model's own registry ``provider`` block (e.g. an order/ignore allowlist) is
+    preserved as the base; only the ``sort`` key is overridden on attempts 1-2.
+    Returns None when there's nothing to send (no base, no sort).
+    """
+    base = dict(base_provider) if base_provider else {}
+    if attempt_idx == 0:
+        return {**base, "sort": "throughput"}
+    if attempt_idx == 1:
+        return {**base, "sort": "latency"}
+    return base or None
+
+
+def _settings_for_attempt(base_settings, provider_routing: Optional[dict]):
+    """Clone model settings with this attempt's provider routing swapped in.
+
+    ``base_settings`` is the OpenAIModelSettings built at agent creation (a
+    TypedDict → plain dict). We copy it and replace ``extra_body['provider']``
+    so the per-attempt routing escalation doesn't mutate the shared settings.
+    Returns None if the result carries nothing (so callers pass no settings).
+    """
+    settings = dict(base_settings) if base_settings else {}
+    extra = dict(settings.get("extra_body") or {})
+    if provider_routing is not None:
+        extra["provider"] = provider_routing
+    else:
+        extra.pop("provider", None)
+    if extra:
+        settings["extra_body"] = extra
+    elif "extra_body" in settings:
+        del settings["extra_body"]
+    return settings or None
 
 
 def _serialize_messages(messages) -> list[dict]:
@@ -590,6 +657,11 @@ class TurnManager:
         # Separate TaskMaster cost counter (Decision 10) — distinct from the
         # Player's total_cost_usd so strategy vs tactics cost is comparable.
         self.task_master_cost_usd = 0.0
+        # TaskMaster invocations counted as turns (Andreas 2026-06-17): each
+        # cold-start + handoff is +1 reported turn, added to player turns for the
+        # leaderboard total. Player/game turns (self.turn_number) stay separate so
+        # gate deadlines keep measuring game progress only.
+        self.task_master_turns = 0
         # Rolling-window size for the TaskMaster's view of its own prior outputs.
         self.history_window_n = int(
             config.get("task_master", {}).get("history_window_n", 20)
@@ -881,6 +953,28 @@ class TurnManager:
             turns_used=self.current_task_turn,
         )
 
+    def _record_task_master_turn(self, inv) -> None:
+        """Account one TaskMaster invocation as a turn (Andreas 2026-06-17).
+
+        TaskMaster's strategy calls now contribute to BOTH the run's reported
+        turn count (``task_master_turns``, added to player turns for the
+        leaderboard total) and the per-turn cost breakdown — previously the cost
+        landed only in the grand-total bucket and was attached to no turn, so it
+        was invisible in any per-turn view. The cost still also accumulates in
+        ``task_master_cost_usd`` for the strategy-vs-tactics split (Decision 10).
+        The per-turn entry is tagged ``kind:"task_master"``; player entries carry
+        no ``kind`` (treat absent as the player).
+        """
+        cost = inv.cost_usd + inv.tool_cost_usd
+        self.task_master_cost_usd += cost
+        self.task_master_turns += 1
+        self.turn_costs.append({
+            "turn": self.turn_number,
+            "cost_usd": cost,
+            "model": inv.model_used,
+            "kind": "task_master",
+        })
+
     async def _cold_start(self) -> None:
         """First TaskMaster invocation: set task 1 (no rating).
 
@@ -891,7 +985,7 @@ class TurnManager:
         runner = self._get_task_master_runner()
         cs_input = self._build_cold_start_input()
         inv = await runner.invoke_async(cs_input, is_cold_start=True)
-        self.task_master_cost_usd += inv.cost_usd + inv.tool_cost_usd
+        self._record_task_master_turn(inv)
         self.current_task_index = 1
         self.current_task_turn = 0
         task = inv.output.task
@@ -936,7 +1030,7 @@ class TurnManager:
         runner = self._get_task_master_runner()
         ho_input = self._build_handoff_input(handoff)
         inv = await runner.invoke_async(ho_input, is_cold_start=False)
-        self.task_master_cost_usd += inv.cost_usd + inv.tool_cost_usd
+        self._record_task_master_turn(inv)
         out: TaskMasterOutput = inv.output
 
         # 1. Rate the just-finished task N (task_completed{N}). Backward-stamp.
@@ -1067,6 +1161,8 @@ class TurnManager:
                     print(f"  [Turn {self.turn_number}] No valid Player output at the "
                           f"budget boundary; forcing handoff to TaskMaster.")
                     await self._handle_handoff(None, None)
+                    if self._referee_should_break():
+                        break
                     continue
                 print(f"  [Turn {self.turn_number}] No result. Stopping.")
                 break
@@ -1088,6 +1184,8 @@ class TurnManager:
                     if getattr(result, "reasoning", None):
                         self._cur_task_player_reasons.append(result.reasoning)
                     await self._handle_handoff(result, handoff)
+                    if self._referee_should_break():
+                        break
                     continue
 
             # Apply memory updates from the agent's output (string → dict)
@@ -1151,50 +1249,12 @@ class TurnManager:
                     self.ocr.set_active(False)
 
             # Referee poll — runs after the screen has settled so memory
-            # reflects the just-executed action. Wrapped so a referee failure
-            # (e.g. a flaky memory read) can NEVER take down a player run.
-            # Under enforcement, poll() returns True when a deadline gate was
-            # missed; we then stop the run cleanly (same graceful exit as a
-            # normal completion — savepoint + summary still written below).
-            referee_terminate = False
-            if self.referee is not None:
-                try:
-                    referee_terminate = bool(self.referee.poll(self.turn_number))
-                except Exception as e:
-                    self.logger.log_custom("referee_error", {
-                        "turn": self.turn_number, "error": str(e),
-                    })
-            if referee_terminate:
-                reason = self.referee.termination_reason
-                print(f"  [Turn {self.turn_number}] Referee gate enforcement: "
-                      f"{reason}. Stopping run cleanly.")
-                self.logger.log_custom("referee_terminate", {
-                    "turn": self.turn_number, "reason": reason,
-                })
+            # reflects the just-executed action. Polled on EVERY turn (including
+            # the handoff turns above, via their own poll before `continue`) so a
+            # deadline gate is evaluated at the exact turn it falls due, not a
+            # turn late.
+            if self._referee_should_break():
                 break
-
-            # Success exit (locked decision #8): the final ladder rung is
-            # complete → the benchmark is WON and ends immediately rather than
-            # playing on. Parallel to the missed-deadline path above; guarded so
-            # a referee that doesn't implement it (or a flaky read) can never
-            # take down a run. The end status is recorded as `completed`.
-            if self.referee is not None:
-                try:
-                    if self.referee.should_complete_run():
-                        self._referee_completed = True
-                        reason = getattr(
-                            self.referee, "completion_reason", "final_gate"
-                        )
-                        print(f"  [Turn {self.turn_number}] Referee: final ladder "
-                              f"gate reached ({reason}) — run complete (WIN).")
-                        self.logger.log_custom("referee_complete", {
-                            "turn": self.turn_number, "reason": reason,
-                        })
-                        break
-                except Exception as e:
-                    self.logger.log_custom("referee_error", {
-                        "turn": self.turn_number, "error": str(e),
-                    })
 
             # Periodic savepoint — at the very end of the iteration so the
             # emulator state is post-settle, not mid-button-press.
@@ -1229,6 +1289,53 @@ class TurnManager:
         # Restore stdout and close terminal log
         sys.stdout = self._orig_stdout
         self._terminal_log.close()
+
+    def _referee_should_break(self) -> bool:
+        """Poll the referee at the current turn and act on its verdict.
+
+        Returns True when the run loop should break — either a missed-gate
+        termination (enforcement) or the final-rung WIN (locked decision #8).
+        Wrapped so a referee fault (e.g. a flaky memory read) can NEVER take
+        down a player run. Safe to call on every turn, including TaskMaster
+        handoff turns: that's what evaluates a deadline gate at the exact turn
+        it falls due instead of one turn late (the off-by-one fix, 2026-06-17).
+        Idempotent — poll() only first-stamps and the missed-gate latch is
+        one-shot, so calling it on a handoff turn that pressed no buttons just
+        re-runs the deadline check against the unchanged game state.
+        """
+        if self.referee is None:
+            return False
+        # Missed-gate enforcement.
+        try:
+            if bool(self.referee.poll(self.turn_number)):
+                reason = self.referee.termination_reason
+                print(f"  [Turn {self.turn_number}] Referee gate enforcement: "
+                      f"{reason}. Stopping run cleanly.")
+                self.logger.log_custom("referee_terminate", {
+                    "turn": self.turn_number, "reason": reason,
+                })
+                return True
+        except Exception as e:
+            self.logger.log_custom("referee_error", {
+                "turn": self.turn_number, "error": str(e),
+            })
+            return False
+        # Success exit (locked decision #8): final ladder rung complete → WIN.
+        try:
+            if self.referee.should_complete_run():
+                self._referee_completed = True
+                reason = getattr(self.referee, "completion_reason", "final_gate")
+                print(f"  [Turn {self.turn_number}] Referee: final ladder "
+                      f"gate reached ({reason}) — run complete (WIN).")
+                self.logger.log_custom("referee_complete", {
+                    "turn": self.turn_number, "reason": reason,
+                })
+                return True
+        except Exception as e:
+            self.logger.log_custom("referee_error", {
+                "turn": self.turn_number, "error": str(e),
+            })
+        return False
 
     async def _run_turn(self) -> Optional[GameAction]:
         """Execute a single turn."""
@@ -1473,14 +1580,30 @@ class TurnManager:
         max_attempts = len(_LLM_CALL_TIMEOUTS_S)
         t = deps.turn_number
 
+        # Per-model retry tuning, read off the resolved registry entry: `slow`
+        # doubles every per-attempt timeout; `provider` is the base routing block
+        # the per-attempt throughput→latency→default escalation layers onto.
+        resolved = self.config.get("_llm_resolved") or {}
+        is_slow = bool(resolved.get("slow"))
+        base_provider = resolved.get("provider")
+        slow_mult = _SLOW_MODEL_TIMEOUT_MULT if is_slow else 1.0
+
         for model_id in model_chain:
-            for attempt_idx, timeout_s in enumerate(_LLM_CALL_TIMEOUTS_S):
+            for attempt_idx, base_timeout in enumerate(_LLM_CALL_TIMEOUTS_S):
                 attempt_num = attempt_idx + 1
+                timeout_s = base_timeout * slow_mult
+                provider_routing = _provider_routing_for_attempt(
+                    attempt_idx, base_provider
+                )
+                attempt_settings = _settings_for_attempt(
+                    self.model_settings, provider_routing
+                )
+                sort_label = (provider_routing or {}).get("sort", "default")
                 model = OpenAIModel(model_id, provider="openrouter")
                 try:
                     result, captured = await asyncio.wait_for(
                         self._run_agent_iter(
-                            user_message, deps, model, usage_limits, self.model_settings
+                            user_message, deps, model, usage_limits, attempt_settings
                         ),
                         timeout=timeout_s,
                     )
@@ -1495,9 +1618,11 @@ class TurnManager:
                         if isinstance(exc, asyncio.TimeoutError)
                         else f"{type(exc).__name__}: {exc}"
                     )
+                    slow_note = " slow×2" if is_slow else ""
                     print(
                         f"  [Turn {t}] LLM attempt {attempt_num}/{max_attempts} "
-                        f"({model_id}, timeout={timeout_s:.0f}s) failed: {err_label}"
+                        f"({model_id}, sort={sort_label}, timeout={timeout_s:.0f}s"
+                        f"{slow_note}) failed: {err_label}"
                     )
 
                     try:
@@ -1507,6 +1632,8 @@ class TurnManager:
                             "attempt": attempt_num,
                             "max_attempts": max_attempts,
                             "timeout_s": timeout_s,
+                            "provider_sort": sort_label,
+                            "slow_model": is_slow,
                             "error_type": type(exc).__name__,
                             "error": str(exc)[:300],
                             "retryable": is_transient,
@@ -1515,7 +1642,11 @@ class TurnManager:
                         pass
 
                     if is_transient and attempt_num < max_attempts:
-                        # Throughput-sort will re-roll the provider on the next call.
+                        # Backoff (jittered) before re-rolling: the next attempt
+                        # also escalates provider routing (throughput→latency→default).
+                        backoff = _retry_backoff_s(attempt_idx)
+                        if backoff > 0:
+                            await asyncio.sleep(backoff)
                         continue
 
                     # Non-transient OR out of attempts: try the thinking-strip
@@ -1867,7 +1998,15 @@ class TurnManager:
                 "thinking": self.config.get("thinking"),
                 "fallback_models": self.fallback_models,
                 "task": (self.tasks or self.config.get("task", {})).get("goal", ""),
-                "total_turns": self.turn_number,
+                # total_turns is the leaderboard metric: player/game turns PLUS
+                # TaskMaster invocations (Andreas 2026-06-17). player_turns is the
+                # game-progress count gate deadlines are measured against; they're
+                # broken out so the two scales stay legible. NOTE: including TM
+                # turns means new official runs are not turn-comparable to runs
+                # recorded before this change.
+                "total_turns": self.turn_number + self.task_master_turns,
+                "player_turns": self.turn_number,
+                "task_master_turns": self.task_master_turns,
                 "duration_seconds": round(duration, 1),
                 "started_at": time.strftime(
                     "%Y-%m-%dT%H:%M:%S",
