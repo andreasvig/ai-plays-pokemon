@@ -6,7 +6,7 @@
   // player handback. (Round 9 E.) This IS the run report; the old standalone
   // HTML report (src/cli/report.py) was retired in favour of this view.
   import { GATES } from '../lib/gates.js'
-  import { usd, dur, perTurn, dateShort, actionEmoji } from '../lib/format.js'
+  import { usd, dur, perTurn, dateShort, actionEmoji, coerceHandback } from '../lib/format.js'
   import { mdToHtml } from '../lib/md.js'
   import * as api from '../lib/api.js'
   let { run = null, onback, oncontinue } = $props()
@@ -130,8 +130,9 @@
   function turnActionDisplay(t) {
     const a = finalResultArgs(t)
     if (a && Array.isArray(a.inputs) && a.inputs.length) return actionEmoji(a.inputs)
-    if (a && a.return_to_taskmaster) {
-      const v = fmtVerdict(a.return_to_taskmaster.self_assessment)
+    const hb = coerceHandback(a && a.return_to_taskmaster)
+    if (hb) {
+      const v = fmtVerdict(hb.self_assessment)
       return v?.label ?? '↩️ Returned to TaskMaster'
     }
     // fallback: raw action, but the bare "?" sentinel → a dash, never a stray "?"
@@ -429,6 +430,7 @@
                               {:else if step.type === 'final_result'}
                                 <!-- player's final_result = the DECISION for this turn -->
                                 {@const p = parseArgs(step.args)}
+                                {@const hbObj = coerceHandback(p && p.return_to_taskmaster)}
                                 <details class="trace-step trace-output" open>
                                   <summary>
                                     <span class="step-label">Output</span>
@@ -442,9 +444,9 @@
                                       <div class="step-decision">
                                         <div class="dec-row"><span class="dec-lab">Last turn</span><span class="dec-val">{turnGrade(p.last_turn_succeeded)}</span></div>
                                         {#if p.reasoning}<div class="dec-row"><span class="dec-lab">Reasoning</span><div class="dec-desc">{p.reasoning}</div></div>{/if}
-                                        {#if p.return_to_taskmaster}
-                                          {@const hb = fmtVerdict(p.return_to_taskmaster.self_assessment)}
-                                          <div class="dec-row"><span class="dec-lab">↩️ Return to TaskMaster</span><span class="dec-val">{hb.label}{#if p.return_to_taskmaster.task_summary} — {p.return_to_taskmaster.task_summary}{/if}</span></div>
+                                        {#if hbObj}
+                                          {@const hb = fmtVerdict(hbObj.self_assessment)}
+                                          <div class="dec-row"><span class="dec-lab">↩️ Return to TaskMaster</span><span class="dec-val">{hb.label}{#if hbObj.task_summary} — {hbObj.task_summary}{/if}</span></div>
                                         {:else}
                                           <div class="dec-row"><span class="dec-lab">Action</span><span class="dec-val">{actionEmoji(p.inputs ?? '')}</span></div>
                                         {/if}

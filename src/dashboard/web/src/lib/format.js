@@ -39,6 +39,30 @@ export function actionEmoji(action) {
     .map((tok) => ACTION_EMOJI[String(tok).toLowerCase()] ?? tok)
     .join(' ')
 }
+// Mirror of the backend `coerce_stringified_object` (src/agent/coerce.py): some
+// models (xiaomi/mimo-v2.5) can't emit a JSON null or nested object as a tool
+// arg, so a null `return_to_taskmaster` arrives as the literal string "None" /
+// "null" / "" and a real handoff arrives as a STRINGIFIED object. The backend
+// coerces those before pydantic sees them, but the trace UI reads the RAW
+// final_result args, where "None" is a truthy JS string and would render a
+// phantom "Returned to TaskMaster" box on every turn. Normalize here: return a
+// real handoff object, or null for the no-handoff case.
+const _NULL_TOKENS = new Set(['', 'none', 'null', 'nil'])
+export function coerceHandback(r) {
+  if (r == null) return null
+  if (typeof r === 'object') return r
+  if (typeof r === 'string') {
+    const s = r.trim()
+    if (_NULL_TOKENS.has(s.toLowerCase())) return null
+    try {
+      const parsed = JSON.parse(s)
+      return parsed && typeof parsed === 'object' ? parsed : null
+    } catch {
+      return null
+    }
+  }
+  return null
+}
 // A killed (cancelled) or failed (crashed) run both read as "incomplete" in the
 // UI (Andreas 2026-06-17): voided from the leaderboard but kept in history with a
 // readable report. completed / terminated / running keep their own labels.

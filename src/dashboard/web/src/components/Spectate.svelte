@@ -10,7 +10,7 @@
   //   trace feed ← the full event taxonomy, grouped by turn
   // The active run id comes from /api/emulator/status (App passes it in).
   import { gate, GATE_INDEX } from '../lib/gates.js'
-  import { usd, dur } from '../lib/format.js'
+  import { usd, dur, coerceHandback } from '../lib/format.js'
   import { windowFeed } from '../lib/feed.js'
   import JsonTree from './JsonTree.svelte'
   import TraceFeed from './TraceFeed.svelte'
@@ -287,7 +287,8 @@
           const inputs = Array.isArray(args.inputs) ? args.inputs.join(' ') : args.inputs
           pushBox(evt.turn, { k: 'action', t: inputs })
         }
-        if (args.return_to_taskmaster) pushBox(evt.turn, { k: 'handback', ...fmtHandback(args.return_to_taskmaster) })
+        const handback = coerceHandback(args.return_to_taskmaster)
+        if (handback) pushBox(evt.turn, { k: 'handback', ...fmtHandback(handback) })
       }
       return
     }
