@@ -319,8 +319,14 @@
 # apply the low-temp Function Call profile rather than the v2.5 blanket
 # general-purpose recommendation (1.0 / 0.95).
 "mimo-v2.5(thinking)":
-  # ~1T total params, AA Intelligence ~54, $0.40/$2.00 per M.
+  # ~1T total params, AA Intelligence ~54, $0.40/$2.00 per M. MULTIMODAL —
+  # confirmed image input via OpenRouter API 2026-06-17 (input_modalities
+  # text/audio/image/video), unlike the -pro variant which is text-only.
   openrouter_id: "xiaomi/mimo-v2.5"
+  # slow: end-to-end ~58.6s/turn (observed below). NOT broken — the 2026-06-16
+  # run that died at turn 0 was the old 60s first-attempt timeout giving up on a
+  # genuinely slow model. The retry rework + this flag (2× timeouts) restore it.
+  slow: true
   reasoning:
     enabled: true
   temperature: 0.3
@@ -349,7 +355,10 @@
 
 # mimo-v2.5-pro is TEXT-ONLY on OpenRouter — no endpoints support image
 # input (confirmed 2026-04-24 via 404 "No endpoints found that support
-# image input"). The Player sends screenshots as ImageUrl (direct
+# image input"; RE-CONFIRMED 2026-06-17 via the OpenRouter models API —
+# input_modalities is ["text"] only, vs mimo-v2.5's text/audio/image/video).
+# It genuinely cannot drive the vision Player; not a config bug. The Player
+# sends screenshots as ImageUrl (direct
 # multimodal), so this model cannot drive the agent — and the old
 # separate-VLM (caption-to-text) fallback has been removed. Leaving both
 # entries in the registry so the cost/intel numbers stay documented, but
@@ -405,6 +414,7 @@
 # Stick with the binary toggle.
 "gemma-4-31b(thinking)":
   openrouter_id: "google/gemma-4-31b-it"
+  slow: true  # 74.9s avg/turn (observed below), slow-provider tail to 220s → 2× timeouts
   reasoning:
     enabled: true
   temperature: 0.3
@@ -474,6 +484,7 @@
 # this registry.
 "gemma-4-26b-a4b(thinking)":
   openrouter_id: "google/gemma-4-26b-a4b-it"
+  slow: true  # "unusable on default throughput-sort" (>60s/turn) — exactly what 2× timeouts target
   reasoning:
     enabled: true
   temperature: 0.3
@@ -573,6 +584,59 @@
   observed:
     sample_turns: 0
 
+# --- Alibaba Qwen3.7-Plus (added 2026-06-17) ---
+# Successor to qwen3.6-plus. Multimodal (text+image — confirmed via OpenRouter
+# API 2026-06-17). Binary thinking toggle (native enable_thinking; no effort
+# tiers — `reasoning` is in supported_parameters but `reasoning_effort` is not).
+# UNLIKE qwen3.6-plus, the OpenRouter providers DO list tool_choice +
+# structured_outputs (verified 2026-06-17), so we use the default tool output
+# mode (tool_choice="required") rather than 3.6's prompted-output workaround.
+# Sampling 0.3/0.95 to match the registry's structured-output profile.
+# Slug is the floating alias (canonical pinned id: qwen/qwen3.7-plus-20260602).
+"qwen3.7-plus(thinking)":
+  openrouter_id: "qwen/qwen3.7-plus"
+  reasoning:
+    enabled: true
+  temperature: 0.3
+  top_p: 0.95
+  observed:
+    sample_turns: 0
+
+"qwen3.7-plus(non-thinking)":
+  openrouter_id: "qwen/qwen3.7-plus"
+  reasoning:
+    enabled: false
+  temperature: 0.3
+  top_p: 0.95
+  observed:
+    sample_turns: 0
+
+# --- MiniMax M3 (added 2026-06-17) ---
+# MiniMax's M3 flagship. Multimodal (text+image+video — confirmed via OpenRouter
+# API 2026-06-17). Binary thinking toggle (`reasoning` supported, no
+# `reasoning_effort`). OpenRouter providers list tool_choice + structured_outputs
+# (verified 2026-06-17) → default tool output mode. Sampling 0.3/0.95 to match
+# the structured-output profile used across the registry. Latency unknown (no
+# run yet) — add `slow: true` if a first run shows a slow end-to-end tail.
+# Slug is the floating alias (canonical pinned id: minimax/minimax-m3-20260531).
+"minimax-m3(thinking)":
+  openrouter_id: "minimax/minimax-m3"
+  reasoning:
+    enabled: true
+  temperature: 0.3
+  top_p: 0.95
+  observed:
+    sample_turns: 0
+
+"minimax-m3(non-thinking)":
+  openrouter_id: "minimax/minimax-m3"
+  reasoning:
+    enabled: false
+  temperature: 0.3
+  top_p: 0.95
+  observed:
+    sample_turns: 0
+
 # --- xAI Grok 4.3 ---
 # Always-on reasoning — no effort tiers, no binary toggle. OpenRouter docs:
 # "Reasoning is always active and cannot be disabled or configured by effort
@@ -604,6 +668,7 @@
 # effort nor enabled is sent to OpenRouter.
 "grok-4.3":
   openrouter_id: "x-ai/grok-4.3"
+  slow: true  # 71.7s avg/turn, range 24–250s (always-on reasoning, verbose) → 2× timeouts
   observed:
     avg_turn_cost_usd: 0.0162
     avg_turn_latency_s: 71.7
@@ -648,6 +713,7 @@
   # Marketed as "fast agentic-coding" — that framing did not translate to
   # FireRed navigation. Not recommended for this task.
   openrouter_id: "x-ai/grok-build-0.1"
+  slow: true  # 118.6s avg/turn, monotonic climb 78s→165s with context → 2× timeouts
   reasoning:
     effort: "medium"
   observed:
@@ -721,6 +787,67 @@
     last_updated: 2026-05-20
     notes: "config-3.5 20T (upscale=3): reached Oak's lab but did NOT pick up the starter. Big jump from 2026-05-01 baseline (stuck in 2F bedroom) — attributable to `historic_images_count=1`, `summary: auto`, and updated prompt, NOT the model itself. Sibling A/B run config-3.6 (upscale=6) reached Oak's lab AND picked up Squirtle for +47% input tokens / +29% USD per turn — directional win for higher upscale at n=1, worth replicating."
 
+# gpt-5.5 thinking tiers beyond the low/medium probed above (added 2026-06-17,
+# Andreas). Same model + summary:auto convention; effort is the GPT-5 family
+# control surface (xhigh ~95% / high / medium / low / minimal ~10% of max_tokens
+# for reasoning). Untested here (sample_turns 0) — selectable competitors.
+"gpt-5.5(xhigh)":
+  openrouter_id: "openai/gpt-5.5"
+  reasoning:
+    effort: "xhigh"
+    summary: "auto"
+  observed:
+    sample_turns: 0
+
+"gpt-5.5(high)":
+  openrouter_id: "openai/gpt-5.5"
+  reasoning:
+    effort: "high"
+    summary: "auto"
+  observed:
+    sample_turns: 0
+
+"gpt-5.5(minimal)":
+  openrouter_id: "openai/gpt-5.5"
+  reasoning:
+    effort: "minimal"
+    summary: "auto"
+  observed:
+    sample_turns: 0
+
+# --- OpenAI GPT-5.5 Pro (added 2026-06-17, Andreas) ---
+# Frontier "pro" reasoning tier. Multimodal (file/image/text — confirmed via
+# OpenRouter API 2026-06-17). CAVEAT: the OpenRouter model lists `reasoning` in
+# supported_parameters but NOT `reasoning_effort`, and "pro" reasoning models
+# (o1-pro lineage) sometimes pin maximum effort and reject an explicit tier. We
+# send effort tiers via reasoning.effort following the GPT-5 family convention;
+# if a live smoke 400s on the effort field, collapse these to a single
+# no-effort entry (always-on, like grok-4.3). Needs a one-turn live check.
+# Slug is the floating alias (canonical pinned id: openai/gpt-5.5-pro-20260423).
+"gpt-5.5-pro(high)":
+  openrouter_id: "openai/gpt-5.5-pro"
+  reasoning:
+    effort: "high"
+    summary: "auto"
+  observed:
+    sample_turns: 0
+
+"gpt-5.5-pro(medium)":
+  openrouter_id: "openai/gpt-5.5-pro"
+  reasoning:
+    effort: "medium"
+    summary: "auto"
+  observed:
+    sample_turns: 0
+
+"gpt-5.5-pro(low)":
+  openrouter_id: "openai/gpt-5.5-pro"
+  reasoning:
+    effort: "low"
+    summary: "auto"
+  observed:
+    sample_turns: 0
+
 # --- Moonshot AI Kimi K2.6 ---
 # Multimodal flagship from Moonshot, 262K context, $0.74/$3.49 per M (mid-tier
 # — between MiMo V2.5 and Qwen3.6-Plus). Binary thinking toggle, no effort
@@ -746,6 +873,7 @@
   # field was ignored (config.py confirmed it resolved correctly). If you
   # need Kimi for this project, expect long wait times regardless of sort.
   openrouter_id: "moonshotai/kimi-k2.6"
+  slow: true  # slowest in registry — 110–458s/turn (reasoning grows with history) → 2× timeouts
   reasoning:
     enabled: true
   temperature: 0.3
