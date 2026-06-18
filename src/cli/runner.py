@@ -405,6 +405,22 @@ def run_single_loop(
                 f"({len(tm_state.get('task_history') or [])} prior in history)"
             )
 
+    # Player history restore (--continue path): the emulator + TaskMaster state
+    # are back, but the Player's transient context (turn_explanations, the
+    # historic-image buffer, the global turn counter, the in-progress task's
+    # evidence) lived only in memory and would otherwise restart empty — the
+    # resumed agent's first turn would show "(none — this is the first turn.)"
+    # and forget everything. Rebuild it from the (already-copied) events.jsonl so
+    # continuing is indistinguishable from never having stopped.
+    if continued_from:
+        sp_turn = config.get("_continued_from_turn")
+        if isinstance(sp_turn, int):
+            turn_mgr.restore_player_history(
+                run_dir / "events.jsonl",
+                run_dir / "screenshots",
+                sp_turn,
+            )
+
     print(f"Running {turns} turns...")
     print(f"Task: {config.get('task', {}).get('goal', 'Play the game')}")
     llm_alias = config.get("_llm_alias")
@@ -501,8 +517,11 @@ def continue_from_run(source_run_dir: str) -> tuple[dict, Path]:
     - Reads the source run's config.json to recover model alias + all settings.
     - Creates a new run dir at local/runs/<ts>_<run_name>_continued_from_turn_<N>/
       and copies events.jsonl + screenshots/ + ocr/ + terminal.log over verbatim.
-    - Returns (continuation_config, savepoint_dir). The caller feeds these
-      into run_single_loop; the agent's turn counter and history start fresh.
+    - Returns (continuation_config, savepoint_dir). The caller feeds these into
+      run_single_loop, which restores the emulator + TaskMaster state from the
+      savepoint AND rebuilds the Player's turn history / turn counter / historic
+      images from the copied events.jsonl (TurnManager.restore_player_history),
+      so the resumed run picks up exactly where it left off.
     """
     source = Path(source_run_dir).resolve()
     if not source.is_dir():

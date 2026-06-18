@@ -7,6 +7,7 @@ import random
 import sys
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Optional
 
 from PIL import Image
@@ -1144,6 +1145,141 @@ class TurnManager:
         self.current_task_index = int(state.get("current_task_index", 0) or 0)
         self.current_task_turn = int(state.get("current_task_turn", 0) or 0)
         self.task_history = list(state.get("task_history") or [])
+
+    def restore_player_history(
+        self,
+        events_path: "Path | str",
+        screenshots_dir: "Path | str",
+        up_to_turn: int,
+    ) -> None:
+        """Rebuild the Player's in-memory turn context from a source run's
+        events.jsonl so a continued run resumes seamlessly — same turn number,
+        same "## Previous Turns" history, same historic-image buffer, and same
+        in-progress-task evidence as if the run had never stopped (Andreas
+        2026-06-18: "no difference from stopping and starting vs letting it run").
+
+        The emulator state + TaskMaster task tree are restored elsewhere (the
+        savepoint's emulator.state and task_master_state.json). What was LOST on
+        continue — and is rebuilt here, for every turn <= ``up_to_turn`` (the
+        savepoint turn) — is the Player's transient context:
+
+        - ``self.turn_explanations`` — the action/reasoning/grade list behind the
+          "## Previous Turns" block. Without it the resumed agent's first turn
+          renders "(none — this is the first turn.)" and forgets all prior play.
+        - ``self.turn_number`` — continued FROM ``up_to_turn`` (not reset to 0), so
+          turn numbering, the "### Turn N" labels, and new screenshot/savepoint
+          names stay globally monotonic across the continuation boundary.
+        - ``self.turn_screenshots`` — the last ``historic_images_count`` start-of-
+          turn screenshots (skipped when historic images are off).
+        - ``self._cur_task_player_reasons`` / ``_cur_task_first_image`` /
+          ``_cur_task_last_image`` — the in-progress task's evidence (reasonings +
+          first/last screenshot refs since the current task began) so TaskMaster's
+          NEXT rating judges the whole task, not just the post-resume turns.
+
+        Pure read of the (already-copied) events.jsonl + screenshot files; no
+        emulator interaction. Best-effort — a malformed/absent log degrades to the
+        old fresh-start behaviour rather than failing the run. Screenshot paths
+        are remapped to ``screenshots_dir`` (the new run's copies) so the resumed
+        run is self-contained and doesn't depend on the source run surviving.
+        """
+        events_path = Path(events_path)
+        screenshots_dir = Path(screenshots_dir)
+        if not events_path.exists():
+            return
+
+        def _resolve(file_ref: str) -> str:
+            """Map a logged screenshot path to the new run's copy by basename."""
+            local = screenshots_dir / Path(file_ref).name
+            return str(local) if local.exists() else file_ref
+
+        explanations_by_turn: dict[int, dict] = {}
+        screenshot_by_turn: dict[int, str] = {}
+        task_start_turn: dict[int, int] = {}
+        cur_turn: Optional[int] = None
+
+        try:
+            with open(events_path) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        evt = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    etype = evt.get("type")
+                    if etype == "turn_start":
+                        t = evt.get("turn")
+                        cur_turn = t if isinstance(t, int) else None
+                    elif etype == "screenshot":
+                        # The first screenshot logged after a turn_start is that
+                        # turn's start-of-turn capture (label "turn_<t>").
+                        if (
+                            isinstance(cur_turn, int)
+                            and cur_turn <= up_to_turn
+                            and cur_turn not in screenshot_by_turn
+                        ):
+                            file_ref = evt.get("file")
+                            if file_ref:
+                                screenshot_by_turn[cur_turn] = _resolve(file_ref)
+                    elif etype == "turn_explanation":
+                        t = evt.get("turn")
+                        exp = evt.get("explanation")
+                        if isinstance(t, int) and t <= up_to_turn and isinstance(exp, dict):
+                            explanations_by_turn[t] = exp
+                    elif etype == "task_started":
+                        ti = evt.get("task_index")
+                        gt = evt.get("global_turn")
+                        if isinstance(ti, int) and isinstance(gt, int):
+                            task_start_turn[ti] = gt
+        except OSError:
+            return
+
+        if not explanations_by_turn and not screenshot_by_turn:
+            return
+
+        # turn_explanations is the loop's append-ordered list — one entry per
+        # player-action turn (handoff turns produce none). Rebuild in turn order.
+        self.turn_explanations = [
+            explanations_by_turn[t] for t in sorted(explanations_by_turn)
+        ]
+
+        # Continue the global turn counter from the savepoint turn (the loop adds
+        # 1 before the first resumed turn → it picks up at up_to_turn + 1).
+        self.turn_number = up_to_turn
+
+        # Rebuild the historic-image ring buffer: the last K start-of-turn
+        # screenshots among turns <= up_to_turn, decoded back into PIL images.
+        if self.historic_images_count > 0 and screenshot_by_turn:
+            recent = sorted(screenshot_by_turn)[-self.historic_images_count:]
+            buf: list[tuple[int, Image.Image]] = []
+            for t in recent:
+                try:
+                    with Image.open(screenshot_by_turn[t]) as im:
+                        buf.append((t, im.copy()))
+                except (OSError, ValueError):
+                    continue
+            self.turn_screenshots = buf
+
+        # Restore the in-progress task's evidence buffers so TaskMaster's next
+        # invocation rates the whole task, not just the post-resume turns.
+        if self.task_master_enabled and self.current_task_index:
+            start = task_start_turn.get(self.current_task_index, 1)
+            self._cur_task_player_reasons = [
+                r
+                for t in sorted(explanations_by_turn)
+                if t >= start and (r := explanations_by_turn[t].get("reasoning"))
+            ]
+            task_shots = [t for t in sorted(screenshot_by_turn) if t >= start]
+            if task_shots:
+                self._cur_task_first_image = screenshot_by_turn[task_shots[0]]
+                self._cur_task_last_image = screenshot_by_turn[task_shots[-1]]
+
+        print(
+            f"  Player history restored: {len(self.turn_explanations)} prior turns, "
+            f"resuming at turn {self.turn_number + 1} "
+            f"({len(self.turn_screenshots)} historic screenshot(s) buffered)"
+        )
 
     def run_loop(self, max_turns: Optional[int] = None) -> None:
         """Run the turn loop synchronously."""

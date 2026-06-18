@@ -369,8 +369,9 @@ state_file: "local/state/state.json"
 
 # --- Savepoints ---
 # Per-run checkpoints into <run_dir>/savepoints/turn_<N>/. `pokemon run --continue`
-# resumes from the latest. Continued runs start with a fresh turn counter and
-# empty agent text history — only state.json carries over.
+# resumes from the latest savepoint, picking up exactly where it left off:
+# emulator + TaskMaster state restore from the savepoint, and the Player's turn
+# history / counter / historic images rebuild from the copied events.jsonl.
 savepoints:
   every_n_turns: 3   # 0 disables periodic saves
   at_end: true
