@@ -26,14 +26,48 @@ watches and scores.
 | Max turns | none — gate deadlines bound it | you choose |
 | Gate ladder | the benchmark's, enforced (`enforce: true`) | none |
 | Leaderboard | eligible (if completed/terminated), per benchmark | never |
-| Continues | n/a | always casual |
+| Continues | yes — stays official on the SAME benchmark | always casual |
 
 **Official** is the comparable benchmark: same frozen config, same start save
 (`configs/saves/pokebench-v1`), for every model — the only variable is the
 model. You pick *which benchmark* the run plays (see below); that selects the
 gate ladder **and** the goal. A cancelled official run is **voided** (it never
-reaches the leaderboard). **Casual** runs are for experimentation — pick any
-config and turn budget; they run free of gates and never score.
+reaches the leaderboard), but it can be **continued** and the continuation scores
+(see *Pausing & resuming* below). **Casual** runs are for experimentation — pick
+any config and turn budget; they run free of gates and never score.
+
+---
+
+## Pausing & resuming an official run
+
+An official run **may be paused and resumed any number of times** — stop it at
+night, hit Continue in the morning, and it finishes as the same benchmark. A full
+multi-day game benchmark is run this way. This is sound because **the score is
+turn-based, not clock-based**, and the checkpoint is turn-exact:
+
+- **What's scored is checkpoint-exact.** The score is `gates_reached` + `turns`
+  (below), both turn-based; gate deadlines are in *turns*, never wall-clock. A
+  savepoint is an **atomic turn-N bundle** — emulator state + the referee gate
+  latch + the TaskMaster task tree + the turn counter, all captured at the same
+  turn — and a continue restores all of them to turn N, discarding anything the
+  source recorded *after* N. So resuming is indistinguishable from never stopping.
+- **Wall-clock is active-compute time, and isn't ranked.** `duration_s` sums the
+  active segments and **excludes the idle pause** — an overnight gap is invisible
+  to it, and it's display-only (never part of the ranking).
+- **Hard-kill safe.** A cooperative Stop checkpoints the exact turn (`on_crash`).
+  A hard death (OOM/power) falls back to the last bundle; the official config
+  checkpoints every 10 turns **and** at every TaskMaster handoff, so at most a few
+  turns replay — and the referee latch is capped to the bundle turn, so a replayed
+  turn never double-credits a gate or double-counts.
+- **Tamper-evident.** Each bundle carries a `checkpoint.sha256` over its
+  score-bearing parts (emulator state + gate latch + task tree). An official
+  continue **refuses to resume a checkpoint whose seal doesn't match** — a paused
+  benchmark can't be hand-edited overnight and still score.
+
+The intermediate stopped segment is itself voided (status `cancelled`, never on
+the leaderboard), but it keeps `kind=official` + its benchmark id so the chain
+stays resumable; the segment that finally reaches the last gate (or misses a
+deadline) is the one that posts the verdict.
 
 ---
 

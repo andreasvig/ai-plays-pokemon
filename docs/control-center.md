@@ -129,10 +129,14 @@ Two kinds (see [the benchmark doc](benchmark.md) for the full distinction):
 ### Continue a run
 
 From a finished (or stopped) run you can **continue** it from its latest
-savepoint. Continues are **always casual** — they reuse the source run's config
-and model, resume from the highest `savepoints/turn_<N>/`, and start a **fresh
-turn counter** (cost + turn counters reset; the only carry-over is whatever the
-agent wrote into its `state.json` plus the restored game + TaskMaster state).
+savepoint. A continue is **seamless** — indistinguishable from never stopping: it
+reuses the source run's model, resumes from the highest `savepoints/turn_<N>/`,
+and carries everything forward — the turn counter, the Player's turn history, the
+TaskMaster task tree, the gate latch, and the cumulative cost / tokens / active
+time (none of these reset). The continue **inherits the source run's kind**: an
+**official** run continues official on the **same benchmark** (so a run stopped
+overnight can be finished + scored), a casual run continues casual. See
+[Pausing & resuming an official run](benchmark.md) for the validity details.
 
 ### Reorder / remove / stop
 
@@ -143,7 +147,8 @@ agent wrote into its `state.json` plus the restored game + TaskMaster state).
   up to a turn's worth of time. The UI shows an amber "stopping…" state
   immediately so the latency doesn't read as a dead button. A stopped run saves
   a savepoint and is marked `cancelled`; a cancelled **official** run is voided
-  (it never reaches the leaderboard).
+  (it never reaches the leaderboard) — but it stays **continuable as the same
+  benchmark**, and the continuation that finishes the ladder is what scores.
 
 ---
 
@@ -160,7 +165,7 @@ Each run writes a directory under `local/runs/<timestamp>_<config>__<model>/`
 | `state.json` | The agent's persistent memory at end of run. |
 | `screenshots/` | Per-turn frames the agent saw. |
 | `ocr/` | OCR captures. |
-| `savepoints/turn_<N>/` | Periodic checkpoints (emulator `.state` + agent/task state) — the resume points for `--continue`. |
+| `savepoints/turn_<N>/` | Atomic turn-N checkpoint bundles — the resume points for `--continue`. Each holds the emulator `.state`, agent `state.json`, `task_master_state.json`, the referee gate latch (`referee_state.json`), and a `checkpoint.sha256` tamper-seal. Official runs checkpoint every 10 turns + at every TaskMaster handoff (+ on stop/crash). |
 
 The index and queue live separately under `local/app/`: `runs_index.json`
 (rebuildable by scanning `local/runs/`) and `queue.json`.
