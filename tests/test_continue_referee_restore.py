@@ -65,6 +65,46 @@ def test_restored_latch_is_what_a_fresh_referee_loads(tmp_path):
     assert ref.stamps == {"a": 10}  # b (turn 30 > savepoint 20) was never written
 
 
+def test_stamped_events_replays_restored_gates_in_turn_order(tmp_path):
+    # The live spectate gate HUD is built only from referee_checkpoint events on
+    # the session stream, so a continue must re-announce the restored latch or
+    # cleared gates show as un-reached. stamped_events() is what the runner
+    # injects into the EventBridge.
+    from src.referee.checkpoints import Checkpoint
+    nodes = [
+        Checkpoint(id="a", name="A", type="map", signature={"map_group": 1, "map_num": 1},
+                   deadline_turn=25),
+        Checkpoint(id="b", name="B", type="map", signature={"map_group": 1, "map_num": 2},
+                   deadline_turn=50),
+    ]
+    new_run = tmp_path / "run"
+    new_run.mkdir()
+    # Seed a restored latch (out of turn order on disk) + one autofilled gate.
+    (new_run / "referee_state.json").write_text(
+        json.dumps({"stamps": {"b": 18, "a": 7}, "autofilled": ["b"]})
+    )
+    ref = Referee(nodes, _FakeEmu(), _FakeLogger(), new_run)
+
+    events = ref.stamped_events()
+    assert [e["checkpoint_id"] for e in events] == ["a", "b"]  # ordered by turn
+    assert all(e["type"] == "referee_checkpoint" for e in events)
+    assert events[0] == {
+        "type": "referee_checkpoint", "checkpoint_id": "a", "name": "A",
+        "checkpoint_type": "map", "turn": 7, "auto": False,
+    }
+    assert events[1]["turn"] == 18 and events[1]["auto"] is True
+
+
+def test_stamped_events_empty_when_no_gates(tmp_path):
+    from src.referee.checkpoints import Checkpoint
+    nodes = [Checkpoint(id="a", name="A", type="map", signature={"map_group": 1, "map_num": 1},
+                        deadline_turn=25)]
+    run = tmp_path / "run"
+    run.mkdir()
+    ref = Referee(nodes, _FakeEmu(), _FakeLogger(), run)
+    assert ref.stamped_events() == []
+
+
 def test_missing_bundle_file_is_safe_noop(tmp_path):
     sp = tmp_path / "savepoints" / "turn_20"
     sp.mkdir(parents=True)  # no referee_state.json in the bundle

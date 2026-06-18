@@ -153,6 +153,32 @@ class Referee:
         """
         return {"stamps": dict(self.stamps), "autofilled": sorted(self.autofilled)}
 
+    def stamped_events(self) -> list[dict]:
+        """Replayable ``referee_checkpoint`` payloads for every stamped gate.
+
+        A --continue restores the latch SILENTLY (``_load_state``), but the live
+        spectate gate HUD is built only from ``referee_checkpoint`` events seen
+        on the current session's stream. The prior run's stamps live in the
+        copied ``events.jsonl`` (so the report + score are intact) but NOT in the
+        in-memory EventBridge buffer, so without re-announcing them a resumed
+        official run shows its already-cleared gates as un-reached — reads as
+        "gates not persisted." The runner injects each of these into the bridge
+        on continue. Ordered by stamp turn so the HUD fills in ladder order. The
+        payload mirrors ``_stamp``'s event (minus the reserved id/type keys).
+        """
+        events: list[dict] = []
+        for cp_id, turn in sorted(self.stamps.items(), key=lambda kv: kv[1]):
+            cp = self._by_id.get(cp_id)
+            events.append({
+                "type": "referee_checkpoint",
+                "checkpoint_id": cp_id,
+                "name": cp.name if cp else cp_id,
+                "checkpoint_type": cp.type if cp else "checkpoint",
+                "turn": turn,
+                "auto": cp_id in self.autofilled,
+            })
+        return events
+
     def _persist_state(self) -> None:
         """Write the latch to ``referee_state.json`` (best-effort)."""
         try:

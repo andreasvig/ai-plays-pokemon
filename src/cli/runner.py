@@ -465,6 +465,16 @@ def run_single_loop(
                     "global_turn": sp_turn + 1,
                 })
 
+            # Same reason for the referee gate HUD: the latch is restored in
+            # backend state, but the spectate HUD is built only from
+            # referee_checkpoint events on this session's live stream (the prior
+            # run's are in the copied events.jsonl, not the in-memory bridge). So
+            # re-announce every already-stamped gate, else a resumed official run
+            # shows its cleared gates as un-reached ("gates not persisted").
+            if turn_mgr.referee is not None:
+                for _ev in turn_mgr.referee.stamped_events():
+                    session.bridge.inject(_ev)
+
     print(f"Running {turns} turns...")
     print(f"Task: {config.get('task', {}).get('goal', 'Play the game')}")
     llm_alias = config.get("_llm_alias")
