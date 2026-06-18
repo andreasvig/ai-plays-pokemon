@@ -96,7 +96,9 @@ class QueuedRun(BaseModel):
     ``config``/``max_turns`` are casual-only (official uses the frozen pokebench
     config + no max-turns). ``benchmark`` is official-only — which benchmark
     (e.g. ``pokebench-easy``) this run plays; it selects the gate ladder + the
-    goal override. ``continue_from`` is set by Continue (casual only).
+    goal override. ``continue_from`` is set by Continue; it inherits the source
+    run's kind — an official run continues official on the same ``benchmark``, a
+    casual run continues casual.
     """
 
     queue_id: str

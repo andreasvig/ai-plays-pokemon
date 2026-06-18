@@ -780,10 +780,12 @@ async def api_run_stop(run_id: str):
 
 @app.post("/api/runs/{run_id}/continue")
 async def api_run_continue(run_id: str, body: dict | None = None):
-    """Build a CASUAL continue spec and enqueue it (locked #10).
+    """Build a continue spec and enqueue it (locked #10).
 
     Reuses the SOURCE run's model (any model in the request body is IGNORED),
-    resolves the latest savepoint, sets ``continue_from``, and enqueues casual.
+    resolves the latest savepoint, sets ``continue_from``, and INHERITS the
+    source's kind: an official run continues official on the SAME benchmark (so a
+    run stopped overnight can be finished + scored); a casual run continues casual.
     """
     queue, executor, _index = _require_control()
     try:
@@ -794,6 +796,7 @@ async def api_run_continue(run_id: str, body: dict | None = None):
         kind=spec["kind"],
         model=spec["model"],
         config=spec.get("config"),
+        benchmark=spec.get("benchmark"),
         max_turns=(body or {}).get("max_turns"),
         continue_from=spec["continue_from"],
     )

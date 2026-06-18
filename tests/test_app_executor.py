@@ -485,6 +485,8 @@ def test_turn_loop_win_stamps_completed_status(tmp_path):
     tm.total_output_tokens = 0
     tm.turn_costs = []
     tm.turn_explanations = []
+    tm._explanation_turns = []        # parallel real-turn list (handoff-gap fix)
+    tm._prior_duration_s = 0.0        # cumulative-resume accounting baseline
     tm.referee = None
     tm._referee_completed = True
 

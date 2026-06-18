@@ -168,6 +168,23 @@ class RunExecutor:
             # would resolve against CWD and fail "not a directory".
             source_dir = self.runs_root / item.continue_from
             cfg, savepoint_dir = self._resolve_continue_fn()(str(source_dir))
+            if item.kind == RunKind.official:
+                # Official continue: resume the SAME benchmark. Re-apply the
+                # canonical official wiring (goal + enforced ladder + benchmark
+                # mode) on top of the resumed config, reading the ladder POINTER
+                # at runtime exactly like the official-fresh branch below — so the
+                # continued run stays enforced and leaderboard-eligible even if the
+                # source predates a ladder edit. No max-turns (gate deadlines bound
+                # it); the savepoint dir is the snapshot.
+                benchmark = get_benchmark(item.benchmark)
+                task = cfg.get("task")
+                if not isinstance(task, dict):
+                    task = {}
+                task["goal"] = benchmark.goal
+                cfg["task"] = task
+                cfg["referee"] = {"checkpoints": benchmark.ladder, "enforce": True}
+                cfg.setdefault("task_master", {})["mode"] = "benchmark"
+                return cfg, str(savepoint_dir), self._OFFICIAL_TURN_SENTINEL
             cfg.setdefault("task_master", {})["mode"] = "freeplay"  # casual continue
             turns = item.max_turns or 1500
             return cfg, str(savepoint_dir), turns
@@ -423,18 +440,23 @@ class RunExecutor:
             status = RunStatus.completed.value
         summary["status"] = status
 
-        # benchmark / benchmark_version: for an official run that posts a verdict,
-        # stamp WHICH benchmark it played (drives the per-benchmark leaderboard
-        # filter) + the season version. A CANCELLED (voided, locked #9) or
-        # CRASHED (incomplete — mid-run fault, Andreas 2026-06-17) official run
-        # gets NULL on both so it is never leaderboard-eligible. Casual = always
-        # null.
-        if is_official and status not in (
-            RunStatus.cancelled.value,
-            RunStatus.crashed.value,
-        ):
+        # benchmark / benchmark_version: stamp WHICH benchmark an official run
+        # played (drives the per-benchmark filter AND lets a continue resume the
+        # same benchmark) on EVERY official run — including a CANCELLED (voided,
+        # locked #9) or CRASHED one. The void is enforced by STATUS:
+        # ``leaderboard_eligible`` already requires completed/terminated, so a
+        # cancelled official run with a benchmark id can never reach the board; it
+        # only stays identifiable so an overnight stop can be continued + finished.
+        # ``benchmark_version`` (the season marker) is still withheld from
+        # cancelled/crashed runs to preserve the existing void semantics. Casual =
+        # always null on both.
+        if is_official:
             summary["benchmark"] = get_benchmark(item.benchmark).id
-            summary["benchmark_version"] = OFFICIAL_BENCHMARK_VERSION
+            summary["benchmark_version"] = (
+                None
+                if status in (RunStatus.cancelled.value, RunStatus.crashed.value)
+                else OFFICIAL_BENCHMARK_VERSION
+            )
         else:
             summary["benchmark"] = None
             summary["benchmark_version"] = None
@@ -482,13 +504,21 @@ class RunExecutor:
     # --- continue (locked decision #10) ---------------------------------------
 
     def build_continue_spec(self, source_run_id: str) -> dict:
-        """Build a CASUAL continue spec that reuses the source run's model.
+        """Build a continue spec that reuses the source run's model.
 
         Resolves the latest savepoint of the source run (raises if none), reads
         the source model from its ``run_summary.json`` (or the index), and
-        returns a dict ready for ``QueueManager.enqueue`` kwargs: always casual,
-        ``continue_from`` set, model reused. An injected model is the CALLER's
-        problem to drop — this never reads one (locked #10).
+        returns a dict ready for ``QueueManager.enqueue`` kwargs: ``continue_from``
+        set, model reused. An injected model is the CALLER's problem to drop —
+        this never reads one (locked #10).
+
+        Kind is INHERITED from the source: a continue of an OFFICIAL run stays
+        official and resumes the SAME benchmark (so a run stopped overnight can be
+        finished + scored), rather than silently downgrading to casual. A casual
+        source continues casual. The intermediate stopped segment is itself voided
+        (status ``cancelled``), but it keeps ``kind=official`` + its benchmark id
+        so the chain stays resumable as that benchmark — the segment that finally
+        reaches the last gate is the one that posts to the leaderboard.
         """
         source_dir = self.runs_root / source_run_id
         # Resolve the latest savepoint (raises FileNotFoundError if absent).
@@ -497,12 +527,35 @@ class RunExecutor:
         _find_latest_savepoint(source_dir)  # validates a savepoint exists
 
         model = self._source_model(source_run_id, source_dir)
-        return {
-            "kind": RunKind.casual,
+        kind, benchmark = self._source_kind_and_benchmark(source_run_id, source_dir)
+        spec = {
+            "kind": kind,
             "model": model,
             "config": None,
             "continue_from": source_run_id,
         }
+        if kind == RunKind.official:
+            spec["benchmark"] = benchmark
+        return spec
+
+    def _source_kind_and_benchmark(
+        self, source_run_id: str, source_dir: Path
+    ) -> tuple[RunKind, str | None]:
+        """Recover (kind, benchmark id) of the source run, so an official continue
+        resumes the same benchmark. Index first, then the run summary. A benchmark
+        id of None (a legacy/stopped official run that never stamped one) falls
+        back downstream to the registry default in ``build_run_config``."""
+        entry = self.index.get(source_run_id)
+        if entry is not None and entry.kind == RunKind.official:
+            return RunKind.official, entry.benchmark
+        try:
+            with open(source_dir / "run_summary.json") as f:
+                summary = json.load(f)
+            if summary.get("kind") == RunKind.official.value:
+                return RunKind.official, summary.get("benchmark")
+        except Exception:
+            pass
+        return RunKind.casual, None
 
     def _source_model(self, source_run_id: str, source_dir: Path) -> str:
         """Recover the source run's model alias (index first, then summary)."""
