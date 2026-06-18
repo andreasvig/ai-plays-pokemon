@@ -213,4 +213,7 @@ def project_run_dir(run_dir: Path) -> RunSummary | None:
         total_gates=total_gates,
         termination_reason=termination_reason,
         continued_from=summary.get("continued_from"),
+        # resumed: explicit when the writer stamped it; else infer from a
+        # continued_from link so legacy continued runs still flag as multi-segment.
+        resumed=bool(session.get("resumed") or summary.get("continued_from")),
     )

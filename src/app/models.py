@@ -75,6 +75,7 @@ class RunSummary(BaseModel):
     total_gates: int = 0
     termination_reason: str | None = None
     continued_from: str | None = None
+    resumed: bool = False
 
     @property
     def leaderboard_eligible(self) -> bool:

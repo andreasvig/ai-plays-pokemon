@@ -80,3 +80,57 @@ def test_finalize_is_cumulative_after_restore(tmp_path):
     # The per-turn figure the History row shows is now cumulative/cumulative.
     s_per_turn = s["session"]["duration_seconds"] / s["session"]["total_turns"]
     assert 8.0 < s_per_turn < 9.0   # ~500s / 61 turns — honest, not the 2.2 drift
+
+
+def test_segment_ledger_records_this_segment(tmp_path):
+    # P6: a continued run is transparently multi-segment.
+    m = _manager(tmp_path)
+    m.config["_continued_from"] = "2026-06-18_src_run"
+    m.config["_continued_from_turn"] = 52
+    m.restore_run_accounting({"session": {"duration_seconds": 500.0}, "cost": {}})
+    m.turn_number = 58
+
+    m._write_run_summary(status=None)
+    seg = json.loads((Path(tmp_path) / "run_summary.json").read_text())["session"]
+
+    assert seg["resumed"] is True
+    assert seg["segment"]["continued_from"] == "2026-06-18_src_run"
+    assert seg["segment"]["resumed_at_turn"] == 52
+    assert seg["segment"]["prior_duration_s"] == 500.0
+    assert seg["segment"]["segment_player_turns"] == 6     # 58 - 52, this segment only
+    assert seg["segment"]["segment_duration_s"] < 540.0    # this segment's own clock
+
+
+def test_fresh_run_is_not_resumed(tmp_path):
+    m = _manager(tmp_path)
+    m.turn_number = 30
+    m._write_run_summary(status=None)
+    sess = json.loads((Path(tmp_path) / "run_summary.json").read_text())["session"]
+    assert sess["resumed"] is False
+    assert sess["segment"]["continued_from"] is None
+    assert sess["segment"]["segment_player_turns"] == 30
+
+
+def test_projection_surfaces_resumed(tmp_path):
+    from src.app.projection import project_run_dir
+
+    # Explicit flag from the writer.
+    d1 = tmp_path / "2026-06-18_cfg__m"
+    d1.mkdir()
+    (d1 / "run_summary.json").write_text(json.dumps(
+        {"session": {"resumed": True}, "cost": {}, "kind": "casual"}))
+    assert project_run_dir(d1).resumed is True
+
+    # Legacy run: no session.resumed, but a continued_from link → inferred True.
+    d2 = tmp_path / "2026-06-18_cfg__m2"
+    d2.mkdir()
+    (d2 / "run_summary.json").write_text(json.dumps(
+        {"session": {}, "cost": {}, "kind": "casual", "continued_from": "src"}))
+    assert project_run_dir(d2).resumed is True
+
+    # Fresh run → False.
+    d3 = tmp_path / "2026-06-18_cfg__m3"
+    d3.mkdir()
+    (d3 / "run_summary.json").write_text(json.dumps(
+        {"session": {}, "cost": {}, "kind": "casual"}))
+    assert project_run_dir(d3).resumed is False

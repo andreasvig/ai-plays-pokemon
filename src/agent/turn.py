@@ -2258,7 +2258,15 @@ class TurnManager:
         behaves exactly as before (no extra keys), so existing callers are
         unchanged. The flat ``app.projection`` layer reads these when present and
         falls back to defensive inference when absent (legacy runs)."""
-        duration = (time.time() - self._run_start_time if self._run_start_time else 0) + self._prior_duration_s
+        this_session_s = (time.time() - self._run_start_time) if self._run_start_time else 0
+        duration = this_session_s + self._prior_duration_s
+        # Segment ledger: a continued run is transparently multi-segment. Record
+        # THIS segment's own wall clock + where it resumed; the full chain is walked
+        # via continued_from. duration_seconds stays cumulative ACTIVE-compute time
+        # (sum of segments) and excludes the idle pause — it is display-only, never
+        # scored (the benchmark ranks gates + turns), so an overnight gap is invisible.
+        continued_from_cfg = self.config.get("_continued_from")
+        resumed_at_turn = self.config.get("_continued_from_turn")
 
         summary = {
             "session": {
@@ -2277,6 +2285,18 @@ class TurnManager:
                 "player_turns": self.turn_number,
                 "task_master_turns": self.task_master_turns,
                 "duration_seconds": round(duration, 1),
+                "resumed": bool(continued_from_cfg),
+                "segment": {
+                    "continued_from": continued_from_cfg,
+                    "resumed_at_turn": resumed_at_turn,
+                    "prior_duration_s": round(self._prior_duration_s, 1),
+                    "segment_duration_s": round(this_session_s, 1),
+                    "segment_player_turns": (
+                        self.turn_number - resumed_at_turn
+                        if isinstance(resumed_at_turn, int)
+                        else self.turn_number
+                    ),
+                },
                 "started_at": time.strftime(
                     "%Y-%m-%dT%H:%M:%S",
                     time.localtime(self._run_start_time),
