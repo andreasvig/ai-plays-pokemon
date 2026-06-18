@@ -8,18 +8,27 @@
   const PW = W - ML - MR, PH = H - MT - MB
   const lg = (v) => Math.log10(Math.max(v, 1e-9))
 
-  // --- domains auto-fit to the points actually present (mode/filter aware) ---
+  // A model that cleared at least the first checkpoint has completion > 0. The
+  // ones that never cleared checkpoint 1 all pin to the 0% floor and pile up /
+  // overlap along the bottom axis — so they're pulled OUT of the scatter and
+  // shown as a compact list to the left (see markup), and the plot + domains +
+  // frontier only consider the points that actually scored.
+  const cleared = (p) => (p.completion ?? p.y) > 0
+  const plotted = $derived(points.filter(cleared))
+  const notCleared = $derived(points.filter((p) => !cleared(p)))
+
+  // --- domains auto-fit to the plotted points (mode/filter aware) ---
   const xd = $derived((() => {
-    if (!points.length) return { min: 0, max: 1 }
-    const xs = points.map((p) => p.x)
+    if (!plotted.length) return { min: 0, max: 1 }
+    const xs = plotted.map((p) => p.x)
     let min = Math.min(...xs), max = Math.max(...xs)
     if (xLog) return { min: Math.pow(10, lg(min) - 0.18), max: Math.pow(10, lg(max) + 0.18) }
     const pad = (max - min) || max || 1
     return { min: Math.max(0, min - pad * 0.14), max: max + pad * 0.14 }
   })())
   const yd = $derived((() => {
-    if (!points.length) return { min: 0, max: 150 }
-    const ys = points.map((p) => p.y)
+    if (!plotted.length) return { min: 0, max: 150 }
+    const ys = plotted.map((p) => p.y)
     let min = Math.min(...ys), max = Math.max(...ys)
     const pad = (max - min) || 12
     return { min: Math.max(0, min - pad * 0.14), max: Math.min(151, max + pad * 0.14) }
@@ -37,7 +46,7 @@
   // Padded top so the best clear sits below the band label. Falls back to a
   // plain linear scale when only one zone shows.
   const ydSupMax = $derived((() => {
-    const sup = points.filter((p) => p.y > 100).map((p) => p.y)
+    const sup = plotted.filter((p) => p.y > 100).map((p) => p.y)
     const m = sup.length ? Math.max(...sup) : 150
     return m + Math.max((m - 100) * 0.25, 8)
   })())
@@ -60,7 +69,7 @@
 
   // Pareto frontier (lower x + higher y better): upper-left envelope
   const frontier = $derived((() => {
-    const sorted = [...points].sort((a, b) => a.x - b.x)
+    const sorted = [...plotted].sort((a, b) => a.x - b.x)
     const keep = []; let best = -Infinity
     for (const p of sorted) { if (p.y > best) { keep.push(p); best = p.y } }
     return keep
@@ -73,10 +82,54 @@
   // Aliases without a tier (e.g. "claude-haiku-4-5") are left untouched.
   const fmtLabel = (s) => s.replace(/\(([^)]*)\)/, ' · $1')
 
+  // Which side of its dot a label sits on (mirrors the per-point render below).
+  const isRight = (p) => xs(p.x) > ML + PW * 0.6
+
+  // Label repel: dots cluster in y (esp. near the frontier), so naive labels at
+  // a fixed dot offset overlap. Per side (left/right anchored), sort by y and
+  // push any label that's within LABEL_GAP of the one above it downward; if the
+  // column then overflows the plot, shift it back up and re-spread. Result: a
+  // collision-free vertical column of labels, each connected to its dot by a
+  // faint leader when it had to move. Keyed by label → baseline y.
+  const LABEL_GAP = 11.5
+  const labelY = $derived.by(() => {
+    const map = new Map()
+    const top = MT + 9, bottom = MT + PH + 11
+    for (const side of [true, false]) {
+      const col = plotted
+        .filter((p) => isRight(p) === side)
+        .map((p) => ({ label: p.label, y: ys(p.y) + 3.3 }))
+        .sort((a, b) => a.y - b.y)
+      if (!col.length) continue
+      for (let i = 1; i < col.length; i++)
+        if (col[i].y - col[i - 1].y < LABEL_GAP) col[i].y = col[i - 1].y + LABEL_GAP
+      const overflow = col[col.length - 1].y - bottom
+      if (overflow > 0)
+        for (const c of col) c.y = Math.max(top, c.y - overflow)
+      for (let i = col.length - 2; i >= 0; i--)
+        if (col[i + 1].y - col[i].y < LABEL_GAP) col[i].y = col[i + 1].y - LABEL_GAP
+      for (const c of col) map.set(c.label, c.y)
+    }
+    return map
+  })
+
   let hovered = $state(null)
 </script>
 
 <div class="wrap">
+  {#if notCleared.length}
+    <aside class="nolist">
+      <div class="nolist-h">Didn't clear<br />checkpoint 1</div>
+      <div class="nolist-items">
+        {#each notCleared as p (p.label)}
+          <button class="nolist-item" class:oss={p.openSource}
+                  onclick={() => onpick && onpick(p.slug)}
+                  title={`${p.label} — click to open run`}>{fmtLabel(p.label)}</button>
+        {/each}
+      </div>
+    </aside>
+  {/if}
+  <div class="chartcol">
   <svg viewBox={`0 0 ${W} ${H}`} class="chart" role="img" aria-label={xLabel}>
     {#if bandVisible}
       <rect x={ML} y={MT} width={PW} height={ys(100) - MT} class="zone" />
@@ -102,13 +155,20 @@
 
     {#if frontier.length > 1}<polyline points={frontierPath} class="frontier" />{/if}
 
-    {#each points as p (p.label)}
-      {@const rightSide = xs(p.x) > ML + PW * 0.6}
+    {#each plotted as p (p.label)}
+      {@const rightSide = isRight(p)}
+      {@const cx = xs(p.x)}
+      {@const cy = ys(p.y)}
+      {@const lx = rightSide ? cx - 9 : cx + 9}
+      {@const ly = labelY.get(p.label) ?? cy + 3.3}
       <g class="pt" class:oss={p.openSource} class:front={onFrontier(p)} class:hot={hovered === p}
          onmouseenter={() => hovered = p} onmouseleave={() => hovered = null}
          onclick={() => onpick && onpick(p.slug)} onkeydown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && onpick) { e.preventDefault(); onpick(p.slug) } }} role="button" tabindex="0">
-        <circle cx={xs(p.x)} cy={ys(p.y)} r={onFrontier(p) ? 6 : 5} />
-        <text x={rightSide ? xs(p.x) - 9 : xs(p.x) + 9} y={ys(p.y) + 3.5}
+        {#if Math.abs(ly - (cy + 3.3)) > 4}
+          <line x1={rightSide ? cx - 5 : cx + 5} y1={cy} x2={lx} y2={ly - 3.3} class="leader" />
+        {/if}
+        <circle cx={cx} cy={cy} r={onFrontier(p) ? 6 : 5} />
+        <text x={lx} y={ly}
               class="plabel" text-anchor={rightSide ? 'end' : 'start'}>{fmtLabel(p.label)}</text>
       </g>
     {/each}
@@ -125,11 +185,20 @@
       <div class="tip-go">click to open run →</div>
     </div>
   {/if}
+  </div>
 </div>
 
 <style>
-  .wrap { position: relative; }
+  .wrap { position: relative; display: flex; align-items: stretch; gap: 12px; }
+  .chartcol { position: relative; flex: 1 1 auto; min-width: 0; }
+  .nolist { flex: 0 0 118px; align-self: center; display: flex; flex-direction: column; gap: 6px; padding: 6px 0; }
+  .nolist-h { font-size: 9px; font-weight: 700; color: var(--faint); text-transform: uppercase; letter-spacing: .04em; line-height: 1.3; }
+  .nolist-items { display: flex; flex-direction: column; gap: 3px; }
+  .nolist-item { text-align: left; border: none; background: none; padding: 0; font-size: 9.5px; font-weight: 600; color: var(--muted); cursor: pointer; line-height: 1.25; white-space: normal; }
+  .nolist-item:hover { color: var(--text); text-decoration: underline; }
+  .nolist-item.oss { color: #0d9488; }
   .chart { width: 100%; height: auto; display: block; }
+  .leader { stroke: var(--border-2); stroke-width: 1; opacity: .8; }
   .zone { fill: var(--accent-soft); opacity: .45; }
   .zonelabel { fill: var(--accent); font-size: 10px; font-weight: 700; }
   .grid { stroke: var(--border-2); stroke-width: 1; }
@@ -141,7 +210,7 @@
   .frontier { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 6 4; opacity: .8; }
   .pt { cursor: pointer; }
   .pt circle { fill: var(--accent); stroke: #fff; stroke-width: 1.5; transition: r .1s; }
-  .pt .plabel { fill: var(--muted); font-size: 10px; font-weight: 600; }
+  .pt .plabel { fill: var(--muted); font-size: 8.5px; font-weight: 600; }
   .pt.oss circle { fill: #0d9488; }
   .pt.oss .plabel { fill: #0d9488; }
   .pt.front circle { stroke: var(--accent); stroke-width: 2; }
