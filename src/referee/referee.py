@@ -144,16 +144,21 @@ class Referee:
             self.stamps = {}
             self.autofilled = set()
 
+    def export_state(self) -> dict:
+        """The referee latch as a plain dict — the unit a savepoint bundle stores.
+
+        Single source of truth for the on-disk shape: both ``_persist_state``
+        (live ``referee_state.json``) and the savepoint bundle (P1) serialize
+        this, so the two can never drift.
+        """
+        return {"stamps": dict(self.stamps), "autofilled": sorted(self.autofilled)}
+
     def _persist_state(self) -> None:
         """Write the latch to ``referee_state.json`` (best-effort)."""
         try:
             self.run_dir.mkdir(parents=True, exist_ok=True)
             with open(self._state_path, "w") as f:
-                json.dump(
-                    {"stamps": self.stamps, "autofilled": sorted(self.autofilled)},
-                    f,
-                    indent=2,
-                )
+                json.dump(self.export_state(), f, indent=2)
         except Exception:
             pass  # persistence failure must never take down a run
 

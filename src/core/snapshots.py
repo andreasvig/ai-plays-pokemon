@@ -1,7 +1,6 @@
 """Snapshot system for saving and loading full game + agent state."""
 
 import json
-import os
 import shutil
 import time
 from pathlib import Path
@@ -86,6 +85,7 @@ class SnapshotManager:
         turn: int,
         kind: str = "periodic",
         task_master_state: Optional[dict] = None,
+        referee_state: Optional[dict] = None,
     ) -> Path:
         """Save a run-scoped savepoint to <run_dir>/savepoints/turn_<N>/.
 
@@ -100,6 +100,13 @@ class SnapshotManager:
         legacy ``tasks.json`` task-state file in the TaskMaster path. On the
         TM-disabled legacy path it is None and only the tasks.json copy below
         runs (unchanged).
+
+        ``referee_state`` — when a Referee is active (official benchmark runs),
+        the loop passes ``Referee.export_state()`` (``{stamps, autofilled}``) so
+        the gate latch is captured ATOMICALLY in the same turn-N bundle as the
+        emulator state. This is what makes resuming an official run turn-exact
+        and score-consistent (the bundle, not the run dir's separately-written
+        referee_state.json, is the source of truth on --continue).
         """
         savepoints_root = run_dir / "savepoints"
         savepoints_root.mkdir(parents=True, exist_ok=True)
@@ -119,6 +126,12 @@ class SnapshotManager:
         if task_master_state is not None:
             with open(target / "task_master_state.json", "w") as f:
                 json.dump(task_master_state, f, indent=2, default=str)
+
+        # Referee gate latch — captured in-bundle so the savepoint is a single
+        # consistent turn-N snapshot of {emulator, agent, task tree, gates}.
+        if referee_state is not None:
+            with open(target / "referee_state.json", "w") as f:
+                json.dump(referee_state, f, indent=2)
 
         tasks_src = self.state_file.parent / "tasks.json"
         if tasks_src.exists():

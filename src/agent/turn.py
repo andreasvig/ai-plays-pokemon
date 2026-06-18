@@ -856,11 +856,13 @@ class TurnManager:
             return None
         try:
             tm_state = self._task_master_state() if self.task_master_enabled else None
+            ref_state = self.referee.export_state() if self.referee is not None else None
             path = self._snapshot_mgr.save_run_savepoint(
                 run_dir=self.logger.run_dir,
                 turn=self.turn_number,
                 kind=kind,
                 task_master_state=tm_state,
+                referee_state=ref_state,
             )
             self.logger.log_custom("savepoint_saved", {
                 "turn": self.turn_number, "kind": kind, "path": str(path),
