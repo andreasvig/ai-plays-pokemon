@@ -727,6 +727,12 @@ class TurnManager:
 
         # Turn history
         self.turn_explanations: list[dict] = []
+        # Real game-turn number for each turn_explanations entry, same index.
+        # Handoff turns produce a turn_start but NO explanation, so explanation
+        # index != turn number once any handoff has happened — this keeps the
+        # "## Previous Turns" headings and historic-screenshot action lookups on
+        # the true turn number instead of drifting by the handoff count.
+        self._explanation_turns: list[int] = []
         # Ring buffer of (turn_number, PIL.Image) for the last K screenshots —
         # only populated when historic_images_count > 0. Bounded by K so memory
         # stays flat regardless of run length.
@@ -1239,10 +1245,12 @@ class TurnManager:
             return
 
         # turn_explanations is the loop's append-ordered list — one entry per
-        # player-action turn (handoff turns produce none). Rebuild in turn order.
-        self.turn_explanations = [
-            explanations_by_turn[t] for t in sorted(explanations_by_turn)
-        ]
+        # player-action turn (handoff turns produce none). Rebuild in turn order,
+        # keeping the parallel real-turn-number list so headings + action lookups
+        # stay on the true turn number across the handoff gaps.
+        ordered_turns = sorted(explanations_by_turn)
+        self.turn_explanations = [explanations_by_turn[t] for t in ordered_turns]
+        self._explanation_turns = list(ordered_turns)
 
         # Continue the global turn counter from the savepoint turn (the loop adds
         # 1 before the first resumed turn → it picks up at up_to_turn + 1).
@@ -1388,6 +1396,7 @@ class TurnManager:
                 "memory_updates_raw": result.memory_updates,
             }
             self.turn_explanations.append(explanation)
+            self._explanation_turns.append(self.turn_number)
             self.logger.log_turn_explanation(self.turn_number, explanation)
             # Accumulate the Player's reasoning for the CURRENT task — fed to the
             # next TaskMaster invocation so it can judge the task from the trace.
@@ -2066,8 +2075,14 @@ class TurnManager:
             start = 0
         visible = self.turn_explanations[start:]
         n_visible = len(visible)
+        # Real turn numbers, aligned with `visible`. Falls back to positional
+        # numbering only if the parallel list is somehow out of sync (old data).
+        if len(self._explanation_turns) == len(self.turn_explanations):
+            visible_turns = self._explanation_turns[start:]
+        else:
+            visible_turns = [start + j + 1 for j in range(n_visible)]
         for j, exp in enumerate(visible):
-            turn_num = start + j + 1
+            turn_num = visible_turns[j]
             action = exp.get('action', [])
             action_str = ", ".join(action) if isinstance(action, list) else str(action)
             reasoning = exp.get('reasoning', '')
@@ -2137,8 +2152,19 @@ class TurnManager:
         return task_text
 
     def _lookup_actions(self, turn_num: int) -> str:
-        """Return the comma-joined action list for a past turn, or '?' if unknown."""
-        idx = turn_num - 1
+        """Return the comma-joined action list for a past turn, or '?' if unknown.
+
+        Looks up by REAL turn number (handoff turns leave gaps, so positional
+        indexing drifts — see _explanation_turns). A handoff turn has a
+        screenshot but no explanation, so its actions resolve to '?'.
+        """
+        if len(self._explanation_turns) == len(self.turn_explanations):
+            try:
+                idx = self._explanation_turns.index(turn_num)
+            except ValueError:
+                return "?"
+        else:
+            idx = turn_num - 1  # fallback: positional (old data)
         if 0 <= idx < len(self.turn_explanations):
             action = self.turn_explanations[idx].get("action", [])
             if isinstance(action, list):

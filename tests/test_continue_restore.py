@@ -29,9 +29,11 @@ def _blank_manager(*, historic_images_count=0, task_master_enabled=False,
     """A TurnManager with only the fields restore_player_history touches set."""
     mgr = TurnManager.__new__(TurnManager)
     mgr.turn_explanations = []
+    mgr._explanation_turns = []
     mgr.turn_screenshots = []
     mgr.turn_number = 0
     mgr.historic_images_count = historic_images_count
+    mgr.max_turns_before_trim = None
     mgr.task_master_enabled = task_master_enabled
     mgr.current_task_index = current_task_index
     mgr._cur_task_player_reasons = []
@@ -131,6 +133,40 @@ def test_handoff_turns_have_no_explanation_but_count_in_numbering(tmp_path):
     assert mgr._cur_task_player_reasons == ["r4", "r5"]
     assert mgr._cur_task_first_image.endswith("_turn_4.png")
     assert mgr._cur_task_last_image.endswith("_turn_5.png")
+    # Parallel real-turn list skips the handoff turn (3): explanations map to
+    # turns 1,2,4,5 — NOT positional 1,2,3,4.
+    assert mgr._explanation_turns == [1, 2, 4, 5]
+
+
+def test_previous_turns_text_uses_real_turn_numbers_across_handoff_gap(tmp_path):
+    # Reproduces the resume bug: turn 16 was a handoff (no explanation), so
+    # positional numbering drifts by 1 after it. The rendered "## Previous Turns"
+    # headings must show the REAL turn numbers (…28, 29), not positional (…27, 28).
+    turns = []
+    for t in range(1, 30):  # turns 1..29
+        if t == 16:
+            turns.append((t, False, None))   # handoff — no explanation
+        else:
+            turns.append((t, True, f"reason {t}"))
+    events_path, shots = _build_run(tmp_path, turns)
+    mgr = _blank_manager(historic_images_count=1, task_master_enabled=True,
+                         current_task_index=1)
+
+    mgr.restore_player_history(events_path, shots, up_to_turn=29)
+    text = mgr._render_previous_turns_text()
+
+    # The latest player turn is 29 (turn 30 doesn't exist here) — it must appear,
+    # and the off-by-one ghost "Turn 28-as-latest" must NOT be the last heading.
+    assert "### Turn 29" in text
+    assert "### Turn 28" in text
+    # Turn 16 (handoff) has no entry and must be absent.
+    assert "### Turn 16" not in text
+    # Headings are strictly the real, gap-aware turn numbers.
+    import re
+    headings = [int(m) for m in re.findall(r"### Turn (\d+)", text)]
+    assert headings == sorted(headings)
+    assert 16 not in headings
+    assert headings[-1] == 29
 
 
 def test_missing_events_file_is_a_safe_noop(tmp_path):
