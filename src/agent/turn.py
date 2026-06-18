@@ -1136,6 +1136,13 @@ class TurnManager:
         status = rating_dict["status"] if rating_dict else "(none)"
         print(f"  Task {n} rated {status}; Task {next_index}: {next_task.title!r}")
 
+        # Checkpoint at the task boundary. A handoff is a natural, semantically
+        # clean savepoint; taking one here tightens the worst-case replay window
+        # for an official benchmark that dies between periodic saves (a hard kill
+        # skips the on_crash handler, so resume falls back to the last bundle).
+        # Idempotent with a periodic save at the same turn (the dir is rewritten).
+        self.save_savepoint("handoff")
+
     def _task_master_state(self) -> dict:
         """Serializable TaskMaster state for a savepoint (Phase B4)."""
         return {

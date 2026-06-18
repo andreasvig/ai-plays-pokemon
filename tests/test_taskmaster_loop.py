@@ -482,6 +482,33 @@ def test_real_runner_async_path_no_nested_asyncio():
     assert calls["n"] >= 2  # real invoke_async actually ran twice
 
 
+def test_handoff_takes_a_savepoint(monkeypatch):
+    """P4: each TaskMaster handoff checkpoints, bounding hard-kill replay.
+
+    The scenario runs a cold start + two handoffs; save_savepoint must fire with
+    kind='handoff' once per handoff (independent of the periodic cadence)."""
+    kinds: list[str] = []
+
+    def _spy(self, kind):
+        kinds.append(kind)
+        return None
+
+    monkeypatch.setattr(TurnManager, "save_savepoint", _spy)
+    _run_three_task_scenario()  # two handoffs (budget-exhaustion + voluntary)
+
+    assert kinds.count("handoff") == 2, kinds
+
+
+def test_official_config_savepoint_cadence_is_tight():
+    """P4: the frozen official config checkpoints every 10 turns (hard-kill bound)."""
+    from src.config import load_config
+
+    cfg = load_config("configs/config-3.13.yaml")
+    sp = cfg["savepoints"]
+    assert sp["every_n_turns"] == 10
+    assert sp["on_crash"] is True and sp["at_end"] is True
+
+
 if __name__ == "__main__":
     test_taskmaster_handoff_loop_order_and_shape()
     test_event_shapes_match_fixture()

@@ -128,7 +128,12 @@ auto_snapshot_depth: 0
 # evidence are rebuilt from the copied events.jsonl. on_crash saves a savepoint
 # at the exact turn when a run is stopped/crashes, so resuming is seamless.
 savepoints:
-  every_n_turns: 50   # 0 disables periodic saves
+  # Tight cadence for the OFFICIAL benchmark: a hard kill (OOM/power, which skips
+  # the on_crash handler) resumes from the last bundle, so this bounds worst-case
+  # replayed turns to <=10. A savepoint is ALSO taken at every TaskMaster handoff.
+  # Resume is turn-exact and score-consistent (gates + turns are checkpoint-exact),
+  # so a frequent cadence costs only disk, not benchmark validity.
+  every_n_turns: 10   # 0 disables periodic saves
   at_end: true
   on_crash: true
 
