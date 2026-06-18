@@ -739,6 +739,17 @@ class TurnManager:
         self.turn_screenshots: list[tuple[int, Image.Image]] = []
         self.turn_number = 0
 
+        # Highest turn whose game-state mutation has fully settled — i.e. the
+        # turn the live emulator state (and thus any savepoint taken right now)
+        # is byte-exact for. Advanced at the END of each committed turn (after
+        # buttons press + screen settle) and on each TaskMaster handoff. A stop
+        # or crash that fires mid-turn (during the LLM call, before any button
+        # press) leaves the emulator at THIS turn's state, never the in-flight
+        # one — so the kill savepoint stamps this, and resume re-runs the
+        # interrupted turn from a clean boundary. Restored to the savepoint turn
+        # on a continued run.
+        self._last_settled_turn = 0
+
         # Tasks (loaded from run folder)
         self.tasks: Optional[dict] = None
 
@@ -846,34 +857,43 @@ class TurnManager:
             else:
                 print(f"  Task source: CONFIG — goal: {cfg_goal!r}")
 
-    def save_savepoint(self, kind: str) -> Optional[str]:
-        """Write a savepoint for the current turn. Returns the path on success.
+    def save_savepoint(self, kind: str, turn: Optional[int] = None) -> Optional[str]:
+        """Write a savepoint. Returns the path on success.
+
+        ``turn`` overrides the stamped turn number; it defaults to
+        ``self.turn_number`` (a clean periodic/handoff/end save). Crash/stop
+        handlers pass ``self._last_settled_turn`` instead: an interrupt can land
+        mid-turn (turn_number already incremented, but no button pressed yet),
+        and the live emulator state is the LAST SETTLED turn, not the in-flight
+        one — so stamping the in-flight number would claim a turn that never
+        actually happened and make resume skip it.
 
         Best-effort: failures are logged but do not raise. Safe to call from
         crash handlers in the caller.
         """
-        if self._snapshot_mgr is None or self.turn_number <= 0:
+        save_turn = self.turn_number if turn is None else turn
+        if self._snapshot_mgr is None or save_turn <= 0:
             return None
         try:
             tm_state = self._task_master_state() if self.task_master_enabled else None
             ref_state = self.referee.export_state() if self.referee is not None else None
             path = self._snapshot_mgr.save_run_savepoint(
                 run_dir=self.logger.run_dir,
-                turn=self.turn_number,
+                turn=save_turn,
                 kind=kind,
                 task_master_state=tm_state,
                 referee_state=ref_state,
             )
             self.logger.log_custom("savepoint_saved", {
-                "turn": self.turn_number, "kind": kind, "path": str(path),
+                "turn": save_turn, "kind": kind, "path": str(path),
             })
-            print(f"  [Turn {self.turn_number}] Savepoint ({kind}): {path}")
+            print(f"  [Turn {save_turn}] Savepoint ({kind}): {path}")
             return str(path)
         except Exception as e:
             self.logger.log_custom("savepoint_error", {
-                "turn": self.turn_number, "kind": kind, "error": str(e),
+                "turn": save_turn, "kind": kind, "error": str(e),
             })
-            print(f"  [Turn {self.turn_number}] Savepoint ({kind}) FAILED: {e}")
+            print(f"  [Turn {save_turn}] Savepoint ({kind}) FAILED: {e}")
             return None
 
     # --- TaskMaster orchestration -------------------------------------------
@@ -1141,6 +1161,10 @@ class TurnManager:
         # for an official benchmark that dies between periodic saves (a hard kill
         # skips the on_crash handler, so resume falls back to the last bundle).
         # Idempotent with a periodic save at the same turn (the dir is rewritten).
+        # A handoff turn presses no buttons, so the emulator is unchanged from the
+        # prior settle — but the turn counter advanced and TaskMaster state is now
+        # persisted, so this IS a clean resume boundary. Mark it for a later kill.
+        self._last_settled_turn = self.turn_number
         self.save_savepoint("handoff")
 
     def _task_master_state(self) -> dict:
@@ -1267,6 +1291,9 @@ class TurnManager:
         # Continue the global turn counter from the savepoint turn (the loop adds
         # 1 before the first resumed turn → it picks up at up_to_turn + 1).
         self.turn_number = up_to_turn
+        # The restored emulator state IS the savepoint turn's settled state, so a
+        # kill before the first resumed turn completes must stamp back to here.
+        self._last_settled_turn = up_to_turn
 
         # Rebuild the historic-image ring buffer: the last K start-of-turn
         # screenshots among turns <= up_to_turn, decoded back into PIL images.
@@ -1367,7 +1394,7 @@ class TurnManager:
             print(f"  Turn {self.turn_number}")
             print(f"{'─'*60}")
 
-            result = await self._run_turn()
+            result = await self._run_turn_or_stop()
             if result is None:
                 # At the per-task budget boundary the handoff to TaskMaster is an
                 # invariant. If the Player produced no valid output there (e.g. a
@@ -1478,6 +1505,12 @@ class TurnManager:
             if self._referee_should_break():
                 break
 
+            # This turn's action has been pressed AND the screen has settled, so
+            # the live emulator state is now byte-exact for this turn. Mark it so
+            # a later mid-turn kill/crash savepoint stamps THIS turn (the clean
+            # boundary), never the in-flight one.
+            self._last_settled_turn = self.turn_number
+
             # Periodic savepoint — at the very end of the iteration so the
             # emulator state is post-settle, not mid-button-press.
             if (
@@ -1565,6 +1598,42 @@ class TurnManager:
                 "turn": self.turn_number, "error": str(e),
             })
         return False
+
+    async def _run_turn_or_stop(self) -> Optional[GameAction]:
+        """Run one turn, but abort it the instant a stop is requested mid-turn.
+
+        The dominant per-turn latency is the LLM call. Polling the stop flag
+        only at the loop boundary means a UI "kill" has to wait for the whole
+        in-flight turn (think → act → settle) to finish before it halts —
+        which reads as a dead button on a slow thinking model. Here we race the
+        turn against the stop predicate and CANCEL it the moment a stop lands
+        (within ~one poll interval).
+
+        Safe because buttons are pressed by the loop body AFTER ``_run_turn``
+        returns: a cancelled turn never mutated the emulator, so the live state
+        is still ``_last_settled_turn`` and the crash savepoint is clean +
+        byte-exact. Resume then re-runs the interrupted turn from that clean
+        boundary, with no double-counted turn and no leaked context (memory
+        updates are applied only on a completed turn). Raises KeyboardInterrupt
+        to reuse the existing interrupt → savepoint → cancelled path.
+        """
+        if self._should_stop is None:
+            return await self._run_turn()
+        turn_task = asyncio.create_task(self._run_turn())
+        while True:
+            done, _ = await asyncio.wait({turn_task}, timeout=0.2)
+            if turn_task in done:
+                return turn_task.result()
+            if self._should_stop():
+                turn_task.cancel()
+                try:
+                    await turn_task
+                except BaseException:
+                    # CancelledError (expected) or any teardown error from the
+                    # aborted LLM call — swallow; the run is being killed anyway.
+                    pass
+                print("\n  Stop requested — aborting the in-flight turn now.")
+                raise KeyboardInterrupt
 
     async def _run_turn(self) -> Optional[GameAction]:
         """Execute a single turn."""

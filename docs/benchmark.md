@@ -54,11 +54,17 @@ turn-based, not clock-based**, and the checkpoint is turn-exact:
 - **Wall-clock is active-compute time, and isn't ranked.** `duration_s` sums the
   active segments and **excludes the idle pause** — an overnight gap is invisible
   to it, and it's display-only (never part of the ranking).
-- **Hard-kill safe.** A cooperative Stop checkpoints the exact turn (`on_crash`).
-  A hard death (OOM/power) falls back to the last bundle; the official config
-  checkpoints every 10 turns **and** at every TaskMaster handoff, so at most a few
-  turns replay — and the referee latch is capped to the bundle turn, so a replayed
-  turn never double-credits a gate or double-counts.
+- **Hard-kill safe.** A cooperative Stop is near-instant: it **cancels the
+  in-flight turn** and checkpoints the *last settled* turn (`on_crash`). Because
+  a turn's buttons are pressed only after the model returns, the cancelled turn
+  left the game untouched — so the continuation simply **re-runs the interrupted
+  turn from that clean boundary**. That re-run is not a second scored attempt: it
+  changed no game state and leaked no context (memory updates apply only on a
+  completed turn), and the turn counter is restored to the bundle turn, so it is
+  not double-counted. A hard death (OOM/power) falls back to the last bundle; the
+  official config checkpoints every 10 turns **and** at every TaskMaster handoff,
+  so at most a few turns replay — and the referee latch is capped to the bundle
+  turn, so a replayed turn never double-credits a gate or double-counts.
 - **Tamper-evident.** Each bundle carries a `checkpoint.sha256` over its
   score-bearing parts (emulator state + gate latch + task tree). An official
   continue **refuses to resume a checkpoint whose seal doesn't match** — a paused

@@ -142,13 +142,17 @@ overnight can be finished + scored), a casual run continues casual. See
 
 - The queue can be reordered and items removed before they run.
 - The active run can be **stopped** ("kill run", with a confirm dialog). Stops
-  are **cooperative**: the run halts at the **next turn boundary** (never
-  mid-turn — that would corrupt the savepoint), so for a slow model it can take
-  up to a turn's worth of time. The UI shows an amber "stopping…" state
-  immediately so the latency doesn't read as a dead button. A stopped run saves
-  a savepoint and is marked `cancelled`; a cancelled **official** run is voided
-  (it never reaches the leaderboard) — but it stays **continuable as the same
-  benchmark**, and the continuation that finishes the ladder is what scores.
+  are **near-instant**: the stop is detected within a fraction of a second and
+  **the in-flight turn is cancelled immediately** rather than waiting for the
+  (possibly slow) LLM call to finish. That's safe because a turn's buttons are
+  only pressed *after* the model returns — so a cancelled turn never touched the
+  emulator, and the kill savepoint lands on the **last settled turn** (a clean,
+  byte-exact boundary). The UI still shows an amber "stopping…" state for the
+  brief teardown. A stopped run saves a savepoint and is marked `cancelled`; a
+  cancelled **official** run is voided (it never reaches the leaderboard) — but
+  it stays **continuable as the same benchmark**, and **the continuation re-runs
+  the exact turn the agent was killed on**, so finishing the ladder is what
+  scores.
 
 ---
 

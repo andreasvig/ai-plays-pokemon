@@ -478,7 +478,11 @@ def run_single_loop(
         print("\nInterrupted by user.")
         user_interrupted = True
         if turn_mgr.savepoint_on_crash:
-            turn_mgr.save_savepoint("crash")
+            # Stamp the LAST SETTLED turn, not turn_number: a cooperative stop can
+            # abort mid-turn (the in-flight turn was cancelled before its buttons
+            # pressed), so the live emulator state is the prior settled turn. This
+            # makes resume re-run the exact turn the agent was killed on.
+            turn_mgr.save_savepoint("crash", turn=turn_mgr._last_settled_turn)
         # A cooperative stop aborts the loop before its clean finalize. Write the
         # full summary now so the killed run still has a readable report; status
         # stays None and the executor stamps `cancelled` (voided if official).
@@ -488,7 +492,9 @@ def run_single_loop(
         import traceback
         traceback.print_exc()
         if turn_mgr.savepoint_on_crash:
-            turn_mgr.save_savepoint("crash")
+            # A fault can surface mid-turn before the action settled; stamp the
+            # last settled turn so resume replays from a clean boundary.
+            turn_mgr.save_savepoint("crash", turn=turn_mgr._last_settled_turn)
         # A mid-run fault (e.g. a model erroring out — the Gemma run, 2026-06-17).
         # Record the run as `crashed` so it lands in History as INCOMPLETE with
         # its report intact and never posts to the leaderboard, instead of
