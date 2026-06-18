@@ -11,6 +11,10 @@ boundary. These tests pin the new behavior:
      the PRIOR turn — the clean boundary a resume re-runs from.
   3. `save_savepoint(turn=...)` stamps the override turn, so the crash handler
      records the last settled turn, not the in-flight one.
+  4. A turn that BLOCKS its event loop (e.g. a slow/sync LLM call) is still
+     killed instantly — the turn runs on a worker loop so the main loop's stop
+     watcher is never starved. This is the case the original same-loop race
+     failed: with 240s LLM timeouts the kill hung for minutes.
 
 No mGBA / network: emulator, vision, state are stubs; the Player turn is
 overridden to block on the chosen turn.
@@ -20,6 +24,7 @@ import asyncio
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import pytest
@@ -146,6 +151,54 @@ def test_midturn_stop_aborts_and_keeps_last_settled_on_prior_turn():
     # Only the two completed turns ever pressed a button — the aborted turn 3
     # never mutated the emulator, so resume from turn 2 is byte-exact.
     assert len(mgr.emulator.presses) == 2
+
+
+class _BlockingSyncPlayerManager(TurnManager):
+    """Player turn that BLOCKS its event loop on ``block_at`` (a sync sleep).
+
+    Models the real failure: a turn wedged in a synchronous / non-yielding LLM
+    call. A same-loop stop watcher would be starved here and the kill would hang
+    for the whole block; running the turn on a worker loop lets the main loop
+    poll + abandon it.
+    """
+
+    def __init__(self, config, block_at, block_s):
+        super().__init__(config)
+        self.block_at = block_at
+        self.block_s = block_s
+        self.entered_block = False
+
+    async def _run_turn(self):
+        t = self.turn_number
+        self.logger.log_turn_start(t)
+        self.logger.log_screenshot(_StubImage(), label=f"turn_{t}")
+        if t == self.block_at:
+            self.entered_block = True
+            time.sleep(self.block_s)  # SYNC block — does NOT yield to the loop
+        return _ga(f"move {t}")
+
+
+def test_blocking_turn_is_abandoned_not_waited_on():
+    tmp = Path(tempfile.mkdtemp())
+    cfg = _config(tmp)
+    logger = RunLogger(cfg)
+    # Block for 5s, but only allow 0.3s of unwind grace before abandoning.
+    mgr = _BlockingSyncPlayerManager(cfg, block_at=2, block_s=5.0)
+    mgr.setup(_StubEmulator(), _StubState(), _StubVision(), logger, None)
+    mgr._stop_unwind_timeout_s = 0.3
+    mgr._should_stop = lambda: mgr.entered_block
+
+    t0 = time.time()
+    with pytest.raises(KeyboardInterrupt):
+        mgr.run_loop(max_turns=50)
+    elapsed = time.time() - t0
+
+    # The kill must NOT wait out the 5s block — it abandons after ~the unwind
+    # grace. (Generous bound to stay non-flaky on a loaded CI box.)
+    assert elapsed < 3.0, f"kill waited {elapsed:.1f}s for the blocking turn"
+    assert mgr.turn_number == 2
+    assert mgr._last_settled_turn == 1   # turn 1 completed; turn 2 abandoned
+    assert len(mgr.emulator.presses) == 1
 
 
 def test_save_savepoint_honors_turn_override():

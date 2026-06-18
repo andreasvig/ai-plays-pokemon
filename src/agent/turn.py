@@ -5,6 +5,7 @@ import json
 import logging
 import random
 import sys
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -650,6 +651,21 @@ class TurnManager:
         # interrupt→savepoint→cancelled path fires. Without it the loop only stops
         # on a real Ctrl-C, so a UI "stop" never actually halts the run.
         self._should_stop: Optional[Any] = None
+
+        # Dedicated event loop + daemon thread that player turns run ON, so the
+        # main loop stays free to watch the stop flag. A single turn can sit
+        # inside one LLM call for MINUTES (slow "thinking" models use 240s
+        # per-attempt timeouts), and if that call ever blocks its event loop a
+        # same-loop stop-watcher is starved → the kill hangs for the whole turn.
+        # Running the turn off-thread lets the main loop poll + ABANDON it
+        # instantly. Lazily started on the first stop-armed turn; torn down in
+        # run_loop's finally. See _run_turn_or_stop.
+        self._turn_worker_loop: Optional[asyncio.AbstractEventLoop] = None
+        self._turn_worker_thread: Optional[threading.Thread] = None
+        # How long a stop waits for a cancelled turn to unwind cleanly before
+        # abandoning it (an async LLM call unwinds near-instantly; a turn wedged
+        # in a blocking call is abandoned — the run is being killed regardless).
+        self._stop_unwind_timeout_s = 2.0
 
         # TaskMaster gate. When enabled the Player prompt gains a current-task +
         # task-progress block each turn and the budget validator (attached in
@@ -1361,7 +1377,12 @@ class TurnManager:
 
     def run_loop(self, max_turns: Optional[int] = None) -> None:
         """Run the turn loop synchronously."""
-        asyncio.run(self._run_loop_async(max_turns))
+        try:
+            asyncio.run(self._run_loop_async(max_turns))
+        finally:
+            # Tear down the player-turn worker thread (if a stop-armed run
+            # started one), including after a KeyboardInterrupt abandon.
+            self._shutdown_turn_worker()
 
     async def _run_loop_async(self, max_turns: Optional[int] = None) -> None:
         """Run the turn loop."""
@@ -1599,41 +1620,79 @@ class TurnManager:
             })
         return False
 
+    def _ensure_turn_worker(self) -> asyncio.AbstractEventLoop:
+        """Lazily start the player-turn worker loop on a daemon thread."""
+        if self._turn_worker_loop is None:
+            self._turn_worker_loop = asyncio.new_event_loop()
+            self._turn_worker_thread = threading.Thread(
+                target=self._turn_worker_loop.run_forever,
+                name="pokemon-turn-worker",
+                daemon=True,
+            )
+            self._turn_worker_thread.start()
+        return self._turn_worker_loop
+
+    def _shutdown_turn_worker(self) -> None:
+        """Stop the worker loop + join its thread. Best-effort, idempotent."""
+        loop = self._turn_worker_loop
+        self._turn_worker_loop = None
+        thread = self._turn_worker_thread
+        self._turn_worker_thread = None
+        if loop is not None:
+            try:
+                loop.call_soon_threadsafe(loop.stop)
+            except Exception:
+                pass
+        if thread is not None:
+            # Daemon thread, so even a turn wedged in a blocking call (which we
+            # deliberately abandoned) can't keep the process alive past exit.
+            thread.join(timeout=2.0)
+
     async def _run_turn_or_stop(self) -> Optional[GameAction]:
         """Run one turn, but abort it the instant a stop is requested mid-turn.
 
-        The dominant per-turn latency is the LLM call. Polling the stop flag
-        only at the loop boundary means a UI "kill" has to wait for the whole
-        in-flight turn (think → act → settle) to finish before it halts —
-        which reads as a dead button on a slow thinking model. Here we race the
-        turn against the stop predicate and CANCEL it the moment a stop lands
-        (within ~one poll interval).
+        A single turn can sit inside one LLM call for MINUTES (slow thinking
+        models use 240s per-attempt timeouts). Polling the stop flag only at the
+        loop boundary means a UI "kill" has to wait for that whole call — a dead
+        button. An earlier same-loop race fixed this ONLY when the call yielded;
+        if the LLM call ever blocks its event loop, a same-loop watcher is
+        starved and the kill still hangs.
 
-        Safe because buttons are pressed by the loop body AFTER ``_run_turn``
-        returns: a cancelled turn never mutated the emulator, so the live state
-        is still ``_last_settled_turn`` and the crash savepoint is clean +
-        byte-exact. Resume then re-runs the interrupted turn from that clean
-        boundary, with no double-counted turn and no leaked context (memory
-        updates are applied only on a completed turn). Raises KeyboardInterrupt
-        to reuse the existing interrupt → savepoint → cancelled path.
+        So the turn runs on a dedicated WORKER loop while THIS loop stays free to
+        poll the stop flag every 0.1s. On stop we cancel the turn (an async LLM
+        call unwinds near-instantly), wait briefly for it to settle, then ABANDON
+        it and raise KeyboardInterrupt — reusing the existing interrupt →
+        savepoint → cancelled path. The main loop is never starved, so the kill
+        is instant regardless of what the turn is doing.
+
+        Safe because the player agent has NO tools: a turn only READS the
+        emulator (the start-of-turn screenshot) and never presses a button —
+        buttons are pressed by the loop body AFTER this returns. So an abandoned
+        turn leaves the game byte-exact at ``_last_settled_turn``; resume
+        re-runs it from that clean boundary, with no double-counted turn and no
+        leaked context (memory is applied only on a completed turn).
         """
         if self._should_stop is None:
             return await self._run_turn()
-        turn_task = asyncio.create_task(self._run_turn())
+        worker = self._ensure_turn_worker()
+        fut = asyncio.run_coroutine_threadsafe(self._run_turn(), worker)
         while True:
-            done, _ = await asyncio.wait({turn_task}, timeout=0.2)
-            if turn_task in done:
-                return turn_task.result()
+            if fut.done():
+                return fut.result()
             if self._should_stop():
-                turn_task.cancel()
+                fut.cancel()
+                # Let an async turn unwind its LLM call cleanly so the emulator
+                # is quiescent before the crash savepoint; abandon a turn wedged
+                # in a blocking call (the run is being killed regardless).
                 try:
-                    await turn_task
+                    await asyncio.wait_for(
+                        asyncio.wrap_future(fut), timeout=self._stop_unwind_timeout_s
+                    )
                 except BaseException:
-                    # CancelledError (expected) or any teardown error from the
-                    # aborted LLM call — swallow; the run is being killed anyway.
                     pass
                 print("\n  Stop requested — aborting the in-flight turn now.")
                 raise KeyboardInterrupt
+            await asyncio.sleep(0.1)
 
     async def _run_turn(self) -> Optional[GameAction]:
         """Execute a single turn."""
