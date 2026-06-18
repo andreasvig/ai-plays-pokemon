@@ -27,17 +27,51 @@ def load_events(run_dir: Path) -> list[dict]:
     return events
 
 
+def _turn_settled(turn: dict) -> bool:
+    """True if a turn produced real output, vs an aborted mid-flight fragment.
+
+    A turn killed in flight (the instant-kill path) leaves only a bare
+    ``turn_start`` in the log — it is abandoned before any llm_output / turn_trace
+    / explanation / usage is recorded. The resume re-runs that SAME turn number
+    and logs it fully. This predicate distinguishes the complete turn from the
+    aborted fragment so the latter can be superseded.
+    """
+    return bool(
+        turn.get("trace") is not None
+        or turn.get("action")
+        or turn.get("explanation")
+        or "usage" in turn
+    )
+
+
 def group_events_by_turn(events: list[dict]) -> list[dict]:
-    """Group events into turns."""
+    """Group events into turns.
+
+    Resume safety: when a run is killed mid-turn and resumed, the original
+    session leaves a bare ``turn_start`` for the in-flight turn (no output — the
+    kill abandons it) and the resumed session re-runs and fully logs the SAME
+    turn number. Without handling, that surfaces as two same-numbered turns in
+    the trace (a phantom empty one + the real one), which both reads as a broken
+    resume and breaks the SPA's turn-keyed list. We drop the aborted fragment so
+    the trace shows one clean turn — indistinguishable from never having stopped.
+    """
     turns = []
     current_turn = None
 
     for event in events:
         if event["type"] == "turn_start":
+            new_turn = event.get("turn", len(turns) + 1)
             if current_turn:
-                turns.append(current_turn)
+                # Supersede an aborted fragment that the resume is re-running:
+                # same turn number AND the prior copy never settled. Any other
+                # case (the normal monotonic 6→7, or two genuinely settled turns)
+                # is kept as-is.
+                if current_turn["turn"] == new_turn and not _turn_settled(current_turn):
+                    pass  # discard the aborted fragment
+                else:
+                    turns.append(current_turn)
             current_turn = {
-                "turn": event.get("turn", len(turns) + 1),
+                "turn": new_turn,
                 "agent_id": event.get("agent_id", ""),
                 "task_index": event.get("task_index"),
                 "events": [],

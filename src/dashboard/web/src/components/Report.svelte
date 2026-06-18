@@ -376,8 +376,8 @@
           <!-- nested player turns (collapsible) -->
           {#if !hasTasks || g.task_index == null || gOpen}
             <div class="turns" class:nested={hasTasks && g.task_index != null}>
-              {#each g.turns ?? [] as t (t.turn)}
-                {@const tk = `${gk}:${t.turn}`}
+              {#each g.turns ?? [] as t, ti (`${gk}:${t.turn}:${ti}`)}
+                {@const tk = `${gk}:${t.turn}:${ti}`}
                 {@const tOpen = openTurns.has(tk)}
                 {@const ptr = t.trace}
                 <div class="turn" class:open={tOpen}>
