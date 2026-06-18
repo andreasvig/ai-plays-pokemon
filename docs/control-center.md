@@ -39,6 +39,11 @@ automatically.
 
 ## Boot sequence
 
+> **Before first launch**, build the web UI: `cd src/dashboard/web && npm install
+> && npm run build` (or run `scripts/setup.sh`). The built `web/dist/` is
+> gitignored, so a fresh clone has none — without it the server runs but every
+> page returns "SPA not built". See the [README setup](../README.md#setup).
+
 On `pokemon app` the process:
 
 1. **Reclaims stale processes** — kills anything left over from a previous launch

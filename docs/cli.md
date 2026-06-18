@@ -87,7 +87,7 @@ pokemon run --model "gemini-3.5-flash(medium)" --snapshot local/snapshots/has_st
 # Kill any leftover mGBA before starting
 pokemon run --model "gemini-3.5-flash(medium)" --kill-existing
 
-# Continue a prior run from its latest savepoint (fresh turn counter)
+# Continue a prior run from its latest savepoint (resumes where it left off)
 pokemon run --continue local/runs/2026-05-26_..._config-3.13__claude-opus-4-7 --turns 30
 ```
 
@@ -120,7 +120,7 @@ Run output lands in `local/runs/<timestamp>_<config-stem>__<model-slug>/` (gitig
 
 ### Savepoints
 
-When the config carries a `savepoints:` block, a run periodically writes mid-flight checkpoints into `<run_dir>/savepoints/turn_<N>/`. Each savepoint is a standard snapshot folder (emulator.state + state.json + tasks.json + metadata.json) and can be loaded by `pokemon run --continue` to resume.
+When the config carries a `savepoints:` block, a run periodically writes mid-flight checkpoints into `<run_dir>/savepoints/turn_<N>/`. Each savepoint folder holds `emulator.state` + `state.json` + `metadata.json`, plus `task_master_state.json` (the task tree, on TaskMaster runs) or the legacy `tasks.json`. With `on_crash: true`, stopping or crashing a run also writes a savepoint at the exact current turn, so a continue resumes seamlessly. Loaded by `pokemon run --continue` to resume.
 
 ```yaml
 # In configs/config-X.Y.yaml
@@ -130,7 +130,7 @@ savepoints:
   on_crash: true     # best-effort save on KeyboardInterrupt or exception
 ```
 
-`pokemon run --continue <run_dir>` finds the highest `turn_<N>/` in that run's `savepoints/`, copies events.jsonl + screenshots + ocr + terminal.log into a new `<ts>_<run_name>_continued_from_turn_<N>/` run dir, then resumes the agent from there. **The agent's turn counter and text history start fresh** — the only narrative continuity is whatever the agent wrote into `state.json` during the original run. Cost counters also reset; the new run reports only its own spend. For a full cumulative view, read both run dirs' `run_summary.json`.
+`pokemon run --continue <run_dir>` finds the highest `turn_<N>/` in that run's `savepoints/`, copies events.jsonl + screenshots + ocr + terminal.log into a new `<ts>_<run_name>_continued_from_turn_<N>/` run dir, then **resumes exactly where it left off**: the emulator state and TaskMaster task tree restore from the savepoint, and the Player's turn history, turn counter, historic-image buffer, and in-progress-task evidence are rebuilt from the copied events.jsonl (so the agent's "## Previous Turns" context and turn numbering carry over, not just `state.json`). Only the cost counters reset — the new run reports only its own spend; for a cumulative view, read both run dirs' `run_summary.json`.
 
 The control center serves the UI at <http://localhost:3420/>: live runs at `/spectate`, finished runs under `/history/<run_id>`. (`pokemon app` opens it at boot.)
 

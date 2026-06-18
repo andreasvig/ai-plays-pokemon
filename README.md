@@ -95,11 +95,44 @@ brew install tesseract
 sudo apt install tesseract-ocr
 ```
 
-### 5. OpenRouter API key
+### 5. Node.js 18+
+
+Only needed to build the control-center web UI (`pokemon app`). The headless
+`pokemon run` path works without it.
+
+```bash
+# macOS
+brew install node
+
+# Ubuntu/Debian (or use nvm / https://nodejs.org)
+sudo apt install nodejs npm
+```
+
+### 6. OpenRouter API key
 
 Sign up at [openrouter.ai/keys](https://openrouter.ai/keys).
 
 ## Setup
+
+### Quick start (recommended)
+
+After cloning, one script does the whole project-local setup — venv, the
+editable CLI install, the web-UI build, and the `.env` file — and tells you what
+(if anything) is still missing:
+
+```bash
+git clone https://github.com/<your-fork>/ai-plays-pokemon.git
+cd ai-plays-pokemon
+scripts/setup.sh              # add --skip-frontend for the headless CLI only
+```
+
+It does **not** install system packages (mGBA, Tesseract) or supply the ROM — it
+checks for them and prints install hints. You still need to:
+
+1. drop a ROM you legally own into `roms/` (see below), and
+2. set `OPENROUTER_API_KEY` in the `.env` it created.
+
+### Manual setup
 
 ```bash
 # Clone
@@ -109,18 +142,24 @@ cd ai-plays-pokemon
 # Drop your ROM into roms/ (gitignored)
 cp /path/to/your/firered.gba "roms/Pokemon - FireRed Version (USA, Europe) (Rev 1).gba"
 
-# Python environment
+# Python environment + the `pokemon` CLI (editable install; deps come from
+# pyproject.toml — there is no requirements.txt).
 python -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
-
-# Install the `pokemon` CLI (editable install — picks up local edits)
 pip install -e .
+
+# Build the control-center web UI (skip if you only use headless `pokemon run`).
+# The built output (web/dist/) is gitignored, so a fresh clone must build it or
+# `pokemon app` will report "SPA not built".
+( cd src/dashboard/web && npm install && npm run build )
 
 # API key
 cp .env.example .env
 # Edit .env and add your OPENROUTER_API_KEY
 ```
+
+> Using [`uv`](https://github.com/astral-sh/uv)? `uv sync` installs from
+> `uv.lock` instead of the `pip install -e .` step.
 
 ## Running it
 
@@ -164,7 +203,8 @@ pokemon run --config configs/config-3.13.yaml --model "claude-opus-4.7(medium)" 
 pokemon run --config configs/config-3.13.yaml \
             --model "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" --turns 50
 
-# Continue a prior run from its latest savepoint (fresh turn counter + history)
+# Continue a prior run from its latest savepoint (resumes exactly where it left
+# off — emulator, task tree, turn history, and turn counter all restored)
 pokemon run --continue local/runs/2026-05-26_..._config-3.13__claude-opus-4-7 --turns 30
 ```
 
