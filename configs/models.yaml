@@ -217,13 +217,14 @@ qwen3.6-plus:
     non-thinking:
       sample_turns: 0
 
-# Alibaba Qwen3.7-Plus (added 2026-06-17) — binary thinking, multimodal (text+image, OpenRouter API 2026-06-17). UNLIKE 3.6 its providers DO support tool_choice + structured_outputs (verified 2026-06-17) → default tool output mode. Floating slug (pinned: qwen/qwen3.7-plus-20260602).
+# Alibaba Qwen3.7-Plus (added 2026-06-17) — binary thinking, multimodal (text+image, OpenRouter API 2026-06-17). output_mode prompted: the sole provider (Alibaba) advertises tool_choice + structured_outputs, but it HARD-REJECTS a forced tool_choice while thinking is on — `<400> InvalidParameter: The tool_choice parameter does not support being set to required or object in thinking mode` (live-probed 2026-06-18). Pydantic-AI's tool-output mode forces tool_choice to the final_result tool, so tool mode + thinking 400s the whole run; PromptedOutput skips the forced tool and reasoning still comes back. Single-provider, so no fallback absorbs the 400. (The earlier "providers support tool_choice → default tool output" read missed the thinking-mode carve-out.)
 qwen3.7-plus:
   openrouter_id: qwen/qwen3.7-plus
   reasoning_type: binary
   thinking_levels:
   - thinking
   - non-thinking
+  output_mode: prompted
   temperature: 0.3
   top_p: 0.95
   observed:

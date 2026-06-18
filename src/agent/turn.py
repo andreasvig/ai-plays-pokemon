@@ -2055,6 +2055,30 @@ class TurnManager:
         if not response or not hasattr(response, 'parts'):
             return
 
+        # Some providers (e.g. Moonshot Kimi) return their chain-of-thought in
+        # OpenRouter's top-level `reasoning` field rather than as a structured
+        # ThinkingPart, so it lands in provider_details — NOT in response.parts.
+        # The post-hoc trace serializer surfaces it (_extract_openrouter_reasoning),
+        # but the LIVE spectate HUD is built solely from these node events, so
+        # without this fallback the Player's thinking silently vanishes for those
+        # models while the TaskMaster (serialized path) still shows it. Emit it
+        # FIRST so thinking precedes the output in the live stream, and skip when
+        # a ThinkingPart already carried it to avoid double-logging.
+        has_thinking_part = any(
+            isinstance(p, ThinkingPart) and p.content for p in response.parts
+        )
+        if not has_thinking_part:
+            try:
+                or_reasoning = (response.provider_details or {}).get("reasoning")
+            except Exception:
+                or_reasoning = None
+            if or_reasoning:
+                self.logger.log_custom("llm_thinking", {
+                    "content": or_reasoning,
+                    "turn": deps.turn_number,
+                    "agent_id": deps.agent_id,
+                })
+
         for part in response.parts:
             if isinstance(part, ThinkingPart) and part.content:
                 self.logger.log_custom("llm_thinking", {
