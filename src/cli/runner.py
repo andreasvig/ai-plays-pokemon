@@ -335,6 +335,12 @@ def run_single_loop(
         _copy_prior_run_artifacts(source_run, run_dir)
         logger.seed_screenshot_id()
         prior_turn = config.get("_continued_from_turn", "?")
+        # Restore the referee gate latch from the savepoint BUNDLE (not the
+        # source run dir's separately-written file), capped to the savepoint
+        # turn. Must run before setup() builds the Referee (which auto-loads
+        # run_dir/referee_state.json). An official continue scores against this.
+        if isinstance(prior_turn, int):
+            _restore_referee_state(snapshot, run_dir, prior_turn)
         print(f"Continued from: {source_run} (savepoint turn {prior_turn})")
 
     if snapshot and os.path.exists(snapshot):
@@ -589,6 +595,43 @@ def continue_from_run(source_run_dir: str) -> tuple[dict, Path]:
     cfg["_continued_from_turn"] = sp_turn
 
     return cfg, savepoint_dir
+
+
+def _restore_referee_state(savepoint_dir, new_run_dir: Path, up_to_turn: int) -> None:
+    """Restore the referee gate latch from a savepoint bundle into a continued run.
+
+    Writes a capped ``referee_state.json`` into ``new_run_dir`` so the Referee
+    built in ``setup()`` auto-loads it (``Referee._load_state``). Caps stamps to
+    turns ``<= up_to_turn``: this defends the hard-kill case where the source
+    run's separately-written latch was AHEAD of the savepoint's emulator state —
+    a gate stamped after the savepoint turn must NOT be credited, or the resumed
+    run would score a gate its restored game state hasn't actually reached.
+
+    Best-effort: a missing/corrupt bundle file leaves the continued run with a
+    fresh (empty) latch rather than raising.
+    """
+    if savepoint_dir is None:
+        return
+    src = Path(savepoint_dir) / "referee_state.json"
+    if not src.exists():
+        return
+    try:
+        data = json.loads(src.read_text())
+    except (OSError, ValueError):
+        return
+    stamps = data.get("stamps", {}) if isinstance(data, dict) else {}
+    kept = {
+        cid: int(t)
+        for cid, t in stamps.items()
+        if isinstance(t, (int, float)) and int(t) <= up_to_turn
+    }
+    autofilled = [c for c in data.get("autofilled", []) if c in kept]
+    try:
+        (Path(new_run_dir) / "referee_state.json").write_text(
+            json.dumps({"stamps": kept, "autofilled": autofilled}, indent=2)
+        )
+    except OSError:
+        pass
 
 
 def _copy_prior_run_artifacts(source_run_dir: Path, new_run_dir: Path) -> None:
