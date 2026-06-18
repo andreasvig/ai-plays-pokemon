@@ -405,7 +405,9 @@
   // ── elapsed = client clock from the run's start ──
   $effect(() => {
     if (!activeRunId) { elapsedS = 0; return }
-    const tick = () => { if (startedAtMs) elapsedS = Math.max(0, (Date.now() - startedAtMs) / 1000) }
+    // + prior_duration_s makes a --continue keep counting from the source run's
+    // elapsed time instead of restarting at 0 (seeded via the stats WS msg).
+    const tick = () => { if (startedAtMs) elapsedS = Math.max(0, (Date.now() - startedAtMs) / 1000 + (stats.prior_duration_s || 0)) }
     tick()
     const iv = setInterval(tick, 1000)
     return () => clearInterval(iv)

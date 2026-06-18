@@ -421,6 +421,44 @@ def run_single_loop(
                 sp_turn,
             )
 
+            # Cumulative cost / time / tokens: seed the run summary accounting AND
+            # the live stats baseline from the source run's summary, so a resumed
+            # run keeps counting up instead of restarting from zero (Andreas).
+            source_summary_path = Path(continued_from) / "run_summary.json"
+            if source_summary_path.exists():
+                source_summary = None
+                try:
+                    with open(source_summary_path) as _sf:
+                        source_summary = _json.load(_sf)
+                except (OSError, ValueError):
+                    source_summary = None
+                if source_summary:
+                    turn_mgr.restore_run_accounting(source_summary)
+                    _cost = source_summary.get("cost") or {}
+                    _sess = source_summary.get("session") or {}
+                    session.bridge.seed_stats(
+                        cost=float(_cost.get("llm_usd", 0) or 0)
+                        + float(_cost.get("ocr_usd", 0) or 0),
+                        turns=sp_turn,
+                        input_tokens=int(_cost.get("total_input_tokens", 0) or 0),
+                        output_tokens=int(_cost.get("total_output_tokens", 0) or 0),
+                        prior_duration_s=float(_sess.get("duration_seconds", 0) or 0),
+                    )
+
+            # The source's task_started is in the copied events.jsonl but not in
+            # this session's live stream, so re-announce the restored task to the
+            # live spectate (else its "Current task" panel shows "No task yet").
+            if turn_mgr.task_master_enabled and turn_mgr.current_task:
+                _ct = turn_mgr.current_task
+                session.bridge.inject({
+                    "type": "task_started",
+                    "task_index": turn_mgr.current_task_index,
+                    "title": _ct.get("title", ""),
+                    "description": _ct.get("description", ""),
+                    "success_criteria": _ct.get("success_criteria", ""),
+                    "global_turn": sp_turn + 1,
+                })
+
     print(f"Running {turns} turns...")
     print(f"Task: {config.get('task', {}).get('goal', 'Play the game')}")
     llm_alias = config.get("_llm_alias")

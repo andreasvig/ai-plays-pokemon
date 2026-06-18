@@ -39,6 +39,14 @@ def _blank_manager(*, historic_images_count=0, task_master_enabled=False,
     mgr._cur_task_player_reasons = []
     mgr._cur_task_first_image = None
     mgr._cur_task_last_image = None
+    # run-accounting fields (restore_run_accounting)
+    mgr.ocr = None
+    mgr.total_cost_usd = 0.0
+    mgr.total_input_tokens = 0
+    mgr.total_output_tokens = 0
+    mgr.task_master_cost_usd = 0.0
+    mgr.task_master_turns = 0
+    mgr._prior_duration_s = 0.0
     return mgr
 
 
@@ -167,6 +175,46 @@ def test_previous_turns_text_uses_real_turn_numbers_across_handoff_gap(tmp_path)
     assert headings == sorted(headings)
     assert 16 not in headings
     assert headings[-1] == 29
+
+
+def test_restore_run_accounting_seeds_cumulative_totals():
+    summary = {
+        "session": {"duration_seconds": 612.5, "task_master_turns": 3},
+        "cost": {
+            "llm_usd": 0.42, "ocr_usd": 0.03, "task_master_usd": 0.11,
+            "total_input_tokens": 120_000, "total_output_tokens": 8_000,
+        },
+    }
+    mgr = _blank_manager()
+    mgr.restore_run_accounting(summary)
+
+    # total_cost_usd = Player LLM + OCR (TaskMaster tracked separately).
+    assert round(mgr.total_cost_usd, 6) == 0.45
+    assert mgr.task_master_cost_usd == 0.11
+    assert mgr.total_input_tokens == 120_000
+    assert mgr.total_output_tokens == 8_000
+    assert mgr.task_master_turns == 3
+    assert mgr._prior_duration_s == 612.5
+
+
+def test_restore_run_accounting_seeds_ocr_for_correct_split():
+    # When an OCR runner is present, its cost must be seeded too so the
+    # finalize-time llm_usd = total_cost_usd - ocr.total_cost_usd stays correct.
+    class _OCR:
+        total_cost_usd = 0.0
+    mgr = _blank_manager()
+    mgr.ocr = _OCR()
+    mgr.restore_run_accounting({"cost": {"llm_usd": 0.4, "ocr_usd": 0.03}, "session": {}})
+    assert mgr.ocr.total_cost_usd == 0.03
+    assert round(mgr.total_cost_usd - mgr.ocr.total_cost_usd, 6) == 0.4  # llm_usd
+
+
+def test_restore_run_accounting_tolerates_empty_summary():
+    mgr = _blank_manager()
+    mgr.restore_run_accounting({})
+    assert mgr.total_cost_usd == 0.0
+    assert mgr.task_master_turns == 0
+    assert mgr._prior_duration_s == 0.0
 
 
 def test_missing_events_file_is_a_safe_noop(tmp_path):

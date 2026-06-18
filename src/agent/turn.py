@@ -750,6 +750,9 @@ class TurnManager:
 
         # Run timing
         self._run_start_time: Optional[float] = None
+        # Wall-clock seconds already spent in a prior run (--continue). Added to
+        # this session's duration so the reported elapsed time is cumulative.
+        self._prior_duration_s: float = 0.0
 
         # Savepoint config (validated in src/config.py)
         sp = config.get("savepoints") or {}
@@ -1288,6 +1291,37 @@ class TurnManager:
             f"resuming at turn {self.turn_number + 1} "
             f"({len(self.turn_screenshots)} historic screenshot(s) buffered)"
         )
+
+    def restore_run_accounting(self, summary: dict) -> None:
+        """Seed cost / token / duration / TaskMaster counters from a source run's
+        run_summary.json so a continued run's totals are CUMULATIVE, not reset
+        (Andreas 2026-06-18: "the time elapsed and the cost to continue as well
+        as the token counts").
+
+        Seeds, from the source summary:
+          - total_cost_usd  ← source Player+OCR cost (llm_usd + ocr_usd)
+          - ocr.total_cost_usd ← source OCR cost (so the finalize-time llm/ocr
+            split stays correct after seeding the combined total)
+          - task_master_cost_usd ← source TaskMaster cost
+          - total_input_tokens / total_output_tokens
+          - task_master_turns (folds into total_turns)
+          - _prior_duration_s (added to this session's wall clock)
+
+        Best-effort: a missing/partial summary leaves the counters at zero (the
+        old reset behaviour) rather than failing the resume.
+        """
+        cost = summary.get("cost") or {}
+        session = summary.get("session") or {}
+        llm_usd = float(cost.get("llm_usd", 0) or 0)
+        ocr_usd = float(cost.get("ocr_usd", 0) or 0)
+        self.total_cost_usd = llm_usd + ocr_usd
+        if self.ocr is not None:
+            self.ocr.total_cost_usd = (self.ocr.total_cost_usd or 0) + ocr_usd
+        self.task_master_cost_usd = float(cost.get("task_master_usd", 0) or 0)
+        self.total_input_tokens = int(cost.get("total_input_tokens", 0) or 0)
+        self.total_output_tokens = int(cost.get("total_output_tokens", 0) or 0)
+        self.task_master_turns = int(session.get("task_master_turns", 0) or 0)
+        self._prior_duration_s = float(session.get("duration_seconds", 0) or 0)
 
     def run_loop(self, max_turns: Optional[int] = None) -> None:
         """Run the turn loop synchronously."""
@@ -2215,7 +2249,7 @@ class TurnManager:
         behaves exactly as before (no extra keys), so existing callers are
         unchanged. The flat ``app.projection`` layer reads these when present and
         falls back to defensive inference when absent (legacy runs)."""
-        duration = time.time() - self._run_start_time if self._run_start_time else 0
+        duration = (time.time() - self._run_start_time if self._run_start_time else 0) + self._prior_duration_s
 
         summary = {
             "session": {
@@ -2260,7 +2294,13 @@ class TurnManager:
             },
             "turns": [
                 {
-                    "turn": i + 1,
+                    # Real turn number (handoff gaps make position != turn);
+                    # falls back to positional only if the parallel list desyncs.
+                    "turn": (
+                        self._explanation_turns[i]
+                        if len(self._explanation_turns) == len(self.turn_explanations)
+                        else i + 1
+                    ),
                     "action": exp.get("action", ""),
                     "reasoning": exp.get("reasoning", ""),
                     "last_turn_succeeded": exp.get("last_turn_succeeded"),
