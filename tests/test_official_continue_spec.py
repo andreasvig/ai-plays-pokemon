@@ -12,6 +12,8 @@ inherits) and build_run_config (the dispatch wiring) — no emulator/network.
 import json
 from pathlib import Path
 
+import pytest
+
 from src.app.benchmarks import get_benchmark
 from src.app.executor import RunExecutor
 from src.app.models import RunKind
@@ -103,6 +105,22 @@ def test_official_continue_dispatch_reapplies_enforced_ladder(tmp_path):
     assert cfg["task_master"]["mode"] == "benchmark"
     assert turns == ex._OFFICIAL_TURN_SENTINEL          # no max-turns; gates bound it
     assert snapshot.endswith("savepoints/turn_30")     # resumes from the savepoint
+
+
+def test_official_continue_refuses_tampered_seal(tmp_path):
+    # P5: a present-but-mismatched checkpoint seal is tamper evidence — the
+    # official continue refuses to resume it (raises; the drain then skips it).
+    ex, runs_root = _executor(tmp_path)
+    src = _write_source(runs_root, "src_tampered", kind="official", benchmark="pokebench-full")
+    (src / "savepoints" / "turn_30" / "checkpoint.sha256").write_text("deadbeef")
+
+    spec = ex.build_continue_spec("src_tampered")
+    item = ex.queue.enqueue(
+        kind=spec["kind"], model=spec["model"],
+        benchmark=spec.get("benchmark"), continue_from=spec["continue_from"],
+    )
+    with pytest.raises(ValueError, match="seal mismatch"):
+        ex.build_run_config(item)
 
 
 def test_casual_continue_stays_freeplay_no_ladder(tmp_path):

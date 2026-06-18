@@ -169,6 +169,19 @@ class RunExecutor:
             source_dir = self.runs_root / item.continue_from
             cfg, savepoint_dir = self._resolve_continue_fn()(str(source_dir))
             if item.kind == RunKind.official:
+                # Tamper-seal gate: an official resume must prove the paused
+                # checkpoint wasn't hand-edited. A present-but-mismatched seal is
+                # genuine tamper evidence — refuse to resume it AS official (it
+                # must never post a score). A legacy savepoint with no seal passes
+                # (verify_savepoint returns True). Raising here skips the run; the
+                # drain logs it and advances the queue.
+                from src.core.snapshots import SnapshotManager
+                if not SnapshotManager.verify_savepoint(savepoint_dir):
+                    raise ValueError(
+                        f"checkpoint seal mismatch for official continue of "
+                        f"{item.continue_from!r} — refusing to resume a tampered "
+                        f"benchmark checkpoint (savepoint: {savepoint_dir})"
+                    )
                 # Official continue: resume the SAME benchmark. Re-apply the
                 # canonical official wiring (goal + enforced ladder + benchmark
                 # mode) on top of the resumed config, reading the ladder POINTER

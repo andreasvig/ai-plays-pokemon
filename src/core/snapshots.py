@@ -1,5 +1,6 @@
 """Snapshot system for saving and loading full game + agent state."""
 
+import hashlib
 import json
 import shutil
 import time
@@ -148,7 +149,51 @@ class SnapshotManager:
         with open(target / "metadata.json", "w") as f:
             json.dump(metadata, f, indent=2)
 
+        # Tamper-seal: hash the scoring-relevant bundle parts so an official
+        # resume can prove the paused checkpoint wasn't hand-edited overnight.
+        try:
+            (target / "checkpoint.sha256").write_text(self._checkpoint_digest(target))
+        except OSError:
+            pass
+
         return target
+
+    # Files the seal covers, in a FIXED order. emulator.state is the game; the
+    # referee latch + task tree are the score/strategy state. metadata/tasks.json
+    # are excluded (descriptive, not score-bearing).
+    _SEALED_PARTS = ("emulator.state", "referee_state.json", "task_master_state.json")
+
+    @classmethod
+    def _checkpoint_digest(cls, savepoint_dir) -> str:
+        """sha256 over the sealed bundle parts (in fixed order, skipping absent
+        ones). Length-prefixes each part so concatenation is unambiguous."""
+        target = Path(savepoint_dir)
+        h = hashlib.sha256()
+        for name in cls._SEALED_PARTS:
+            p = target / name
+            if not p.exists():
+                continue
+            data = p.read_bytes()
+            h.update(f"{name}:{len(data)}:".encode())
+            h.update(data)
+        return h.hexdigest()
+
+    @classmethod
+    def verify_savepoint(cls, savepoint_dir) -> bool:
+        """True iff the bundle's recorded seal matches a fresh digest.
+
+        A savepoint with NO ``checkpoint.sha256`` (legacy, pre-seal) returns True
+        — there's nothing to verify, so it must not block continuing a run made
+        before sealing existed. A seal that is PRESENT but mismatches returns
+        False: genuine tamper evidence (the official-continue path refuses to
+        score such a resume)."""
+        seal = Path(savepoint_dir) / "checkpoint.sha256"
+        if not seal.exists():
+            return True
+        try:
+            return seal.read_text().strip() == cls._checkpoint_digest(savepoint_dir)
+        except OSError:
+            return False
 
     @staticmethod
     def load_task_master_state(snapshot_path: str) -> Optional[dict]:
