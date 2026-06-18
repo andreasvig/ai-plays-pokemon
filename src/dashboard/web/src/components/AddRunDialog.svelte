@@ -62,7 +62,12 @@
     if (open && !prevOpen) {
       untrack(() => {
         if (continueFrom) {
-          kind = 'casual'
+          // Continue INHERITS the source run's kind: an official run continues
+          // official on the SAME benchmark (still leaderboard-eligible); a casual
+          // run continues casual. The backend (build_continue_spec) is
+          // authoritative — this just mirrors it so the dialog isn't misleading.
+          kind = continueFrom.kind === 'official' ? 'official' : 'casual'
+          benchmark = continueFrom.benchmark ?? defaultBenchmark
           // Continue reuses the source run's full identity verbatim (already
           // a "model(level)" string) — no picker.
           modelBase = ''
@@ -138,8 +143,12 @@
 
       {#if isContinue}
         <div class="cont-note">
-          Continuing <span class="mono">{continueFrom.runId}</span> from its last save state.
-          Continues are always <b>casual</b> and reuse the original model.
+          Continuing <span class="mono">{continueFrom.runId}</span> from its last save state — on the exact turn it left off.
+          {#if isOfficial}
+            This stays an <b>official</b> run on the <b>{selectedBench?.name ?? continueFrom.benchmark}</b> benchmark — it can still complete the ladder and post to the leaderboard. Model reused from the source run.
+          {:else}
+            Continues <b>casual</b> and reuses the original model.
+          {/if}
         </div>
       {:else}
         <div class="seg">
@@ -198,8 +207,8 @@
 
         {#if isOfficial}
           <label class="field">
-            <span class="flabel">Benchmark</span>
-            <select bind:value={benchmark}>
+            <span class="flabel">Benchmark {#if isContinue}<span class="locked">locked</span>{/if}</span>
+            <select bind:value={benchmark} disabled={isContinue}>
               {#each BENCHMARKS as b}<option value={b.id}>{b.name}</option>{/each}
             </select>
           </label>
