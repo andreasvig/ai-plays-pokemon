@@ -42,8 +42,8 @@
 
 # --- Top-Level Task ---
 task:
-  goal: "Beat the first gym leader Brock"
-  description: "Get a starter Pokémon from Professor Oak, then go to Viridian City, then Viridian Forest, prepare your Pokémon team for Brock and defeat him."
+  goal: "play the game, progress, have fun, and enjoy the game"
+  description: "Get through the game at your own pace, catch your rare and favorite Pokémon, and explore the map. There are no time or turn limits, so you can take your time and enjoy the game at your own pace."
 # When true, ignore the snapshot's tasks.json and use the config's `task:` field
 # above instead. Default false preserves 'snapshot wins' behavior. Without this,
 # the user message's task can silently disagree with the system prompt (which
@@ -261,7 +261,7 @@ task_master:
 
   freeplay_guidelines: |
     # Freeplay Mode: TRUE
-    You are in freeplay mode. You are not being measured. You are free to explore the game and play as you want — you are not limited to only completing the top-level goal as fast as possible, but can take your time to explore, play, and enjoy the game at your own pace. Inspiration for what to do in freeplay mode: catch and train rare and obscure Pokemon, explore hidden areas, do roleplay, and more.
+    You are in freeplay mode. You are not being measured. You are free to explore the game and play as you want — you are not limited to only completing the top-level goal as fast as possible, but can take your time to explore, play, and enjoy the game at your own pace. Inspiration for what to do in freeplay mode: catch and train rare and obscure Pokemon and be sure to utilize different Pokemon throughout the game, explore hidden areas, do roleplay, and more. Be sure to nickname your Pokemon and keep a diverse and fun team. And have fun with the game.
 
   benchmark_guidelines: |
     # Benchmark Mode: TRUE
