@@ -431,15 +431,21 @@
                                 <!-- player's final_result = the DECISION for this turn -->
                                 {@const p = parseArgs(step.args)}
                                 {@const hbObj = coerceHandback(p && p.return_to_taskmaster)}
+                                <!-- the model's extended thinking gets its OWN prominent step
+                                     (chronologically before the Output), matching the TaskMaster —
+                                     not buried inside the Output card where it reads as absent. -->
+                                {#if step.thinking}
+                                  <details class="trace-step trace-thinking-only" open>
+                                    <summary><span class="step-label">💭 Thinking</span></summary>
+                                    <div class="step-content md">{@html mdToHtml(step.thinking)}</div>
+                                  </details>
+                                {/if}
                                 <details class="trace-step trace-output" open>
                                   <summary>
                                     <span class="step-label">Output</span>
                                     <span class="step-action-code">{p ? actionEmoji(p.inputs ?? '') : ''}</span>
                                   </summary>
                                   <div class="step-body">
-                                    {#if step.thinking}
-                                      <div class="step-thinking"><div class="sub-label">Thinking</div><div class="md">{@html mdToHtml(step.thinking)}</div></div>
-                                    {/if}
                                     {#if p && (p.reasoning != null || p.last_turn_succeeded !== undefined)}
                                       <div class="step-decision">
                                         <div class="dec-row"><span class="dec-lab">Last turn</span><span class="dec-val">{turnGrade(p.last_turn_succeeded)}</span></div>
