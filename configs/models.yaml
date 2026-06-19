@@ -242,6 +242,8 @@ minimax-m3:
   - non-thinking
   temperature: 0.3
   top_p: 0.95
+  slow:
+    thinking: true
   observed:
     thinking:
       sample_turns: 0
@@ -329,6 +331,10 @@ gpt-5.5-pro:
   - low
   - minimal
   reasoning_summary: auto
+  slow:
+    xhigh: true
+    high: true
+    medium: true
   observed:
     high:
       sample_turns: 0
