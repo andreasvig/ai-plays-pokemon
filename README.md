@@ -2,8 +2,6 @@
 
 > A vision-only AI agent that plays Pokemon FireRed by looking at the screen — no RAM reads, no memory peeking, no privileged emulator access.
 
-![The agent's view of the screen with grid overlay](docs/hero.png)
-
 ### 🎥 Watch: Which AI model is *actually* the best at playing Pokémon?
 
 [![Which AI model is ACTUALLY the best at playing Pokémon?](https://img.youtube.com/vi/tkZSo8450rQ/maxresdefault.jpg)](https://www.youtube.com/watch?v=tkZSo8450rQ)
@@ -32,25 +30,30 @@ Detailed comparison: [`docs/analysis/compiled_summary.md`](docs/analysis/compile
 
 ## Leaderboard
 
-Every model runs the same benchmark course — **Pallet Town → Route 1 → Viridian City**, vision-only, capped at 100 turns — scored on battles, menuing, and navigation.
+Every model runs the same course — **Pallet Town → Route 1 → Viridian City**, vision-only, capped at 100 turns — scored on battles, menuing, and navigation. Models that cleared the course are ranked by **fewest turns**; the rest by how far they got.
 
-<p align="center">
-  <img src="docs/leaderboard/benchmark-course.png" alt="The benchmark course: Pallet Town to Route 1 to Viridian City, testing battles, menuing, and navigation, ~40 min median, 100-turn limit" width="640">
-</p>
+| # | Model | Result | Turns | Wall time | Sec/turn | Total cost | Cost/turn |
+|---:|---|---|---:|---:|---:|---:|---:|
+| 1 | gpt-5.5 `(xhigh)` | 🏁 **100%** — cleared | 46 | 1h 8m | 89.8s | $6.04 | $0.131 |
+| 2 | gemini-3.5-flash `(high)` | 🏁 **100%** — cleared | 50 | 35m 24s | 42.5s | $2.22 | $0.0443 |
+| 3 | gemini-3.1-pro `(high)` | 🏁 **100%** — cleared | 52 | 39m 5s | 45.1s | $2.44 | $0.0469 |
+| 4 | gemini-3-flash `(high)` | 🏁 **100%** — cleared | 59 | 38m 16s | 38.9s | $0.688 | $0.0117 |
+| 5 | claude-opus-4.8 `(xhigh)` | 🏁 **100%** — cleared | 100 | 45m 43s | 27.4s | $9.37 | $0.0937 |
+| 6 | gemma-4-31b `(thinking)` 🔓 | 86% — Reached Route 1 | 100 | 1h 23m | 50.3s | $0.186 | $0.0019 |
+| 7 | gemini-3.1-flash-lite `(high)` | 57% — Chose a starter | 70 | 13m 45s | 11.8s | $0.254 | $0.0036 |
+| 8 | mimo-v2.5 `(thinking)` 🔓 | 43% — Entered Oak's Lab | 50 | 23m 8s | 27.8s | $0.0861 | $0.0017 |
+| 9 | minimax-m3 `(thinking)` | 29% — Entered Oak's Lab | 29 | 1h 25m | 176.2s | $0.277 | $0.0096 |
+| 10 | gemma-4-26b-a4b-fast `(thinking)` 🔓 | 0% | 2 | 3m 42s | 111.0s | $0.0000 | $0.0000 |
+| 11 | claude-haiku-4.5 `(high)` | 0% | 20 | 28m 0s | 84.0s | $0.712 | $0.0356 |
+| 12 | qwen3.6-plus `(thinking)` 🔓 | 0% | 20 | 10m 18s | 30.9s | $0.100 | $0.0050 |
+| 13 | kimi-k2.7-code `(thinking)` 🔓 | 0% | 20 | 4m 34s | 13.7s | $0.162 | $0.0081 |
+| 14 | gpt-5.4-mini `(medium)` | 0% | 20 | 6m 2s | 18.1s | $0.154 | $0.0077 |
+| 15 | grok-4.3 `(high)` | 0% | 20 | 6m 32s | 19.6s | $0.268 | $0.0134 |
+| 16 | qwen3.7-plus `(thinking)` 🔓 | 0% | 20 | 26m 51s | 80.5s | $0.146 | $0.0073 |
 
-**Who cleared it — fewest turns wins.** All five models reached Viridian City within the 100-turn limit; the gap at the top is razor-thin.
+🔓 = open-source / open-weight model. `(…)` is the reasoning-effort setting.
 
-<p align="center">
-  <img src="docs/leaderboard/standings.png" alt="Leaderboard standings: gpt-5.5 46 turns, gemini-3.5-flash 50, gemini-3.1-pro 52, gemini-3-flash 59, claude-opus-4.8 100" width="640">
-</p>
-
-**Cost per turn vs performance.** Speed isn't the whole story — `gemini-3.5-flash` sits on the cost/performance frontier, clearing the course at a fraction of the price per turn.
-
-<p align="center">
-  <img src="docs/leaderboard/cost-vs-performance.png" alt="Cost per turn versus performance, log scale: cheaper-left, models that cleared the course ranked by fewest turns above the line" width="640">
-</p>
-
-> Full breakdown and commentary in the video above. The benchmark itself — referee, gate ladder, official vs casual, scoring — is documented in [`docs/benchmark.md`](docs/benchmark.md).
+> The benchmark itself — referee, gate ladder, official vs casual, scoring — is documented in [`docs/benchmark.md`](docs/benchmark.md). Full breakdown and commentary in the [video above](https://www.youtube.com/watch?v=tkZSo8450rQ).
 
 ## Architecture
 
