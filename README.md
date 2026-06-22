@@ -4,7 +4,11 @@
 
 ![The agent's view of the screen with grid overlay](docs/hero.png)
 
-> 🎥 **Demo video coming soon.** I'll embed it here when filmed.
+### 🎥 Watch: Which AI model is *actually* the best at playing Pokémon?
+
+[![Which AI model is ACTUALLY the best at playing Pokémon?](https://img.youtube.com/vi/tkZSo8450rQ/maxresdefault.jpg)](https://www.youtube.com/watch?v=tkZSo8450rQ)
+
+<sub>▶️ <https://www.youtube.com/watch?v=tkZSo8450rQ></sub>
 
 ## What makes this different
 
@@ -25,6 +29,28 @@ That constraint forces real perception work. The harness is also **game-agnostic
 | **This project** | **mGBA + Lua** | **None** | **Direct multimodal + OCR** | **Yes** |
 
 Detailed comparison: [`docs/analysis/compiled_summary.md`](docs/analysis/compiled_summary.md).
+
+## Leaderboard
+
+Every model runs the same benchmark course — **Pallet Town → Route 1 → Viridian City**, vision-only, capped at 100 turns — scored on battles, menuing, and navigation.
+
+<p align="center">
+  <img src="docs/leaderboard/benchmark-course.png" alt="The benchmark course: Pallet Town to Route 1 to Viridian City, testing battles, menuing, and navigation, ~40 min median, 100-turn limit" width="640">
+</p>
+
+**Who cleared it — fewest turns wins.** All five models reached Viridian City within the 100-turn limit; the gap at the top is razor-thin.
+
+<p align="center">
+  <img src="docs/leaderboard/standings.png" alt="Leaderboard standings: gpt-5.5 46 turns, gemini-3.5-flash 50, gemini-3.1-pro 52, gemini-3-flash 59, claude-opus-4.8 100" width="640">
+</p>
+
+**Cost per turn vs performance.** Speed isn't the whole story — `gemini-3.5-flash` sits on the cost/performance frontier, clearing the course at a fraction of the price per turn.
+
+<p align="center">
+  <img src="docs/leaderboard/cost-vs-performance.png" alt="Cost per turn versus performance, log scale: cheaper-left, models that cleared the course ranked by fewest turns above the line" width="640">
+</p>
+
+> Full breakdown and commentary in the video above. The benchmark itself — referee, gate ladder, official vs casual, scoring — is documented in [`docs/benchmark.md`](docs/benchmark.md).
 
 ## Architecture
 
