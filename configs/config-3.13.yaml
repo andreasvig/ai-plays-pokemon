@@ -53,7 +53,7 @@ task_override_snapshot: true
 # --- Shared Turn Budget ---
 # Per-task turn budget. SHARED: caps the Player's per-task loop AND is the
 # budget TaskMaster sizes each task against. Lives at root since both use it.
-max_turns_per_task: 50
+max_turns_per_task: 25
 
 # --- Vision ---
 # The Player LLM sees raw screenshots directly (direct multimodal); there is no
@@ -104,6 +104,7 @@ ocr:
     Fix obvious OCR misreads when confident (e.g. 'unsate' → 'unsafe', 'qrass' → 'grass', 'ltem' → 'Item', 'wrold' → 'world').
     Drop tokens that are clearly pixel-art noise: isolated symbols like '|', '—', random letter salads like 'eS ES oe', short non-word fragments.
     Preserve meaningful line breaks. Merge duplicate/overlapping captures into single coherent text.
+    The output text has to make sense and be coherent with the game. It should not contain any gibberish or noise, meaing you shoud activly go out of your way to removed any gibberish or noise.
     Do NOT invent text that isn't supported by the OCR input.
   cleanup_user_prompt: |
     Clean up this OCR buffer. Each key is a separate capture from the same game turn; merge them into coherent text, drop gibberish, fix obvious OCR misreads.
@@ -249,7 +250,7 @@ task_master:
 
     ## Issuing the next task
     - Pick the single most useful next step toward the meta-goal, informed by what just happened. If the last task failed or stalled, do not blindly re-issue it — diagnose why and adjust (smaller step, different route, recover first).
-    - Size the task to the per-task turn budget you are given (shown in the Input). The `success_criteria` must be things the Player can verify by looking at the screen.
+    - Size the task to the per-task turn budget you are given (shown in the Input), but shoot for relatvly short tasks. The `success_criteria` must be things the Player can verify by looking at the screen.
     - Scope the task based on the player's historic success rate. If the player has consistently completed tasks well within the turn budget, you can safely increase the task scope to slightly longer-horizon tasks. And vice versa: if the player has been failing to complete tasks within the turn budget, you should decrease the task scope to shorter-horizon tasks.
     - Size the tasks to fill the per-task turn budget you are given (shown in the Input). If a Player agent hits the per-task turn limit, it will be forced to return to the TaskMaster (you) to get a new task, so try to avoid that. Once you have a history of task success/failure rates, you can adjust the task size based on that.
     - Start with small tasks like "go downstairs" or "fight trainer X at the start of the route", and work your way up to longer-horizon tasks only when the Player agent has a history of high success on smaller tasks.
@@ -397,6 +398,7 @@ player_agent:
     - `self_assessment`: your honest grade — `succeeded`, `failed`, `partial`, or `other`. TaskMaster cross-checks against the screenshots, so over-claiming gains you nothing.
     - `task_summary`: a factual prose summary — what you did, the resulting game state, any blockers, what you learned, and a suggested next task. Everything goes in this one field.
 
+    # Important task notes. if you have had no meaingfull progress for the last 8+ turns in a row, you should hand control back to the TaskMaster. let it re-plan the task and give you a new task, you are likly stuck and need guidance.
 
     # Movement and Navigation Guidelines
 
