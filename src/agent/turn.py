@@ -81,6 +81,28 @@ _TRANSIENT_ERROR_PATTERNS = (
 )
 
 
+# Seconds between in-flight "still working" heartbeat lines during an LLM call.
+# Long/slow calls (slow models, big thinking budgets) stay visible; calls that
+# finish under this interval print nothing, so fast turns aren't spammed.
+_HEARTBEAT_INTERVAL_S = 20.0
+
+
+async def _emit_heartbeat(label: str, interval_s: float = _HEARTBEAT_INTERVAL_S) -> None:
+    """Print an elapsed-time line every ``interval_s`` until cancelled.
+
+    Makes a long or fully hung in-flight LLM call visible in the terminal
+    instead of dead-silent. Cancelled the moment the call returns/raises.
+    """
+    elapsed = 0.0
+    try:
+        while True:
+            await asyncio.sleep(interval_s)
+            elapsed += interval_s
+            print(f"  {label} … {elapsed:.0f}s elapsed", flush=True)
+    except asyncio.CancelledError:
+        return
+
+
 def _is_taskmaster_retryable(exc: BaseException) -> bool:
     """Whether a failed agent.run deserves a full re-invocation."""
     return _is_agent_invoke_retryable(exc)
@@ -2033,6 +2055,10 @@ class TurnManager:
                 )
                 sort_label = (provider_routing or {}).get("sort", "default")
                 model = OpenAIModel(model_id, provider="openrouter")
+                heartbeat = asyncio.ensure_future(_emit_heartbeat(
+                    f"[Turn {t}] LLM in flight (attempt {attempt_num}/{max_attempts}, "
+                    f"{model_id}, sort={sort_label}, timeout={timeout_s:.0f}s)"
+                ))
                 try:
                     result, captured = await asyncio.wait_for(
                         self._run_agent_iter(
@@ -2040,10 +2066,12 @@ class TurnManager:
                         ),
                         timeout=timeout_s,
                     )
+                    heartbeat.cancel()
                     out_messages.extend(captured)
                     return result, model_id
 
                 except (asyncio.TimeoutError, Exception) as exc:
+                    heartbeat.cancel()
                     last_error = exc
                     is_transient = _is_transient_llm_error(exc)
                     is_retryable = is_transient or _is_agent_invoke_retryable(exc)

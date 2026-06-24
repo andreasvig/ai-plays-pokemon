@@ -19,6 +19,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import warnings
 from pathlib import Path
@@ -40,6 +41,57 @@ _CONTINUE_SUFFIX_RE = re.compile(r"(_continued_from_turn_\d+)+$")
 def _root_run_name(name: str) -> str:
     """Return the original run slug, stripping any continue suffix chain."""
     return _CONTINUE_SUFFIX_RE.sub("", name)
+
+
+def _print_mgba_log_tail(log_path: str, n: int = 30) -> None:
+    """Print the last ``n`` lines of mGBA's captured output (crash diagnostics)."""
+    try:
+        with open(log_path, errors="replace") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return
+    tail = [ln for ln in lines if ln.strip()][-n:]
+    if not tail:
+        return
+    print(f"  mGBA output (last {len(tail)} lines of {log_path}):")
+    for ln in tail:
+        print(f"    {ln}")
+
+
+def _print_crash_banner(exc: BaseException, turn_mgr, config: dict, run_dir, handle: dict) -> None:
+    """Loud, scannable crash summary printed AFTER the traceback.
+
+    Surfaces what broke and where (turn, agent models, run dir, events log) plus
+    whether mGBA itself died — so a livestream viewer (and resume later) can see
+    the failure at a glance instead of scrolling a buried traceback.
+    """
+    bar = "=" * 70
+    print("\n" + bar)
+    print("  ⚠  RUN CRASHED")
+    print(bar)
+    tn = getattr(turn_mgr, "turn_number", "?")
+    ls = getattr(turn_mgr, "_last_settled_turn", "?")
+    print(f"  Turn:        {tn}   (last settled: {ls})")
+    print(f"  Error:       {type(exc).__name__}: {exc}")
+    player_alias = config.get("_llm_alias") or config.get("llm_model", "?")
+    print(f"  Player:      {player_alias} → {config.get('llm_model', '?')}")
+    if config.get("task_master_model"):
+        tm_alias = config.get("_task_master_alias") or config["task_master_model"]
+        print(f"  TaskMaster:  {tm_alias} → {config['task_master_model']}")
+    print(f"  Run dir:     {run_dir}")
+    print(f"  Events log:  {Path(run_dir) / 'events.jsonl'}")
+    # Emulator liveness: distinguish an agent/LLM fault from a game-side death.
+    mgba_proc = (handle or {}).get("mgba_proc")
+    if mgba_proc is not None:
+        rc = mgba_proc.poll()
+        if rc is None:
+            print("  mGBA:        still running (fault is agent/LLM-side, not the game)")
+        else:
+            print(f"  mGBA:        DIED (exit code {rc}) — the emulator/game crashed")
+            log_path = (handle or {}).get("mgba_log_path")
+            if log_path:
+                _print_mgba_log_tail(log_path)
+    print(bar + "\n")
 from src.cli.slots import get_slot
 from src.config import load_config
 from src.core import RunLogger, StateManager
@@ -271,10 +323,18 @@ def run_prepare_phase(config: dict, saves_dir: Path) -> dict:
         "-C", f"savestatePath={saves_dir}",
         rom_path,
     ]
-    mgba_proc = subprocess.Popen(
-        mgba_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    # Capture mGBA's own stdout+stderr to a file instead of discarding it, so a
+    # game-side crash (segfault, ROM/save error, Lua failure) leaves a readable
+    # tail the crash banner can surface — otherwise "the game crashed" gives no
+    # diagnostic at all (output was DEVNULL'd). One log per emulator process;
+    # mGBA is long-lived so it accumulates across sequential runs in app mode.
+    mgba_log = tempfile.NamedTemporaryFile(
+        prefix="mgba_", suffix=".log", delete=False, mode="w"
     )
-    print(f"mGBA launched (PID {mgba_proc.pid})")
+    mgba_proc = subprocess.Popen(
+        mgba_cmd, stdout=mgba_log, stderr=subprocess.STDOUT,
+    )
+    print(f"mGBA launched (PID {mgba_proc.pid}) — log: {mgba_log.name}")
 
     caffeinate_proc = None
     if sys.platform == "darwin":
@@ -294,6 +354,7 @@ def run_prepare_phase(config: dict, saves_dir: Path) -> dict:
     return {
         "emu": emu,
         "mgba_proc": mgba_proc,
+        "mgba_log_path": mgba_log.name,
         "caffeinate_proc": caffeinate_proc,
         "slot_cfg": slot_cfg,
     }
@@ -528,6 +589,7 @@ def run_single_loop(
         print(f"\nError: {e}")
         import traceback
         traceback.print_exc()
+        _print_crash_banner(e, turn_mgr, config, run_dir, handle)
         if turn_mgr.savepoint_on_crash:
             # A fault can surface mid-turn before the action settled; stamp the
             # last settled turn so resume replays from a clean boundary.
