@@ -546,3 +546,22 @@ claude-opus-4.8:
     minimal:
       sample_turns: 0
 
+# Sakana Fugu Ultra (added 2026-06-24) — multimodal (text+image), 1M ctx, $5/$30 per M. Per Sakana's OpenRouter card it's NOT a monolith but "a learned multi-agent orchestration system: a language model trained to route" across sub-agents. supported_parameters advertises reasoning + include_reasoning + tools + tool_choice + structured_outputs, so reasoning_type effort + default tool output is the starting bet (mirrors minimax-m3). UNVERIFIED — live probing blocked 2026-06-24: every call (text-only AND with a 720x480 FireRed screenshot; reasoning {effort:high/low}, {enabled:true}, none; forced tool_choice; with/without HTTP-Referer+X-Title; provider data_collection=allow) returned a provider-side HTTP 403 "403 Forbidden" HTML from Sakana AI, while the same key returns 200 on other registry models. The model is access-gated on Sakana's side (allowlist / preview opt-in), not a request-format issue. TODO once enabled on the OpenRouter dashboard: re-probe to confirm reasoning_type (effort vs binary enabled), whether forced tool_choice survives thinking (qwen3.7-style carve-out → may need output_mode: prompted), and latency/cost (mark slow:true if a slow tail shows).
+fugu-ultra:
+  openrouter_id: sakana/fugu-ultra
+  reasoning_type: effort
+  thinking_levels:
+  - high
+  - medium
+  - low
+  - minimal
+  observed:
+    high:
+      sample_turns: 0
+    medium:
+      sample_turns: 0
+    low:
+      sample_turns: 0
+    minimal:
+      sample_turns: 0
+
