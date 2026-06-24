@@ -50,6 +50,15 @@
   let benchmark = $state('')        // selected benchmark id (official only)
   let maxTurns = $state(100)        // casual default: 100 turns
   let modelQuery = $state('')       // searchable model-picker filter text
+  // Casual-continue TaskMaster override. '' = keep the source run's TaskMaster
+  // (the backend reuses it); otherwise a "model(level)" alias to switch to.
+  let taskMasterChoice = $state('')
+
+  // Split a "model(level)" alias into its parts (level '' for type-none models).
+  function parseAlias(alias) {
+    const m = String(alias ?? '').match(/^(.*?)\((.*)\)$/)
+    return m ? { base: m[1], level: m[2] } : { base: alias ?? '', level: '' }
+  }
 
   // Apply open-time defaults ONCE per false→true transition of `open`.
   // Reading `config`/`kind`/`model`/`maxTurns` inside an $effect would make
@@ -68,10 +77,19 @@
           // authoritative — this just mirrors it so the dialog isn't misleading.
           kind = continueFrom.kind === 'official' ? 'official' : 'casual'
           benchmark = continueFrom.benchmark ?? defaultBenchmark
-          // Continue reuses the source run's full identity verbatim (already
-          // a "model(level)" string) — no picker.
-          modelBase = ''
-          level = ''
+          taskMasterChoice = ''  // default: keep the source TaskMaster
+          if (continueFrom.kind === 'official') {
+            // Official continue is model-LOCKED — reuse the source identity
+            // verbatim, no picker (it must stay leaderboard-comparable).
+            modelBase = ''
+            level = ''
+          } else {
+            // Casual continue: seed the Player picker to the source model so
+            // "reuse" is the default; the user can change Player and/or TaskMaster.
+            const parsed = parseAlias(continueFrom.model)
+            modelBase = parsed.base
+            level = parsed.level
+          }
           maxTurns = continueFrom.maxTurns ?? 100
           if (!config) config = latestConfig(CONFIGS)
         } else {
@@ -89,16 +107,22 @@
 
   const isContinue = $derived(!!continueFrom)
   const isOfficial = $derived(kind === 'official')
+  // The Player model is locked (no picker) ONLY on an official continue. A casual
+  // continue gets the full picker (seeded to the source model); fresh runs always do.
+  const lockModel = $derived(isContinue && isOfficial)
+  // Casual continue is the one mode that exposes a TaskMaster override picker.
+  const casualContinue = $derived(isContinue && !isOfficial)
   const selectedBench = $derived(BENCHMARKS.find((b) => b.id === benchmark) ?? null)
 
   // The picked model row + its thinking levels (second-axis dropdown).
   const selectedModel = $derived(MODELS.find((m) => m.model === modelBase) ?? null)
   const availableLevels = $derived(selectedModel?.levels ?? [])
 
-  // Final submit identity: continue reuses the source alias; otherwise
-  // "model(level)", or the bare model when it has no thinking levels (type none).
+  // Final Player identity: official continue reuses the source alias verbatim;
+  // otherwise (fresh OR casual continue) it's the picker's "model(level)", or the
+  // bare model when it has no thinking levels (type none).
   const model = $derived(
-    isContinue
+    lockModel
       ? (continueFrom?.model ?? '')
       : (level ? `${modelBase}(${level})` : modelBase)
   )
@@ -116,10 +140,22 @@
   const sortedModels = $derived(
     [...MODELS].sort((a, b) => (b.run_count ?? 0) - (a.run_count ?? 0) || a.model.localeCompare(b.model))
   )
+  // The Player plays from screenshots, so its picker only offers MULTIMODAL
+  // models (the guard). Every current model qualifies, so this is future-proofing.
+  const playerModels = $derived(sortedModels.filter((m) => m.multimodal !== false))
   const filteredModels = $derived(
     modelQuery.trim()
-      ? sortedModels.filter((m) => m.model.toLowerCase().includes(modelQuery.trim().toLowerCase()))
-      : sortedModels
+      ? playerModels.filter((m) => m.model.toLowerCase().includes(modelQuery.trim().toLowerCase()))
+      : playerModels
+  )
+  // TaskMaster override options (casual continue). It reasons over text handoffs,
+  // so it isn't multimodal-gated; offer every model at its default level, plus a
+  // "keep original" sentinel ('').
+  const tmOptions = $derived(
+    sortedModels.map((m) => ({
+      alias: m.default_level ? `${m.model}(${m.default_level})` : m.model,
+      label: m.default_level ? `${m.model} · ${m.default_level}` : m.model,
+    }))
   )
 
   function submit() {
@@ -129,6 +165,11 @@
       config: isOfficial ? null : config,
       maxTurns: isOfficial ? null : maxTurns,
       continueFrom: continueFrom?.runId ?? null,
+      // Casual continue may override models. Player rides on `model` (the backend
+      // treats it as reuse when it equals the source alias, else an override).
+      // TaskMaster: '' = keep the source's. Both null for fresh/official.
+      playerModel: casualContinue ? model : null,
+      taskMasterModel: casualContinue && taskMasterChoice ? taskMasterChoice : null,
     })
   }
 </script>
@@ -145,9 +186,9 @@
         <div class="cont-note">
           Continuing <span class="mono">{continueFrom.runId}</span> from its last save state — on the exact turn it left off.
           {#if isOfficial}
-            This stays an <b>official</b> run on the <b>{selectedBench?.name ?? continueFrom.benchmark}</b> benchmark — it can still complete the ladder and post to the leaderboard. Model reused from the source run.
+            This stays an <b>official</b> run on the <b>{selectedBench?.name ?? continueFrom.benchmark}</b> benchmark — it can still complete the ladder and post to the leaderboard. Models are <b>locked</b> to the source run.
           {:else}
-            Continues <b>casual</b> and reuses the original model.
+            Continues <b>casual</b>. Defaults to the source run's models — change the Player and/or TaskMaster below to resume on a different model.
           {/if}
         </div>
       {:else}
@@ -163,8 +204,8 @@
 
       <div class="fields">
         <div class="field">
-          <span class="flabel">Model {#if isContinue}<span class="locked">locked</span>{/if}</span>
-          {#if isContinue}
+          <span class="flabel">{casualContinue ? 'Player model' : 'Model'} {#if lockModel}<span class="locked">locked</span>{/if}</span>
+          {#if lockModel}
             <div class="frozen mono">{model} <span class="faint">(reused from source run)</span></div>
           {:else}
             <input
@@ -194,7 +235,7 @@
           {/if}
         </div>
 
-        {#if !isContinue && availableLevels.length}
+        {#if !lockModel && availableLevels.length}
           <label class="field">
             <span class="flabel">Thinking level <span class="faint">· benchmarked separately</span></span>
             <select bind:value={level}>
@@ -202,6 +243,17 @@
                 <option value={lv.level}>{lv.level}{#if lv.run_count} · {lv.run_count} {lv.run_count === 1 ? 'run' : 'runs'}{/if}</option>
               {/each}
             </select>
+          </label>
+        {/if}
+
+        {#if casualContinue}
+          <label class="field">
+            <span class="flabel">TaskMaster model</span>
+            <select bind:value={taskMasterChoice}>
+              <option value="">Keep original</option>
+              {#each tmOptions as o}<option value={o.alias}>{o.label}</option>{/each}
+            </select>
+            <span class="faint tm-hint">Plans tasks &amp; handoffs from text. Gemini Flash is the reliable default for casual runs.</span>
           </label>
         {/if}
 
@@ -288,6 +340,7 @@
   select:disabled, input:disabled { background: var(--surface-2); color: var(--muted); }
   .frozen { font-size: 13px; padding: 9px 11px; border: 1px dashed var(--border); border-radius: 8px; background: var(--surface-2); }
   .goal { margin: -4px 0 0; font-size: 12px; line-height: 1.45; color: var(--muted); font-style: italic; }
+  .tm-hint { font-size: 10.5px; line-height: 1.4; }
 
   .model-search { margin-bottom: 6px; }
   .model-list {

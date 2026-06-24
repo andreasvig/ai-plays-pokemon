@@ -18,6 +18,9 @@
 #   reasoning_summary: 'auto' to reliably surface OpenAI reasoning summaries.
 #   output_mode:      tool (default) | native_json | prompted.
 #   temperature/top_p/max_tokens/provider/fallbacks: model-wide passthrough.
+#   multimodal:       false to mark a text-only model (default true). The Player
+#                     plays from screenshots, so the picker only offers multimodal
+#                     models for the Player; every current entry is vision-capable.
 #   slow:             true (all levels) | {level: true} — doubles per-attempt
 #                     LLM timeouts (known-slow end-to-end latency).
 #   observed:         {level: {avg_turn_cost_usd, avg_turn_latency_s,

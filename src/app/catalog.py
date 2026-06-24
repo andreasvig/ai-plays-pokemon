@@ -67,6 +67,12 @@ def list_models() -> list[dict[str, Any]]:
                 "default_level": default_level,
                 "levels": level_rows,
                 "observed": headline,
+                # Vision capability. The benchmark sends screenshots, so the
+                # PLAYER must be multimodal; the picker uses this to gate Player
+                # choices. Defaults True (every model currently in the registry is
+                # vision-capable) — set ``multimodal: false`` on a text-only entry
+                # to exclude it from the Player picker.
+                "multimodal": bool(entry.get("multimodal", True)),
             }
         )
     return out

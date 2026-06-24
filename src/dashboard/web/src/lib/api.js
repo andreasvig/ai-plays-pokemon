@@ -105,6 +105,9 @@ export async function fetchModels() {
       : [],
     observed: m.observed ?? null,
     run_count: m.run_count ?? 0,
+    // Vision capability. The Player plays from screenshots, so the Player picker
+    // only offers multimodal models. Defaults true (every current model qualifies).
+    multimodal: m.multimodal !== false,
   }))
 }
 
@@ -304,9 +307,14 @@ export function deleteRun(runId) {
   return send('DELETE', `/api/runs/${encodeURIComponent(runId)}`)
 }
 
-export function continueRun(runId, maxTurns) {
-  const body = maxTurns != null ? { max_turns: maxTurns } : undefined
-  return send('POST', `/api/runs/${encodeURIComponent(runId)}/continue`, body)
+export function continueRun(runId, { maxTurns = null, playerModel = null, taskMasterModel = null } = {}) {
+  // Casual continues may swap models (UI pickers); official continues are
+  // model-locked server-side (a sent override 400s). Send only what's set.
+  const body = {}
+  if (maxTurns != null) body.max_turns = maxTurns
+  if (playerModel != null) body.player_model = playerModel
+  if (taskMasterModel != null) body.task_master_model = taskMasterModel
+  return send('POST', `/api/runs/${encodeURIComponent(runId)}/continue`, Object.keys(body).length ? body : undefined)
 }
 
 export function setEmulatorMute(mute) {

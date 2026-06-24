@@ -71,6 +71,7 @@ class QueueManager:
         benchmark: str | None = None,
         max_turns: int | None = None,
         continue_from: str | None = None,
+        task_master_model: str | None = None,
         enqueued_at: str | None = None,
     ) -> QueuedRun:
         """Mint a :class:`QueuedRun`, append it, and save.
@@ -87,6 +88,7 @@ class QueueManager:
             benchmark=benchmark,
             max_turns=max_turns,
             continue_from=continue_from,
+            task_master_model=task_master_model,
             enqueued_at=enqueued_at or _now_iso(),
         )
         self.items.append(item)

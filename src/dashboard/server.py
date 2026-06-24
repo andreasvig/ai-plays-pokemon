@@ -780,25 +780,50 @@ async def api_run_stop(run_id: str):
 
 @app.post("/api/runs/{run_id}/continue")
 async def api_run_continue(run_id: str, body: dict | None = None):
-    """Build a continue spec and enqueue it (locked #10).
+    """Build a continue spec and enqueue it.
 
-    Reuses the SOURCE run's model (any model in the request body is IGNORED),
-    resolves the latest savepoint, sets ``continue_from``, and INHERITS the
+    Resolves the latest savepoint, sets ``continue_from``, and INHERITS the
     source's kind: an official run continues official on the SAME benchmark (so a
     run stopped overnight can be finished + scored); a casual run continues casual.
+
+    CASUAL continues may override the models via the request body:
+    ``player_model`` and ``task_master_model`` (both ``model(level)`` aliases).
+    Omitted → the source's models are reused. OFFICIAL continues are model-locked
+    (locked #10): passing an override for an official source is a 400.
     """
+    from src.app.models import RunKind
+
     queue, executor, _index = _require_control()
+    body = body or {}
+    player_model = body.get("player_model")
+    task_master_model = body.get("task_master_model")
+    if player_model is not None:
+        _validate_model_alias(player_model)
+    if task_master_model is not None:
+        _validate_model_alias(task_master_model)
     try:
-        spec = executor.build_continue_spec(run_id)
+        spec = executor.build_continue_spec(
+            run_id,
+            player_model=player_model,
+            task_master_model=task_master_model,
+        )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    # Official continues are model-locked: reject (don't silently drop) overrides.
+    if spec["kind"] == RunKind.official and (player_model or task_master_model):
+        raise HTTPException(
+            status_code=400,
+            detail="cannot change models on an official continue — the resumed "
+            "benchmark segment must reuse the source run's models to stay comparable",
+        )
     item = queue.enqueue(
         kind=spec["kind"],
         model=spec["model"],
         config=spec.get("config"),
         benchmark=spec.get("benchmark"),
-        max_turns=(body or {}).get("max_turns"),
+        max_turns=body.get("max_turns"),
         continue_from=spec["continue_from"],
+        task_master_model=spec.get("task_master_model"),
     )
     notify_control()
     return JSONResponse(item.model_dump(mode="json"), status_code=201)

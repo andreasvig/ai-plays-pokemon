@@ -229,6 +229,45 @@ def set_mgba_mute_for_pid(pid: int, mute: bool) -> bool:
 DEFAULT_FREEPLAY_TASK_MASTER_MODEL = "gemini-3.5-flash(medium)"
 
 
+def _resolve_player_model(config: dict, model_alias: str | None) -> None:
+    """Re-resolve a NEW Player model alias into a (continued) config, in place.
+
+    Mirrors load_config's ``_resolve_llm_alias`` but FORCES re-resolution: on a
+    continue the loaded config already carries the SOURCE run's resolved
+    ``llm_model`` (a raw OpenRouter id), so we overwrite the alias and recompute
+    ``thinking`` + fallbacks from the new pick. Casual continue only — official
+    continues never call this (their Player model is locked to the source).
+
+    Raises ``ValueError`` on an unknown alias (the API validates first, so this
+    is a defensive backstop; it must not ``sys.exit`` from the executor thread).
+    """
+    if not model_alias:
+        return
+    from src.config import (
+        _alias_to_openrouter_id,
+        _is_raw_model_id,
+        _load_models_registry,
+        resolve_model_selection,
+    )
+
+    if _is_raw_model_id(model_alias):
+        config["llm_model"] = model_alias
+        config["_llm_alias"] = model_alias
+        config.pop("_llm_resolved", None)
+        config["thinking"] = None
+        config["llm_fallback_models"] = []
+        return
+    registry = _load_models_registry()
+    resolved = resolve_model_selection(model_alias, registry)  # raises ValueError
+    config["_llm_alias"] = resolved["_alias"]
+    config["_llm_resolved"] = resolved
+    config["llm_model"] = resolved["openrouter_id"]
+    config["thinking"] = resolved.get("reasoning")
+    config["llm_fallback_models"] = [
+        _alias_to_openrouter_id(fb, registry) for fb in (resolved.get("fallbacks") or [])
+    ]
+
+
 def _resolve_task_master_model(config: dict, tm_model_alias: str | None) -> None:
     """Resolve the TaskMaster model alias into config, in place.
 

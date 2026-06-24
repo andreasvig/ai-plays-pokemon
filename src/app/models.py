@@ -109,4 +109,8 @@ class QueuedRun(BaseModel):
     benchmark: str | None = None
     max_turns: int | None = None
     continue_from: str | None = None
+    # Optional TaskMaster model override (casual only). None → inherit the
+    # source/config/freeplay-default resolution. The Player model rides on
+    # ``model``; on a casual continue the UI may set both to new picks.
+    task_master_model: str | None = None
     enqueued_at: str

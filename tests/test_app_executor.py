@@ -355,10 +355,124 @@ def test_continue_spec_reuses_model_and_savepoint_ignores_request_model(harness)
     assert spec["model"] == "claude"  # reused from source
     assert spec.get("config") is None
 
-    # Even if a caller passes a model, the spec never carries one from a request:
-    # build_continue_spec takes no model arg — proving the request model is moot.
+    # A bare positional `model=` is still not a parameter (the Player model rides
+    # on the dedicated `player_model` keyword), proving a stray request model is moot.
     with pytest.raises(TypeError):
         executor.build_continue_spec(source_id, model="other")  # type: ignore[call-arg]
+
+
+def test_continue_spec_casual_accepts_model_overrides(harness):
+    """Casual continue may swap Player + TaskMaster models (UI pickers)."""
+    executor = harness["executor"]
+    runs_root = harness["runs_root"]
+    index = harness["index"]
+
+    source_id = "2026-06-15_src_cfg__claude"
+    source_dir = runs_root / source_id
+    (source_dir / "savepoints" / "turn_50").mkdir(parents=True)
+    with open(source_dir / "run_summary.json", "w") as f:
+        json.dump({"session": {"llm_alias": "claude", "llm_model": "anthropic/claude"}}, f)
+    index.rebuild_from_scan()
+
+    spec = executor.build_continue_spec(
+        source_id,
+        player_model="gpt-5.5(medium)",
+        task_master_model="gemini-3.5-flash(low)",
+    )
+    assert spec["kind"] == RunKind.casual
+    assert spec["model"] == "gpt-5.5(medium)"  # Player override
+    assert spec["task_master_model"] == "gemini-3.5-flash(low)"  # TM override
+
+
+def test_continue_spec_official_ignores_model_overrides(harness):
+    """Official continue is model-locked: overrides dropped, source models reused."""
+    executor = harness["executor"]
+    runs_root = harness["runs_root"]
+    index = harness["index"]
+
+    source_id = "2026-06-15_off_cfg__claude"
+    source_dir = runs_root / source_id
+    (source_dir / "savepoints" / "turn_50").mkdir(parents=True)
+    with open(source_dir / "run_summary.json", "w") as f:
+        json.dump(
+            {
+                "kind": "official",
+                "benchmark": "pokebench-easy",
+                "session": {"llm_alias": "claude", "llm_model": "anthropic/claude"},
+            },
+            f,
+        )
+    index.rebuild_from_scan()
+
+    spec = executor.build_continue_spec(
+        source_id,
+        player_model="gpt-5.5(medium)",
+        task_master_model="gemini-3.5-flash(low)",
+    )
+    assert spec["kind"] == RunKind.official
+    assert spec["model"] == "claude"  # override ignored — model-locked
+    assert spec["task_master_model"] is None  # override ignored
+    assert spec["benchmark"] == "pokebench-easy"
+
+
+def test_continue_dispatch_applies_player_override(harness):
+    """A casual continue with a NEW valid Player model re-resolves llm_model."""
+    executor = harness["executor"]
+    runs_root = harness["runs_root"]
+    queue = harness["queue"]
+
+    source_id = "2026-06-16_src__gpt"
+
+    def fake_continue_fn(arg):
+        # Source resolved to gpt-5.5; the continue picks a DIFFERENT model.
+        return (
+            {
+                "run_name": "x",
+                "_config_path": "configs/x.yaml",
+                "_llm_alias": "gpt-5.5(medium)",
+                "llm_model": "openai/gpt-5.5",
+                "task_master": {"mode": "freeplay"},
+            },
+            runs_root / source_id / "savepoints" / "turn_50",
+        )
+
+    executor._continue_fn = fake_continue_fn
+    item = queue.enqueue(kind=RunKind.casual, model="gemini-3.5-flash(low)", max_turns=30)
+    item.continue_from = source_id
+
+    cfg, _snapshot, turns = executor.build_run_config(item)
+    assert cfg["_llm_alias"] == "gemini-3.5-flash(low)"  # re-resolved to the override
+    assert cfg["llm_model"] == "google/gemini-3.5-flash"
+    assert turns == 30
+
+
+def test_continue_dispatch_reuse_keeps_source_settings(harness):
+    """A reuse continue (item.model == source alias) does NOT re-resolve the model,
+    preserving the source run's exact resolved settings (no registry round-trip)."""
+    executor = harness["executor"]
+    runs_root = harness["runs_root"]
+    queue = harness["queue"]
+
+    source_id = "2026-06-16_src__gpt2"
+
+    def fake_continue_fn(arg):
+        return (
+            {
+                "run_name": "x",
+                "_config_path": "configs/x.yaml",
+                "_llm_alias": "gpt-5.5(medium)",
+                "llm_model": "openai/gpt-5.5-PINNED",  # deliberately odd → proves no re-resolve
+                "task_master": {"mode": "freeplay"},
+            },
+            runs_root / source_id / "savepoints" / "turn_50",
+        )
+
+    executor._continue_fn = fake_continue_fn
+    item = queue.enqueue(kind=RunKind.casual, model="gpt-5.5(medium)", max_turns=30)
+    item.continue_from = source_id
+
+    cfg, _snapshot, _turns = executor.build_run_config(item)
+    assert cfg["llm_model"] == "openai/gpt-5.5-PINNED"  # source settings kept verbatim
 
 
 def test_continue_dispatch_resolves_full_runs_root_path(harness):

@@ -185,7 +185,11 @@
     dialogOpen = false; dialogContinueFrom = null
     try {
       if (spec.continueFrom) {
-        await api.continueRun(spec.continueFrom, spec.maxTurns)
+        await api.continueRun(spec.continueFrom, {
+          maxTurns: spec.maxTurns,
+          playerModel: spec.playerModel ?? null,
+          taskMasterModel: spec.taskMasterModel ?? null,
+        })
       } else {
         await api.enqueueRun(spec)
       }

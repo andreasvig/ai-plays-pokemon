@@ -199,6 +199,27 @@ class RunExecutor:
                 cfg.setdefault("task_master", {})["mode"] = "benchmark"
                 return cfg, str(savepoint_dir), self._OFFICIAL_TURN_SENTINEL
             cfg.setdefault("task_master", {})["mode"] = "freeplay"  # casual continue
+            # Casual continue may swap the Player and/or TaskMaster model (UI
+            # pickers). ``item.model`` carries the chosen Player model. Re-resolve
+            # it ONLY when it (a) is a genuine registry selection and (b) actually
+            # differs from the source run's own alias — so a plain reuse-continue
+            # keeps the source's EXACT settings (no needless round-trip, no churn
+            # if the registry retuned the model since), an override re-resolves,
+            # and a legacy/raw/stale ``model`` value can't crash dispatch.
+            # ``item.task_master_model`` is the explicit TM override; None keeps
+            # the source/freeplay-default resolution.
+            from src.cli.runner import _resolve_player_model, _resolve_task_master_model
+            from src.config import _load_models_registry, is_valid_model_selection
+
+            source_alias = cfg.get("_llm_alias") or cfg.get("llm_model")
+            if (
+                item.model
+                and item.model != source_alias
+                and is_valid_model_selection(item.model, _load_models_registry())
+            ):
+                _resolve_player_model(cfg, item.model)
+            if item.task_master_model:
+                _resolve_task_master_model(cfg, item.task_master_model)
             turns = item.max_turns or 1500
             return cfg, str(savepoint_dir), turns
 
@@ -519,22 +540,29 @@ class RunExecutor:
 
     # --- continue (locked decision #10) ---------------------------------------
 
-    def build_continue_spec(self, source_run_id: str) -> dict:
-        """Build a continue spec that reuses the source run's model.
+    def build_continue_spec(
+        self,
+        source_run_id: str,
+        *,
+        player_model: str | None = None,
+        task_master_model: str | None = None,
+    ) -> dict:
+        """Build a continue spec, reusing the source run's model by default.
 
         Resolves the latest savepoint of the source run (raises if none), reads
         the source model from its ``run_summary.json`` (or the index), and
-        returns a dict ready for ``QueueManager.enqueue`` kwargs: ``continue_from``
-        set, model reused. An injected model is the CALLER's problem to drop —
-        this never reads one (locked #10).
+        returns a dict ready for ``QueueManager.enqueue`` kwargs.
+
+        CASUAL continues may override the models (UI pickers): ``player_model``
+        replaces the reused Player model, ``task_master_model`` sets a TaskMaster
+        override. OFFICIAL continues IGNORE both overrides — their models stay
+        locked to the source so the resumed benchmark segment is comparable and
+        leaderboard-eligible (locked #10).
 
         Kind is INHERITED from the source: a continue of an OFFICIAL run stays
         official and resumes the SAME benchmark (so a run stopped overnight can be
         finished + scored), rather than silently downgrading to casual. A casual
-        source continues casual. The intermediate stopped segment is itself voided
-        (status ``cancelled``), but it keeps ``kind=official`` + its benchmark id
-        so the chain stays resumable as that benchmark — the segment that finally
-        reaches the last gate is the one that posts to the leaderboard.
+        source continues casual.
         """
         source_dir = self.runs_root / source_run_id
         # Resolve the latest savepoint (raises FileNotFoundError if absent).
@@ -542,13 +570,16 @@ class RunExecutor:
 
         _find_latest_savepoint(source_dir)  # validates a savepoint exists
 
-        model = self._source_model(source_run_id, source_dir)
+        source_model = self._source_model(source_run_id, source_dir)
         kind, benchmark = self._source_kind_and_benchmark(source_run_id, source_dir)
+        # Official continues are model-locked; casual may swap Player + TaskMaster.
+        is_casual = kind != RunKind.official
         spec = {
             "kind": kind,
-            "model": model,
+            "model": (player_model if (is_casual and player_model) else source_model),
             "config": None,
             "continue_from": source_run_id,
+            "task_master_model": (task_master_model if is_casual else None),
         }
         if kind == RunKind.official:
             spec["benchmark"] = benchmark
