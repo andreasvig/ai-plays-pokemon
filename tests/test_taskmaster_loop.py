@@ -482,6 +482,90 @@ def test_real_runner_async_path_no_nested_asyncio():
     assert calls["n"] >= 2  # real invoke_async actually ran twice
 
 
+def test_task_master_runner_request_limit_from_config():
+    """task_master.request_limit in config overrides the module default."""
+    from src.agent.task_master import DEFAULT_REQUEST_LIMIT
+    from src.agent.turn import TaskMasterRunner
+
+    tmp = Path(tempfile.mkdtemp())
+    cfg = _base_config(tmp, enabled=True)
+    runner = TaskMasterRunner(cfg)
+    assert runner._request_limit == DEFAULT_REQUEST_LIMIT
+
+    cfg["task_master"]["request_limit"] = 30
+    assert TaskMasterRunner(cfg)._request_limit == 30
+
+
+def test_task_master_runner_retry_settings_from_config():
+    from src.agent.task_master import DEFAULT_INVOKE_RETRIES, DEFAULT_OUTPUT_RETRIES
+    from src.agent.turn import TaskMasterRunner
+
+    tmp = Path(tempfile.mkdtemp())
+    cfg = _base_config(tmp, enabled=True)
+    runner = TaskMasterRunner(cfg)
+    assert runner._invoke_retries == DEFAULT_INVOKE_RETRIES
+
+    cfg["task_master"]["invoke_retries"] = 4
+    assert TaskMasterRunner(cfg)._invoke_retries == 4
+
+    from src.agent.task_master import create_task_master_agent
+
+    agent, _ = create_task_master_agent(cfg)
+    assert agent._max_result_retries == DEFAULT_OUTPUT_RETRIES
+
+    cfg["task_master"]["output_retries"] = 10
+    agent, _ = create_task_master_agent(cfg)
+    assert agent._max_result_retries == 10
+
+
+def test_taskmaster_invoke_retries_on_validation_failure(monkeypatch):
+    import asyncio
+
+    from pydantic_ai.exceptions import UnexpectedModelBehavior
+
+    from src.agent.task_master import TaskMasterInput, TaskMasterOutput, TaskSpec
+    from src.agent.turn import TaskMasterInvocation, TaskMasterRunner
+
+    tmp = Path(tempfile.mkdtemp())
+    cfg = _base_config(tmp, enabled=True)
+    cfg["task_master"]["invoke_retries"] = 4
+    runner = TaskMasterRunner(cfg)
+
+    class _FakeResult:
+        def __init__(self, output):
+            self.output = output
+
+    calls = {"n": 0}
+
+    async def _fake_run(user_message, **kwargs):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise UnexpectedModelBehavior(
+                "Exceeded maximum retries (3/5) for output validation"
+            )
+        return _FakeResult(
+            TaskMasterOutput(
+                reasoning="ok",
+                rating_of_previous_task=None,
+                task=TaskSpec(title="t", description="d", success_criteria="c"),
+            )
+        )
+
+    runner._agent.run = _fake_run
+    monkeypatch.setattr(
+        "src.agent.turn.create_task_master_agent",
+        lambda config: (runner._agent, runner._model_settings),
+    )
+    monkeypatch.setattr("src.agent.turn._retry_backoff_s", lambda _idx: 0.0)
+
+    inp = TaskMasterInput(meta_goal="goal", player_memory="", prior_outputs=[])
+    inv = asyncio.run(runner.invoke_async(inp, is_cold_start=True))
+
+    assert isinstance(inv, TaskMasterInvocation)
+    assert calls["n"] == 3
+    assert inv.output.task.title == "t"
+
+
 def test_handoff_takes_a_savepoint(monkeypatch):
     """P4: each TaskMaster handoff checkpoints, bounding hard-kill replay.
 

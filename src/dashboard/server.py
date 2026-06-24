@@ -1064,13 +1064,22 @@ async def api_emulator_status():
 
     executor = _CONTROL["executor"]
     if executor is None or getattr(executor, "supervisor", None) is None:
+        # Headless ``pokemon run`` registers live sessions in _REGISTRY but does
+        # not wire the control-plane executor. Spectate still needs an
+        # active_run_id to open /runs/{id}/ws/* — expose the newest registry
+        # entry so CLI runs are spectatable at /spectate without ``pokemon app``.
+        sessions = _REGISTRY.all()
+        active_run_id = None
+        if sessions:
+            active_run_id = max(sessions, key=lambda s: s.registered_at).run_id
+        live = bool(active_run_id)
         return JSONResponse(
             {
-                "configured": False,
-                "process_up": False,
-                "connected": False,
-                "busy": False,
-                "active_run_id": None,
+                "configured": live,
+                "process_up": live,
+                "connected": live,
+                "busy": live,
+                "active_run_id": active_run_id,
                 "muted": True,
             }
         )

@@ -1,14 +1,15 @@
-"""OpenRouter finish_reason=None must not crash the run.
+"""OpenRouter finish_reason=None / 'error' must not crash the run.
 
-Some OpenRouter providers (notably certain Gemini endpoints) return
-``finish_reason: null``. OpenAI's ChatCompletion schema types finish_reason as a
-strict Literal, so pydantic-ai's re-validation in ``_process_response`` raises
-``UnexpectedModelBehavior`` and kills the whole run — observed mid-handoff on a
-gemini-3.1-flash-lite run (2026-06-19). The patch coerces a missing
-finish_reason to 'stop' (the message is complete) before that validation.
+Some OpenRouter providers (notably certain Gemini/Gemma endpoints) return
+``finish_reason: null`` or ``finish_reason: 'error'``. OpenAI's ChatCompletion
+schema types finish_reason as a strict Literal, so pydantic-ai's re-validation
+in ``_process_response`` raises ``UnexpectedModelBehavior`` and kills the whole
+run — observed mid-handoff on gemini-3.1-flash-lite (2026-06-19) and
+gemma-4-31b (2026-06-23). The patch coerces unknown/missing finish reasons to
+'stop' before that validation when the message is otherwise present.
 
-This pins: with patches applied, a finish_reason=None response is processed into
-a normal ModelResponse instead of raising.
+This pins: with patches applied, a finish_reason=None or 'error' response is
+processed into a normal ModelResponse instead of raising.
 """
 
 import os
@@ -52,6 +53,18 @@ def test_finish_reason_none_is_coerced_not_crashed():
     assert result is not None
     assert result.parts  # the message content survived
     # The raw response's finish_reason was coerced to a valid literal.
+    assert resp.choices[0].finish_reason == "stop"
+
+
+def test_finish_reason_error_is_coerced_not_crashed():
+    apply_patches()
+    model = _model()
+    resp = _response_with_finish_reason("error")
+
+    result = model._process_response(resp)
+
+    assert result is not None
+    assert result.parts
     assert resp.choices[0].finish_reason == "stop"
 
 

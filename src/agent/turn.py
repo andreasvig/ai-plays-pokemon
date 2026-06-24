@@ -81,6 +81,28 @@ _TRANSIENT_ERROR_PATTERNS = (
 )
 
 
+def _is_taskmaster_retryable(exc: BaseException) -> bool:
+    """Whether a failed agent.run deserves a full re-invocation."""
+    return _is_agent_invoke_retryable(exc)
+
+
+def _is_agent_invoke_retryable(exc: BaseException) -> bool:
+    """Whether a failed Player/TaskMaster agent.run deserves a full re-invocation."""
+    if _is_transient_llm_error(exc):
+        return True
+    from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
+
+    if isinstance(exc, (UnexpectedModelBehavior, UsageLimitExceeded)):
+        return True
+    msg = str(exc).lower()
+    if "output validation" in msg or "maximum retries" in msg:
+        return True
+    status = getattr(exc, "status_code", None)
+    if isinstance(status, int) and (status >= 500 or status == 429):
+        return True
+    return False
+
+
 def _is_transient_llm_error(exc: BaseException) -> bool:
     if isinstance(exc, asyncio.TimeoutError):
         return True
@@ -498,11 +520,21 @@ class TaskMasterRunner:
     """
 
     def __init__(self, config: dict[str, Any]):
-        from src.agent.task_master import DEFAULT_REQUEST_LIMIT, DEFAULT_SEARCH_MODEL
+        from src.agent.task_master import (
+            DEFAULT_INVOKE_RETRIES,
+            DEFAULT_REQUEST_LIMIT,
+            DEFAULT_SEARCH_MODEL,
+        )
 
         self.config = config
         self._agent, self._model_settings = create_task_master_agent(config)
-        self._request_limit = DEFAULT_REQUEST_LIMIT
+        tm_cfg = config.get("task_master") or {}
+        self._request_limit = int(
+            tm_cfg.get("request_limit", DEFAULT_REQUEST_LIMIT)
+        )
+        self._invoke_retries = int(
+            tm_cfg.get("invoke_retries", DEFAULT_INVOKE_RETRIES)
+        )
         self._model_used = (
             config.get("task_master_model") or config.get("llm_model") or ""
         )
@@ -535,11 +567,6 @@ class TaskMasterRunner:
 
         from src.agent.task_master import _looks_like_data_url
 
-        deps = TaskMasterDeps(
-            is_cold_start=is_cold_start,
-            search_model=self._search_model,
-            tool_costs=[],
-        )
         text = render_task_master_input(
             inp,
             is_cold_start=is_cold_start,
@@ -560,25 +587,74 @@ class TaskMasterRunner:
 
         usage_limits = UsageLimits(request_limit=self._request_limit)
 
-        kwargs: dict[str, Any] = {}
-        if self._model_settings:
-            kwargs["model_settings"] = self._model_settings
+        agent = self._agent
+        model_settings = self._model_settings
+        max_attempts = self._invoke_retries
+        accumulated_cost = 0.0
+        accumulated_tool_cost = 0.0
+        last_error: BaseException | None = None
 
-        with capture_run_messages() as captured:
-            result = await self._agent.run(
-                user_message, deps=deps, usage_limits=usage_limits, **kwargs
+        for attempt_idx in range(max_attempts):
+            attempt_num = attempt_idx + 1
+            if attempt_idx > 0:
+                await asyncio.sleep(_retry_backoff_s(attempt_idx - 1))
+                agent, model_settings = create_task_master_agent(self.config)
+
+            deps = TaskMasterDeps(
+                is_cold_start=is_cold_start,
+                search_model=self._search_model,
+                tool_costs=[],
             )
-        messages = list(captured)
-        trace = _serialize_messages(messages)
-        cost = _extract_cost_from_messages(messages)
-        tool_cost = float(sum(deps.tool_costs))
-        return TaskMasterInvocation(
-            output=result.output,
-            trace=trace,
-            cost_usd=cost,
-            tool_cost_usd=tool_cost,
-            model_used=self._model_used,
-        )
+
+            kwargs: dict[str, Any] = {}
+            if model_settings:
+                kwargs["model_settings"] = model_settings
+
+            with capture_run_messages() as captured:
+                try:
+                    result = await agent.run(
+                        user_message,
+                        deps=deps,
+                        usage_limits=usage_limits,
+                        **kwargs,
+                    )
+                except Exception as exc:
+                    last_error = exc
+                    if captured:
+                        accumulated_cost += _extract_cost_from_messages(captured)
+                        accumulated_tool_cost += float(sum(deps.tool_costs))
+                    if (
+                        attempt_idx < max_attempts - 1
+                        and _is_taskmaster_retryable(exc)
+                    ):
+                        print(
+                            f"  [TaskMaster] invoke attempt {attempt_num}/"
+                            f"{max_attempts} failed ({type(exc).__name__}: "
+                            f"{exc}); retrying after backoff"
+                        )
+                        continue
+                    raise
+
+            messages = list(captured)
+            trace = _serialize_messages(messages)
+            cost = _extract_cost_from_messages(messages) + accumulated_cost
+            tool_cost = float(sum(deps.tool_costs)) + accumulated_tool_cost
+            if attempt_idx > 0:
+                print(
+                    f"  [TaskMaster] invoke attempt {attempt_num}/"
+                    f"{max_attempts} succeeded after earlier failure(s)"
+                )
+            return TaskMasterInvocation(
+                output=result.output,
+                trace=trace,
+                cost_usd=cost,
+                tool_cost_usd=tool_cost,
+                model_used=self._model_used,
+            )
+
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("TaskMaster invoke exhausted retries without result")
 
 
 class _TeeWriter:
@@ -1970,6 +2046,7 @@ class TurnManager:
                 except (asyncio.TimeoutError, Exception) as exc:
                     last_error = exc
                     is_transient = _is_transient_llm_error(exc)
+                    is_retryable = is_transient or _is_agent_invoke_retryable(exc)
                     err_label = (
                         f"timeout after {timeout_s:.0f}s"
                         if isinstance(exc, asyncio.TimeoutError)
@@ -1993,12 +2070,12 @@ class TurnManager:
                             "slow_model": is_slow,
                             "error_type": type(exc).__name__,
                             "error": str(exc)[:300],
-                            "retryable": is_transient,
+                            "retryable": is_retryable,
                         })
                     except Exception:
                         pass
 
-                    if is_transient and attempt_num < max_attempts:
+                    if is_retryable and attempt_num < max_attempts:
                         # Backoff (jittered) before re-rolling: the next attempt
                         # also escalates provider routing (throughput→latency→default).
                         backoff = _retry_backoff_s(attempt_idx)

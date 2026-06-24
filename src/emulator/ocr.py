@@ -10,6 +10,7 @@ coherent cleaned text alongside the raw buffer for logging.
 import json
 import os
 import re
+import shutil
 import threading
 import time
 from collections import deque
@@ -18,6 +19,11 @@ from typing import Any, Callable, Optional
 import httpx
 import pytesseract
 from PIL import Image, ImageEnhance
+
+
+def _tesseract_available() -> bool:
+    cmd = pytesseract.pytesseract.tesseract_cmd
+    return bool(cmd and (os.path.isfile(cmd) or shutil.which(cmd)))
 
 
 DEFAULT_CLEANUP_SYSTEM_PROMPT = (
@@ -139,12 +145,19 @@ class OCRRunner:
         self._stats_empty_ocr = 0           # Tesseract returned nothing after conf filter
         self._stats_tesseract_runs = 0      # actual Tesseract calls
         self._stats_buffer_full = 0         # skipped due to buffer cap
+        self._warned_missing_tesseract = False
 
     # ── Public API ────────────────────────────────────────────────────
 
     def start(self) -> None:
         if not self.enabled:
             return
+        if not _tesseract_available():
+            print(
+                "WARNING: tesseract not found — OCR will stay empty. "
+                "Install it, then restart the run: macOS: brew install tesseract · "
+                "Debian/Ubuntu: sudo apt install tesseract-ocr"
+            )
         self._running = True
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
         self._thread.start()
@@ -327,6 +340,14 @@ class OCRRunner:
 
     def _tesseract_confidence_filter(self, img: Image.Image) -> str:
         """Run Tesseract image_to_data and keep only words with conf >= threshold."""
+        if not _tesseract_available():
+            if not self._warned_missing_tesseract:
+                self._warned_missing_tesseract = True
+                print(
+                    "WARNING: tesseract not found — OCR captures will be empty until "
+                    "you install it (macOS: brew install tesseract)."
+                )
+            return ""
         try:
             data = pytesseract.image_to_data(
                 img, config="--psm 6", output_type=pytesseract.Output.DICT

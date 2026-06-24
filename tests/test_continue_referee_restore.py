@@ -10,7 +10,7 @@ restored game hasn't reached would corrupt the score.
 import json
 from pathlib import Path
 
-from src.cli.runner import _restore_referee_state
+from src.cli.runner import _restore_referee_state, _root_run_name
 from src.referee.referee import Referee
 
 
@@ -122,3 +122,15 @@ def test_none_savepoint_is_safe_noop(tmp_path):
     new_run.mkdir()
     _restore_referee_state(None, new_run, up_to_turn=5)
     assert not (new_run / "referee_state.json").exists()
+
+
+def test_root_run_name_strips_chained_continue_suffixes():
+    chained = (
+        "config-3.13__gemma-4-31b-thinking"
+        "_continued_from_turn_300"
+        "_continued_from_turn_588"
+    )
+    assert _root_run_name(chained) == "config-3.13__gemma-4-31b-thinking"
+    assert _root_run_name("config-3.13__gemma-4-31b-thinking") == (
+        "config-3.13__gemma-4-31b-thinking"
+    )

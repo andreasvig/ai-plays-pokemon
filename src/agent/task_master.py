@@ -35,8 +35,16 @@ from src.agent.tools.ask_perplexity import ask_perplexity as _ask_perplexity
 from src.core.prompts import fill_prompt
 
 # Default round-count ceiling for a single TaskMaster invocation. Bounds tool
-# rounds (search/visit loops) without an aggregate token cap.
-DEFAULT_REQUEST_LIMIT = 12
+# rounds (search/visit loops) without an aggregate token cap. Late handoffs
+# (long prior-output window + rating validator retries + ask_perplexity) can
+# exceed 12 model rounds in one call — see task_master.request_limit in config.
+DEFAULT_REQUEST_LIMIT = 24
+# In-agent ModelRetry rounds when output validation fails (malformed JSON, null
+# rating on handoff, etc.). Gemma prompted mode often needs more than 5.
+DEFAULT_OUTPUT_RETRIES = 8
+# Full TaskMaster re-invocations after a failed agent.run (validation exhaustion,
+# usage limit, transient provider glitches). Mirrors the Player's outer retry loop.
+DEFAULT_INVOKE_RETRIES = 6
 
 
 # --- Input / output schemas ---------------------------------------------------
@@ -374,13 +382,15 @@ def create_task_master_agent(config: dict[str, Any]) -> tuple[Agent, Any]:
     # this is a harmless no-op.
     system_prompt = fill_prompt(system_prompt, mode_guidelines=_mode_guidelines(tm_cfg))
 
+    output_retries = int(tm_cfg.get("output_retries", DEFAULT_OUTPUT_RETRIES))
+
     agent = Agent(
         model=model,
         system_prompt=system_prompt,
         deps_type=TaskMasterDeps,
         output_type=output_type,
         tools=tools,
-        retries=5,
+        retries=output_retries,
     )
 
     @agent.output_validator

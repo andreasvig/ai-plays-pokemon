@@ -285,10 +285,9 @@ def create_agent(config: dict[str, Any]) -> tuple[Agent, Any, list[str]]:
     # vs. losing the whole turn.
     #
     # When TaskMaster is enabled we also give the OUTPUT validator its own retry
-    # budget (output_retries=3) so the budget-boundary rejection below gets up to
-    # three in-conversation retries to coax a handoff out of the model, per the
-    # "ModelRetry over silent-sanitize" rule. When disabled this stays None and
-    # the agent's behavior is identical to before.
+    # budget (output_retries=8) so malformed JSON / budget-boundary rejections
+    # get more in-conversation retries before the outer loop re-rolls. Gemma
+    # prompted mode routinely needs >3.
     agent_kwargs: dict[str, Any] = dict(
         model=model,
         system_prompt=system_prompt,
@@ -298,7 +297,7 @@ def create_agent(config: dict[str, Any]) -> tuple[Agent, Any, list[str]]:
         retries=5,
     )
     if tm_enabled:
-        agent_kwargs["output_retries"] = 3
+        agent_kwargs["output_retries"] = 8
     agent = Agent(**agent_kwargs)
 
     # Budget-boundary output validator. Only attached when TaskMaster is enabled,

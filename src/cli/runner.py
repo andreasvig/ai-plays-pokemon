@@ -28,6 +28,18 @@ warnings.filterwarnings("ignore", module="pydantic_ai")
 
 sys.stdout.reconfigure(line_buffering=True)
 
+from src.cli.launch import find_mgba
+
+
+# Chained continues used to append ``_continued_from_turn_<N>`` to the *full*
+# prior run_name, so names grew without bound and eventually hit the macOS
+# 255-byte path limit after several resume cycles.
+_CONTINUE_SUFFIX_RE = re.compile(r"(_continued_from_turn_\d+)+$")
+
+
+def _root_run_name(name: str) -> str:
+    """Return the original run slug, stripping any continue suffix chain."""
+    return _CONTINUE_SUFFIX_RE.sub("", name)
 from src.cli.slots import get_slot
 from src.config import load_config
 from src.core import RunLogger, StateManager
@@ -59,7 +71,10 @@ def position_mgba_window_for_pid(pid: int, x: int, y: int) -> None:
             end tell
         end tell
     '''
-    subprocess.run(['osascript', '-e', script], capture_output=True, timeout=10)
+    try:
+        subprocess.run(['osascript', '-e', script], capture_output=True, timeout=10)
+    except subprocess.TimeoutExpired:
+        pass
 
 
 def open_scripting_window_for_pid(pid: int) -> bool:
@@ -156,33 +171,45 @@ def set_mgba_mute_for_pid(pid: int, mute: bool) -> bool:
     return result.stdout.strip() == "ok"
 
 
+# Default TaskMaster for custom/casual (freeplay) runs. Gemma-as-Player is fine,
+# but Gemma prompted JSON is too flaky for TaskMaster handoffs — Gemini tool mode
+# is reliable. Overridable via task_master.model in the config YAML or --task-master-model.
+DEFAULT_FREEPLAY_TASK_MASTER_MODEL = "gemini-3.5-flash(medium)"
+
+
 def _resolve_task_master_model(config: dict, tm_model_alias: str | None) -> None:
-    """Resolve the --task-master-model alias into config, in place.
+    """Resolve the TaskMaster model alias into config, in place.
 
-    Mirrors the Player's `--model` resolution: the alias is looked up in
-    configs/models.yaml the same way and expanded into `task_master_model`
-    (the OpenRouter id) + `_task_master_llm_resolved` (the registry entry, which
-    carries reasoning/temperature/provider/output_mode). B2's
-    create_task_master_agent reads exactly those two keys.
+    Mirrors the Player's ``--model`` resolution: the alias is looked up in
+    ``configs/models.yaml`` and expanded into ``task_master_model`` (OpenRouter id)
+    + ``_task_master_llm_resolved`` (registry entry with output_mode etc.).
 
-    When `tm_model_alias` is None the flag was omitted — leave both keys unset so
-    create_task_master_agent falls back to the Player's `llm_model` + `_llm_resolved`
-    (the documented default: "defaults to the Player's --model when omitted").
+    Precedence when ``tm_model_alias`` is omitted:
+      1. ``task_master.model`` in the loaded config YAML/JSON
+      2. ``DEFAULT_FREEPLAY_TASK_MASTER_MODEL`` when ``task_master.mode`` is ``freeplay``
+      3. unset → create_task_master_agent falls back to the Player's model
     """
-    if not tm_model_alias:
+    alias = tm_model_alias
+    if not alias:
+        tm_cfg = config.get("task_master") or {}
+        alias = tm_cfg.get("model")
+        if not alias and tm_cfg.get("mode") == "freeplay":
+            alias = DEFAULT_FREEPLAY_TASK_MASTER_MODEL
+    if not alias:
         return
     from src.config import _is_raw_model_id, _load_models_registry, resolve_model_selection
 
-    if _is_raw_model_id(tm_model_alias):
-        # Raw provider/model id — use verbatim, no registry entry to resolve.
-        config["task_master_model"] = tm_model_alias
-        config["_task_master_alias"] = tm_model_alias
+    if _is_raw_model_id(alias):
+        config["task_master_model"] = alias
+        config["_task_master_alias"] = alias
+        config.pop("_task_master_llm_resolved", None)
         return
     registry = _load_models_registry()
     try:
-        resolved = resolve_model_selection(tm_model_alias, registry)
+        resolved = resolve_model_selection(alias, registry)
     except ValueError as e:
-        sys.exit(f"ERROR: --task-master-model {tm_model_alias!r}: {e}")
+        label = tm_model_alias or alias
+        sys.exit(f"ERROR: --task-master-model {label!r}: {e}")
     config["task_master_model"] = resolved["openrouter_id"]
     config["_task_master_llm_resolved"] = resolved
     config["_task_master_alias"] = resolved["_alias"]
@@ -231,7 +258,7 @@ def run_prepare_phase(config: dict, saves_dir: Path) -> dict:
     emu.start_server()
 
     rom_path = config["emulator"]["rom_path"]
-    mgba_path = "/opt/homebrew/bin/mgba"
+    mgba_path = find_mgba()
     # NOTE: launch with audio ENABLED — do NOT pass `-C mute=1`. That core-option
     # override mutes at a level the Audio/Video → Mute menu cannot clear, so it
     # would defeat the runtime mute toggle (verified 2026-06-16: focused + menu
@@ -603,12 +630,14 @@ def continue_from_run(source_run_dir: str) -> tuple[dict, Path]:
     load_dotenv()
     cfg["openrouter_api_key"] = os.environ.get("OPENROUTER_API_KEY", "")
 
-    base_name = cfg.get("run_name") or source.name.split("_", 2)[-1]
+    base_name = _root_run_name(cfg.get("run_name") or source.name.split("_", 2)[-1])
     cfg["run_name"] = f"{base_name}_continued_from_turn_{sp_turn}"
-    label = cfg.get("run_label") or base_name
+    label = _root_run_name(cfg.get("run_label") or base_name)
     cfg["run_label"] = f"{label} · continued from turn {sp_turn}"
     cfg["_continued_from"] = str(source)
     cfg["_continued_from_turn"] = sp_turn
+
+    _resolve_task_master_model(cfg, None)
 
     return cfg, savepoint_dir
 
@@ -772,9 +801,11 @@ Examples:
         if args.model or args.config != [None]:
             sys.exit(
                 "ERROR: --continue is exclusive with --config/--model. "
-                "The source run's config and model are reused automatically."
+                "The source run's config and Player model are reused automatically; "
+                "use --task-master-model to override only the TaskMaster model."
             )
         cfg, savepoint_dir = continue_from_run(args.continue_from)
+        _resolve_task_master_model(cfg, args.task_master_model)
         prepared = [cfg]
         # The savepoint dir is what run_single_loop's --snapshot path expects.
         args.snapshot = str(savepoint_dir)

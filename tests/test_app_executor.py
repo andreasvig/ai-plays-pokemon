@@ -327,6 +327,8 @@ def test_casual_uses_chosen_config_and_maxturns(harness):
     assert "referee" not in config  # casual = no gates
     assert snapshot == executor.canonical_save
     assert config["task_master"]["mode"] == "freeplay"  # casual = custom/freeplay
+    assert config.get("_task_master_alias") == "gemini-3.5-flash(medium)"
+    assert config.get("task_master_model") == "google/gemini-3.5-flash"
 
 
 def test_continue_spec_reuses_model_and_savepoint_ignores_request_model(harness):

@@ -161,6 +161,19 @@ valid_inputs:
 task_master:
   enabled: true
   history_window_n: 20
+  # Max pydantic-ai tool-loop rounds per TaskMaster invocation (cold-start or
+  # handoff). Late handoffs with a full prior-output window + rating retries +
+  # ask_perplexity can exceed 12; 24 avoids UsageLimitExceeded mid-run.
+  request_limit: 24
+  # In-agent ModelRetry rounds when output JSON/validation fails (Gemma prompted
+  # mode often exhausts the old default of 5).
+  output_retries: 8
+  # Full TaskMaster re-invocations after validation exhaustion or transient errors.
+  invoke_retries: 6
+  # TaskMaster LLM for custom/casual runs (registry alias). Uses reliable tool-mode
+  # structured output while the Player keeps --model (e.g. Gemma). Official benchmark
+  # configs omit this so TaskMaster inherits the Player model.
+  model: gemini-3.5-flash(medium)
   # Perplexity Sonar model the ask_perplexity tool routes to (via OpenRouter).
   # Candidates: sonar-pro-search, sonar-reasoning-pro, sonar-pro, sonar.
   search_model: "perplexity/sonar-pro-search"

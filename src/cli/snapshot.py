@@ -21,6 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+from src.cli.launch import find_mgba
 from src.config import load_config
 from src.core import SnapshotManager
 from src.emulator import EmulatorClient
@@ -29,7 +30,7 @@ from src.emulator import EmulatorClient
 def launch_and_connect(config):
     """Launch mGBA and wait for connection."""
     rom_path = config["emulator"]["rom_path"]
-    mgba_path = "/opt/homebrew/bin/mgba"
+    mgba_path = find_mgba()
 
     emu = EmulatorClient(config)
     emu.start_server()

@@ -166,16 +166,20 @@ def patch_openai_model_response():
             except (AttributeError, TypeError):
                 pass
 
-            # OpenRouter (notably some Gemini providers) sometimes returns
-            # finish_reason=None, which OpenAI's strict ChatCompletion Literal
-            # rejects in _original's model_validate — crashing the whole run,
-            # even mid-handoff. The message itself is complete (content/tool
-            # call present), so coerce a missing finish_reason to 'stop' before
-            # the strict re-validation. Same class as the service_tier loosening;
-            # done per-call here so downstream sees a valid literal, not None.
+            # OpenRouter (notably some Gemini/Gemma providers) sometimes returns
+            # finish_reason=None or finish_reason='error', which OpenAI's strict
+            # ChatCompletion Literal rejects in _original's model_validate — crashing
+            # the whole run, even mid-handoff. When the message is otherwise
+            # present, coerce unknown/missing finish reasons to 'stop' before the
+            # strict re-validation. Same class as the service_tier loosening;
+            # done per-call here so downstream sees a valid literal.
+            _VALID_FINISH_REASONS = frozenset({
+                'stop', 'length', 'tool_calls', 'content_filter', 'function_call',
+            })
             try:
                 for choice in response.choices:
-                    if getattr(choice, 'finish_reason', 'stop') is None:
+                    fr = getattr(choice, 'finish_reason', 'stop')
+                    if fr is None or fr not in _VALID_FINISH_REASONS:
                         choice.finish_reason = 'stop'
             except (AttributeError, TypeError):
                 pass

@@ -42,6 +42,7 @@ from src.agent.turn import (
     _RETRY_BACKOFF_CAP_S,
     _RETRY_BACKOFF_FACTOR,
     _SLOW_MODEL_TIMEOUT_MULT,
+    _is_taskmaster_retryable,
     _is_transient_llm_error,
     _provider_routing_for_attempt,
     _retry_backoff_s,
@@ -121,6 +122,17 @@ def test_transient_classifier_covers_timeout_jsondecode_and_wrapped_5xx():
     ) is True
     # A genuine deterministic fault must NOT be retried (would burn the budget).
     assert _is_transient_llm_error(ValueError("schema mismatch: field x required")) is False
+
+
+def test_taskmaster_retry_classifier_covers_validation_and_usage_limit():
+    from pydantic_ai.exceptions import UnexpectedModelBehavior, UsageLimitExceeded
+
+    assert _is_taskmaster_retryable(UnexpectedModelBehavior("bad json")) is True
+    assert _is_taskmaster_retryable(
+        UnexpectedModelBehavior("Exceeded maximum retries (3/5) for output validation")
+    ) is True
+    assert _is_taskmaster_retryable(UsageLimitExceeded("request_limit")) is True
+    assert _is_taskmaster_retryable(ValueError("schema mismatch: field x required")) is False
 
 
 def test_retry_schedule_is_six_attempts_and_escalates():

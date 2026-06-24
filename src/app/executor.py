@@ -236,6 +236,9 @@ class RunExecutor:
         # Casual fresh = custom/freeplay mode: TaskMaster gets freeplay_guidelines.
         cfg = prepare_config(self._resolve_config_path(item.config), item.model)
         cfg.setdefault("task_master", {})["mode"] = "freeplay"
+        from src.cli.runner import _resolve_task_master_model
+
+        _resolve_task_master_model(cfg, None)
         turns = item.max_turns or 1500
         return cfg, self.canonical_save, turns
 

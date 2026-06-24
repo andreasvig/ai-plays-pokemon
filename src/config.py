@@ -387,6 +387,11 @@ def _validate_config(config: dict[str, Any], *, require_llm_model: bool = True) 
             raise ValueError(
                 f"task_master.search_model must be a non-empty string, got {sm!r}"
             )
+        tmm = tm.get("model")
+        if tmm is not None and (not isinstance(tmm, str) or not tmm.strip()):
+            raise ValueError(
+                f"task_master.model must be a non-empty string, got {tmm!r}"
+            )
         # system_prompt: optional TaskMaster system prompt. Omit to use the code
         # default (task_master.SYSTEM_PROMPT). Mirrors the Player's top-level
         # `system_prompt` so both agents' prompts live in the config.
