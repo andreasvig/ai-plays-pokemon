@@ -352,6 +352,15 @@ def main() -> None:
     from src.dashboard import server as _dash_server
 
     _dash_server._start_server_if_needed(args.port)
+    # Warn if the built web UI is missing or older than its source — a pulled-but-
+    # not-rebuilt bundle would serve the OLD UI, which reads as a broken feature.
+    _spa = _dash_server.spa_freshness()
+    if _spa == "missing":
+        print("  ⚠ Web UI not built — run: ( cd src/dashboard/web && npm install && npm run build )")
+    elif _spa == "stale":
+        print("  ⚠ Web UI bundle is OLDER than its source — looks like new frontend code")
+        print("    was pulled without rebuilding. The browser will show the OLD UI until you run:")
+        print("      ( cd src/dashboard/web && npm run build )   then hard-refresh the page")
     url = f"http://localhost:{args.port}/"
     print(f"Control center: {url}")
 

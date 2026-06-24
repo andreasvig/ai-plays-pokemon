@@ -190,6 +190,25 @@ cp .env.example .env
 > Using [`uv`](https://github.com/astral-sh/uv)? `uv sync` installs from
 > `uv.lock` instead of the `pip install -e .` step.
 
+### Updating (after a `git pull`)
+
+`scripts/setup.sh` only runs once, on a fresh clone — pulling new code does **not**
+rebuild anything. The control-center web UI (`src/dashboard/web/dist/`) is
+**gitignored and served as a pre-built bundle**, so after a pull that touched the
+frontend the running `pokemon app` keeps serving the **old** UI until you rebuild:
+
+```bash
+git pull
+( cd src/dashboard/web && npm install && npm run build )   # rebuild the UI
+# Python deps rarely change; if pyproject.toml moved, also: pip install -e .  (or uv sync)
+```
+
+Then restart `pokemon app`. **Symptom of a skipped rebuild:** a UI change (new
+dialog option, etc.) is in the code but never appears in the browser — it's a
+stale bundle, not a broken feature. (Hard-refresh the page too, to clear the
+browser cache.) Run on the machine that hosts `pokemon app` — e.g. the box you
+stream the daily runs from.
+
 ## Running it
 
 ### Recommended: the control center

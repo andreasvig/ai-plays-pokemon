@@ -167,3 +167,33 @@ def test_api_runs_unconfigured_returns_legacy_listing():
     finally:
         server._REGISTRY.unregister("boot-legacy-run")
         _clear_control()
+
+
+def test_spa_freshness_missing_stale_ok(tmp_path, monkeypatch):
+    """spa_freshness() flags a pulled-but-not-rebuilt UI bundle so `pokemon app`
+    can warn at boot (stale bundle reads as itself, not a broken feature)."""
+    import os
+    import time
+
+    dist = tmp_path / "web" / "dist"
+    src = tmp_path / "web" / "src"
+    dist.mkdir(parents=True)
+    src.mkdir(parents=True)
+    index = dist / "index.html"
+    monkeypatch.setattr(server, "SPA_DIST_DIR", dist)
+    monkeypatch.setattr(server, "SPA_INDEX", index)
+
+    # No build yet → missing.
+    assert server.spa_freshness() == "missing"
+
+    # Built index newer than (or equal to) source → ok.
+    (src / "App.svelte").write_text("x")
+    index.write_text("<html></html>")
+    os.utime(index, None)
+    assert server.spa_freshness() == "ok"
+
+    # A source file newer than the built index → stale.
+    old = time.time() - 100
+    os.utime(index, (old, old))
+    (src / "App.svelte").write_text("y")  # rewrite → mtime now
+    assert server.spa_freshness() == "stale"

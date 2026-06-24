@@ -111,6 +111,32 @@ def _spa_built() -> bool:
     return SPA_INDEX.is_file()
 
 
+def spa_freshness() -> str:
+    """``'missing' | 'stale' | 'ok'`` for the built SPA bundle.
+
+    ``stale`` = a frontend source file under ``web/src/`` is NEWER than the built
+    ``dist/index.html`` — i.e. someone pulled new UI code but didn't re-run
+    ``npm run build``, so the server would keep serving the OLD bundle. The
+    ``pokemon app`` boot path warns on this so a stale bundle reads as itself, not
+    as a broken feature. Best-effort: any stat error or a missing source tree
+    (e.g. a packaged deploy) reports ``ok`` rather than nagging.
+    """
+    if not SPA_INDEX.is_file():
+        return "missing"
+    src_dir = SPA_DIST_DIR.parent / "src"
+    if not src_dir.is_dir():
+        return "ok"
+    try:
+        built = SPA_INDEX.stat().st_mtime
+        newest_src = max(
+            (p.stat().st_mtime for p in src_dir.rglob("*") if p.is_file()),
+            default=0.0,
+        )
+    except OSError:
+        return "ok"
+    return "stale" if newest_src > built else "ok"
+
+
 def _require_session(run_id: str) -> RunSession:
     session = _REGISTRY.get(run_id)
     if session is None:
