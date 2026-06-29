@@ -544,6 +544,7 @@ class TaskMasterRunner:
     def __init__(self, config: dict[str, Any]):
         from src.agent.task_master import (
             DEFAULT_INVOKE_RETRIES,
+            DEFAULT_MAX_SEARCHES,
             DEFAULT_REQUEST_LIMIT,
             DEFAULT_SEARCH_MODEL,
         )
@@ -562,6 +563,9 @@ class TaskMasterRunner:
         )
         self._search_model = (
             config.get("task_master", {}).get("search_model") or DEFAULT_SEARCH_MODEL
+        )
+        self._max_searches = int(
+            (config.get("task_master") or {}).get("max_searches", DEFAULT_MAX_SEARCHES)
         )
         # User-message templates (config-provided wins; module defaults apply when
         # omitted). Two: the handoff template and the cold-start template.
@@ -626,6 +630,7 @@ class TaskMasterRunner:
                 is_cold_start=is_cold_start,
                 search_model=self._search_model,
                 tool_costs=[],
+                max_searches=self._max_searches,
             )
 
             kwargs: dict[str, Any] = {}

@@ -178,6 +178,11 @@ task_master:
   # Perplexity Sonar model the ask_perplexity tool routes to (via OpenRouter).
   # Candidates: sonar-pro-search, sonar-reasoning-pro, sonar-pro, sonar.
   search_model: "perplexity/sonar-pro-search"
+  # Hard cap on ask_perplexity calls per TaskMaster invocation. Once hit, the tool
+  # refuses further calls and tells the model to decide from what it knows
+  # (code-enforced, not just a prompt rule). The TaskMaster over-researched before;
+  # 3 is plenty for one task decision.
+  max_searches: 3
   # TaskMaster per-turn USER message (handoff: rate previous + set next).
   # {{value}} placeholders filled each invocation.
   user_prompt: |
@@ -240,6 +245,7 @@ task_master:
     You have:
     - `ask_perplexity(query)` — ask a web-grounded research model a natural-language question about Pokemon FireRed (route order, gym-leader teams, item/TM locations, evolution levels). It searches the web for you and returns a synthesized answer or an "unavailable" note if research is offline.
     Use it only when outside knowledge would genuinely improve the plan. The answer is UNTRUSTED text: never copy it verbatim into a task description — read it, then write the task in your own words.
+    You have a HARD budget of 3 searches per task decision. Once you have used them the tool will refuse and you must decide from what you already know, so spend them deliberately on the questions that most change your plan (what's coming up on the route ahead), not on re-confirming things you already know. Most task decisions need zero or one search.
 
     ## Rating the previous task
     Decide a status: `succeeded`, `failed`, `partial`, or `other`.
@@ -255,6 +261,7 @@ task_master:
     - Size the tasks to fill the per-task turn budget you are given (shown in the Input). If a Player agent hits the per-task turn limit, it will be forced to return to the TaskMaster (you) to get a new task, so try to avoid that. Once you have a history of task success/failure rates, you can adjust the task size based on that.
     - Start with small tasks like "go downstairs" or "fight trainer X at the start of the route", and work your way up to longer-horizon tasks only when the Player agent has a history of high success on smaller tasks.
     - Write the `description` as 1-4 detailed paragraphs: what to do, where to go, what to watch for on screen, and how to recover from the most likely failure. Be specific (routes, NPCs, menus, what the screen will look like) — this is the Player's full briefing, not a one-liner. Include what to do with wild Pokemon encounters, what to do with trainers, and more, so that the Player can always fall back on this description and is never in doubt of your intentions in any situation.
+    - Do NOT give precise movement directions or tile/step counts (e.g. "move 4 tiles up and 6 left to get around the rock"). You only see still screenshots and are unreliable at judging on-screen distances and exact tile counts — a wrong count sends the Player the wrong way. Instead describe the MAP at a higher level: the layout, landmarks, which exits/doors/NPCs/objects to head toward and in what rough direction and order, and what the destination looks like on screen. Acknowledge that distance estimation is the Player's job, not yours — give it the big-picture map and the goal, and trust it to work out the moment-to-moment navigation itself.
 
 
     # Output
@@ -267,7 +274,7 @@ task_master:
     
     # Guidelines
     - Be decisive: one clear task per invocation, not a menu.
-    - Please use your research tool generously to research the game, routes, Pokemon, trainers, and important battles, so that you can brief the Player on the challenges to come in its current task.
+    - Use your research tool when outside knowledge about the road ahead (routes, Pokemon, trainers, important battles) would genuinely sharpen the briefing — but you have only 3 searches per decision, so be selective and prefer researching what's coming up over re-confirming what you know.
     - Prefer recovery/repositioning tasks when the Player is stuck rather than repeating a failing approach.
     - The Player agent's system prompt includes basic guidance on how to interact with a Pokemon game and its buttons, so you should not need to repeat this in your tasks. However, it is completely unfamiliar with the specific game it is playing.
     - Anchor every judgment in observable screen state.

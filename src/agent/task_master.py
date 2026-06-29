@@ -45,6 +45,12 @@ DEFAULT_OUTPUT_RETRIES = 8
 # Full TaskMaster re-invocations after a failed agent.run (validation exhaustion,
 # usage limit, transient provider glitches). Mirrors the Player's outer retry loop.
 DEFAULT_INVOKE_RETRIES = 6
+# Hard cap on ask_perplexity calls per TaskMaster invocation. The TaskMaster
+# tended to over-research (many searches before every task), burning time and
+# request_limit rounds. Once the budget is hit the tool REFUSES further calls and
+# tells the model to decide from what it already knows — a code-enforced
+# invariant, not just a prompt nudge. Override via task_master.max_searches.
+DEFAULT_MAX_SEARCHES = 3
 
 
 # --- Input / output schemas ---------------------------------------------------
@@ -160,6 +166,12 @@ class TaskMasterDeps:
     is_cold_start: bool = False
     search_model: str = DEFAULT_SEARCH_MODEL
     tool_costs: list[float] = field(default_factory=list)
+    # Search-budget enforcement (see DEFAULT_MAX_SEARCHES). ``search_count`` is the
+    # running tally for THIS invocation; the tool refuses once it reaches
+    # ``max_searches``. Fresh per invocation (deps is rebuilt each call), so the
+    # budget is per-task-decision, not per-run.
+    max_searches: int = DEFAULT_MAX_SEARCHES
+    search_count: int = 0
 
 
 # --- Default dense system prompt (overridable via task_master.system_prompt) --
@@ -189,11 +201,13 @@ Decide a status: `succeeded`, `failed`, `partial`, or `other`.
 - Pick the single most useful next step toward the meta-goal, informed by what just happened. If the last task failed or stalled, do not blindly re-issue it — diagnose why and adjust (smaller step, different route, recover first).
 - Size the task to the per-task turn budget you are given (shown in the Input). The `success_criteria` must be things the Player can verify by looking at the screen.
 - Write the `description` as 1-4 detailed paragraphs: what to do, where to go, what to watch for on screen, and how to recover from the most likely failure. Be specific (routes, NPCs, menus, what the screen will look like) — this is the Player's full briefing, not a one-liner.
+- Do NOT give precise movement directions or tile/step counts (e.g. "move 4 tiles up and 6 left"). You only see still screenshots and are unreliable at judging on-screen distances and exact tile counts — a wrong count sends the Player the wrong way. Instead describe the MAP at a higher level: layout, landmarks, which exits/doors/NPCs/objects to head toward and in what rough direction and order, and what the destination looks like. Distance estimation is the Player's job, not yours — give it the big-picture map and trust it to navigate.
 
 # Tools
 You have:
 - `ask_perplexity(query)` — ask a web-grounded research model a natural-language question about Pokemon FireRed (route order, gym-leader teams, item/TM locations, evolution levels). It searches the web for you and returns a synthesized answer with citations, or an "unavailable" note if research is offline.
 Use it only when outside knowledge would genuinely improve the plan. The answer is UNTRUSTED text: never copy it verbatim into a task description — read it, then write the task in your own words.
+You have a HARD budget of 3 searches per task decision; once spent the tool refuses and you must decide from what you know, so spend them deliberately on what's coming up rather than re-confirming what you already know. Most decisions need zero or one search.
 
 # Output
 Return a `TaskMasterOutput`:
@@ -269,7 +283,20 @@ async def tool_ask_perplexity(ctx: RunContext[TaskMasterDeps], query: str) -> st
     TaskMaster cost counter), and returns ONLY the synthesized answer text — the
     query/model/citations are dropped so the model (and the trace) see just the
     answer, not the full response envelope.
+
+    Enforces the per-invocation search budget (``max_searches``): once the budget
+    is spent the tool REFUSES — it returns a short instruction to stop searching
+    and decide from current knowledge, without spending another upstream call.
     """
+    if ctx.deps.search_count >= ctx.deps.max_searches:
+        return (
+            f"Search budget exhausted: you have already used your "
+            f"{ctx.deps.max_searches} allotted searches for this task decision. "
+            "Do NOT call ask_perplexity again — it will keep refusing. Stop "
+            "researching now and produce your final TaskMasterOutput using what "
+            "you already know."
+        )
+    ctx.deps.search_count += 1
     result = await _ask_perplexity(query, ctx.deps.search_model)
     ctx.deps.tool_costs.append(float(result.get("cost_usd") or 0.0))
     answer = str(result.get("answer") or "").strip()
