@@ -89,6 +89,10 @@ pokemon run --model "gemini-3.5-flash(medium)" --kill-existing
 
 # Continue a prior run from its latest savepoint (resumes where it left off)
 pokemon run --continue local/runs/2026-05-26_..._config-3.13__claude-opus-4-7 --turns 30
+
+# Record the run to MP4 while it plays (headless — unaffected by your browser)
+pokemon run --model "claude-opus-4.7(medium)" --turns 50 \
+            --record simple --record-speed cut-thinking
 ```
 
 ### Pairing rules between `--config` and `--model`
@@ -115,6 +119,9 @@ Aliases come from `configs/models.yaml`. Raw `"provider/model"` OpenRouter ids a
 | `--connect-timeout S` | `300.0`                          | Seconds to wait for the initial Lua connect.  |
 | `--kill-existing`     | off                              | `pkill -f mgba` before launching.             |
 | `--continue PATH`     | off                              | Resume from the source run's latest savepoint. Single-run only. Mutex with `--config` / `--model`. |
+| `--record VIEW`       | off                              | Record to `<run_dir>/recording.mp4`. `simple` = the 1:1 view (1080×1080); `detailed` = the full wide panel (1920×1080). See [recording.md](recording.md). |
+| `--record-speed S`    | `realtime`                       | `realtime` keeps every pause; `cut-thinking` records only each turn's execution window, cutting the model's response time. |
+| `--record-fps N`      | `30`                             | Recording frame rate, 1–60.                   |
 
 Run output lands in `local/runs/<timestamp>_<config-stem>__<model-slug>/` (gitignored): `events.jsonl`, `state.json`, `tasks.json`, `run_summary.json`, and screenshots. Reports are rendered natively in the `pokemon app` SPA (History view) from these files.
 

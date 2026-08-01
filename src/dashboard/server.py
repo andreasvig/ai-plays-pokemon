@@ -496,6 +496,16 @@ def get_registry() -> RunRegistry:
     return _REGISTRY
 
 
+def get_server_port() -> Optional[int]:
+    """The bound port, or None if the server has not started in this process.
+
+    The recorder needs it to point its own headless browser at us; it is the
+    only thing that distinguishes "there is a UI to record" from "this is a
+    headless run".
+    """
+    return _SERVER_PORT if _SERVER_STARTED else None
+
+
 # ───────────────────────── control plane (Plan §P3) ─────────────────────────
 #
 # The control routes below are ADDITIVE — they don't touch the existing run-
@@ -701,16 +711,43 @@ def _enqueue_kwargs(spec: dict) -> dict:
         raise HTTPException(status_code=400, detail="model is required")
     _validate_model_alias(model)
 
+    record = _validate_record(spec.get("record"))
+
     if kind == RunKind.official:
         benchmark = _validate_benchmark_id(spec.get("benchmark"))
-        return {"kind": kind, "model": model, "config": None, "benchmark": benchmark, "max_turns": None}
+        return {
+            "kind": kind, "model": model, "config": None,
+            "benchmark": benchmark, "max_turns": None, "record": record,
+        }
     return {
         "kind": kind,
         "model": model,
         "config": spec.get("config"),
         "max_turns": spec.get("max_turns"),
         "continue_from": spec.get("continue_from"),
+        "record": record,
     }
+
+
+def _validate_record(raw: Any) -> dict | None:
+    """Validate an optional record spec → a plain dict, or None for no recording.
+
+    Rejects an unavailable recorder up front (400) instead of enqueuing a run
+    that would silently produce no video: the caller asked for a recording, and
+    finding out 200 turns later that ffmpeg was missing is the worst outcome.
+    """
+    from src.dashboard.recorder import normalize_spec, recorder_preflight
+
+    try:
+        spec = normalize_spec(raw)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if spec is None:
+        return None
+    blocked = recorder_preflight()
+    if blocked:
+        raise HTTPException(status_code=400, detail=f"recording unavailable: {blocked}")
+    return spec
 
 
 @app.post("/api/queue")
@@ -854,6 +891,10 @@ async def api_run_continue(run_id: str, body: dict | None = None):
         max_turns=body.get("max_turns"),
         continue_from=spec["continue_from"],
         task_master_model=spec.get("task_master_model"),
+        # A continue is a fresh run with its own run dir, so it gets its own
+        # video — the source run's recording setting is NOT inherited (you may
+        # well be continuing precisely because you now want it recorded).
+        record=_validate_record(body.get("record")),
     )
     notify_control()
     return JSONResponse(item.model_dump(mode="json"), status_code=201)

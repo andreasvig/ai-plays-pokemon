@@ -289,6 +289,9 @@ export function enqueueRun(spec) {
     // ignored server-side (frozen wiring).
     body.benchmark = spec.benchmark
   }
+  // Recording applies to BOTH kinds — an official run is exactly the one worth a
+  // video — so it sits outside the kind branch. Omitted entirely when off.
+  if (spec.record) body.record = spec.record
   return send('POST', '/api/queue', body)
 }
 
@@ -310,13 +313,16 @@ export function deleteRun(runId) {
   return send('DELETE', `/api/runs/${encodeURIComponent(runId)}`)
 }
 
-export function continueRun(runId, { maxTurns = null, playerModel = null, taskMasterModel = null } = {}) {
+export function continueRun(runId, { maxTurns = null, playerModel = null, taskMasterModel = null, record = null } = {}) {
   // Casual continues may swap models (UI pickers); official continues are
   // model-locked server-side (a sent override 400s). Send only what's set.
   const body = {}
   if (maxTurns != null) body.max_turns = maxTurns
   if (playerModel != null) body.player_model = playerModel
   if (taskMasterModel != null) body.task_master_model = taskMasterModel
+  // A continue is a fresh run dir, so recording is chosen per-continue and is
+  // never inherited from the source run.
+  if (record) body.record = record
   return send('POST', `/api/runs/${encodeURIComponent(runId)}/continue`, Object.keys(body).length ? body : undefined)
 }
 

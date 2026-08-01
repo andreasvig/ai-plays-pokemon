@@ -50,6 +50,12 @@
   let config = $state('')
   let benchmark = $state('')        // selected benchmark id (official only)
   let maxTurns = $state(100)        // casual default: 100 turns
+
+  // ── recording (opt-in; off by default — it costs a headless browser + an
+  // encoder for the whole run, so it is never something you get by accident) ──
+  let record = $state(false)
+  let recordView = $state('simple')       // the 1:1 recording view
+  let recordSpeed = $state('realtime')
   let modelQuery = $state('')       // searchable model-picker filter text
   // Casual-continue TaskMaster override. '' = keep the source run's TaskMaster
   // (the backend reuses it); otherwise a "model(level)" alias to switch to.
@@ -175,6 +181,9 @@
       // TaskMaster: '' = keep the source's. Both null for fresh/official.
       playerModel: casualContinue ? model : null,
       taskMasterModel: casualContinue && taskMasterChoice ? taskMasterChoice : null,
+      // Opt-in MP4 capture. null (not false) when off, because the backend
+      // treats an absent spec as "don't record" and validates a present one.
+      record: record ? { view: recordView, speed: recordSpeed } : null,
     })
   }
 </script>
@@ -288,6 +297,40 @@
             <input type="number" bind:value={maxTurns} min="1" step="50" />
           </label>
         {/if}
+
+        <!-- Recording. Rendered headlessly server-side, so it keeps going
+             whatever this browser is doing — that is the whole point of it
+             living on the run spec rather than in a screen-recorder. -->
+        <label class="check">
+          <input type="checkbox" bind:checked={record} />
+          <span>Record this run to MP4</span>
+        </label>
+        {#if record}
+          <div class="recopts">
+            <label class="field">
+              <span class="flabel">Capture</span>
+              <select bind:value={recordView}>
+                <option value="simple">Simple view · 1:1 · screen + turn box</option>
+                <option value="detailed">Detailed view · 1920×1080 · full panel</option>
+              </select>
+            </label>
+            <label class="field">
+              <span class="flabel">Speed</span>
+              <select bind:value={recordSpeed}>
+                <option value="realtime">Real time · every pause kept</option>
+                <option value="cut-thinking">Cut thinking · execution only</option>
+              </select>
+            </label>
+            <p class="rechint faint">
+              {#if recordSpeed === 'cut-thinking'}
+                Records each turn from the moment it starts executing until the screen settles — the model's response time is left out.
+              {:else}
+                Records continuously, including the time the model spends thinking.
+              {/if}
+              Saved to <span class="mono">recording.mp4</span> in the run folder.
+            </p>
+          </div>
+        {/if}
       </div>
 
       <footer class="df">
@@ -334,6 +377,13 @@
   .seg button.on small { color: var(--accent); }
 
   .fields { padding: 8px 20px 4px; display: flex; flex-direction: column; gap: 14px; }
+  .check { display: flex; align-items: center; gap: 8px; font-size: 12.5px;
+    color: var(--text); font-weight: 600; cursor: pointer; margin-top: 2px; }
+  .check input { width: 14px; height: 14px; accent-color: var(--accent, #3b82f6); }
+  .recopts { display: flex; flex-direction: column; gap: 10px;
+    border-left: 2px solid var(--border-2); padding-left: 12px; margin-left: 3px; }
+  .rechint { font-size: 11.5px; line-height: 1.5; margin: 0; }
+
   .field { display: flex; flex-direction: column; gap: 6px; }
   .flabel { font-size: 11.5px; font-weight: 650; color: var(--muted); display: flex; align-items: center; gap: 8px; }
   .locked { font-size: 9.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); background: #f0f2f6; padding: 1px 6px; border-radius: 4px; }

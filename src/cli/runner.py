@@ -516,6 +516,15 @@ def run_single_loop(
         open_browser=open_browser,
     )
 
+    # MP4 recording (config['_record'], set by `pokemon run --record` or by the
+    # executor from a queued run's record spec). Started HERE — after the run is
+    # registered, so its live sockets exist, and before the turn loop, so the
+    # recorder's own headless browser is up and painting by turn 1. It is
+    # deliberately not the caller's job: this is the one place both the CLI and
+    # the control-center executor pass through. See dashboard/recorder.py.
+    from src.dashboard import recorder as _recorder
+    _rec = _recorder.maybe_start(config, run_dir, session.run_id)
+
     turn_mgr = TurnManager(config)
     turn_mgr.setup(emu, state, vision, logger, ocr_runner)
     # Cooperative stop hook (control-center executor passes a predicate that's
@@ -642,6 +651,10 @@ def run_single_loop(
         if ocr_runner:
             ocr_runner.stop()
         logger.close()
+        # Finalise the video BEFORE unregistering: unregister_run closes the run's
+        # event + screen sockets, which blanks the recorder's page. Stopping first
+        # keeps the final settled screen as the last frame instead of a dead view.
+        _recorder.finish(_rec)
         unregister_run(session.run_id)
 
         print(f"Run log: {run_dir}")
@@ -896,6 +909,26 @@ Examples:
         "--kill-existing", action="store_true",
         help="pkill any existing mGBA before launching.",
     )
+    parser.add_argument(
+        "--record", choices=["simple", "detailed"], default=None,
+        help="Record the run to <run_dir>/recording.mp4. `simple` captures the "
+             "1:1 simple view (game screen + turn box) at 1080x1080; `detailed` "
+             "captures the full wide spectate panel at 1920x1080. Rendered in the "
+             "recorder's OWN headless browser, so it is unaffected by what you "
+             "have on screen. Applies to every pair in a sequential run.",
+    )
+    parser.add_argument(
+        "--record-speed", dest="record_speed",
+        choices=["realtime", "cut-thinking"], default="realtime",
+        help="`realtime` keeps every pause at its true length. `cut-thinking` "
+             "records only from the moment a turn starts executing until the "
+             "screen has settled, so the model's response time is cut out. "
+             "Default: realtime.",
+    )
+    parser.add_argument(
+        "--record-fps", dest="record_fps", type=int, default=30,
+        help="Recording frame rate (1-60). Default: 30.",
+    )
     args = parser.parse_args()
 
     if args.continue_from:
@@ -918,6 +951,26 @@ Examples:
             prepare_config(c, m, tm_model_alias=args.task_master_model)
             for c, m in pairs
         ]
+
+    # Recording rides on the config under `_record` (the same private-key
+    # convention as `_llm_alias` / `_config_path`), so it reaches run_single_loop
+    # without a new parameter on the run function that the executor and every
+    # test fake would also have to carry.
+    if args.record:
+        from src.dashboard.recorder import normalize_spec, recorder_preflight
+
+        try:
+            record_spec = normalize_spec(
+                {"view": args.record, "speed": args.record_speed, "fps": args.record_fps}
+            )
+        except ValueError as e:
+            sys.exit(f"ERROR: {e}")
+        blocked = recorder_preflight()
+        if blocked:
+            # Fail before mGBA launches rather than 40 turns in with no video.
+            sys.exit(f"ERROR: --record is not available: {blocked}")
+        for c in prepared:
+            c["_record"] = record_spec
 
     if args.kill_existing:
         subprocess.run(["pkill", "-f", "mgba"], capture_output=True)

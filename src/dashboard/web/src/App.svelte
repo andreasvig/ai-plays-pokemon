@@ -8,6 +8,7 @@
   import Report from './components/Report.svelte'
   import AddRunDialog from './components/AddRunDialog.svelte'
   import { router } from './lib/router.svelte.js'
+  import { recording, recordRun, forcedSimple } from './lib/record.js'
   import * as api from './lib/api.js'
 
   // route -> view + param
@@ -33,7 +34,11 @@
 
   // active run id for spectate streams (Plan §P6) — the run-dir id the executor
   // is currently driving, from /api/emulator/status; null in headless/between runs.
-  const activeRunId = $derived(emulator.active_run_id ?? null)
+  // A recorder page pins its run id from the URL (see lib/record.js): the
+  // emulator's active_run_id goes null the moment the run ends, and a recorder
+  // that followed it would cut to the "waiting for a live run" panel for the
+  // last seconds of every video.
+  const activeRunId = $derived(recordRun ?? emulator.active_run_id ?? null)
   let models = $state([])          // alias list for the Add-run dialog
   let configs = $state([])         // casual config stems for the dialog
   let benchmarks = $state([])      // benchmark registry [{id,name,goal,...}]
@@ -189,6 +194,7 @@
           maxTurns: spec.maxTurns,
           playerModel: spec.playerModel ?? null,
           taskMasterModel: spec.taskMasterModel ?? null,
+          record: spec.record ?? null,
         })
       } else {
         await api.enqueueRun(spec)
@@ -247,7 +253,8 @@
   {:else if view === 'history'}
     <History {runs} oninspect={inspect} oncontinue={openContinue} ondelete={removeRun} />
   {:else if view === 'spectate'}
-    <Spectate run={active} {activeRunId} muted={emulator.muted} ontogglemute={toggleMute} onnew={openNew} onback={() => go('/')} />
+    <Spectate run={active} {activeRunId} muted={emulator.muted} ontogglemute={toggleMute} onnew={openNew} onback={() => go('/')}
+      {recording} {forcedSimple} />
   {:else if view === 'report'}
     <Report run={selectedRun} onback={() => go('/history')} oncontinue={openContinue} />
   {:else if view === 'about'}

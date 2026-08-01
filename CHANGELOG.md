@@ -1,5 +1,52 @@
 # Changelog
 
+## 2026-08-01 — Record a run to MP4 (`--record`)
+
+### What
+- `src/dashboard/recorder.py`: a server-side recorder. Launches its OWN headless
+  Chrome at `/spectate?record=1&view=<view>&run=<run_id>`, subscribes to
+  `Page.startScreencast` over CDP, samples the newest frame at a fixed rate, and
+  pipes it into `ffmpeg -f image2pipe` → `<run_dir>/recording.mp4` (H.264,
+  yuv420p, `+faststart`, no audio).
+- Two capture surfaces: `simple` (the 1:1 recording view at 1080×1080 — a square
+  viewport makes `.stage`'s `min(100vw,100vh)` fill the frame exactly) and
+  `detailed` (the whole wide spectate panel at 1920×1080).
+- Two speeds. `realtime` keeps every pause at its true length. `cut-thinking`
+  opens the sampler at `llm_output` and shuts it 0.9s after `screen_settled`, so
+  the model's response time is never sampled and does not exist in the file.
+  `RecordGate` is a pure state machine with an injected clock.
+- Entry points: `pokemon run --record/--record-speed/--record-fps`,
+  `pokemon queue add --record ...`, a `record` object on `POST /api/queue`,
+  `/api/queue/batch` and `/api/runs/{id}/continue`, and a checkbox + two selects
+  in the Add-run dialog. Off by default everywhere.
+- Frontend: `lib/record.js` reads the recorder's URL params; `App.svelte` pins
+  `activeRunId` from `?run=`; `Spectate.svelte` pins the presentation and never
+  writes the human's `spectate.simple` preference.
+- `docs/recording.md`; `tests/test_recorder.py` (24 tests, no Chrome/ffmpeg).
+
+### Why
+Andreas wants runs posted as video, and the capture must not depend on the
+viewer: "independently of if I had focus or have the web app minimised." Every
+in-page route (MediaRecorder, canvas grab, a screen recorder on his window) is
+hostage to his tab, its route, and Chrome's background throttling. Rendering the
+view in a second, headless browser makes the recording an artefact of the run
+rather than of the session watching it — he can be anywhere in the UI, or absent.
+
+### Notes
+- **`--window-size` is not the viewport.** 1080×1080 requested gave a 1080×**993**
+  content area: not square (the 1:1 view would have letterboxed) and odd-height,
+  which made libx264 exit `-22` before writing a packet — a zero-byte mp4 with no
+  warning. Fixed with `Emulation.setDeviceMetricsOverride`, plus a
+  `scale=trunc(iw/2)*2:trunc(ih/2)*2` safety net.
+- Screencast frames are change-driven (~1 frame/several seconds on a static
+  page), which is why the recorder samples on a clock instead of forwarding
+  frames — that is what makes the output CFR and both speed modes one mechanism.
+- The spec rides on the run config as `_record` (the `_llm_alias` convention)
+  rather than as a `run_single_loop` parameter, so the CLI and the executor share
+  one integration point and no injected test fake changed.
+- Verified end to end: 4-turn synthetic run, realtime **22.3s** vs cut-thinking
+  **11.8s** (47% removed, within 2% of prediction), frames inspected for both views.
+
 ## 2026-05-26 — In-run savepoints + `pokemon run --continue`
 
 ### What

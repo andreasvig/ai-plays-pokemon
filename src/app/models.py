@@ -46,6 +46,41 @@ class RunStatus(str, Enum):
     cancelled = "cancelled"
 
 
+class RecordView(str, Enum):
+    """Which presentation the recorder captures.
+
+    ``simple`` = the 1:1 recording view (game screen + turn box) at a square
+    viewport. ``detailed`` = the whole wide spectate instrument panel.
+    """
+
+    simple = "simple"
+    detailed = "detailed"
+
+
+class RecordSpeed(str, Enum):
+    """How the recording treats the model's response time.
+
+    ``realtime`` keeps every pause at its true length. ``cut_thinking`` records
+    only the execution window of each turn — from ``llm_output`` (the turn starts
+    executing) to just after ``screen_settled`` — so the think is not in the file.
+    """
+
+    realtime = "realtime"
+    cut_thinking = "cut-thinking"
+
+
+class RecordSpec(BaseModel):
+    """Opt-in MP4 recording settings for one run.
+
+    Absent (``None``) on a queued run means "don't record" — recording is never
+    the default; it costs a headless browser and an encoder for the whole run.
+    """
+
+    view: RecordView = RecordView.simple
+    speed: RecordSpeed = RecordSpeed.realtime
+    fps: int = 30
+
+
 class RunSummary(BaseModel):
     """Flat, denormalized per-run index entry (Plan "run_summary.json schema").
 
@@ -113,4 +148,7 @@ class QueuedRun(BaseModel):
     # source/config/freeplay-default resolution. The Player model rides on
     # ``model``; on a casual continue the UI may set both to new picks.
     task_master_model: str | None = None
+    # Opt-in MP4 recording. None = not recorded (the default). Applies to both
+    # kinds — an official run is exactly the one you'd most want a video of.
+    record: RecordSpec | None = None
     enqueued_at: str

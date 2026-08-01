@@ -26,7 +26,13 @@
 
   // `run` = the active RunSummary (for model + kind badge); `activeRunId` = the
   // run-dir id to open the live streams against. Either may be null (no run).
-  let { run = null, activeRunId = null, muted = true, ontogglemute, onnew, onback } = $props()
+  // `recording` / `forcedSimple` are set only on a recorder page (see
+  // lib/record.js): the MP4 recorder loads /spectate with query params so its
+  // headless browser lands on the right presentation with no human input.
+  let {
+    run = null, activeRunId = null, muted = true, ontogglemute, onnew, onback,
+    recording = false, forcedSimple = null,
+  } = $props()
 
   // ── live state, populated by the event/screen sockets ──
   let stats = $state({ turns: 0, cost: 0, input_tokens: 0, output_tokens: 0 })
@@ -69,7 +75,14 @@
   function readSimple() {
     try { return localStorage.getItem(SIMPLE_KEY) === '1' } catch { return false }
   }
-  let simple = $state(readSimple())
+  // A recorder page is pinned to whichever presentation it was told to capture
+  // and ignores (and never writes) the human's stored preference — recording the
+  // detailed view must not flip his own tab to it on the next reload.
+  // Reading the prop here captures its INITIAL value, which is exactly right:
+  // a recorder page's view is fixed for the life of the file, and a human's
+  // page never receives a non-null forcedSimple at all.
+  // svelte-ignore state_referenced_locally
+  let simple = $state(forcedSimple ?? readSimple())
   // {seq, data} handed to SimpleView. See setSimple/ingestEvent for the
   // one-write-per-task contract that makes it work.
   let lastEvent = $state(null)
@@ -84,6 +97,7 @@
   let evtSeq = 0
 
   function setSimple(on) {
+    if (recording) return   // a recorder page's view is fixed for the whole file
     // Seed and lastEvent are written here, in the click task, BEFORE `simple`
     // flips — SimpleView mounts with both already in place. lastEvent is cleared
     // so a freshly mounted instance doesn't replay whatever event happened to be

@@ -310,6 +310,14 @@ class RunExecutor:
         captured: dict = {}
         try:
             config, snapshot, turns = self.build_run_config(item)
+            # Opt-in MP4 recording. Stamped onto the config rather than passed as
+            # a run_fn argument: `run_single_loop` is the one place both entry
+            # points (this executor and `pokemon run --record`) converge, and it
+            # already reads private `_`-prefixed keys off the config. Keeping the
+            # run_fn signature fixed also means every injected test fake keeps
+            # working unchanged. See dashboard/recorder.py.
+            if item.record is not None:
+                config["_record"] = item.record.model_dump(mode="json")
             run_fn = self._resolve_run_fn()
             # Publish (and capture) the active run dir the instant the run starts
             # (not after it returns) so the control plane exposes it DURING the run

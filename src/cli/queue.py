@@ -41,6 +41,9 @@ def _print_queue(payload: dict) -> None:
             flags.append(f"continue_from={it['continue_from']}")
         if it.get("config"):
             flags.append(f"config={it['config']}")
+        if it.get("record"):
+            r = it["record"]
+            flags.append(f"rec={r.get('view')}/{r.get('speed')}")
         print(
             f"{mark}{i:>1}  {it['queue_id']:<12} {it['kind']:<8} "
             f"{(it.get('benchmark') or '—'):<16} {it['model']:<28} {', '.join(flags)}"
@@ -71,6 +74,15 @@ def _cmd_add(args) -> int:
                 spec["config"] = args.config
             if args.max_turns is not None:
                 spec["max_turns"] = args.max_turns
+        if args.record:
+            # Validated server-side (400 on a bad view/speed or a missing
+            # ffmpeg/Chrome), so a batch that can't actually be recorded is
+            # rejected whole rather than half-enqueued.
+            spec["record"] = {
+                "view": args.record,
+                "speed": args.record_speed,
+                "fps": args.record_fps,
+            }
         for _ in range(args.repeat):
             specs.append(dict(spec))
 
@@ -160,6 +172,24 @@ def main() -> None:
     p_add.add_argument("--config", help="Config path (casual only).")
     p_add.add_argument("--max-turns", type=int, dest="max_turns", help="Max turns (casual only).")
     p_add.add_argument("--repeat", type=int, default=1, help="Enqueue each model N times (default 1).")
+    p_add.add_argument(
+        "--record", choices=["simple", "detailed"], default=None,
+        help="Record the run to <run_dir>/recording.mp4. `simple` = the 1:1 "
+             "recording view (game screen + turn box) at 1080x1080; `detailed` = "
+             "the whole wide spectate panel at 1920x1080. Rendered headlessly "
+             "server-side, so it does not depend on any open browser.",
+    )
+    p_add.add_argument(
+        "--record-speed", dest="record_speed",
+        choices=["realtime", "cut-thinking"], default="realtime",
+        help="`realtime` keeps every pause. `cut-thinking` records only each "
+             "turn's execution window (llm_output → screen settled), cutting the "
+             "model's response time. Default: realtime.",
+    )
+    p_add.add_argument(
+        "--record-fps", dest="record_fps", type=int, default=30,
+        help="Recording frame rate, 1-60 (default 30).",
+    )
 
     p_re = sub.add_parser("reorder", parents=[common], help="Set the full queue order by ids.")
     p_re.add_argument("ids", nargs="+", help="queue_ids in the desired order (must be all current ids).")

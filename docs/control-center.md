@@ -126,6 +126,13 @@ Two kinds (see [the benchmark doc](benchmark.md) for the full distinction):
 - **Casual** — you pick **model + config + max-turns**. No gates, never on the
   leaderboard. For experiments.
 
+Either kind can also be **recorded to MP4**. Tick "Record this run to MP4" in the
+dialog and pick the interface (the 1:1 simple view, or the full wide panel) and
+the speed (real time, or cut-thinking — which drops the model's response time).
+The capture runs headlessly on the server, so it is unaffected by where you are
+in the UI, whether the window has focus, or whether it is open at all. Full
+guide: [recording.md](recording.md).
+
 ### Continue a run
 
 From a finished (or stopped) run you can **continue** it from its latest

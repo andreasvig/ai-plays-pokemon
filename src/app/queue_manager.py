@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from src.app.models import QueuedRun, RunKind
+from src.app.models import QueuedRun, RecordSpec, RunKind
 
 
 def _now_iso() -> str:
@@ -72,12 +72,14 @@ class QueueManager:
         max_turns: int | None = None,
         continue_from: str | None = None,
         task_master_model: str | None = None,
+        record: dict | RecordSpec | None = None,
         enqueued_at: str | None = None,
     ) -> QueuedRun:
         """Mint a :class:`QueuedRun`, append it, and save.
 
         ``benchmark`` is the official benchmark id (which ladder + goal); ``None``
-        for casual runs. ``enqueued_at`` is overridable so tests can pin a
+        for casual runs. ``record`` opts the run into an MP4 capture (``None`` =
+        no recording). ``enqueued_at`` is overridable so tests can pin a
         deterministic timestamp; it defaults to the current UTC ISO time.
         """
         item = QueuedRun(
@@ -89,6 +91,7 @@ class QueueManager:
             max_turns=max_turns,
             continue_from=continue_from,
             task_master_model=task_master_model,
+            record=RecordSpec.model_validate(record) if record is not None else None,
             enqueued_at=enqueued_at or _now_iso(),
         )
         self.items.append(item)
