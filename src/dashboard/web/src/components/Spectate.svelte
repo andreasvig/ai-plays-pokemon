@@ -5,7 +5,9 @@
   //   stats row  ← `stats` WS msg (+ client-clock elapsed)
   //   emulator   ← /runs/{id}/ws/screen binary PNG frames
   //   memory     ← `state_update` WS msg
-  //   task       ← task_started/task_completed events (TaskMaster) w/ graceful fallback
+  //   task       ← task_started/task_completed events (TaskMaster only; on a
+  //                self-directed run — config-4.0+, no TaskMaster — the panel is
+  //                not rendered at all and memory takes the row. See hasTaskMaster.)
   //   gate HUD   ← referee_checkpoint events ÷ /runs/{id}/api/config ladder
   //   trace feed ← the full event taxonomy, grouped by turn
   // The active run id comes from /api/emulator/status (App passes it in).
@@ -29,6 +31,19 @@
   let stats = $state({ turns: 0, cost: 0, input_tokens: 0, output_tokens: 0 })
   let memory = $state({})
   let task = $state(null)              // {title, description, success} | null
+
+  // Self-directed runs (config-4.0+) have no TaskMaster and therefore emit no
+  // task_started/task_completed events, so `task` stays null for the whole run.
+  // The agent instead keeps the goal it set ITSELF in its memory dictionary under
+  // `current_goal` — which the memory panel already renders — so there is no
+  // separate goal panel on these runs: it would duplicate a memory key verbatim.
+  // The memory dictionary takes the full width instead.
+  //
+  // Keyed on the CONFIG (`task_master.enabled`), not on `task == null`: `task`
+  // is also null during the opening turns of a TaskMaster run, before the first
+  // handoff, so keying on it would collapse the panel and then pop it back in.
+  // Defaults to true so the panel never flickers away while the config loads.
+  let hasTaskMaster = $state(true)
   let ladder = $state([])              // [{id, name, deadline_turn, group?}]
   let enforce = $state(false)
   let stamps = $state({})              // {checkpoint_id: turn} latched
@@ -332,6 +347,7 @@
     stats = { turns: 0, cost: 0, input_tokens: 0, output_tokens: 0 }
     memory = {}
     task = null
+    hasTaskMaster = true   // re-answered by the new run's /api/config
     stamps = {}
     currentTurn = 0
     eventCount = 0
@@ -389,6 +405,7 @@
     cfgRunId = id
     api.fetchRunConfig(id).then((cfg) => {
       if (cfgRunId !== id) return
+      hasTaskMaster = !!cfg.task_master
       if (cfg.referee && Array.isArray(cfg.referee.ladder)) {
         ladder = cfg.referee.ladder
         enforce = !!cfg.referee.enforce
@@ -473,7 +490,8 @@
           {/if}
         </div>
 
-        <div class="panels">
+        <div class="panels" class:solo={!hasTaskMaster}>
+          {#if hasTaskMaster}
           <div class="panel task">
             <div class="p-h">🧭 Current task</div>
             <div class="p-scroll">
@@ -482,10 +500,11 @@
                 {#if task.description}<div class="t-lab">Description</div><p class="t-body">{task.description}</p>{/if}
                 {#if task.success}<div class="t-lab">🎯 Success criteria</div><p class="t-body mono">{task.success}</p>{/if}
               {:else}
-                <p class="t-body faint">No task yet — waiting for the first TaskMaster handoff (or this run isn't TaskMaster-scaffolded).</p>
+                <p class="t-body faint">Waiting for the first TaskMaster handoff…</p>
               {/if}
             </div>
           </div>
+          {/if}
           <div class="panel mem">
             <div class="p-h">🧠 Memory dictionary</div>
             <div class="p-scroll">
@@ -562,8 +581,11 @@
   .sv { font-size: 18px; font-weight: 750; }
   .su { font-size: 11px; color: var(--muted); font-weight: 600; }
 
-  /* Current task gets more room than the memory dictionary — 60/40 split. */
+  /* Current task gets more room than the memory dictionary — 60/40 split.
+     `.solo` = self-directed run (no TaskMaster): the task panel isn't rendered
+     at all, so the memory dictionary takes the whole row. */
   .panels { flex: none; display: grid; grid-template-columns: 3fr 2fr; gap: 14px; align-items: stretch; }
+  .panels.solo { grid-template-columns: 1fr; }
   .panel { display: flex; flex-direction: column; min-height: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; box-shadow: var(--shadow); }
   .p-h { flex: none; font-size: 11px; font-weight: 750; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: 10px; }
   .t-title { font-size: 14px; font-weight: 700; margin-bottom: 8px; }

@@ -315,6 +315,10 @@ async def get_config(run_id: str):
         "label": s.label,
         "task": s.config.get("task", {}).get("goal", ""),
         "llm_model": s.config.get("_llm_alias") or s.config.get("llm_model", ""),
+        # Whether this run has a TaskMaster above the Player. The UI keys its
+        # layout on this rather than on "has a task arrived yet?", which is also
+        # false during the first turns of a TaskMaster run.
+        "task_master": bool((s.config.get("task_master") or {}).get("enabled", False)),
     }
     referee = _referee_payload(s.config)
     if referee is not None:
