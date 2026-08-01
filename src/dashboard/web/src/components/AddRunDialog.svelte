@@ -1,5 +1,6 @@
 <script>
   import { untrack } from 'svelte'
+  import { searchModels } from '../lib/modelSearch.js'
   // MODELS / CONFIGS are fed from App (sourced from /api/models + /api/configs).
   // MODELS is the collapsed registry: [{model, openrouter_id, reasoning_type,
   // default_level, levels:[{level, observed, run_count}], observed, run_count}].
@@ -135,19 +136,23 @@
     level = m.default_level ?? ''
   }
 
-  // Searchable, run-count-sorted model list. Models you've already run
-  // (higher run_count) sort first so they're easy to find; name breaks ties.
-  const sortedModels = $derived(
-    [...MODELS].sort((a, b) => (b.run_count ?? 0) - (a.run_count ?? 0) || a.model.localeCompare(b.model))
-  )
+  // Newest model first. Release dates come from OpenRouter via
+  // configs/model_release_dates.json (see scripts/sync_model_release_dates.py);
+  // a model with no date sorts last rather than being guessed at, and name
+  // breaks ties so the order is stable when two models shipped the same day.
+  function byRelease(a, b) {
+    const ra = a.released ?? ''
+    const rb = b.released ?? ''
+    if (ra !== rb) return rb.localeCompare(ra)
+    return a.model.localeCompare(b.model)
+  }
+  const sortedModels = $derived([...MODELS].sort(byRelease))
   // The Player plays from screenshots, so its picker only offers MULTIMODAL
   // models (the guard). Every current model qualifies, so this is future-proofing.
   const playerModels = $derived(sortedModels.filter((m) => m.multimodal !== false))
-  const filteredModels = $derived(
-    modelQuery.trim()
-      ? playerModels.filter((m) => m.model.toLowerCase().includes(modelQuery.trim().toLowerCase()))
-      : playerModels
-  )
+  // Fuzzy: typos and missing separators are forgiven, digits are not. See
+  // lib/modelSearch.js — "gbt 5.1" finds gpt-5.1 and must NOT find gpt-4.1.
+  const filteredModels = $derived(searchModels(playerModels, modelQuery, byRelease))
   // TaskMaster override options (casual continue). It reasons over text handoffs,
   // so it isn't multimodal-gated; offer every model at its default level, plus a
   // "keep original" sentinel ('').

@@ -108,6 +108,9 @@ export async function fetchModels() {
     // Vision capability. The Player plays from screenshots, so the Player picker
     // only offers multimodal models. Defaults true (every current model qualifies).
     multimodal: m.multimodal !== false,
+    // "YYYY-MM-DD" or null — the picker's primary sort. Generated from
+    // OpenRouter's catalog, not hand-kept in models.yaml.
+    released: m.released ?? null,
   }))
 }
 
