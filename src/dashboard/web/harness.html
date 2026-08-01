@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SimpleView harness</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #0a0b0c; }
+    </style>
+  </head>
+  <body>
+    <!--
+      DEV-ONLY harness for src/components/SimpleView.svelte. Vite's default
+      build input is index.html alone, so this page is served by `npm run dev`
+      and is NOT part of `npm run build` output. Do not add it to
+      vite.config.js.
+
+        npm run dev  →  http://localhost:5173/harness.html
+
+      Query params: ?turn=9 ?think=2200 ?exec=190 ?settle=700 ?box=24
+                    ?loop=1 ?shots=1 ?once=1
+    -->
+    <div id="app"></div>
+    <script type="module" src="/src/dev/harness.svelte.js"></script>
+  </body>
+</html>
