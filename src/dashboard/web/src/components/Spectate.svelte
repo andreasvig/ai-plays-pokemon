@@ -16,6 +16,7 @@
   import { windowFeed } from '../lib/feed.js'
   import JsonTree from './JsonTree.svelte'
   import TraceFeed from './TraceFeed.svelte'
+  import SimpleView from './SimpleView.svelte'
   import * as api from '../lib/api.js'
 
   // Live feed windowing: render only the last MAX_LIVE_TASKS tasks (or, for
@@ -56,6 +57,73 @@
   let screenUrl = $state(null)
   let startedAtMs = $state(null)
   let elapsedS = $state(0)
+
+  // ── simple view (plan §4.3) ──
+  // The recording-optimised presentation. It is NOT a route: /spectate stays one
+  // URL and the state lives here, persisted to localStorage so a reload
+  // mid-recording comes back in the same view. Both sockets are owned by the
+  // $effect below, which keys on activeRunId ONLY — toggling must never appear
+  // in that effect's dependency set or the streams would tear down and re-open
+  // on every flip.
+  const SIMPLE_KEY = 'spectate.simple'
+  function readSimple() {
+    try { return localStorage.getItem(SIMPLE_KEY) === '1' } catch { return false }
+  }
+  let simple = $state(readSimple())
+  // {seq, data} handed to SimpleView. See setSimple/ingestEvent for the
+  // one-write-per-task contract that makes it work.
+  let lastEvent = $state(null)
+  // {turn, presses, reasoning} — the last turn we already know about, so
+  // toggling on at turn 40 doesn't open on an empty box (plan §8).
+  let seed = $state(null)
+  // Monotonic for the LIFETIME of this component, deliberately never reset —
+  // not by resetLiveState, not by a run change. SimpleView drops any event whose
+  // seq is not greater than the last one it saw, so a counter that restarted at
+  // 1 while a mounted SimpleView had already reached 300 would silently swallow
+  // every event of the new run.
+  let evtSeq = 0
+
+  function setSimple(on) {
+    // Seed and lastEvent are written here, in the click task, BEFORE `simple`
+    // flips — SimpleView mounts with both already in place. lastEvent is cleared
+    // so a freshly mounted instance doesn't replay whatever event happened to be
+    // the last one before the toggle (its own lastSeq starts at -1, so it would
+    // otherwise treat a stale event as new and animate a turn the seed just
+    // rendered).
+    seed = on ? buildSeed() : null
+    lastEvent = null
+    simple = on
+    try { localStorage.setItem(SIMPLE_KEY, on ? '1' : '0') } catch { /* private mode */ }
+  }
+
+  // Most recent turn we hold a decision for, rebuilt out of the same turnBoxes
+  // accumulator the trace feed renders from — no new event, no new API field.
+  // Max key rather than last insertion: a backlog replay can bind turns out of
+  // order. Returns null when nothing has landed yet (SimpleView then just waits).
+  function buildSeed() {
+    let best = null
+    for (const [turn, boxes] of turnBoxes) {
+      if (typeof turn !== 'number' || (best != null && turn <= best)) continue
+      if (boxes.some((b) => b.k === 'output' || b.k === 'action')) best = turn
+    }
+    if (best == null) return null
+    const boxes = turnBoxes.get(best)
+    let out = null
+    let act = null
+    for (const b of boxes) {
+      if (b.k === 'output') out = b
+      else if (b.k === 'action') act = b
+    }
+    return {
+      turn: best,
+      // `presses` may be a token list or a space-joined string; actionTokens()
+      // accepts both. `reasoning` prefers the raw field stashed on the box over
+      // its rendered `t`, which carries a "Last turn: succeeded — " prefix that
+      // is trace-feed chrome, not the model's prose.
+      presses: act ? act.t : '',
+      reasoning: out ? (out.reasoning || out.t || '') : '',
+    }
+  }
 
   // per-turn box accumulation while streaming (turn → boxes[])
   let turnBoxes = new Map()
@@ -210,6 +278,18 @@
   // map one raw event → zero or more trace boxes (parity with static/index.html)
   function ingestEvent(evt) {
     eventCount += 1
+    // ONE write per task, and exactly one — this is the whole contract with
+    // SimpleView. Svelte batches state, so two assignments inside one
+    // synchronous block flush as a single update and the FIRST event is silently
+    // dropped. Safe here because the only caller is the events WS `onmessage`
+    // (api.openEventSocket), and the server sends one JSON frame per event —
+    // including during the backlog replay on connect — so every ingestEvent()
+    // call is its own task with an effect flush behind it. There is no
+    // for-loop-over-a-backlog path in this component; if one is ever added it
+    // must yield between iterations or SimpleView will miss phases.
+    // Written unconditionally, not gated on `simple`: the counter has to stay
+    // continuous across a toggle.
+    lastEvent = { seq: ++evtSeq, data: evt }
     const t = evt.type
 
     if (t === 'turn_start') {
@@ -284,7 +364,10 @@
         if (grade === true) { lines.push('Last turn: succeeded'); ok = true }
         else if (grade === false) { lines.push('Last turn: failed'); ok = false }
         if (args.reasoning) lines.push(args.reasoning)
-        if (lines.length) pushBox(evt.turn, { k: 'output', ok, t: lines.join(' — ') })
+        // `reasoning` is the model's prose without the grade prefix, carried
+        // alongside the rendered `t` purely so buildSeed() has something clean
+        // to hand the simple view. Nothing renders it directly.
+        if (lines.length) pushBox(evt.turn, { k: 'output', ok, t: lines.join(' — '), reasoning: args.reasoning || '' })
         if (args.inputs && args.inputs.length) {
           const inputs = Array.isArray(args.inputs) ? args.inputs.join(' ') : args.inputs
           pushBox(evt.turn, { k: 'action', t: inputs })
@@ -357,6 +440,10 @@
     pendingTaskIndex = null
     feed = []
     hiddenTurns = 0
+    // Same treatment as turnBoxes: the seed is derived from it, so it must not
+    // survive into the next run. `evtSeq` is deliberately NOT reset (see above).
+    seed = null
+    lastEvent = null
     // cancel any in-flight rebuild so it doesn't fire against the reset state
     if (rebuildRaf != null && typeof cancelAnimationFrame !== 'undefined') cancelAnimationFrame(rebuildRaf)
     rebuildPending = false
@@ -445,6 +532,14 @@
       <button class="btn" onclick={() => onnew()}>+ New run</button>
       <button class="btn ghost" onclick={() => onback()}>← Back to leaderboard</button>
     </div>
+  {:else if simple}
+    <!-- The simple view replaces the whole instrument panel, bar included. Its
+         root is position:fixed;inset:0;z-index:40, so it does not sit in this
+         flow at all — it covers the viewport, letterbox and all. Exit is its own
+         ✕ (visible only while the mouse moves), which calls onexit. The sockets
+         above are untouched: they belong to an $effect keyed on activeRunId, and
+         nothing here re-runs it. -->
+    <SimpleView frame={screenUrl} {lastEvent} {seed} onexit={() => setSimple(false)} />
   {:else}
     <div class="bar">
       <button class="btn ghost" onclick={() => onback()}>← Leaderboard</button>
@@ -452,6 +547,8 @@
       <button class="mutebtn" class:muted onclick={() => ontogglemute && ontogglemute()}
               title={muted ? 'Game audio muted — click to unmute' : 'Game audio on — click to mute'}
               aria-label={muted ? 'Unmute game audio' : 'Mute game audio'}>{muted ? '🔇' : '🔊'}</button>
+      <button class="btn ghost" onclick={() => setSimple(true)}
+              title="Simple view — full-screen, recording-optimised">▣ Simple view</button>
       {#if run}<span class="badge {run.kind}">{run.kind === 'official' ? 'benchmark' : 'casual'}</span>{/if}
       <span class="model mono">{run?.model ?? activeRunId}</span>
       <span class="conn">
