@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Simple View — paper</title>
+<style>
+  :root{
+    --mono: ui-monospace,"SF Mono",SFMono-Regular,"JetBrains Mono",Menlo,monospace;
+    --paper:#f2efe9; --card:#fbf9f5; --rule:#ddd7cc;
+    --ink:#1f1c17; --body:#3b362e; --faint:#9a9184;
+    --morph: .52s cubic-bezier(.32,.72,0,1);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#0a0b0c;overflow:hidden;
+    font-family:var(--mono);color:var(--ink)}
+
+  /* ── dev strip: mock-only, never ships ──────────────────────────────── */
+  .dev{position:fixed;top:0;right:0;z-index:60;display:flex;gap:8px;
+    align-items:center;padding:7px 11px;background:rgba(10,11,12,.93);
+    border-bottom-left-radius:9px;transition:opacity .25s}
+  .dev.hide{opacity:0;pointer-events:none}
+  .dev button,.dev label{background:#141a20;color:#e7ecf1;border:1px solid #232b34;
+    border-radius:6px;padding:4px 9px;font:12px var(--mono);cursor:pointer}
+  .dev b{color:#8fb6f5}
+  .dev .st{color:#5b666f;font:12px var(--mono);min-width:80px}
+
+  /* ── recordable stage: 1:1, letterboxed, never scrolls ───────────────── */
+  .stagewrap{height:100%;display:grid;place-items:center}
+  .stage{height:100vh;aspect-ratio:1/1;background:var(--paper);position:relative;
+    display:flex;flex-direction:column;align-items:center;
+    gap:1.5%;padding:3.4%;overflow:hidden;--boxh:24%;--striph:7%}
+
+  /* exit: top-left, only while the mouse moves. Never in the recording. */
+  .exit{position:absolute;top:1.6%;left:1.6%;z-index:30;
+    width:2.1em;height:2.1em;font-size:clamp(11px,1.5vh,19px);
+    display:grid;place-items:center;border-radius:50%;cursor:pointer;padding:0;
+    background:rgba(251,249,245,.78);border:1px solid var(--rule);color:var(--ink);
+    font-family:var(--mono);line-height:1;
+    opacity:0;transition:opacity .22s;backdrop-filter:blur(3px)}
+  .exit.show{opacity:1}
+  .exit:hover{background:var(--card)}
+
+  .shotwrap{flex:1;min-height:0;width:100%;display:grid;place-items:center}
+  .screen{display:block;max-width:100%;max-height:100%;width:auto;height:auto;
+    image-rendering:pixelated;border:1px solid var(--rule);border-radius:2px}
+
+  /* ── main box ─────────────────────────────────────────────────────────── */
+  .box{width:100%;height:var(--boxh);flex:none;background:var(--card);
+    border:1px solid var(--rule);border-radius:3px;position:relative;
+    overflow:hidden;font-size:clamp(10px,1.5vh,19px)}
+  .slot{position:absolute;inset:0;display:flex;flex-direction:column;gap:.5em;
+    padding:1em 1.3em}
+  /* the retired turn phases UP and out while the pending box morphs in */
+  .slot.out{transition:transform var(--morph), opacity .34s ease-in;
+    transform:translateY(-62%);opacity:0}
+
+  .turn{font-size:.86em;letter-spacing:.13em;text-transform:uppercase;
+    color:var(--faint);flex:none;white-space:nowrap}
+  .turn b{color:var(--ink);font-weight:700;letter-spacing:.02em;
+    font-variant-numeric:tabular-nums}
+
+  .acts{display:flex;flex-wrap:wrap;align-items:center;gap:.3em;
+    color:var(--ink);flex:none;min-height:2.35em}
+  .acts svg{opacity:0;transform:scale(.7);
+    animation:pop .26s cubic-bezier(.2,1.4,.4,1) forwards}
+  @keyframes pop{to{opacity:1;transform:scale(1)}}
+
+  .say{flex:1;min-height:0;color:var(--body);line-height:1.45;overflow:hidden}
+  .say p{margin:0}
+  .say p + p{margin-top:.55em}
+  .caret{display:inline-block;width:.5em;height:.95em;vertical-align:-.12em;
+    background:var(--ink);opacity:.45;margin-left:.06em;
+    animation:blink .85s steps(1) infinite}
+  @keyframes blink{50%{opacity:0}}
+
+  /* ── pending box: exists ONLY while the model is thinking. Same padding
+        and top alignment as .slot, so growing into the main box is seamless. */
+  .pending{width:100%;height:var(--striph);flex:none;
+    border:1px dashed var(--rule);border-radius:3px;background:transparent;
+    display:flex;align-items:flex-start;gap:.75em;padding:1em 1.3em;
+    font-size:clamp(10px,1.5vh,19px);color:var(--faint);
+    letter-spacing:.13em;text-transform:uppercase;overflow:hidden;
+    transition:opacity .3s}
+  .pending b{color:var(--ink);font-weight:700;letter-spacing:.02em;
+    font-variant-numeric:tabular-nums}
+  .pending.idle{opacity:0}          /* executing: no next turn exists yet */
+  .dots{color:var(--ink);opacity:.5;letter-spacing:.16em;min-width:2.4em;
+    line-height:1.05}
+
+  /* the element that actually travels: a clone of .pending animated onto the
+     main box's geometry. Removed the instant it lands. */
+  .morph{position:absolute;z-index:10;border:1px dashed var(--rule);
+    border-radius:3px;background:transparent;overflow:hidden;
+    display:flex;align-items:flex-start;gap:.75em;padding:1em 1.3em;
+    font-size:clamp(10px,1.5vh,19px);color:var(--faint);
+    letter-spacing:.13em;text-transform:uppercase;
+    transition:top var(--morph), height var(--morph),
+               background-color var(--morph), border-color var(--morph)}
+  .morph.landed{background:var(--card);border-style:solid}
+</style>
+</head>
+<body>
+
+<div class="dev" id="dev">
+  <button id="play">⏸ pause</button>
+  <button id="step">step ▸</button>
+  <label>box <input id="bh" type="range" min="16" max="42" step="1" value="24"
+    style="width:88px;vertical-align:middle"> <b id="bhv">24%</b></label>
+  <label>exec <input id="ex" type="range" min="0" max="400" step="10" value="190"
+    style="width:88px;vertical-align:middle"> <b id="exv">190ms/press</b></label>
+  <label>think <input id="th" type="range" min="300" max="6000" step="100" value="2200"
+    style="width:88px;vertical-align:middle"> <b id="thv">2.2s</b></label>
+  <span class="st">phase <b id="ph">—</b></span>
+  <span class="st">text <b id="fs">—</b></span>
+</div>
+
+<div class="stagewrap">
+  <div class="stage" id="stage">
+    <button class="exit" id="exit" title="Exit simple view" aria-label="Exit simple view">✕</button>
+    <div class="shotwrap"><img class="screen" id="shot" alt=""></div>
+    <div class="box" id="box"></div>
+    <div class="pending idle" id="pending">
+      Turn <b id="pturn">—</b> <span class="dots" id="dots"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ── GBA control glyphs: inline SVG, currentColor, em-scaled. No emoji. ──── */
+const DIR={up:'M12 5.4 15.4 10.2 8.6 10.2Z', down:'M12 18.6 15.4 13.8 8.6 13.8Z',
+           left:'M5.4 12 10.2 8.6 10.2 15.4Z', right:'M18.6 12 13.8 8.6 13.8 15.4Z'}
+const CROSS='M9.1 2.6h5.8v6.5h6.5v5.8h-6.5v6.5H9.1v-6.5H2.6V9.1h6.5z'
+const svg=(w,inner,label,d)=>`<svg viewBox="0 0 ${w} 24"
+  width="${(w/24*2.35).toFixed(2)}em" height="2.35em" role="img" aria-label="${label}"
+  style="animation-delay:${d}ms">${inner}</svg>`
+
+function glyph(tok,d){
+  const k=String(tok).toLowerCase()
+  if(DIR[k]) return svg(24,
+    `<path d="${CROSS}" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".45"/>
+     <path d="${DIR[k]}" fill="currentColor"/>`,k,d)
+  if(k==='a'||k==='b') return svg(24,
+    `<circle cx="12" cy="12" r="8.6" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".55"/>
+     <text x="12" y="12" fill="currentColor" font-size="9.4" font-weight="700"
+       font-family="ui-monospace,monospace" text-anchor="middle"
+       dominant-baseline="central">${k.toUpperCase()}</text>`,k,d)
+  if(k==='start'||k==='select') return svg(34,
+    `<rect x="2.4" y="8.6" width="29" height="6.6" rx="3.3" fill="none" stroke="currentColor"
+       stroke-width="1.3" opacity=".55" transform="rotate(-16 17 12)"/>
+     <text x="17" y="12.4" fill="currentColor" font-size="6.4" font-weight="700"
+       font-family="ui-monospace,monospace" text-anchor="middle"
+       dominant-baseline="central" letter-spacing=".6">${k.toUpperCase()}</text>`,k,d)
+  if(k==='wait') return svg(24,
+    `<circle cx="12" cy="12" r="8.6" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".55"/>
+     <path d="M12 7.2V12l3.2 2.1" fill="none" stroke="currentColor" stroke-width="1.5"
+       stroke-linecap="round"/>`,k,d)
+  return `<span style="font-weight:600">${tok}</span>`
+}
+const tokens=a=>String(a||'').replace(/[\[\]]/g,'').split(/[,\s]+/).filter(Boolean)
+
+/* Blank line = paragraph; a lone newline is the model's wrapping, not meaning,
+   so it becomes a space. 18 rigid lines -> ~5 flowing ones in the same box. */
+const esc=t=>t.replace(/&/g,'&amp;').replace(/</g,'&lt;')
+const splitParas=txt=>String(txt||'').trim().split(/\n\s*\n/)
+  .map(p=>p.replace(/\s*\n\s*/g,' ').trim()).filter(Boolean)
+const renderParas=ps=>ps.map(p=>`<p>${esc(p)}</p>`).join('')
+
+/* ── auto-fit: shrink until the FULL text fits. Never truncates. Bounds are
+      a fraction of frame height, so it holds at 1000px and at 4K alike. ──── */
+const MIN_R=0.0055, MAX_R=0.019
+function fitSay(el){
+  if(!el) return 0
+  const H=stage.clientHeight||1000, MIN=H*MIN_R, MAX=H*MAX_R
+  let lo=MIN, hi=MAX, best=MIN
+  el.style.fontSize=hi+'px'
+  if(el.scrollHeight<=el.clientHeight) best=hi
+  else while(hi-lo>H*0.00025){
+    const mid=(lo+hi)/2; el.style.fontSize=mid+'px'
+    if(el.scrollHeight<=el.clientHeight){best=mid;lo=mid}else hi=mid
+  }
+  el.style.fontSize=best+'px'
+  const clipped=el.scrollHeight>el.clientHeight+1
+  document.body.dataset.fit=best.toFixed(2)
+  document.body.dataset.clipped=String(clipped)
+  $('#fs').textContent=clipped?('CLIPPED '+MIN.toFixed(1)+'px'):best.toFixed(1)+'px'
+  return best
+}
+
+const $=s=>document.querySelector(s)
+const stage=$('#stage'), box=$('#box'), pending=$('#pending')
+const sleep=ms=>new Promise(r=>setTimeout(r,ms))
+const rect=el=>{const a=el.getBoundingClientRect(), b=stage.getBoundingClientRect()
+  return {top:a.top-b.top, left:a.left-b.left, w:a.width, h:a.height}}
+
+const T={morph:520, glyph:85, textMs:850, dot:340, settle:700}
+let TURNS=[], idx=0, running=true, busy=false, dotTimer=null
+const phase=p=>{$('#ph').textContent=p; document.body.dataset.phase=p}
+
+/* cycling ellipsis: none -> . -> .. -> ... -> none */
+function startDots(){
+  let n=0; clearInterval(dotTimer); $('#dots').textContent=''
+  dotTimer=setInterval(()=>{n=(n+1)%4;$('#dots').textContent='.'.repeat(n)},T.dot)
+}
+const stopDots=()=>{clearInterval(dotTimer);dotTimer=null}
+
+/* the pending box GROWS into the main box while the old turn phases up */
+async function morphIn(t){
+  const from=rect(pending), to=rect(box)
+  const m=document.createElement('div')
+  m.className='morph'
+  m.innerHTML=`Turn <b>${t.turn}</b> <span class="dots">${$('#dots').textContent}</span>`
+  Object.assign(m.style,{top:from.top+'px',left:from.left+'px',
+                         width:from.w+'px',height:from.h+'px'})
+  stage.appendChild(m)
+  stopDots(); pending.classList.add('idle')          // strip vacates its slot
+
+  const old=box.querySelector('.slot')
+  if(old) old.classList.add('out')                   // old turn phases up
+
+  m.getBoundingClientRect()                          // force layout
+  requestAnimationFrame(()=>{
+    m.classList.add('landed')
+    m.style.top=to.top+'px'; m.style.height=to.h+'px'
+  })
+  await sleep(T.morph)
+
+  // hand off: the real box now owns the turn, identical geometry -> no flicker
+  box.innerHTML=`<div class="slot"><div class="turn">Turn <b>${t.turn}</b></div>
+    <div class="acts"></div><div class="say"></div></div>`
+  m.remove()
+}
+
+async function showTurn(t, first){
+  if(t.shot) $('#shot').src=t.shot
+  if(first){
+    box.innerHTML=`<div class="slot"><div class="turn">Turn <b>${t.turn}</b></div>
+      <div class="acts"></div><div class="say"></div></div>`
+  } else {
+    await morphIn(t)
+  }
+  const slot=box.querySelector('.slot')
+  const acts=slot.querySelector('.acts'), say=slot.querySelector('.say')
+  const toks=tokens(t.action), paras=splitParas(t.reasoning)
+
+  // Size the type on the FULL body first, then stream at that size — so it
+  // never resizes mid-stream, which would read as a layout bug.
+  say.innerHTML=renderParas(paras); fitSay(say); say.innerHTML=''
+
+  phase('presses')
+  acts.innerHTML=toks.map((k,n)=>glyph(k,n*T.glyph)).join('')
+  await sleep(toks.length*T.glyph+120)
+
+  phase('text')
+  const words=paras.map(p=>p.split(' '))
+  const total=words.reduce((a,w)=>a+w.length,0)||1
+  const step=Math.max(1,Math.ceil(total/(T.textMs/16)))
+  let pi=0, wi=0
+  while(pi<words.length){
+    wi=Math.min(words[pi].length, wi+step)
+    say.innerHTML=words.slice(0,pi).map(w=>`<p>${esc(w.join(' '))}</p>`).join('')
+      +`<p>${esc(words[pi].slice(0,wi).join(' '))}<span class="caret"></span></p>`
+    await sleep(16)
+    if(wi>=words[pi].length){pi++;wi=0}
+  }
+  say.innerHTML=renderParas(paras)
+  return toks.length
+}
+
+async function cycle(){
+  busy=true
+  const t=TURNS[idx]
+  const nPresses=await showTurn(t, !box.querySelector('.slot'))
+
+  // EXECUTING: the buttons are being pressed and the screen is settling.
+  // No next turn exists yet, so the pending box must not be on screen.
+  phase('executing')
+  pending.classList.add('idle')
+  await sleep(nPresses*(+$('#ex').value)+T.settle)
+
+  // THINKING: only now does the next turn exist as a pending thing.
+  idx=(idx+1)%TURNS.length
+  phase('thinking')
+  $('#pturn').textContent=TURNS[idx].turn
+  pending.classList.remove('idle')
+  startDots()
+  await sleep(+$('#th').value)
+  busy=false
+}
+
+async function loop(){
+  for(;;){ if(running && !busy) await cycle(); else await sleep(120) }
+}
+
+/* ── dev controls (mock only) ─────────────────────────────────────────── */
+$('#play').onclick=e=>{running=!running;e.target.textContent=running?'⏸ pause':'▶ play'}
+$('#step').onclick=()=>{if(!busy){running=false;$('#play').textContent='▶ play';cycle()}}
+$('#bh').oninput=e=>{stage.style.setProperty('--boxh',e.target.value+'%')
+  $('#bhv').textContent=e.target.value+'%'; fitSay(box.querySelector('.say'))}
+$('#ex').oninput=e=>{$('#exv').textContent=e.target.value+'ms/press'}
+$('#th').oninput=e=>{$('#thv').textContent=(e.target.value/1000).toFixed(1)+'s'}
+$('#exit').onclick=()=>alert('→ exits back to the full spectate view')
+
+let hideT
+function poke(){
+  $('#exit').classList.add('show'); $('#dev').classList.remove('hide')
+  clearTimeout(hideT)
+  hideT=setTimeout(()=>{$('#exit').classList.remove('show')
+                        $('#dev').classList.add('hide')},2000)
+}
+addEventListener('mousemove',poke); poke()
+addEventListener('keydown',e=>{
+  if(e.key.toLowerCase()==='f')document.documentElement.requestFullscreen?.()
+  if(e.key===' '){e.preventDefault();$('#play').click()}
+  if(e.key==='ArrowRight')$('#step').click()
+})
+addEventListener('resize',()=>fitSay(box.querySelector('.say')))
+
+fetch('simple-view-mock-turns.json').then(r=>r.json()).then(d=>{
+  TURNS=d
+  const b=/box=(\d+)/.exec(location.hash)
+  if(b){$('#bh').value=b[1];$('#bh').oninput({target:$('#bh')})}
+  loop()
+})
+</script>
+</body>
+</html>
