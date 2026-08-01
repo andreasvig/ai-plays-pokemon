@@ -617,8 +617,9 @@
     max-height: 100%;
     object-fit: contain;
     image-rendering: pixelated;
-    border: 1px solid var(--rule);
-    border-radius: 2px;
+    /* No border. The mock had a 1px --rule frame; on the real emulator output
+       it just reads as a seam, because mGBA's own letterboxing already gives
+       the frame hard black edges. */
   }
 
   /* ── main box ─────────────────────────────────────────────────────────── */
