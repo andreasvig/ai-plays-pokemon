@@ -593,14 +593,29 @@
     min-height: 0;
     width: 100%;
     display: grid;
+    /* An explicit definite row. With the default auto row the image's
+       `max-height: 100%` has nothing to resolve against and silently does
+       nothing, so the frame overflowed the shot area and got clipped by
+       .stage's overflow:hidden. */
+    grid-template-rows: minmax(0, 1fr);
     place-items: center;
   }
+  /* Fill the whole shot area and letterbox inside it, rather than sitting at
+     the frame's intrinsic size. `width/height: auto` + `max-*: 100%` only ever
+     scales a frame DOWN, so the live socket's small GBA frames rendered
+     postage-stamp-sized with a large dead gap above the box — the mock never
+     showed this because its saved trace PNGs are big enough to hit the cap.
+     `width: 100%` + `max-height` scales UP to the available width and clamps
+     when that would overflow. The clamp does NOT recompute the width, so the
+     element box ends up ~1% off the frame's true ratio — `object-fit: contain`
+     absorbs that, keeping the pixels undistorted. Pixel art shows stretching
+     immediately, so this is not a rounding detail. */
   .screen {
     display: block;
-    max-width: 100%;
-    max-height: 100%;
-    width: auto;
+    width: 100%;
     height: auto;
+    max-height: 100%;
+    object-fit: contain;
     image-rendering: pixelated;
     border: 1px solid var(--rule);
     border-radius: 2px;
