@@ -188,6 +188,31 @@ async def index_page():
     )
 
 
+def _recording_path(run_id: str) -> Optional[Path]:
+    """``<run_dir>/recording.mp4`` if this run has a usable video, else None."""
+    executor = _CONTROL.get("executor")
+    if executor is None or not run_id:
+        return None
+    p = Path(executor.runs_root) / run_id / "recording.mp4"
+    try:
+        return p if p.is_file() and p.stat().st_size > 0 else None
+    except OSError:
+        return None
+
+
+def _with_recording(row: dict) -> dict:
+    """Stamp ``has_recording`` onto a serialised RunSummary.
+
+    Derived from disk on every request rather than stored on RunSummary. The
+    index is a projection written once when a run finishes, so a persisted flag
+    would be wrong for every run recorded before the field existed, and wrong
+    again the moment someone deletes an mp4 to reclaim space. One `stat` per row
+    is far cheaper than an index migration that can still go stale.
+    """
+    row["has_recording"] = _recording_path(row.get("run_id") or "") is not None
+    return row
+
+
 @app.get("/api/runs")
 async def api_runs(
     kind: str | None = None,
@@ -234,7 +259,7 @@ async def api_runs(
             sort=sort,
             order=order,
         )
-        return JSONResponse([s.model_dump(mode="json") for s in rows])
+        return JSONResponse([_with_recording(s.model_dump(mode="json")) for s in rows])
 
     sessions = sorted(_REGISTRY.all(), key=lambda s: s.registered_at)
     return JSONResponse([
@@ -1005,7 +1030,7 @@ async def api_run_get(run_id: str):
     entry = index.get(run_id)
     if entry is None:
         raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
-    return JSONResponse(entry.model_dump(mode="json"))
+    return JSONResponse(_with_recording(entry.model_dump(mode="json")))
 
 
 @app.get("/api/runs/{run_id}/summary")
@@ -1083,6 +1108,31 @@ async def api_run_trace(run_id: str):
     except Exception:
         pass
     return JSONResponse(data)
+
+
+@app.get("/api/runs/{run_id}/recording.mp4")
+async def api_run_recording(run_id: str):
+    """Stream ``<run_dir>/recording.mp4`` for an in-page `<video>` element.
+
+    ``FileResponse`` honours HTTP Range, which is what makes the player's scrub
+    bar work — without byte ranges the browser must download the whole file
+    before it can seek, and seeking backwards refetches it.
+
+    ``inline`` disposition, not the default ``attachment``: this URL is the
+    `<video>` element's source first and a download second. The filename is
+    still carried, so the ↓ button in the player saves it under the run's name
+    rather than a directory full of identical `recording.mp4`s.
+    """
+    _require_control()
+    path = _recording_path(run_id)
+    if path is None:
+        raise HTTPException(status_code=404, detail=f"no recording for run: {run_id}")
+    return FileResponse(
+        str(path),
+        media_type="video/mp4",
+        filename=f"{run_id}.mp4",
+        content_disposition_type="inline",
+    )
 
 
 @app.get("/api/runs/{run_id}/screenshots/{name}")

@@ -118,11 +118,26 @@ and the source run's setting is deliberately not inherited.
 
 ---
 
-## Where it lands
+## Where it lands, and watching it back
 
 `<run_dir>/recording.mp4`, beside `events.jsonl` and `run_summary.json`. H.264 /
 yuv420p / `+faststart`, no audio (game audio is not on the dashboard's wire).
 A 1080×1080 30fps recording runs roughly 3–8 MB per minute of *kept* video.
+
+In the UI, any **History** row whose run has a video gets a **▶** button that
+opens it in a player over the list (Esc or the backdrop closes it; **↓** saves
+the file under the run's name). Rows without one show no button.
+
+`has_recording` is derived from the run dir on every request rather than stored
+on `RunSummary`. The index is a projection written once when a run finishes, so
+a persisted flag would be wrong for every run recorded before the field existed,
+and wrong again the moment an mp4 is deleted to reclaim space. A zero-byte file
+counts as *no* recording — that is the signature of a failed encode, and a ▶ on
+an unplayable video is worse than no button.
+
+`GET /api/runs/{run_id}/recording.mp4` serves it with `inline` disposition and
+HTTP Range. Range is not optional: without byte ranges the browser must download
+the whole file before it can seek, and the scrub bar refetches on every drag.
 
 ## When it doesn't work
 

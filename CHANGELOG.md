@@ -1,5 +1,35 @@
 # Changelog
 
+## 2026-08-01 — Watch a recording from History
+
+### What
+- History rows for runs that have a `recording.mp4` gain a **▶** button that
+  opens the video in a player over the list (Esc / backdrop closes, **↓**
+  downloads it under the run's name). Rows without one show no button.
+- `GET /api/runs/{run_id}/recording.mp4` — `FileResponse` with `inline`
+  disposition and HTTP Range.
+- `has_recording` stamped onto `/api/runs` and `/api/runs/{id}` responses.
+
+### Why
+The first real recording existed only as a path in a terminal. Watching it meant
+leaving the app.
+
+### Notes
+- `has_recording` is derived from disk per request, NOT stored on `RunSummary`.
+  The index is written once when a run finishes, so a persisted flag would be
+  wrong for every run recorded before the field existed and wrong again when an
+  mp4 is deleted. One `stat` per row beats a migration that can still go stale.
+- A **zero-byte** mp4 counts as no recording — that is what a failed encode
+  leaves behind, and a ▶ on an unplayable file is worse than no button.
+- `inline`, not the default `attachment`: the URL is a `<video>` source first.
+  Range is what makes the scrub bar seek rather than refetch.
+- The player is a plain `<video controls>`, sized to the video's own aspect so
+  a 1:1 simple capture and a 16:9 detailed one each fill their frame. Clearing
+  `watchTarget` unmounts it — hiding it would leave the stream downloading.
+- Verified against the real 48.9s recording: 1 of 64 rows flagged, `206` on a
+  Range request, and the mounted element reporting
+  `dur 48.9 · t 8.45 · paused false · 1080×1080 · err null`.
+
 ## 2026-08-01 — Record a run to MP4 (`--record`)
 
 ### What

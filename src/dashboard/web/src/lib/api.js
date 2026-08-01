@@ -62,6 +62,9 @@ export function toRun(s) {
     terminationReason: s.termination_reason ?? null,
     continuedFrom: s.continued_from ?? null,
     maxTurns: s.max_turns ?? null,
+    // Derived server-side from the run dir on every request, so it flips off by
+    // itself if the mp4 is deleted to reclaim space.
+    hasRecording: !!s.has_recording,
   }
   r.slug = runSlug(r)
   return r

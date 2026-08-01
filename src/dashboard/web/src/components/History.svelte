@@ -16,6 +16,15 @@
   let deleteError = $state('')
   const canDelete = $derived(confirmText.trim() === 'DELETE')
 
+  // Recording player. `watchTarget` is the run whose mp4 is open; clearing it
+  // unmounts the <video>, which is what actually stops playback and releases
+  // the connection — leaving the element mounted and merely hidden keeps the
+  // audio-less stream downloading in the background.
+  let watchTarget = $state(null)
+  function watch(run) { watchTarget = run }
+  function closeWatch() { watchTarget = null }
+  const recordingUrl = (run) => `/api/runs/${encodeURIComponent(run.runId)}/recording.mp4`
+
   function askDelete(run) { confirmTarget = run; confirmText = ''; deleteError = ''; deleting = false }
   function cancelDelete() { confirmTarget = null; confirmText = ''; deleteError = ''; deleting = false }
   async function confirmDelete() {
@@ -43,6 +52,10 @@
       })
   )
 </script>
+
+<!-- Esc closes the player. Must be top-level — <svelte:window> cannot sit
+     inside an element or block. -->
+<svelte:window onkeydown={(e) => { if (e.key === 'Escape' && watchTarget) closeWatch() }} />
 
 <section class="wrap">
   <div class="head">
@@ -105,6 +118,10 @@
         <span class="c-cost tnum r"><b>{usd(r.totalCostUsd)}</b><span class="sub">{usd(r.avgCostPerTurn)}/t</span></span>
         <span class="c-status r"><span class="status {statusClass(r.status)}">{statusLabel(r.status)}</span></span>
         <span class="c-act">
+          {#if r.hasRecording}
+            <button class="mini play" onclick={(e) => { e.stopPropagation(); watch(r) }}
+                    title="Watch the recording">▶</button>
+          {/if}
           <button class="mini" onclick={(e) => { e.stopPropagation(); oninspect(r) }} title="Inspect report">↗</button>
           <button class="mini" disabled={r.status === 'running'} onclick={(e) => { e.stopPropagation(); oncontinue(r) }} title="Continue run">⟳</button>
           <button class="mini danger" disabled={r.status === 'running'} onclick={(e) => { e.stopPropagation(); askDelete(r) }} title="Delete run">🗑</button>
@@ -112,6 +129,28 @@
       </li>
     {/each}
   </ul>
+
+  <!-- Recording player. A plain <video controls> — the browser's own transport
+       is better than anything worth hand-rolling here, and the server serves the
+       file with HTTP Range so the scrub bar actually seeks. Sized to the video's
+       own aspect (the simple view is 1:1, the detailed view 16:9) rather than
+       forced into one box, so neither gets letterboxed. -->
+  {#if watchTarget}
+    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+    <div class="modal-bg" onclick={closeWatch}>
+      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+      <div class="vmodal" role="dialog" aria-modal="true" tabindex="-1" onclick={(e) => e.stopPropagation()}>
+        <header class="vh">
+          <span class="mono vname">{watchTarget.model}</span>
+          <span class="faint vmeta">{dateShort(watchTarget.startedAt)} · {watchTarget.turns} turns</span>
+          <a class="vdl" href={recordingUrl(watchTarget)} download title="Download the MP4">↓</a>
+          <button class="x" onclick={closeWatch} aria-label="Close">✕</button>
+        </header>
+        <!-- svelte-ignore a11y_media_has_caption -->
+        <video class="vplayer" src={recordingUrl(watchTarget)} controls autoplay playsinline></video>
+      </div>
+    </div>
+  {/if}
 
   {#if confirmTarget}
     <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -189,7 +228,29 @@
   .mini:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
   .mini:disabled { opacity: .4; cursor: not-allowed; }
   .mini.danger:hover:not(:disabled) { border-color: var(--red); color: var(--red); }
+  .mini.play:hover { border-color: var(--accent); color: var(--accent); }
   .badge.official, .badge.casual { font-size: 9.5px; padding: 2px 6px; }
+
+  /* Recording player */
+  .vmodal {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.3); overflow: hidden;
+    display: flex; flex-direction: column; max-width: 100%; max-height: 100%;
+  }
+  .vh { display: flex; align-items: center; gap: 10px; padding: 10px 12px 10px 14px; border-bottom: 1px solid var(--border); }
+  .vname { font-size: 13px; font-weight: 650; }
+  .vmeta { font-size: 11.5px; margin-right: auto; }
+  .vdl {
+    text-decoration: none; color: var(--muted); font-size: 14px; line-height: 1;
+    border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px;
+  }
+  .vdl:hover { border-color: var(--accent); color: var(--accent); }
+  .vh .x { border: none; background: none; color: var(--faint); font-size: 13px; padding: 4px 8px; border-radius: 6px; }
+  .vh .x:hover { background: var(--surface-2); color: var(--text); }
+  /* The video sizes itself to its own aspect within the viewport, so a 1:1
+     simple-view capture and a 16:9 detailed one both fill their frame instead
+     of one of them letterboxing inside a box shaped for the other. */
+  .vplayer { display: block; background: #000; max-width: 88vw; max-height: 78vh; }
 
   /* Typed-DELETE confirmation modal */
   .modal-bg {

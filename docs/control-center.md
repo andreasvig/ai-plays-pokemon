@@ -133,6 +133,9 @@ The capture runs headlessly on the server, so it is unaffected by where you are
 in the UI, whether the window has focus, or whether it is open at all. Full
 guide: [recording.md](recording.md).
 
+Recorded runs get a **▶** button on their **History** row that plays the MP4
+in-page.
+
 ### Continue a run
 
 From a finished (or stopped) run you can **continue** it from its latest

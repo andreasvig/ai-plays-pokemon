@@ -327,6 +327,90 @@ def test_maybe_start_is_a_noop_without_a_spec(tmp_path: Path):
     assert recorder.finish(None) is None
 
 
+# ─────────────────── 4. the History "watch" surface ───────────────────
+
+
+@pytest.fixture
+def api(tmp_path: Path):
+    """TestClient over a control plane whose runs_root is a real temp dir.
+
+    `has_recording` is derived from disk, so the runs_root has to be real —
+    a stub path would make every row False and the test vacuous.
+    """
+    import types
+
+    from fastapi.testclient import TestClient
+
+    from src.app.models import RunKind, RunStatus, RunSummary
+    from src.dashboard import server
+
+    runs = tmp_path / "runs"
+    (runs / "with_vid").mkdir(parents=True)
+    (runs / "no_vid").mkdir(parents=True)
+    (runs / "empty_vid").mkdir(parents=True)
+    (runs / "with_vid" / "recording.mp4").write_bytes(b"\x00" * 2048)
+    (runs / "empty_vid" / "recording.mp4").write_bytes(b"")   # 0 bytes = failed encode
+
+    def mk(rid):
+        return RunSummary(run_id=rid, kind=RunKind.casual, model="m",
+                          status=RunStatus.completed, turns=5)
+
+    entries = [mk("with_vid"), mk("no_vid"), mk("empty_vid")]
+
+    class Index:
+        def all(self): return list(entries)
+        def get(self, rid): return next((e for e in entries if e.run_id == rid), None)
+
+    server.configure_control_plane(
+        queue_manager=object(),
+        executor=types.SimpleNamespace(runs_root=runs),
+        run_index=Index(),
+    )
+    yield TestClient(server.app)
+    server._CONTROL["queue"] = None
+    server._CONTROL["executor"] = None
+    server._CONTROL["index"] = None
+
+
+def test_history_flags_only_runs_that_have_a_video(api):
+    rows = {r["run_id"]: r["has_recording"] for r in api.get("/api/runs").json()}
+    assert rows == {"with_vid": True, "no_vid": False, "empty_vid": False}
+
+
+def test_zero_byte_recording_does_not_count(api):
+    """A failed encode leaves a 0-byte mp4. Flagging it would put a ▶ button on
+    a run whose video is unplayable."""
+    assert api.get("/api/runs/empty_vid").json()["has_recording"] is False
+    assert api.get("/api/runs/empty_vid/recording.mp4").status_code == 404
+
+
+def test_recording_route_serves_inline_and_accepts_ranges(api):
+    """Range is what makes the player's scrub bar seek; `inline` is what stops
+    the browser treating the <video> source as a download."""
+    r = api.get("/api/runs/with_vid/recording.mp4")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "video/mp4"
+    assert r.headers["accept-ranges"] == "bytes"
+    assert r.headers["content-disposition"].startswith("inline")
+
+    part = api.get("/api/runs/with_vid/recording.mp4", headers={"Range": "bytes=0-99"})
+    assert part.status_code == 206
+    assert len(part.content) == 100
+
+
+def test_recording_route_404s_when_absent(api):
+    assert api.get("/api/runs/no_vid/recording.mp4").status_code == 404
+    assert api.get("/api/runs/nope/recording.mp4").status_code == 404
+
+
+def test_flag_follows_the_file(api, tmp_path: Path):
+    """Derived per request, not stored — deleting the mp4 to reclaim space must
+    drop the button rather than leave a ▶ that 404s."""
+    assert api.get("/api/runs/with_vid").json()["has_recording"] is True
+    (tmp_path / "runs" / "with_vid" / "recording.mp4").unlink()
+    assert api.get("/api/runs/with_vid").json()["has_recording"] is False
+
+
 def test_maybe_start_declines_a_bad_spec_instead_of_raising(tmp_path: Path, capsys):
     """A malformed spec must never take a real run down with it."""
     from src.dashboard import recorder
