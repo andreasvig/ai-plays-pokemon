@@ -318,6 +318,51 @@ def test_executor_leaves_unrecorded_runs_alone(tmp_path: Path):
     assert "_record" not in seen["config"]
 
 
+def test_ffmpeg_log_is_deleted_not_leaked(tmp_path: Path):
+    """ffmpeg's stderr scratch file must not survive the recording.
+
+    It is NamedTemporaryFile(delete=False) because ffmpeg needs a real path to
+    write to, so nothing removes it for us — 9 empty logs accumulated in the
+    system temp dir over one afternoon of recording before this was fixed.
+    """
+    import tempfile
+
+    from src.dashboard.recorder import RunRecorder
+
+    rec = RunRecorder(run_id="r", run_dir=tmp_path, port=1,
+                      spec={"view": "simple", "speed": "realtime", "fps": 30})
+    rec._ff_err = tempfile.NamedTemporaryFile(
+        prefix="pokebench-rec-", suffix=".log", delete=False
+    )
+    log = Path(rec._ff_err.name)
+    log.write_bytes(b"some encoder noise\n")
+    assert log.exists()
+
+    rec._drop_ff_log()
+    assert not log.exists()
+    rec._drop_ff_log()          # idempotent — stop() and start() both call it
+
+
+def test_ffmpeg_error_is_read_before_the_log_is_dropped(tmp_path: Path):
+    """The tail has to be folded into `error` while the file still exists.
+
+    Ordering trap: `_teardown()` runs before the error is read, so the delete
+    cannot live there — an empty mp4 would then report no reason at all.
+    """
+    import tempfile
+
+    from src.dashboard.recorder import RunRecorder
+
+    rec = RunRecorder(run_id="r", run_dir=tmp_path, port=1,
+                      spec={"view": "simple", "speed": "realtime", "fps": 30})
+    rec._ff_err = tempfile.NamedTemporaryFile(
+        prefix="pokebench-rec-", suffix=".log", delete=False
+    )
+    Path(rec._ff_err.name).write_text("frame= 0\nTask finished with error code: -22\n")
+    assert "-22" in (rec._ffmpeg_error() or "")
+    rec._drop_ff_log()
+
+
 def test_maybe_start_is_a_noop_without_a_spec(tmp_path: Path):
     """The hook run_single_loop calls unconditionally must cost nothing on the
     overwhelmingly common path — no browser, no import of the server port."""

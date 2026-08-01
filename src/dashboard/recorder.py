@@ -497,6 +497,7 @@ class RunRecorder:
         except Exception as e:  # noqa: BLE001 — never take the run down with us
             self.error = f"{type(e).__name__}: {e}"
             self._teardown()
+            self._drop_ff_log()
             return False
 
         self._started = True
@@ -535,15 +536,39 @@ class RunRecorder:
             except Exception:
                 self._ff.kill()
         self._teardown()
-        if self.frames_written == 0:
-            self.error = self.error or "no frames were sampled (gate never opened?)"
+        try:
+            if self.frames_written == 0:
+                self.error = self.error or "no frames were sampled (gate never opened?)"
+                return None
+            # An mp4 that exists but is zero bytes is the signature of an encoder
+            # that died on its first frame — treat it as a failure, not a result.
+            if self.out_path.exists() and self.out_path.stat().st_size > 0:
+                return self.out_path
+            self.error = self._ffmpeg_error() or "ffmpeg produced no output"
             return None
-        # An mp4 that exists but is zero bytes is the signature of an encoder
-        # that died on its first frame — treat it as a failure, not a result.
-        if self.out_path.exists() and self.out_path.stat().st_size > 0:
-            return self.out_path
-        self.error = self._ffmpeg_error() or "ffmpeg produced no output"
-        return None
+        finally:
+            # Drop the stderr scratch file once its contents have been folded
+            # into self.error. It is NamedTemporaryFile(delete=False) because
+            # ffmpeg needs a real path to write to, so nothing removes it for
+            # us — and one empty log per successful recording accumulates in
+            # the system temp dir forever (9 of them after one afternoon).
+            self._drop_ff_log()
+
+    def _drop_ff_log(self) -> None:
+        """Delete ffmpeg's stderr scratch file. Safe to call more than once."""
+        if self._ff_err is None:
+            return
+        name = getattr(self._ff_err, "name", None)
+        try:
+            self._ff_err.close()
+        except Exception:
+            pass
+        if name:
+            try:
+                Path(name).unlink()
+            except OSError:
+                pass
+        self._ff_err = None
 
     def _ffmpeg_error(self) -> Optional[str]:
         """Tail of ffmpeg's stderr, for when the file didn't materialise."""
