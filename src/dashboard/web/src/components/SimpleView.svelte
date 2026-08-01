@@ -353,8 +353,30 @@
     const s = seed
     untrack(() => {
       if (s) applySeed(s)
+      // A null seed means the parent has no known turn — which is what a run
+      // change looks like from here (resetLiveState clears it). Plan §3 requires
+      // the ratchet to reset per run, and this component has no activeRunId of
+      // its own, so this transition is the only signal for it. Without this the
+      // ceiling set by run A's worst turn silently caps run B for its whole life.
+      else clearForNewRun()
     })
   })
+
+  // Back to the state a fresh mount would have, minus the DOM teardown.
+  function clearForNewRun() {
+    ratchetPx = null
+    fitPx = null
+    card = null
+    morph = null
+    outgoing = false
+    pendingVisible = false
+    pendingTurn = null
+    phase = 'idle'
+    fullParas = []
+    visibleParas = []
+    caretOn = false
+    clipped = false
+  }
 
   // The box height is a percentage of the frame, so any stage resize
   // invalidates the fit AND the ratchet ceiling. A ResizeObserver catches the
@@ -670,7 +692,12 @@
   }
 
   /* ── pending box: on screen ONLY while the model is thinking. Same padding
-        and top alignment as .slot, so growing into the main box is seamless. */
+        and top alignment as .slot, so growing into the main box is seamless.
+        The label is sized × 0.86 to match `.turn` inside the box: plan §5.3
+        requires "TURN n" not to shift during the handoff, and at a plain 1em it
+        rendered 14% larger here and snapped smaller the instant the clone
+        landed. Harmonised toward the settled size — that is what is on screen
+        almost all the time. `.morph` must carry the identical value. */
   .pending {
     width: 100%;
     height: var(--striph);
@@ -682,7 +709,8 @@
     align-items: flex-start;
     gap: 0.75em;
     padding: 1em 1.3em;
-    font-size: clamp(10px, 1.5vh, 19px);
+    /* × 0.86 to match `.turn` inside the box — see the note on .pending. */
+    font-size: calc(clamp(10px, 1.5vh, 19px) * 0.86);
     color: var(--faint);
     letter-spacing: 0.13em;
     text-transform: uppercase;
@@ -719,7 +747,8 @@
     align-items: flex-start;
     gap: 0.75em;
     padding: 1em 1.3em;
-    font-size: clamp(10px, 1.5vh, 19px);
+    /* × 0.86 to match `.turn` inside the box — see the note on .pending. */
+    font-size: calc(clamp(10px, 1.5vh, 19px) * 0.86);
     color: var(--faint);
     letter-spacing: 0.13em;
     text-transform: uppercase;
@@ -728,6 +757,15 @@
       height var(--morph),
       background-color var(--morph),
       border-color var(--morph);
+  }
+  /* Mirrors `.pending b`. Without it the <b> inherits .morph's --faint and the
+     turn NUMBER snaps faint → ink the frame the clone lands, which reads as a
+     flash on exactly the element plan §5.3 says must stay put. */
+  .morph b {
+    color: var(--ink);
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    font-variant-numeric: tabular-nums;
   }
   .morph.landed {
     background: var(--card);

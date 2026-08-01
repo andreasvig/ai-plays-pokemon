@@ -9,8 +9,15 @@
 //
 //   npm run dev  →  http://localhost:5173/harness.html
 //   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
-//     --headless --dump-dom --virtual-time-budget=240000 \
+//     --headless --dump-dom --window-size=913,913 \
+//     --virtual-time-budget=240000 \
 //     "http://localhost:5173/harness.html?think=400&exec=20&settle=120"
+//
+// --window-size is NOT optional. Headless Chrome defaults to roughly 756x469
+// here, and the stage is min(100vw,100vh) — so the frame comes out 469px, the
+// auto-fit hits its 0.0055 × H floor, and the run reports
+// data-clipped-any="true". Following the command without it makes a working
+// feature look broken. Anything from ~800px square up behaves like a monitor.
 //
 // Everything the assertions need ends up inside <pre id="log"> and
 // <pre id="summary">, so a single --dump-dom captures the whole HISTORY, not
