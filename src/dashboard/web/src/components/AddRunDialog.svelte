@@ -384,7 +384,13 @@
   .dialog {
     width: 100%; max-width: 460px; background: var(--surface);
     border-radius: 16px; box-shadow: var(--shadow-lg); overflow: hidden;
+    /* The dialog grows with its content — the recording options alone add ~160px
+       — so cap it at the viewport and let the FIELDS scroll. The header and the
+       footer stay put, which is the point: "Add to queue" must never be pushed
+       off the bottom of the screen. 48px = the scrim's 24px padding, twice. */
+    display: flex; flex-direction: column; max-height: calc(100vh - 48px);
   }
+  .dh, .df { flex: none; }
   .dh { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px 12px; }
   h3 { margin: 0; font-size: 16px; font-weight: 750; }
   .x { border: none; background: none; color: var(--faint); font-size: 14px; padding: 4px 8px; border-radius: 6px; }
@@ -405,7 +411,13 @@
   .seg button.on b { color: var(--accent-ink); }
   .seg button.on small { color: var(--accent); }
 
-  .fields { padding: 8px 20px 4px; display: flex; flex-direction: column; gap: 14px; }
+  /* The one scrolling region. min-height:0 is load-bearing: a flex item's
+     default min-height is auto, which refuses to shrink below its content, so
+     overflow-y would never engage and the dialog would blow past its cap. */
+  .fields {
+    padding: 8px 20px 4px; display: flex; flex-direction: column; gap: 14px;
+    overflow-y: auto; min-height: 0;
+  }
   .check { display: flex; align-items: center; gap: 8px; font-size: 12.5px;
     color: var(--text); font-weight: 600; cursor: pointer; margin-top: 2px; }
   .check input { width: 14px; height: 14px; accent-color: var(--accent, #3b82f6); }
@@ -448,5 +460,8 @@
 
   .df { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px 18px; margin-top: 6px; border-top: 1px solid var(--border-2); }
   .hint { font-size: 11.5px; max-width: 220px; line-height: 1.4; }
-  .actions { display: flex; gap: 8px; }
+  /* nowrap: the hint's max-width lets it squeeze the buttons, and "Add to
+     queue" was breaking across two lines. The hint is what should reflow. */
+  .actions { display: flex; gap: 8px; flex: none; }
+  .actions button { white-space: nowrap; }
 </style>
