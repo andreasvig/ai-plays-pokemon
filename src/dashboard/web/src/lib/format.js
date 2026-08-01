@@ -25,20 +25,6 @@ export function dateShort(iso) {
   const dt = new Date(iso)
   return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
-// Map GBA button tokens → emoji for compact action display. Accepts a single
-// token, a space-joined string ("up up a"), or an array of tokens; maps each
-// (case-insensitive) and joins with a space. Unknown tokens pass through.
-const ACTION_EMOJI = {
-  left: '⬅️', right: '➡️', up: '⬆️', down: '⬇️',
-  a: '🅰️', b: '🅱️', start: '▶️', select: '⏹️', wait: '⏳',
-}
-export function actionEmoji(action) {
-  if (action == null) return ''
-  const tokens = Array.isArray(action) ? action : String(action).trim().split(/\s+/)
-  return tokens
-    .map((tok) => ACTION_EMOJI[String(tok).toLowerCase()] ?? tok)
-    .join(' ')
-}
 // Mirror of the backend `coerce_stringified_object` (src/agent/coerce.py): some
 // models (xiaomi/mimo-v2.5) can't emit a JSON null or nested object as a tool
 // arg, so a null `return_to_taskmaster` arrives as the literal string "None" /

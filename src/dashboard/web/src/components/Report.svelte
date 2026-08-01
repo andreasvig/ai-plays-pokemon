@@ -6,9 +6,10 @@
   // player handback. (Round 9 E.) This IS the run report; the old standalone
   // HTML report (src/cli/report.py) was retired in favour of this view.
   import { GATES } from '../lib/gates.js'
-  import { usd, dur, perTurn, dateShort, actionEmoji, coerceHandback } from '../lib/format.js'
+  import { usd, dur, perTurn, dateShort, coerceHandback } from '../lib/format.js'
   import { mdToHtml } from '../lib/md.js'
   import * as api from '../lib/api.js'
+  import Action, { actionTokens } from './Action.svelte'
   let { run = null, onback, oncontinue } = $props()
 
   let summary = $state(null)     // raw nested run_summary.json (KPIs + referee.gates)
@@ -127,16 +128,20 @@
     if (!fr) return null
     return parseArgs(fr.args)
   }
+  // Feeds two plain-text spots (the collapsed turn header `.tact` and the
+  // expanded `.exp-row .ev`), plus a handback verdict string — mixed string
+  // contexts a `<Action>` element can't sit in, so this stays plain text
+  // (Track A route (b)): real button names via actionTokens(), never emoji.
   function turnActionDisplay(t) {
     const a = finalResultArgs(t)
-    if (a && Array.isArray(a.inputs) && a.inputs.length) return actionEmoji(a.inputs)
+    if (a && Array.isArray(a.inputs) && a.inputs.length) return actionTokens(a.inputs).join(' ')
     const hb = coerceHandback(a && a.return_to_taskmaster)
     if (hb) {
       const v = fmtVerdict(hb.self_assessment)
       return v?.label ?? '↩️ Returned to TaskMaster'
     }
     // fallback: raw action, but the bare "?" sentinel → a dash, never a stray "?"
-    if (t.action && t.action !== '?') return actionEmoji(t.action)
+    if (t.action && t.action !== '?') return actionTokens(t.action).join(' ')
     return '—'
   }
 
@@ -443,7 +448,7 @@
                                 <details class="trace-step trace-output" open>
                                   <summary>
                                     <span class="step-label">Output</span>
-                                    <span class="step-action-code">{p ? actionEmoji(p.inputs ?? '') : ''}</span>
+                                    <span class="step-action-code">{#if p}{#each actionTokens(p.inputs ?? '') as tok}<Action token={tok} />{/each}{/if}</span>
                                   </summary>
                                   <div class="step-body">
                                     {#if p && (p.reasoning != null || p.last_turn_succeeded !== undefined)}
@@ -454,7 +459,7 @@
                                           {@const hb = fmtVerdict(hbObj.self_assessment)}
                                           <div class="dec-row"><span class="dec-lab">↩️ Return to TaskMaster</span><span class="dec-val">{hb.label}{#if hbObj.task_summary} — {hbObj.task_summary}{/if}</span></div>
                                         {:else}
-                                          <div class="dec-row"><span class="dec-lab">Action</span><span class="dec-val">{actionEmoji(p.inputs ?? '')}</span></div>
+                                          <div class="dec-row"><span class="dec-lab">Action</span><span class="dec-val acts">{#each actionTokens(p.inputs ?? '') as tok}<Action token={tok} />{/each}</span></div>
                                         {/if}
                                         {#if p.memory_updates && String(p.memory_updates).trim().toLowerCase() !== 'none'}
                                           <div class="dec-row"><span class="dec-lab">Memory update</span><pre class="dec-mem">{fmtArgs(p.memory_updates)}</pre></div>
@@ -573,7 +578,9 @@
   .trace-thinking-only .step-label { color: var(--faint); }
   .step-tool-name { font-size: 11.5px; font-weight: 700; color: var(--ink); }
   .step-preview { font-size: 11px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .step-action-code { font-size: 12px; }
+  /* Action is 2.35em tall — shrink the container's font-size (not the glyph's
+     own height) so it reads at the old emoji's footprint in this dense row. */
+  .step-action-code { display: inline-flex; align-items: center; gap: 3px; font-size: 7.5px; }
   .step-content, .trace-step pre { margin: 0; padding: 8px 10px; white-space: pre-wrap; word-break: break-word; font-size: 11.5px; line-height: 1.5; color: var(--muted); background: var(--surface); border-top: 1px solid var(--border); border-radius: 0 0 6px 6px; max-height: 360px; overflow: auto; }
   .step-body { padding: 6px 10px 10px; display: flex; flex-direction: column; gap: 8px; }
   .step-body pre { border: 1px solid var(--border); border-radius: 5px; }
@@ -590,6 +597,9 @@
   .dec-row { font-size: 12.5px; line-height: 1.5; }
   .dec-lab { display: block; font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); margin-bottom: 2px; }
   .dec-val { color: var(--ink); }
+  /* Action is 2.35em tall — shrink the container's font-size (not the glyph's
+     own height) so the decision row's glyphs don't dwarf the surrounding text. */
+  .dec-val.acts { display: inline-flex; align-items: center; gap: 3px; font-size: 7.5px; }
   .dec-desc { white-space: pre-wrap; color: var(--muted); }
   .dec-mem { margin: 3px 0 0; padding: 5px 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 5px; font-size: 11px; white-space: pre-wrap; }
 

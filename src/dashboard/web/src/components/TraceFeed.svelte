@@ -1,6 +1,7 @@
 <script>
-  import { usd, actionEmoji } from '../lib/format.js'
+  import { usd } from '../lib/format.js'
   import { mdToHtml } from '../lib/md.js'
+  import Action, { actionTokens } from './Action.svelte'
 
   // turns: chronological feed of tagged entries — {kind:'turn', turn, boxes} and
   // {kind:'master', ...} (the TaskMaster card, interleaved at task boundaries
@@ -96,7 +97,7 @@
                 <div class="ebox {b.k}">
                   <div class="ebox-h"><span class="ico">{boxIcon[b.k]}</span>{boxName[b.k]}{#if b.meta}<span class="ebox-meta faint">{b.meta}</span>{/if}</div>
                   <div class="ebox-b">
-                    {#if b.k === 'action'}<span class="act">{actionEmoji(b.t)}</span>
+                    {#if b.k === 'action'}<span class="act">{#each actionTokens(b.t) as tok}<Action token={tok} />{/each}</span>
                     {:else if b.k === 'tool'}{#if b.args}<div class="mono call">{b.name}({b.args})</div>{/if}{#if b.resp != null}<div class="resp faint">→ {b.resp}</div>{/if}
                     {:else if b.k === 'memory'}<span class="mono">{b.t}</span>
                     {:else if b.k === 'thinking'}<div class="md">{@html mdToHtml(b.t)}</div>
@@ -166,7 +167,10 @@
   .ebox.retry    { border-color: #f0932b; background: rgba(240, 147, 43, 0.12); }
   .ebox.retry .ebox-h { color: #c4670a; }
   .ebox.error    { border-color: var(--red); background: var(--red-soft, #fdeeee); }
-  .act { font-size: 18px; letter-spacing: 3px; }
+  /* Action is 2.35em tall — considerably bigger than the emoji it replaced.
+     Shrink the container's font-size (not the glyph's own height) so it reads
+     at roughly the old emoji's footprint inside a compact trace row. */
+  .act { display: inline-flex; align-items: center; gap: 3px; font-size: 7.5px; }
   .call { font-size: 11.5px; }
   .resp { font-size: 11px; margin-top: 2px; }
 
