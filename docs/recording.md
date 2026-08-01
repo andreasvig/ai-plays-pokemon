@@ -106,6 +106,12 @@ realtime **22.3s**, cut-thinking **11.8s** — 47% removed, and the 11.8s is wit
 | `--record-speed` | `realtime`, `cut-thinking` | `realtime` |
 | `--record-fps` | 1–60 | `30` |
 
+**The UI defaults differ on purpose.** Ticking "Record this run to MP4" in the
+Add-run dialog gives you **simple + cut-thinking** — the pairing you'd actually
+post, rather than a ten-minute file of a model thinking. The CLI keeps
+`realtime`, because there the caller is scripting and silently editing their
+footage is the surprising outcome. Both are one control away from the other.
+
 The same three ride on the queue API as a `record` object:
 
 ```json

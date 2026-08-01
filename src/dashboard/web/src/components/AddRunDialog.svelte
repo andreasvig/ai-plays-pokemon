@@ -53,9 +53,13 @@
 
   // ── recording (opt-in; off by default — it costs a headless browser + an
   // encoder for the whole run, so it is never something you get by accident) ──
+  // Defaults are simple + cut-thinking: the pairing you'd actually post. Ticking
+  // the box should give you a postable clip, not a ten-minute file of a model
+  // thinking. The CLI still defaults to realtime, where the caller is scripting
+  // and an unasked-for edit is the surprising outcome.
   let record = $state(false)
-  let recordView = $state('simple')       // the 1:1 recording view
-  let recordSpeed = $state('realtime')
+  let recordView = $state('simple')          // the 1:1 recording view
+  let recordSpeed = $state('cut-thinking')   // execution windows only
   let modelQuery = $state('')       // searchable model-picker filter text
   // Casual-continue TaskMaster override. '' = keep the source run's TaskMaster
   // (the backend reuses it); otherwise a "model(level)" alias to switch to.
