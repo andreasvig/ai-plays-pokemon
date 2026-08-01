@@ -127,6 +127,12 @@ export async function fetchBenchmarks() {
   return getJSON('/api/benchmarks')
 }
 
+export async function fetchCheckpoints() {
+  // GET /api/checkpoints → [{id, name, type}, ...] in ladder order — the story
+  // events a casual run can be told to stop at. Backs the dialog's "Stop at".
+  return getJSON('/api/checkpoints')
+}
+
 export async function fetchLeaderboard(benchmark = null) {
   // GET /api/leaderboard[?benchmark=] → best official run per model for that
   // benchmark, gates desc / turns asc. Add displayed rank + perfScore (the same
@@ -166,6 +172,7 @@ export async function fetchQueue() {
       model: q.model,
       config: q.config ?? null,
       maxTurns: q.max_turns ?? null,
+      stopAt: q.stop_at ?? null,
       continueFrom: q.continue_from ?? null,
       enqueuedAt: q.enqueued_at,
     })),
@@ -286,6 +293,9 @@ export function enqueueRun(spec) {
   if (spec.kind === 'casual') {
     if (spec.config != null) body.config = spec.config
     if (spec.maxTurns != null) body.max_turns = spec.maxTurns
+    // '' is the picker's "no stop event" option — omit it rather than sending
+    // an empty string the server would have to special-case.
+    if (spec.stopAt) body.stop_at = spec.stopAt
     if (spec.continueFrom != null) body.continue_from = spec.continueFrom
   } else if (spec.benchmark != null) {
     // Official: send WHICH benchmark (ladder + goal). config/max_turns are
@@ -316,11 +326,13 @@ export function deleteRun(runId) {
   return send('DELETE', `/api/runs/${encodeURIComponent(runId)}`)
 }
 
-export function continueRun(runId, { maxTurns = null, playerModel = null, taskMasterModel = null, record = null } = {}) {
+export function continueRun(runId, { maxTurns = null, stopAt = null, playerModel = null, taskMasterModel = null, record = null } = {}) {
   // Casual continues may swap models (UI pickers); official continues are
   // model-locked server-side (a sent override 400s). Send only what's set.
   const body = {}
   if (maxTurns != null) body.max_turns = maxTurns
+  // Chosen per continue, like max_turns — never inherited from the source run.
+  if (stopAt) body.stop_at = stopAt
   if (playerModel != null) body.player_model = playerModel
   if (taskMasterModel != null) body.task_master_model = taskMasterModel
   // A continue is a fresh run dir, so recording is chosen per-continue and is

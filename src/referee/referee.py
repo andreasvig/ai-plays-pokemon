@@ -14,6 +14,11 @@ The deadline is checked AFTER each poll's stamping, so a gate met exactly on
 its deadline turn — or reached early, out of ladder order — is pre-satisfied
 and never terminates.
 
+With ``stop_at="<gate-id>"`` the run also ends — as a success — the moment that
+gate latches, wherever it sits in the ladder. That is how a casual run says
+"play until Viridian Forest"; it is orthogonal to ``enforce`` (casual runs pass
+``enforce=False``, so no deadline can kill them on the way there).
+
 Memory layout (verified addresses, see local/plan-referee-benchmark.md):
   - ``gSaveBlock1Ptr`` @ 0x03005008, ``gSaveBlock2Ptr`` @ 0x0300500C — IWRAM
     pointers, u32 little-endian, dereferenced fresh EVERY poll (DMA shuffle
@@ -82,6 +87,7 @@ class Referee:
         logger: Any,
         run_dir: Any,
         enforce: bool = False,
+        stop_at: Optional[str] = None,
     ) -> None:
         # ``nodes`` is the ladder as authored: an ordered mix of single
         # Checkpoint rungs and MultiGate (any-order) rungs. A plain list of
@@ -113,6 +119,19 @@ class Referee:
         # Set to "missed_gate:<id>" the first time a gate is missed under
         # enforcement; otherwise None. Once set, never cleared.
         self.terminated_reason: Optional[str] = None
+
+        # Optional early finish line (casual runs): the id of a gate that ends
+        # the run the moment it latches, wherever it sits in the ladder. Ends
+        # the run as a SUCCESS — the run did the thing it was asked to do — so
+        # it is checked alongside should_complete_run(), not the missed-gate
+        # path. An unknown id raises here rather than at turn 100: a run that
+        # silently never stops is the failure this guards against.
+        if stop_at is not None and stop_at not in self._by_id:
+            raise ValueError(
+                f"stop_at {stop_at!r} is not a gate in this ladder "
+                f"(have: {', '.join(self._by_id)})"
+            )
+        self.stop_at: Optional[str] = stop_at
 
         # The latch: checkpoint id -> first-seen turn. NEVER un-stamped.
         self.stamps: dict[str, int] = {}
@@ -439,6 +458,25 @@ class Referee:
         if not self.nodes:
             return False
         return self._node_complete(self.nodes[-1])
+
+    # --- early finish line (casual `--stop-at`) --------------------------------
+
+    def should_stop_at(self) -> bool:
+        """True once the requested ``stop_at`` gate has latched.
+
+        Independent of the ladder's own end: the gate can sit anywhere, and
+        everything after it simply never gets played. Reads the latch rather
+        than the memory snapshot, so a gate credited by the safety net's
+        back-fill stops the run exactly like a directly-detected one.
+        """
+        return self.stop_at is not None and self.stop_at in self.stamps
+
+    @property
+    def stop_at_reason(self) -> Optional[str]:
+        """``"stop_at:<id>"`` once the requested gate latched, else None."""
+        if not self.should_stop_at():
+            return None
+        return f"stop_at:{self.stop_at}"
 
     @property
     def completion_reason(self) -> Optional[str]:

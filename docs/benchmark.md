@@ -24,7 +24,8 @@ watches and scores.
 | Goal | the benchmark's goal (overrides the config's) | the config's |
 | Model | you choose | you choose |
 | Max turns | none — gate deadlines bound it | you choose |
-| Gate ladder | the benchmark's, enforced (`enforce: true`) | none |
+| Stop at an event | n/a — ends at its own ladder | optional ([below](#stopping-at-a-story-event)) |
+| Gate ladder | the benchmark's, enforced (`enforce: true`) | none, unless you stop at an event (then observe-only) |
 | Leaderboard | eligible (if completed/terminated), per benchmark | never |
 | Continues | yes — stays official on the SAME benchmark | always casual |
 
@@ -34,7 +35,9 @@ model. You pick *which benchmark* the run plays (see below); that selects the
 gate ladder **and** the goal. A cancelled official run is **voided** (it never
 reaches the leaderboard), but it can be **continued** and the continuation scores
 (see *Pausing & resuming* below). **Casual** runs are for experimentation — pick
-any config and turn budget; they run free of gates and never score.
+any config and turn budget; they run free of gates and never score. A casual run
+may also name a story event to stop at (*Stopping at a story event*, below), so
+"play 100 turns" and "play until Viridian Forest" are both expressible.
 
 ---
 
@@ -156,6 +159,33 @@ diagnostics only — it never decides.
 agent may beat Misty first *or* fetch Bill's S.S. Ticket first. The rung holds
 two gates with a progressive deadline list `[800, 900]`: the first of the two by
 T800, both by T900.
+
+### Stopping at a story event
+
+A **casual** run can borrow the ladder as a finish line instead of a scorecard:
+
+```bash
+pokemon run --model "claude-opus-5(medium)" --turns 400 --stop-at viridian_forest_reached
+pokemon queue add --kind casual --stop-at pewter_reached "claude-opus-5(medium)"
+pokemon queue events                 # the id list
+```
+
+…or the **Stop at** picker in the new-run dialog. The run ends the moment the
+referee stamps that gate — so "100 turns" and "until Viridian Forest" are both
+expressible, and setting both means whichever lands first.
+
+Three things worth knowing:
+
+- **The event ids are the gate ids above** — the same RAM signatures the
+  benchmark uses, so detection is exact rather than inferred from the screen.
+  Every gate is selectable individually, including the two multigate members.
+- **The ladder rides along observe-only** (`enforce: false`). Deadlines are
+  *not* armed, so no pace gate can kill a casual run on its way to the event.
+  The only two ends are the event and the turn cap.
+- **It is still a casual run.** It shows gate progress in the HUD and History
+  (a side effect of carrying the ladder), but leaderboard eligibility keys on
+  `kind == official`, so it can never post a score. Official runs ignore
+  `stop_at` entirely — a benchmark ends at its own ladder.
 
 ---
 

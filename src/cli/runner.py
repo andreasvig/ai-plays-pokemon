@@ -898,6 +898,14 @@ Examples:
         help="Turns per run (applied to every pair). Default: 10.",
     )
     parser.add_argument(
+        "--stop-at", dest="stop_at", default=None,
+        help="Stop the run when this story event is reached, instead of playing "
+             "out --turns. An event id from the benchmark ladder, e.g. "
+             "`viridian_forest_reached`; pass an unknown id to see the full "
+             "list. --turns still applies as the upper bound — whichever comes "
+             "first ends the run.",
+    )
+    parser.add_argument(
         "--snapshot", default="local/snapshots/bedroom_start",
         help="Snapshot reloaded before each run's turn loop.",
     )
@@ -951,6 +959,19 @@ Examples:
             prepare_config(c, m, tm_model_alias=args.task_master_model)
             for c, m in pairs
         ]
+
+    # Stop-at-event: attach the full gate ladder observe-only so the referee
+    # detects the event and ends the run there. Validated BEFORE mGBA launches —
+    # a typo'd id must not cost a run that quietly plays to its turn cap.
+    if args.stop_at:
+        from src.app.catalog import stop_at_referee_config, validate_stop_event
+
+        try:
+            block = stop_at_referee_config(validate_stop_event(args.stop_at))
+        except ValueError as e:
+            sys.exit(f"ERROR: {e}")
+        for c in prepared:
+            c["referee"] = block
 
     # Recording rides on the config under `_record` (the same private-key
     # convention as `_llm_alias` / `_config_path`), so it reaches run_single_loop

@@ -1,5 +1,48 @@
 # Changelog
 
+## 2026-08-01 — Stop a casual run at a story event
+
+### What
+- A casual run can name a story event to finish at instead of only a turn
+  count: `pokemon run --stop-at viridian_forest_reached`, `pokemon queue add
+  --stop-at …`, or the **Stop at** picker in the new-run dialog. Max-turns still
+  applies — whichever lands first ends the run.
+- `pokemon queue events` and `GET /api/checkpoints` list the 21 selectable
+  events (the full gate ladder, flattened, in ladder order).
+- `Referee(stop_at=…)` + `should_stop_at()` / `stop_at_reason`; the turn loop
+  breaks on it and finalises the run as `completed`.
+
+### Why
+"Run until Viridian Forest" was unexpressible — a casual run could only be
+bounded by a turn count, which is a proxy for progress that varies per model.
+The detection already existed for benchmarks; casual runs just weren't given it.
+
+### Notes
+- **The events ARE the benchmark's gates.** Detection is a RAM signature the
+  referee already stamps, not something inferred from the screen. Everything
+  reads `configs/checkpoints-firered-v1.yaml`, which is a strict superset of
+  every other ladder (easy / first-badge are literal prefixes) — one catalog, no
+  union step, and a test asserts the superset property so a new benchmark can't
+  silently leave events out of the picker.
+- **The ladder rides along observe-only** (`enforce: false`). It carries turn
+  deadlines, and arming them would let a *pace* gate terminate a casual run long
+  before it reached the event that was asked for. Tested both ways — the same
+  poll under `enforce=True` does terminate, so the observe-only test bites.
+- The block is built in one place (`catalog.stop_at_referee_config`) and used by
+  both the queue executor and `pokemon run`, so the two entry points cannot
+  drift into wiring the run differently.
+- A stop event is per-run, not inherited: a continue picks its own, like
+  max-turns. Official runs ignore it entirely.
+- Side effect, wanted: a stopped-at-event run now shows gate progress in the HUD
+  and History. It still can't reach the leaderboard — eligibility keys on
+  `kind == official`, never on the presence of a ladder.
+- An unknown event id is rejected at the door (CLI exit / 400), not fallen back
+  from. A fallback would hand you a run with no early exit and no way to know
+  until the turn cap.
+- Multigate members (`cascade_badge`, `bills_errand_reached`) are offered
+  individually; the synthetic group id is not, since the referee stamps members
+  rather than groups and a group id could never latch.
+
 ## 2026-08-01 — Watch a recording from History
 
 ### What

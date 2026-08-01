@@ -129,8 +129,8 @@ class RunSummary(BaseModel):
 class QueuedRun(BaseModel):
     """One item in the serial queue — the spec "add new run" produces.
 
-    ``config``/``max_turns`` are casual-only (official uses the frozen pokebench
-    config + no max-turns). ``benchmark`` is official-only — which benchmark
+    ``config``/``max_turns``/``stop_at`` are casual-only (official uses the
+    frozen pokebench config + no max-turns, and ends at its own ladder). ``benchmark`` is official-only — which benchmark
     (e.g. ``pokebench-easy``) this run plays; it selects the gate ladder + the
     goal override. ``continue_from`` is set by Continue; it inherits the source
     run's kind — an official run continues official on the same ``benchmark``, a
@@ -143,6 +143,11 @@ class QueuedRun(BaseModel):
     config: str | None = None
     benchmark: str | None = None
     max_turns: int | None = None
+    # Casual-only early finish line: the id of a story event (a gate on the full
+    # ladder) that ends the run the moment the referee detects it. Runs
+    # alongside ``max_turns`` — whichever lands first ends the run. None = turn
+    # cap only. Official runs ignore it; a benchmark ends at its own ladder.
+    stop_at: str | None = None
     continue_from: str | None = None
     # Optional TaskMaster model override (casual only). None → inherit the
     # source/config/freeplay-default resolution. The Player model rides on

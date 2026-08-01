@@ -7,6 +7,8 @@ A thin wrapper over the running app's ``/api/queue*`` routes (the app must be up
   pokemon queue get
   pokemon queue add --benchmark pokebench-easy gemini-3.1-flash-lite claude-haiku-4-5
   pokemon queue add --kind casual --max-turns 50 claude-haiku-4-5 --repeat 3
+  pokemon queue add --kind casual --stop-at viridian_forest_reached claude-opus-5
+  pokemon queue events
   pokemon queue reorder q_ab12cd34 q_99ff00aa
   pokemon queue cancel q_ab12cd34 q_99ff00aa
   pokemon queue clear --yes
@@ -41,6 +43,8 @@ def _print_queue(payload: dict) -> None:
             flags.append(f"continue_from={it['continue_from']}")
         if it.get("config"):
             flags.append(f"config={it['config']}")
+        if it.get("stop_at"):
+            flags.append(f"stop_at={it['stop_at']}")
         if it.get("record"):
             r = it["record"]
             flags.append(f"rec={r.get('view')}/{r.get('speed')}")
@@ -74,6 +78,11 @@ def _cmd_add(args) -> int:
                 spec["config"] = args.config
             if args.max_turns is not None:
                 spec["max_turns"] = args.max_turns
+            if args.stop_at:
+                # Validated server-side against the ladder (400 on an unknown
+                # id), so a typo rejects the batch instead of enqueuing runs
+                # that would quietly never stop early.
+                spec["stop_at"] = args.stop_at
         if args.record:
             # Validated server-side (400 on a bad view/speed or a missing
             # ffmpeg/Chrome), so a batch that can't actually be recorded is
@@ -98,6 +107,21 @@ def _cmd_add(args) -> int:
         for it in created:
             tail = it.get("benchmark") or it.get("config") or ""
             print(f"  {it['queue_id']}  {it['kind']:<8} {it['model']}  {tail}")
+    return 0
+
+
+def _cmd_events(args) -> int:
+    """List the story events a casual run can be told to stop at."""
+    status, data = api("GET", "/api/checkpoints", port=args.port)
+    if status != 200:
+        print(f"ERROR: {detail(data)}", file=sys.stderr)
+        return 1
+    if args.json:
+        emit_json(data)
+    else:
+        print(f"{'id':<26} {'type':<7} name")
+        for e in data:
+            print(f"{e['id']:<26} {e['type']:<7} {e['name']}")
     return 0
 
 
@@ -171,6 +195,12 @@ def main() -> None:
     p_add.add_argument("--benchmark", help="Benchmark id (official only).")
     p_add.add_argument("--config", help="Config path (casual only).")
     p_add.add_argument("--max-turns", type=int, dest="max_turns", help="Max turns (casual only).")
+    p_add.add_argument(
+        "--stop-at", dest="stop_at", default=None,
+        help="Stop when this story event is reached (casual only), e.g. "
+             "`viridian_forest_reached`. --max-turns still caps the run; "
+             "whichever comes first ends it. `pokemon queue events` lists the ids.",
+    )
     p_add.add_argument("--repeat", type=int, default=1, help="Enqueue each model N times (default 1).")
     p_add.add_argument(
         "--record", choices=["simple", "detailed"], default=None,
@@ -191,6 +221,11 @@ def main() -> None:
         help="Recording frame rate, 1-60 (default 30).",
     )
 
+    sub.add_parser(
+        "events", parents=[common],
+        help="List the story events a casual run can --stop-at.",
+    )
+
     p_re = sub.add_parser("reorder", parents=[common], help="Set the full queue order by ids.")
     p_re.add_argument("ids", nargs="+", help="queue_ids in the desired order (must be all current ids).")
 
@@ -204,6 +239,7 @@ def main() -> None:
     dispatch = {
         "get": _cmd_get,
         "add": _cmd_add,
+        "events": _cmd_events,
         "reorder": _cmd_reorder,
         "cancel": _cmd_cancel,
         "clear": _cmd_clear,

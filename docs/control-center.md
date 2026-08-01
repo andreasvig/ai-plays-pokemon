@@ -123,8 +123,11 @@ Two kinds (see [the benchmark doc](benchmark.md) for the full distinction):
   (`pokebench-easy` / `first-badge` / `full`). The benchmark selects the gate
   ladder and the goal; config (`config-3.13`) and the start save are locked.
   Counts on that benchmark's leaderboard.
-- **Casual** — you pick **model + config + max-turns**. No gates, never on the
-  leaderboard. For experiments.
+- **Casual** — you pick **model + config + max-turns**, and optionally a
+  **Stop at** story event (`Entered Viridian Forest`, `Reached Pewter City`, …).
+  The run then ends at whichever comes first, the event or the turn cap. Never
+  on the leaderboard. For experiments. See
+  [Stopping at a story event](benchmark.md#stopping-at-a-story-event).
 
 Either kind can also be **recorded to MP4**. Tick "Record this run to MP4" in the
 dialog and pick the interface (the 1:1 simple view, or the full wide panel) and

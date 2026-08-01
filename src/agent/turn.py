@@ -939,6 +939,9 @@ class TurnManager:
                 # Calibration runs leave enforce off (observe-only); only an
                 # explicit `enforce: true` arms the deadline gates.
                 enforce=bool(referee_cfg.get("enforce", False)),
+                # Casual `--stop-at`: end the run when this gate latches. None
+                # on every official run — a benchmark ends at its own ladder.
+                stop_at=referee_cfg.get("stop_at") or None,
             )
 
         # tasks.json supersession (plan.md "Reconciliation"): when TaskMaster is
@@ -1669,8 +1672,9 @@ class TurnManager:
     def _referee_should_break(self) -> bool:
         """Poll the referee at the current turn and act on its verdict.
 
-        Returns True when the run loop should break — either a missed-gate
-        termination (enforcement) or the final-rung WIN (locked decision #8).
+        Returns True when the run loop should break — a missed-gate termination
+        (enforcement), the requested ``stop_at`` event, or the final-rung WIN
+        (locked decision #8).
         Wrapped so a referee fault (e.g. a flaky memory read) can NEVER take
         down a player run. Safe to call on every turn, including TaskMaster
         handoff turns: that's what evaluates a deadline gate at the exact turn
@@ -1706,6 +1710,26 @@ class TurnManager:
                 "turn": self.turn_number, "error": str(e),
             })
             return False
+        # Requested early finish line (casual `--stop-at`). Checked BEFORE the
+        # final-rung win so a run told to stop at the last gate reports the
+        # reason the user actually asked for. Counts as a clean completion: the
+        # run was asked to reach an event and it reached it.
+        try:
+            if self.referee.should_stop_at():
+                self._referee_completed = True
+                reason = self.referee.stop_at_reason
+                print(f"  [Turn {self.turn_number}] Referee: requested stop "
+                      f"event reached ({reason}) — run complete.")
+                self.logger.log_custom("referee_stop_at", {
+                    "turn": self.turn_number,
+                    "total_turns": total_turns,
+                    "reason": reason,
+                })
+                return True
+        except Exception as e:
+            self.logger.log_custom("referee_error", {
+                "turn": self.turn_number, "error": str(e),
+            })
         # Success exit (locked decision #8): final ladder rung complete → WIN.
         try:
             if self.referee.should_complete_run():

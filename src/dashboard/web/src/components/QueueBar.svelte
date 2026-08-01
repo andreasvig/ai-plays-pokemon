@@ -75,7 +75,7 @@
           <button class="rm" onclick={() => confirmId = q.queueId} title="Remove">✕</button>
         </div>
         <div class="cmodel mono">{q.model}</div>
-        <div class="cmeta faint">{#if q.kind === 'casual'}<span class="mono">{q.config}</span> · {q.maxTurns}t{:else}pokebench-v1{/if}</div>
+        <div class="cmeta faint">{#if q.kind === 'casual'}<span class="mono">{q.config}</span> · {q.maxTurns}t{#if q.stopAt} · ⇥ <span class="mono">{q.stopAt}</span>{/if}{:else}pokebench-v1{/if}</div>
         {#if confirmId === q.queueId}
           <div class="confirm">
             <span class="confirm-q">Remove this run?</span>

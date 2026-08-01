@@ -70,6 +70,7 @@ class QueueManager:
         config: str | None = None,
         benchmark: str | None = None,
         max_turns: int | None = None,
+        stop_at: str | None = None,
         continue_from: str | None = None,
         task_master_model: str | None = None,
         record: dict | RecordSpec | None = None,
@@ -78,9 +79,11 @@ class QueueManager:
         """Mint a :class:`QueuedRun`, append it, and save.
 
         ``benchmark`` is the official benchmark id (which ladder + goal); ``None``
-        for casual runs. ``record`` opts the run into an MP4 capture (``None`` =
-        no recording). ``enqueued_at`` is overridable so tests can pin a
-        deterministic timestamp; it defaults to the current UTC ISO time.
+        for casual runs. ``stop_at`` is a casual run's early finish line — the
+        story event that ends it before its turn cap (``None`` = turn cap only).
+        ``record`` opts the run into an MP4 capture (``None`` = no recording).
+        ``enqueued_at`` is overridable so tests can pin a deterministic
+        timestamp; it defaults to the current UTC ISO time.
         """
         item = QueuedRun(
             queue_id=f"q_{uuid4().hex[:8]}",
@@ -89,6 +92,7 @@ class QueueManager:
             config=config,
             benchmark=benchmark,
             max_turns=max_turns,
+            stop_at=stop_at,
             continue_from=continue_from,
             task_master_model=task_master_model,
             record=RecordSpec.model_validate(record) if record is not None else None,

@@ -128,3 +128,79 @@ def list_configs(configs_dir: Path | None = None) -> list[str]:
         stems.append(((int(major), int(minor)), stem))
     stems.sort(key=lambda t: t[0])
     return [stem for _, stem in stems]
+
+
+# The ladder the stop-at catalog is read from. Deliberately the FULL ladder:
+# every other benchmark's ladder (easy, first-badge) is a literal prefix of it,
+# so this one file is a superset of every story event the referee can detect —
+# one catalog, no union step. It happens to be the same file as
+# ``executor.OFFICIAL_LADDER`` but is a SEPARATE constant on purpose: that one
+# names the legacy full benchmark, this one names "the longest ladder we have".
+# A test asserts the superset property so adding a benchmark can't silently
+# leave events out of the picker.
+STOP_EVENT_LADDER = "configs/checkpoints-firered-v1.yaml"
+
+
+def list_stop_events(ladder: str | Path | None = None) -> list[dict[str, Any]]:
+    """Story events a casual run can be told to stop at — ``[{id, name, type}]``.
+
+    The flattened gate list in ladder order (multigate members expanded in
+    place, so ``cascade_badge`` and ``bills_errand_reached`` are each selectable
+    on their own rather than only as their any-order group). Deadlines are
+    deliberately NOT projected: a casual run runs the ladder observe-only, so a
+    gate's turn limit means nothing to it and showing one would imply otherwise.
+
+    Backs ``GET /api/checkpoints`` and validates ``--stop-at`` / the dialog's
+    picker. Pure read, no caching — the ladder file is the source of truth.
+    """
+    from src.referee.checkpoints import load_ladder
+
+    target = Path(ladder) if ladder is not None else Path(STOP_EVENT_LADDER)
+    return [
+        {"id": cp.id, "name": cp.name, "type": cp.type}
+        for cp in load_ladder(target).checkpoints
+    ]
+
+
+def validate_stop_event(
+    stop_at: Any, ladder: str | Path | None = None
+) -> str | None:
+    """Return a known stop-event id, or ``None`` for "no stop event".
+
+    ``None`` and ``""`` both mean unset (the dialog's "—" option posts an empty
+    string). Anything else must name a gate in the ladder, else ``ValueError``
+    — a typo'd id has to fail at the door, because the alternative is a run that
+    quietly never stops early and only reveals the mistake at its turn cap.
+    """
+    if stop_at is None or stop_at == "":
+        return None
+    if not isinstance(stop_at, str):
+        raise ValueError(f"stop_at must be a string event id, got {stop_at!r}")
+    known = [e["id"] for e in list_stop_events(ladder)]
+    if stop_at not in known:
+        raise ValueError(
+            f"unknown stop event {stop_at!r}; known: {', '.join(known)}"
+        )
+    return stop_at
+
+
+def stop_at_referee_config(stop_at: str | None) -> dict[str, Any] | None:
+    """The ``referee`` config block that makes a run stop at ``stop_at``.
+
+    ``None`` in → ``None`` out (no block; the run has no referee at all, which
+    is what a casual run has always had). The single builder for this block:
+    both the queue executor and ``pokemon run --stop-at`` call it, so the two
+    entry points cannot drift into wiring the run differently.
+
+    ``enforce: False`` is the load-bearing field. The full ladder carries turn
+    deadlines, and arming them would let a *pace* gate kill a casual run long
+    before it reaches the event you asked for. Observe-only means the only two
+    ends are the event and the turn cap.
+    """
+    if not stop_at:
+        return None
+    return {
+        "checkpoints": STOP_EVENT_LADDER,
+        "enforce": False,
+        "stop_at": stop_at,
+    }

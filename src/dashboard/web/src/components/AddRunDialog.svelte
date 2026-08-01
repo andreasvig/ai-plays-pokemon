@@ -6,10 +6,13 @@
   // default_level, levels:[{level, observed, run_count}], observed, run_count}].
   // Pick a model, then a thinking level (default = highest); submit "model(level)".
   // CONFIGS is a list of config stems, e.g. "config-3.13".
-  let { open = false, continueFrom = null, models = [], configs = [], benchmarks = [], onclose, onsubmit } = $props()
+  // CHECKPOINTS is the full ladder flattened ([{id, name, type}]) — the story
+  // events a casual run can be told to stop at, from /api/checkpoints.
+  let { open = false, continueFrom = null, models = [], configs = [], benchmarks = [], checkpoints = [], onclose, onsubmit } = $props()
   const MODELS = $derived(models)
   const CONFIGS = $derived(configs)
   const BENCHMARKS = $derived(benchmarks)
+  const CHECKPOINTS = $derived(checkpoints)
   // The registry-default benchmark (or the first), pre-selected on open.
   const defaultBenchmark = $derived(BENCHMARKS.find((b) => b.default)?.id ?? BENCHMARKS[0]?.id ?? '')
 
@@ -50,6 +53,10 @@
   let config = $state('')
   let benchmark = $state('')        // selected benchmark id (official only)
   let maxTurns = $state(100)        // casual default: 100 turns
+  // Casual early finish line. '' = none (turn cap only), which stays the
+  // default: a stop event is a deliberate "play until X", never a surprise.
+  // Set alongside max turns, not instead of it — whichever lands first wins.
+  let stopAt = $state('')
 
   // ── recording (opt-in; off by default — it costs a headless browser + an
   // encoder for the whole run, so it is never something you get by accident) ──
@@ -179,6 +186,8 @@
       benchmark: isOfficial ? benchmark : null,
       config: isOfficial ? null : config,
       maxTurns: isOfficial ? null : maxTurns,
+      // Official ends at its own ladder, so a stop event is casual-only.
+      stopAt: isOfficial ? null : (stopAt || null),
       continueFrom: continueFrom?.runId ?? null,
       // Casual continue may override models. Player rides on `model` (the backend
       // treats it as reuse when it equals the source alias, else an override).
@@ -300,6 +309,22 @@
             <span class="flabel">Max turns</span>
             <input type="number" bind:value={maxTurns} min="1" step="50" />
           </label>
+          <!-- Optional early finish line. The ids come from the real gate
+               ladder (/api/checkpoints) — the same events the referee stamps
+               for a benchmark — so "play until Viridian Forest" is detected
+               from game memory, not guessed from the screen. -->
+          <label class="field">
+            <span class="flabel">Stop at</span>
+            <select bind:value={stopAt}>
+              <option value="">— none (run to max turns)</option>
+              {#each CHECKPOINTS as c}<option value={c.id}>{c.name}</option>{/each}
+            </select>
+          </label>
+          {#if stopAt}
+            <p class="rechint faint">
+              Ends the run as soon as the referee detects this — or at {maxTurns} turns, whichever comes first.
+            </p>
+          {/if}
         {/if}
 
         <!-- Recording. Rendered headlessly server-side, so it keeps going
@@ -339,7 +364,7 @@
 
       <footer class="df">
         <span class="hint faint">
-          {#if isOfficial}Ends on the final gate (win) or a missed deadline.{:else}Runs until max turns. Never on the leaderboard.{/if}
+          {#if isOfficial}Ends on the final gate (win) or a missed deadline.{:else if stopAt}Ends at the chosen event or max turns. Never on the leaderboard.{:else}Runs until max turns. Never on the leaderboard.{/if}
         </span>
         <div class="actions">
           <button class="btn ghost" onclick={() => onclose()}>Cancel</button>

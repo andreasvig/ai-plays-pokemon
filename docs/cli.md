@@ -93,6 +93,10 @@ pokemon run --continue local/runs/2026-05-26_..._config-3.13__claude-opus-4-7 --
 # Record the run to MP4 while it plays (headless — unaffected by your browser)
 pokemon run --model "claude-opus-4.7(medium)" --turns 50 \
             --record simple --record-speed cut-thinking
+
+# Play until a story event instead of a fixed length (--turns is still the cap)
+pokemon run --model "claude-opus-5(medium)" --turns 400 \
+            --stop-at viridian_forest_reached
 ```
 
 ### Pairing rules between `--config` and `--model`
@@ -115,6 +119,7 @@ Aliases come from `configs/models.yaml`. Raw `"provider/model"` OpenRouter ids a
 | `--config PATH ...`   | latest in `configs/`             | One or more config files.                     |
 | `--model ALIAS ...`   | (required)                       | One or more model aliases or raw ids.         |
 | `--turns N`           | `10`                             | Turns per run, applied to every pair.         |
+| `--stop-at EVENT`     | off                              | End the run when this story event is detected. An id from the gate ladder (`pokemon queue events`, or pass a wrong one to see the list). `--turns` still caps it — whichever comes first wins. See [benchmark.md](benchmark.md#stopping-at-a-story-event). |
 | `--snapshot PATH`     | `local/snapshots/bedroom_start`  | Reloaded before each run's turn loop.         |
 | `--connect-timeout S` | `300.0`                          | Seconds to wait for the initial Lua connect.  |
 | `--kill-existing`     | off                              | `pkill -f mgba` before launching.             |

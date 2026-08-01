@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from src.app.benchmarks import get_benchmark
+from src.app.catalog import stop_at_referee_config
 from src.app.models import QueuedRun, RunKind, RunStatus
 from src.app.projection import project_run_dir
 from src.app.trace_build import build_and_cache_trace
@@ -155,6 +156,10 @@ class RunExecutor:
         - Casual continue: reuse the SOURCE run's config + model via
           ``continue_from_run`` (resolves the latest savepoint), the item's
           max-turns, snapshot = that savepoint dir.
+
+        Both casual branches also take the item's optional ``stop_at`` story
+        event (see :meth:`_apply_stop_at`), which bounds the run alongside
+        max-turns rather than replacing it.
         """
         prepare_config = self._resolve_prepare_config()
 
@@ -220,6 +225,9 @@ class RunExecutor:
                 _resolve_player_model(cfg, item.model)
             if item.task_master_model:
                 _resolve_task_master_model(cfg, item.task_master_model)
+            # A continue picks its OWN stop event (like max-turns) — it is a
+            # property of this segment, not something inherited from the source.
+            self._apply_stop_at(cfg, item.stop_at)
             turns = item.max_turns or 1500
             return cfg, str(savepoint_dir), turns
 
@@ -260,8 +268,27 @@ class RunExecutor:
         from src.cli.runner import _resolve_task_master_model
 
         _resolve_task_master_model(cfg, None)
+        self._apply_stop_at(cfg, item.stop_at)
         turns = item.max_turns or 1500
         return cfg, self.canonical_save, turns
+
+    @staticmethod
+    def _apply_stop_at(cfg: dict, stop_at: str | None) -> None:
+        """Wire a casual run's early finish line onto its config, in place.
+
+        The block itself is built by ``catalog.stop_at_referee_config`` (shared
+        with ``pokemon run --stop-at``): the FULL ladder, observe-only, plus the
+        chosen gate. A side effect worth knowing is that the run also gets the
+        live gate HUD and a scorecard — wanted, and it stays off the leaderboard
+        because eligibility keys on ``kind == official``, never on the presence
+        of a ladder.
+
+        No stop event → the config is left exactly as it was (a casual run gets
+        no referee block at all, as before).
+        """
+        block = stop_at_referee_config(stop_at)
+        if block is not None:
+            cfg["referee"] = block
 
     @staticmethod
     def _resolve_config_path(config: str | None) -> str:

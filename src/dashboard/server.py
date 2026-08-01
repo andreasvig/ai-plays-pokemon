@@ -701,6 +701,22 @@ def _validate_benchmark_id(benchmark: Any) -> str | None:
     return benchmark
 
 
+def _validate_stop_at(stop_at: Any) -> str | None:
+    """Return a known stop-event id, or None. 400 on anything unrecognised.
+
+    Unlike the benchmark id (which falls back to the registry default so a stale
+    queue item still runs), an unknown stop event is rejected outright: falling
+    back would silently give you a run with no early exit, and you'd only find
+    out at the turn cap.
+    """
+    from src.app.catalog import validate_stop_event
+
+    try:
+        return validate_stop_event(stop_at)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @app.get("/api/queue")
 async def api_queue_get():
     """`{active, items}` — the serial queue (active queue_id + ordered items)."""
@@ -717,9 +733,11 @@ def _enqueue_kwargs(spec: dict) -> dict:
     """Validate one enqueue ``spec`` → kwargs for ``QueueManager.enqueue``.
 
     Raises ``HTTPException(400)`` on a bad kind / missing-or-unknown model /
-    unknown benchmark. Official (locked #4/#7) FORCES the frozen config + no
-    max-turns (request config/max_turns ignored) and takes only the request's
-    ``benchmark``; casual keeps the request's config/max_turns/continue_from.
+    unknown benchmark / unknown stop event. Official (locked #4/#7) FORCES the
+    frozen config + no max-turns (request config/max_turns/stop_at ignored — a
+    benchmark ends at its own ladder) and takes only the request's
+    ``benchmark``; casual keeps the request's
+    config/max_turns/stop_at/continue_from.
     Pure validation — no enqueue, no side effects — so the single and batch
     routes share exactly the same rules.
     """
@@ -749,6 +767,7 @@ def _enqueue_kwargs(spec: dict) -> dict:
         "model": model,
         "config": spec.get("config"),
         "max_turns": spec.get("max_turns"),
+        "stop_at": _validate_stop_at(spec.get("stop_at")),
         "continue_from": spec.get("continue_from"),
         "record": record,
     }
@@ -914,6 +933,10 @@ async def api_run_continue(run_id: str, body: dict | None = None):
         config=spec.get("config"),
         benchmark=spec.get("benchmark"),
         max_turns=body.get("max_turns"),
+        # Per-segment, like max_turns: the continue picks its own stop event
+        # rather than inheriting the source run's. Ignored for an official
+        # continue (the executor's official branch never reads it).
+        stop_at=_validate_stop_at(body.get("stop_at")),
         continue_from=spec["continue_from"],
         task_master_model=spec.get("task_master_model"),
         # A continue is a fresh run with its own run dir, so it gets its own
@@ -1006,6 +1029,24 @@ async def api_benchmarks():
     except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(status_code=500, detail=f"benchmark registry: {exc}")
     return JSONResponse([b.to_dict() for b in benchmarks])
+
+
+@app.get("/api/checkpoints")
+async def api_checkpoints():
+    """Story events a casual run can stop at — ``[{id, name, type}, ...]``.
+
+    The full ladder flattened into ladder order (see
+    ``src.app.catalog.list_stop_events``). Backs the new-run dialog's "Stop at"
+    picker. Like ``/api/benchmarks``: a pure on-disk projection, no control
+    plane needed.
+    """
+    from src.app.catalog import list_stop_events
+
+    try:
+        events = list_stop_events()
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=500, detail=f"checkpoint ladder: {exc}")
+    return JSONResponse(events)
 
 
 @app.get("/api/leaderboard")

@@ -42,6 +42,7 @@
   let models = $state([])          // alias list for the Add-run dialog
   let configs = $state([])         // casual config stems for the dialog
   let benchmarks = $state([])      // benchmark registry [{id,name,goal,...}]
+  let checkpoints = $state([])     // full ladder [{id,name,type}] — casual "Stop at"
   let benchmark = $state('')       // selected benchmark id (scopes the leaderboard)
 
   // spectate pill is green when the emulator is up AND a run is active
@@ -116,12 +117,13 @@
   }
   async function loadEmulator() { emulator = await api.fetchEmulatorStatus() }
   async function loadCatalog() {
-    const [m, c, b] = await Promise.all([
+    const [m, c, b, k] = await Promise.all([
       api.fetchModels().catch(() => []),
       api.fetchConfigs().catch(() => []),
       api.fetchBenchmarks().catch(() => []),
+      api.fetchCheckpoints().catch(() => []),
     ])
-    models = m; configs = c; benchmarks = b
+    models = m; configs = c; benchmarks = b; checkpoints = k
     // Default the leaderboard filter to the registry-default benchmark (or the
     // first) once, without clobbering a selection the user already made.
     if (!benchmark && b.length) benchmark = (b.find((x) => x.default) ?? b[0]).id
@@ -192,6 +194,7 @@
       if (spec.continueFrom) {
         await api.continueRun(spec.continueFrom, {
           maxTurns: spec.maxTurns,
+          stopAt: spec.stopAt ?? null,
           playerModel: spec.playerModel ?? null,
           taskMasterModel: spec.taskMasterModel ?? null,
           record: spec.record ?? null,
@@ -272,7 +275,7 @@
   {/if}
 </main>
 
-<AddRunDialog open={dialogOpen} continueFrom={dialogContinueFrom} {models} {configs} {benchmarks}
+<AddRunDialog open={dialogOpen} continueFrom={dialogContinueFrom} {models} {configs} {benchmarks} {checkpoints}
   onclose={() => { dialogOpen = false; dialogContinueFrom = null }} onsubmit={submitRun} />
 
 <style>

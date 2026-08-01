@@ -190,6 +190,9 @@ class _StubReferee:
     def should_complete_run(self) -> bool:
         return False
 
+    def should_stop_at(self) -> bool:
+        return False
+
     def scorecard(self) -> dict:
         return {"termination_reason": self._reason, "gates": [], "furthest": None}
 
