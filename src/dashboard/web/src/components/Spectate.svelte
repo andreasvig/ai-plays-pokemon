@@ -17,6 +17,7 @@
   import JsonTree from './JsonTree.svelte'
   import TraceFeed from './TraceFeed.svelte'
   import SimpleView from './SimpleView.svelte'
+  import Icon from './Icon.svelte'
   import * as api from '../lib/api.js'
 
   // Live feed windowing: render only the last MAX_LIVE_TASKS tasks (or, for
@@ -188,15 +189,15 @@
   //   { self_assessment: 'succeeded'|'failed'|'partial'|<free text>, task_summary: str }
   // Map the known enum to a labeled verdict; free text becomes the verdict line.
   function fmtHandback(r) {
-    if (!r || typeof r !== 'object') return { verdict: '🟡 Returned to TaskMaster', tone: 'partial', summary: '' }
+    if (!r || typeof r !== 'object') return { verdict: 'Returned to TaskMaster', tone: 'partial', summary: '' }
     const raw = (r.self_assessment ?? '').toString().trim()
     const lc = raw.toLowerCase()
     let verdict, tone
-    if (/^succe/.test(lc) || lc === 'true' || lc === 'complete') { verdict = '✅ Task complete'; tone = 'ok' }
-    else if (/^fail/.test(lc) || lc === 'false' || /not (complete|done|succeed)/.test(lc)) { verdict = '❌ Task not complete'; tone = 'no' }
-    else if (/^partial/.test(lc) || /partly/.test(lc)) { verdict = '🟡 Partial'; tone = 'partial' }
+    if (/^succe/.test(lc) || lc === 'true' || lc === 'complete') { verdict = '✓ Task complete'; tone = 'ok' }
+    else if (/^fail/.test(lc) || lc === 'false' || /not (complete|done|succeed)/.test(lc)) { verdict = '✗ Task not complete'; tone = 'no' }
+    else if (/^partial/.test(lc) || /partly/.test(lc)) { verdict = '~ Partial'; tone = 'partial' }
     else if (raw) { verdict = raw; tone = 'partial' }      // free-text self-assessment → use verbatim
-    else { verdict = '🟡 Returned to TaskMaster'; tone = 'partial' }
+    else { verdict = 'Returned to TaskMaster'; tone = 'partial' }
     return { verdict, tone, summary: r.task_summary || '' }
   }
 
@@ -544,7 +545,7 @@
       <p class="big">Waiting for a live run</p>
       <p class="faint">No run is active right now. Queue a run to start spectating — the next item starts automatically and streams here live.</p>
       <button class="btn" onclick={() => onnew()}>+ New run</button>
-      <button class="btn ghost" onclick={() => onback()}>← Back to leaderboard</button>
+      <button class="btn ghost" onclick={() => onback()}><Icon name="back" size={13} /> Back to leaderboard</button>
     </div>
   {:else if simple}
     <!-- The simple view replaces the whole instrument panel, bar included. Its
@@ -556,13 +557,13 @@
     <SimpleView frame={screenUrl} {lastEvent} {seed} onexit={() => setSimple(false)} />
   {:else}
     <div class="bar">
-      <button class="btn ghost" onclick={() => onback()}>← Leaderboard</button>
+      <button class="btn ghost" onclick={() => onback()}><Icon name="back" size={13} /> Leaderboard</button>
       <span class="pill"><span class="dot live"></span> live</span>
       <button class="mutebtn" class:muted onclick={() => ontogglemute && ontogglemute()}
               title={muted ? 'Game audio muted — click to unmute' : 'Game audio on — click to mute'}
-              aria-label={muted ? 'Unmute game audio' : 'Mute game audio'}>{muted ? '🔇' : '🔊'}</button>
+              aria-label={muted ? 'Unmute game audio' : 'Mute game audio'}><Icon name={muted ? 'muted' : 'audio'} size={16} /></button>
       <button class="btn ghost" onclick={() => setSimple(true)}
-              title="Simple view — full-screen, recording-optimised">▣ Simple view</button>
+              title="Simple view — full-screen, recording-optimised"><Icon name="tv" size={14} /> Simple view</button>
       {#if run}<span class="badge {run.kind}">{run.kind === 'official' ? 'benchmark' : 'casual'}</span>{/if}
       <span class="model mono">{run?.model ?? activeRunId}</span>
       <span class="conn">
@@ -604,12 +605,12 @@
         <div class="panels" class:solo={!hasTaskMaster}>
           {#if hasTaskMaster}
           <div class="panel task">
-            <div class="p-h">🧭 Current task</div>
+            <div class="p-h">Current task</div>
             <div class="p-scroll">
               {#if task}
                 <div class="t-title">{task.title}{#if task.status}<span class="t-done faint"> · {task.status}</span>{/if}</div>
                 {#if task.description}<div class="t-lab">Description</div><p class="t-body">{task.description}</p>{/if}
-                {#if task.success}<div class="t-lab">🎯 Success criteria</div><p class="t-body mono">{task.success}</p>{/if}
+                {#if task.success}<div class="t-lab">Success criteria</div><p class="t-body mono">{task.success}</p>{/if}
               {:else}
                 <p class="t-body faint">Waiting for the first TaskMaster handoff…</p>
               {/if}
@@ -617,7 +618,7 @@
           </div>
           {/if}
           <div class="panel mem">
-            <div class="p-h">🧠 Memory dictionary</div>
+            <div class="p-h">Memory dictionary</div>
             <div class="p-scroll">
               {#if memory && Object.keys(memory).length}<JsonTree data={memory} />{:else}<p class="t-body faint">(empty)</p>{/if}
             </div>
@@ -641,7 +642,7 @@
   .letterbox {
     width: 100vw; height: 100vh; overflow: hidden;
     display: flex; align-items: center; justify-content: center;
-    background: #0d0f14;
+    background: var(--dark);
   }
   .frame {
     width: min(100vw, calc(100vh * 16 / 9));
@@ -655,10 +656,10 @@
   .bar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex: none; }
   .bar .model { font-size: 14px; font-weight: 650; }
   .mutebtn {
-    border: 1px solid var(--border); background: var(--surface); border-radius: 6px;
-    font-size: 14px; line-height: 1; padding: 4px 8px; cursor: pointer; transition: opacity .12s, background .12s;
+    border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius-sm);
+    line-height: 1; padding: 6px 7px; display: grid; place-items: center; cursor: pointer; transition: opacity .12s, background .12s;
   }
-  .mutebtn:hover { background: #eef1f5; }
+  .mutebtn:hover { background: var(--wash); }
   .mutebtn.muted { opacity: .55; }
   .conn { margin-left: auto; display: flex; align-items: center; gap: 12px; }
   .c-ind { font-size: 11px; font-weight: 650; color: var(--green); display: inline-flex; align-items: center; gap: 5px; }
@@ -674,19 +675,19 @@
   .main { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow: hidden; }
   /* emulator flexes to fill leftover height and shrinks on short screens;
      .screen uses object-fit:contain so it never overflows. */
-  .gba { flex: 1; min-height: 0; aspect-ratio: 240/160; background: #11141b; border-radius: var(--radius); display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-lg); overflow: hidden; }
+  .gba { flex: 1; min-height: 0; aspect-ratio: 240/160; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); display: flex; align-items: center; justify-content: center; overflow: hidden; }
   .screen { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; }
-  .ph { color: #7b8696; text-align: center; font-size: 16px; line-height: 1.7; }
+  .ph { color: var(--faint); text-align: center; font-size: 15px; line-height: 1.7; }
 
   .stats { flex: none; display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; align-items: stretch; }
   .stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 11px 12px; box-shadow: var(--shadow); }
   /* Gates stat carries the next-gate line + deadline urgency tone (the old big
      HUD folded in here); it occupies ~30% of the stats row (set inline). */
   .stat.gates { display: flex; flex-direction: column; }
-  .stat.gates.amber { border-color: #f0d9a0; }
-  .stat.gates.red { border-color: #f0c5c5; }
+  .stat.gates.amber { border-color: var(--tm-rule); }
+  .stat.gates.red { border-color: var(--red-rule); }
   .gnext { font-size: 10px; line-height: 1.35; font-weight: 600; color: var(--muted); margin-top: 3px; }
-  .stat.gates.amber .gnext { color: #b8860b; }
+  .stat.gates.amber .gnext { color: var(--tm); }
   .stat.gates.red .gnext { color: var(--red); }
   .sl { display: block; font-size: 9.5px; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); font-weight: 700; }
   .sv { font-size: 18px; font-weight: 750; }

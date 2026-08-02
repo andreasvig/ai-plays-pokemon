@@ -1,4 +1,5 @@
 <script>
+  import Icon from './Icon.svelte'
   let { active = null, queue = [], onkill, onremove, onreorder, onnew, onspectate } = $props()
   let dragIndex = $state(null)
   let overIndex = $state(null)
@@ -52,7 +53,7 @@
             </div>
           </div>
         {:else}
-          <button class="kill" onclick={(e) => { e.stopPropagation(); killArmed = true }} title="Stop run — starts next">✕ kill</button>
+          <button class="kill" onclick={(e) => { e.stopPropagation(); killArmed = true }} title="Stop run — starts next"><Icon name="close" size={13} /> kill</button>
         {/if}
       </div>
     {:else}
@@ -69,13 +70,13 @@
            ondrop={() => drop(i)}
            ondragend={() => { dragIndex = null; overIndex = null }}>
         <div class="ctop">
-          <span class="grip" title="Drag to reorder">⠿</span>
+          <span class="grip" title="Drag to reorder"><Icon name="grip" size={13} /></span>
           <span class="badge {q.kind}">{label(q.kind)}</span>
-          {#if q.continueFrom}<span class="cont faint">↪</span>{/if}
-          <button class="rm" onclick={() => confirmId = q.queueId} title="Remove">✕</button>
+          {#if q.continueFrom}<span class="cont faint" title="Continues an earlier run"><Icon name="rerun" size={12} /></span>{/if}
+          <button class="rm" onclick={() => confirmId = q.queueId} title="Remove"><Icon name="close" size={11} /></button>
         </div>
         <div class="cmodel mono">{q.model}</div>
-        <div class="cmeta faint">{#if q.kind === 'casual'}<span class="mono">{q.config}</span> · {q.maxTurns}t{#if q.stopAt} · ⇥ <span class="mono">{q.stopAt}</span>{/if}{#if q.rom} · 🎮 <span class="mono">{q.rom}</span>{/if}{:else}pokebench-v1{/if}</div>
+        <div class="cmeta faint">{#if q.kind === 'casual'}<span class="mono">{q.config}</span> · {q.maxTurns}t{#if q.stopAt} · ⇥ <span class="mono">{q.stopAt}</span>{/if}{#if q.rom} · <span class="mono">{q.rom}</span>{/if}{:else}pokebench-v1{/if}</div>
         {#if confirmId === q.queueId}
           <div class="confirm">
             <span class="confirm-q">Remove this run?</span>
@@ -98,7 +99,7 @@
   .track { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; flex: 1; align-items: stretch; }
 
   .card { flex: none; width: 178px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 9px 11px; background: var(--surface); position: relative; transition: border-color .12s, box-shadow .12s, opacity .12s; }
-  .card.active { background: var(--accent-soft); border-color: #c7c8f7; box-shadow: var(--shadow); cursor: pointer; }
+  .card.active { background: var(--accent-soft); border-color: var(--accent-rule); cursor: pointer; }
   .card.up { cursor: grab; }
   .card.up:active { cursor: grabbing; }
   .card.over { border-color: var(--accent); box-shadow: -2px 0 0 var(--accent) inset; }
@@ -111,15 +112,15 @@
   .now.stopping .dot { background: var(--amber); animation: pulse 1s ease-in-out infinite; }
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
   .stopping-note { margin-top: 7px; font-size: 10px; line-height: 1.35; color: var(--amber); }
-  .grip { color: var(--faint); font-size: 11px; }
-  .cont { font-size: 11px; }
-  .rm { margin-left: auto; width: 18px; height: 18px; border: none; background: none; color: var(--faint); border-radius: 4px; font-size: 10px; }
+  .grip { color: var(--faint); display: inline-flex; }
+  .cont { display: inline-flex; }
+  .rm { margin-left: auto; width: 18px; height: 18px; display: grid; place-items: center; padding: 0; border: none; background: none; color: var(--faint); border-radius: var(--radius-sm); }
   .rm:hover { background: var(--red-soft); color: var(--red); }
   .cmodel { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .cmeta { font-size: 10.5px; margin-top: 1px; }
   .badge.official, .badge.casual { font-size: 9px; padding: 1px 6px; }
 
-  .kill { margin-top: 7px; width: 100%; border: 1px solid #f0c5c5; background: var(--surface); color: var(--red); font-weight: 650; font-size: 11px; padding: 4px; border-radius: 6px; }
+  .kill { margin-top: 7px; width: 100%; border: 1px solid var(--red-rule); background: var(--surface); color: var(--red); font-weight: 650; font-size: 11px; padding: 4px; border-radius: var(--radius-sm); display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
   .kill:hover { background: var(--red-soft); }
 
   .add { flex: none; align-self: stretch; border: 1px dashed var(--border); background: var(--surface-2); color: var(--muted); font-weight: 600; font-size: 12px; padding: 0 16px; border-radius: var(--radius-sm); white-space: nowrap; }
@@ -129,9 +130,9 @@
   .confirm { margin-top: 7px; border-top: 1px solid var(--border-2); padding-top: 6px; }
   .confirm-q { display: block; font-size: 10.5px; font-weight: 650; color: var(--red); margin-bottom: 5px; }
   .confirm-actions { display: flex; gap: 6px; }
-  .cf-yes, .cf-no { flex: 1; font-size: 10.5px; font-weight: 650; padding: 4px; border-radius: 6px; border: 1px solid var(--border); }
-  .cf-yes { border-color: #f0c5c5; background: var(--red-soft); color: var(--red); }
-  .cf-yes:hover { background: #f9dada; }
+  .cf-yes, .cf-no { flex: 1; font-size: 10.5px; font-weight: 650; padding: 4px; border-radius: var(--radius-sm); border: 1px solid var(--border); }
+  .cf-yes { border-color: var(--red-rule); background: var(--red-soft); color: var(--red); }
+  .cf-yes:hover { border-color: var(--red); }
   .cf-no { background: var(--surface); color: var(--muted); }
   .cf-no:hover { background: var(--surface-2); }
 </style>

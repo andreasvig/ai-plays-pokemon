@@ -1,4 +1,5 @@
 <script>
+  import Icon from './Icon.svelte'
   let { active = null, queue = [], onkill, onremove, onreorder, onnew } = $props()
   let dragIndex = $state(null)
   let overIndex = $state(null)
@@ -38,18 +39,18 @@
             ondragleave={() => { if (overIndex === i) overIndex = null }}
             ondrop={() => drop(i)}
             ondragend={() => { dragIndex = null; overIndex = null }}>
-          <span class="grip" title="Drag to reorder">⠿</span>
+          <span class="grip" title="Drag to reorder"><Icon name="grip" size={14} /></span>
           <div class="qbody">
             <div class="ctop">
               <span class="badge {q.kind}">{label(q.kind)}</span>
-              {#if q.continueFrom}<span class="cont faint">↪ continue</span>{/if}
+              {#if q.continueFrom}<span class="cont faint"><Icon name="rerun" size={12} /> continue</span>{/if}
             </div>
             <div class="cmodel mono">{q.model}</div>
             <div class="cmeta faint">
-              {#if q.kind === 'casual'}<span class="mono">{q.config}</span> · {q.maxTurns}t{#if q.stopAt} · ⇥ <span class="mono">{q.stopAt}</span>{/if}{#if q.rom} · 🎮 <span class="mono">{q.rom}</span>{/if}{:else}pokebench-v1{/if}
+              {#if q.kind === 'casual'}<span class="mono">{q.config}</span> · {q.maxTurns}t{#if q.stopAt} · ⇥ <span class="mono">{q.stopAt}</span>{/if}{#if q.rom} · <span class="mono">{q.rom}</span>{/if}{:else}pokebench-v1{/if}
             </div>
           </div>
-          <button class="rm" onclick={() => onremove(q.queueId)} title="Remove from queue">✕</button>
+          <button class="rm" onclick={() => onremove(q.queueId)} title="Remove from queue"><Icon name="close" size={12} /></button>
         </li>
       {/each}
     </ul>
@@ -69,25 +70,25 @@
     border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px;
     background: var(--surface-2); position: relative; transition: border-color .12s, transform .06s, box-shadow .12s;
   }
-  .qcard.active { background: var(--accent-soft); border-color: #c7c8f7; margin-bottom: 12px; }
+  .qcard.active { background: var(--accent-soft); border-color: var(--accent-rule); margin-bottom: 12px; }
   .qcard.over { border-color: var(--accent); box-shadow: 0 -2px 0 var(--accent) inset; }
   .qcard.dragging { opacity: .5; }
   .qlist .qcard { display: grid; grid-template-columns: 16px 1fr 22px; gap: 8px; align-items: center; cursor: grab; }
   .qlist .qcard:active { cursor: grabbing; }
 
-  .grip { color: var(--faint); font-size: 13px; text-align: center; user-select: none; }
+  .grip { color: var(--faint); display: grid; place-items: center; user-select: none; }
   .ctop { display: flex; align-items: center; gap: 7px; margin-bottom: 4px; }
   .now { font-size: 11px; font-weight: 650; color: var(--green); display: inline-flex; align-items: center; gap: 5px; margin-left: auto; }
-  .cont { font-size: 10px; font-weight: 650; }
+  .cont { font-size: 10px; font-weight: 650; display: inline-flex; align-items: center; gap: 4px; }
   .cmodel { font-size: 12.5px; font-weight: 600; }
   .cmeta { font-size: 11px; margin-top: 1px; }
   .badge.official, .badge.casual { font-size: 9.5px; padding: 2px 7px; }
 
-  .kill { margin-top: 10px; width: 100%; border: 1px solid #f0c5c5; background: var(--surface); color: var(--red); font-weight: 650; font-size: 12px; padding: 7px; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+  .kill { margin-top: 10px; width: 100%; border: 1px solid var(--red-rule); background: var(--surface); color: var(--red); font-weight: 650; font-size: 12px; padding: 7px; border-radius: var(--radius-sm); display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
   .kill:hover { background: var(--red-soft); }
   .kill .sub { font-size: 10px; color: var(--faint); font-weight: 500; }
 
-  .rm { width: 22px; height: 22px; border: none; background: none; color: var(--faint); border-radius: 5px; font-size: 11px; }
+  .rm { width: 22px; height: 22px; display: grid; place-items: center; padding: 0; border: none; background: none; color: var(--faint); border-radius: var(--radius-sm); }
   .rm:hover { background: var(--red-soft); color: var(--red); }
   .empty { font-size: 12px; text-align: center; padding: 12px 0; }
 </style>

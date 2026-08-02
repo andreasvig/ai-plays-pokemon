@@ -1,5 +1,86 @@
 # Changelog
 
+## 2026-08-02 — Chunky pixel icons, and square markers in the charts
+
+### What
+- `src/dashboard/web/src/components/Icon.svelte` — twelve hand-set pixel icons
+  on a 12x12 grid, replacing the font glyphs (`▶ ↗ ⟳ ✕ ⠿ ↪ ↓ ◓`) that were
+  standing in for a set. Every history-row action, the queue-card controls, the
+  dialog and video-modal closes, the spectate back / simple-view / audio
+  toggles, and the top-bar logo.
+- `Action.svelte` — the GBA control glyphs redrawn on the same grid.
+- The scatter plots' markers are squares; the legend key is the marker.
+
+### Why
+Andreas, looking at the paper redesign: the button logos were "to small and low
+effir". They were also each from a different corner of Unicode, so weight, size
+and vertical centring never agreed and `⟳` was a different shape in every font.
+
+### Notes
+- **12 units, not 24.** Half the resolution of an off-the-shelf pixel set, so
+  each "pixel" is twice the size and the icons read as GBA-era sprites next to
+  the game they wrap. Chosen over vendoring pixelarticons (MIT, 880 icons)
+  knowing the cost: every new icon is hand work.
+- Rects in `currentColor` with `shape-rendering=crispEdges`, sized in px — the
+  same contract `Action.svelte` already had, so nothing loads at runtime.
+- **What the grid refuses.** A 1px feature disappears here, which decided three
+  designs: "continue" is a fast-forward rather than a circular arrow; `muted` is
+  a speaker plus a 6-unit X (a corner-to-corner slash merged into the cone, and
+  a 4-unit X vanished at 17px); and the d-pad's cross is an outline, because two
+  crossing filled bars composite their opacity twice at the centre and the glyph
+  read as a mottled grey plus.
+- The pressed d-pad arm is filled solid and runs one unit into the cross, so it
+  reads as one shape. At 17px a filled quadrant is the direction; the arrowhead
+  it replaced was not.
+- **Lost:** start/select was a pill rotated -16°, a nod to the hardware.
+  Rotation destroys crisp edges, so it is square-on now and slightly longer —
+  six characters need more room in a 12-unit-tall box than in a 24-unit one.
+- The top-bar `◓` is a pixel Poké Ball in oxblood.
+- Charts: `<circle>` → `<rect>`, and a hovered marker gains a printed halo
+  (a heavier stroke) since a rect has no radius to grow. The frontier's dashes
+  mitre rather than round.
+
+## 2026-08-02 — Paper: the whole control center in the SimpleView aesthetic
+
+### What
+The site is re-inked onto the SimpleView recording look — cream stock, one mono
+typeface, square edges. Home, history, report, spectate, the new-run dialog and
+every panel in between.
+
+### Why
+The simple view was built for recordings and ended up being the nicest surface
+in the project. The rest of the app was a white, rounded, sans-serif
+benchmark-site skin that shared nothing with it.
+
+### Notes
+- **The palette is the mock's**, lifted verbatim from `docs/simple-view-mock.html`:
+  `#f2efe9` sheet, `#fbf9f5` card, `#ddd7cc` rule, `#1f1c17` ink. The accent,
+  status and TaskMaster inks were re-mixed to sit on cream rather than on white
+  — the old indigo/amber/teal read as neon against it.
+- **One typeface.** `--font` is now `--mono`; base size drops 14px → 13px
+  because the same measure runs ~8% wider in mono.
+- **Square.** `--radius` 12px → 3px, `--radius-sm` 8px → 2px, and every pill
+  (`999px`) is now square. The status dot is a square printer's mark.
+- **No shadows.** `--shadow` is `none` in one place, which flattens the ~30
+  `box-shadow: var(--shadow)` sites at once; `--shadow-lg` survives only for
+  things that genuinely float (modals, the chart tooltip). Where a shadow was
+  carrying meaning — the active segmented-control button, a leaderboard row
+  hover — it became a hairline rule instead.
+- **No colour emoji.** 🧭 📋 🎯 💭 🔄 ✅ ❌ 🟡 🔇 🗑 and the rest are gone from
+  the trace feed, the report, the spectate panels, the queue cards and the top
+  bar; they are the single most un-paper thing that can be on a page. Replaced
+  with the labels they decorated, monochrome text marks (`✓ ✗ ~ ·`), or — for
+  the mute toggle — a printed switch label (`AUDIO` / `MUTED`).
+- Rank 1–3 lost a white-on-white gradient (invisible on cream) and gained a
+  medal-coloured left rule, driven by the same `medal()` helper that inks the
+  rank numeral so the two can't drift.
+- The spectate hero no longer sits in a near-black box: the GBA screen is on the
+  sheet inside a hairline rule, as it is in the mock.
+- Fixed in passing: `var(--ink)` was referenced in Report and Spectate but never
+  defined, so those rules silently inherited. It is now a real token.
+- SimpleView keeps its own local copy of the palette — it must render the same
+  whether or not the app stylesheet is loaded.
+
 ## 2026-08-01 — More than one game: Emerald, and a ROM registry
 
 ### What

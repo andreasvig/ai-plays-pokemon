@@ -1,6 +1,7 @@
 <script>
   import { untrack } from 'svelte'
   import { searchModels } from '../lib/modelSearch.js'
+  import Icon from './Icon.svelte'
   // MODELS / CONFIGS are fed from App (sourced from /api/models + /api/configs).
   // MODELS is the collapsed registry: [{model, openrouter_id, reasoning_type,
   // default_level, levels:[{level, observed, run_count}], observed, run_count}].
@@ -242,7 +243,7 @@
     <div class="dialog" role="dialog" aria-modal="true" tabindex="-1">
       <header class="dh">
         <h3>{isContinue ? 'Continue run' : 'Queue a new run'}</h3>
-        <button class="x" onclick={() => onclose()} aria-label="Close">✕</button>
+        <button class="x" onclick={() => onclose()} aria-label="Close"><Icon name="close" size={14} /></button>
       </header>
 
       {#if isContinue}
@@ -439,13 +440,13 @@
 
 <style>
   .scrim {
-    position: fixed; inset: 0; z-index: 50; background: rgba(16,22,40,.34);
+    position: fixed; inset: 0; z-index: 50; background: rgba(31, 28, 23, .34);
     display: flex; align-items: center; justify-content: center; padding: 24px;
     backdrop-filter: blur(2px);
   }
   .dialog {
     width: 100%; max-width: 460px; background: var(--surface);
-    border-radius: 16px; box-shadow: var(--shadow-lg); overflow: hidden;
+    border-radius: var(--radius); box-shadow: var(--shadow-lg); overflow: hidden;
     /* The dialog grows with its content — the recording options alone add ~160px
        — so cap it at the viewport and let the FIELDS scroll. The header and the
        footer stay put, which is the point: "Add to queue" must never be pushed
@@ -455,16 +456,16 @@
   .dh, .df { flex: none; }
   .dh { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px 12px; }
   h3 { margin: 0; font-size: 16px; font-weight: 750; }
-  .x { border: none; background: none; color: var(--faint); font-size: 14px; padding: 4px 8px; border-radius: 6px; }
-  .x:hover { background: #eef1f5; color: var(--text); }
+  .x { border: none; background: none; color: var(--faint); padding: 5px 7px; border-radius: var(--radius-sm); display: grid; place-items: center; }
+  .x:hover { background: var(--wash); color: var(--text); }
 
   .cont-note { margin: 0 20px 8px; font-size: 12.5px; color: var(--muted); background: var(--surface-2);
-    border: 1px solid var(--border-2); border-radius: 8px; padding: 10px 12px; }
+    border: 1px solid var(--border-2); border-radius: var(--radius-sm); padding: 10px 12px; }
 
   .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 4px 20px 8px; }
   .seg button {
     display: flex; flex-direction: column; gap: 3px; align-items: flex-start; text-align: left;
-    border: 1.5px solid var(--border); background: var(--surface); padding: 12px 14px; border-radius: 10px;
+    border: 1.5px solid var(--border); background: var(--surface); padding: 12px 14px; border-radius: var(--radius);
     transition: all .12s;
   }
   .seg button b { font-size: 13.5px; font-weight: 700; }
@@ -482,28 +483,28 @@
   }
   .check { display: flex; align-items: center; gap: 8px; font-size: 12.5px;
     color: var(--text); font-weight: 600; cursor: pointer; margin-top: 2px; }
-  .check input { width: 14px; height: 14px; accent-color: var(--accent, #3b82f6); }
+  .check input { width: 14px; height: 14px; accent-color: var(--accent); }
   .recopts { display: flex; flex-direction: column; gap: 10px;
     border-left: 2px solid var(--border-2); padding-left: 12px; margin-left: 3px; }
   .rechint { font-size: 11.5px; line-height: 1.5; margin: 0; }
 
   .field { display: flex; flex-direction: column; gap: 6px; }
   .flabel { font-size: 11.5px; font-weight: 650; color: var(--muted); display: flex; align-items: center; gap: 8px; }
-  .locked { font-size: 9.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); background: #f0f2f6; padding: 1px 6px; border-radius: 4px; }
+  .locked { font-size: 9.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); background: var(--wash); padding: 1px 6px; border-radius: var(--radius-sm); }
   select, input {
     font-family: inherit; font-size: 13.5px; padding: 9px 11px; border: 1px solid var(--border);
-    border-radius: 8px; background: var(--surface); color: var(--text); width: 100%;
+    border-radius: var(--radius-sm); background: var(--surface); color: var(--text); width: 100%;
   }
   select:focus, input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
   select:disabled, input:disabled { background: var(--surface-2); color: var(--muted); }
-  .frozen { font-size: 13px; padding: 9px 11px; border: 1px dashed var(--border); border-radius: 8px; background: var(--surface-2); }
+  .frozen { font-size: 13px; padding: 9px 11px; border: 1px dashed var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
   .goal { margin: -4px 0 0; font-size: 12px; line-height: 1.45; color: var(--muted); font-style: italic; }
   .tm-hint { font-size: 10.5px; line-height: 1.4; }
 
   .model-search { margin-bottom: 6px; }
   .model-list {
     max-height: 168px; overflow-y: auto; border: 1px solid var(--border);
-    border-radius: 8px; background: var(--surface); display: flex; flex-direction: column;
+    border-radius: var(--radius-sm); background: var(--surface); display: flex; flex-direction: column;
   }
   .model-row {
     display: flex; align-items: center; justify-content: space-between; gap: 10px;

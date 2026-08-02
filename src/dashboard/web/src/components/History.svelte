@@ -1,5 +1,6 @@
 <script>
   import { usd, dur, perTurn, ago, dateShort, statusLabel, statusClass } from '../lib/format.js'
+  import Icon from './Icon.svelte'
   let { runs = [], oninspect, oncontinue, ondelete } = $props()
 
   let kindFilter = $state('all')
@@ -120,11 +121,11 @@
         <span class="c-act">
           {#if r.hasRecording}
             <button class="mini play" onclick={(e) => { e.stopPropagation(); watch(r) }}
-                    title="Watch the recording">▶</button>
+                    title="Watch the recording"><Icon name="play" size={18} /></button>
           {/if}
-          <button class="mini" onclick={(e) => { e.stopPropagation(); oninspect(r) }} title="Inspect report">↗</button>
-          <button class="mini" disabled={r.status === 'running'} onclick={(e) => { e.stopPropagation(); oncontinue(r) }} title="Continue run">⟳</button>
-          <button class="mini danger" disabled={r.status === 'running'} onclick={(e) => { e.stopPropagation(); askDelete(r) }} title="Delete run">🗑</button>
+          <button class="mini" onclick={(e) => { e.stopPropagation(); oninspect(r) }} title="Inspect report"><Icon name="report" size={18} /></button>
+          <button class="mini" disabled={r.status === 'running'} onclick={(e) => { e.stopPropagation(); oncontinue(r) }} title="Continue run"><Icon name="rerun" size={18} /></button>
+          <button class="mini danger" disabled={r.status === 'running'} onclick={(e) => { e.stopPropagation(); askDelete(r) }} title="Delete run"><Icon name="trash" size={18} /></button>
         </span>
       </li>
     {/each}
@@ -143,8 +144,8 @@
         <header class="vh">
           <span class="mono vname">{watchTarget.model}</span>
           <span class="faint vmeta">{dateShort(watchTarget.startedAt)} · {watchTarget.turns} turns</span>
-          <a class="vdl" href={recordingUrl(watchTarget)} download title="Download the MP4">↓</a>
-          <button class="x" onclick={closeWatch} aria-label="Close">✕</button>
+          <a class="vdl" href={recordingUrl(watchTarget)} download title="Download the MP4"><Icon name="download" size={16} /></a>
+          <button class="x" onclick={closeWatch} aria-label="Close"><Icon name="close" size={16} /></button>
         </header>
         <!-- svelte-ignore a11y_media_has_caption -->
         <video class="vplayer" src={recordingUrl(watchTarget)} controls autoplay playsinline></video>
@@ -186,15 +187,15 @@
 <style>
   .wrap { max-width: var(--maxw); margin: 0 auto; padding: 32px 24px 60px; }
   .head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 16px; }
-  h2 { font-size: 22px; font-weight: 780; margin: 0; letter-spacing: -.02em; }
+  h2 { font-size: 20px; font-weight: 700; margin: 0; letter-spacing: .01em; }
 
   .controls { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
-  .search { flex: 1; min-width: 180px; font-family: inherit; font-size: 13px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+  .search { flex: 1; min-width: 180px; font-family: inherit; font-size: 13px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
   .search:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-  .segs { display: flex; background: #eef1f5; border-radius: 8px; padding: 3px; gap: 2px; }
-  .segs button { border: none; background: none; padding: 5px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: capitalize; }
-  .segs button.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
-  .sel { font-family: inherit; font-size: 12.5px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--muted); }
+  .segs { display: flex; background: var(--wash); border-radius: var(--radius); padding: 3px; gap: 2px; }
+  .segs button { border: none; background: none; padding: 5px 12px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 600; color: var(--muted); text-transform: capitalize; }
+  .segs button.on { background: var(--surface); color: var(--text); box-shadow: inset 0 0 0 1px var(--border); }
+  .sel { font-family: inherit; font-size: 12.5px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--muted); }
 
   .lhead, .row {
     display: grid;
@@ -208,7 +209,7 @@
     background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
     padding: 10px 14px; cursor: pointer; transition: border-color .1s, background .1s;
   }
-  .row:hover { border-color: #d3d9e3; background: var(--surface-2); }
+  .row:hover { border-color: var(--faint); background: var(--surface-2); }
 
   .c-model { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
   .mname { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -224,7 +225,8 @@
   .c-turns b, .c-time b, .c-cost b { font-size: 13px; font-weight: 700; }
   .sub { font-size: 10px; color: var(--muted); }
   .c-act { display: flex; gap: 4px; justify-content: flex-end; }
-  .mini { width: 26px; height: 26px; border: 1px solid var(--border); background: var(--surface); border-radius: 6px; color: var(--muted); font-size: 13px; }
+  .mini { width: 28px; height: 28px; display: grid; place-items: center; padding: 0;
+    border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius-sm); color: var(--muted); }
   .mini:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
   .mini:disabled { opacity: .4; cursor: not-allowed; }
   .mini.danger:hover:not(:disabled) { border-color: var(--red); color: var(--red); }
@@ -233,33 +235,35 @@
 
   /* Recording player */
   .vmodal {
-    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
-    box-shadow: 0 12px 40px rgba(0,0,0,.3); overflow: hidden;
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: var(--shadow-lg); overflow: hidden;
     display: flex; flex-direction: column; max-width: 100%; max-height: 100%;
   }
   .vh { display: flex; align-items: center; gap: 10px; padding: 10px 12px 10px 14px; border-bottom: 1px solid var(--border); }
   .vname { font-size: 13px; font-weight: 650; }
   .vmeta { font-size: 11.5px; margin-right: auto; }
   .vdl {
-    text-decoration: none; color: var(--muted); font-size: 14px; line-height: 1;
-    border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px;
+    text-decoration: none; color: var(--muted); line-height: 1;
+    display: inline-grid; place-items: center;
+    border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 5px 8px;
   }
   .vdl:hover { border-color: var(--accent); color: var(--accent); }
-  .vh .x { border: none; background: none; color: var(--faint); font-size: 13px; padding: 4px 8px; border-radius: 6px; }
+  .vh .x { border: none; background: none; color: var(--faint); padding: 5px 8px;
+    border-radius: var(--radius-sm); display: inline-grid; place-items: center; }
   .vh .x:hover { background: var(--surface-2); color: var(--text); }
   /* The video sizes itself to its own aspect within the viewport, so a 1:1
      simple-view capture and a 16:9 detailed one both fill their frame instead
      of one of them letterboxing inside a box shaped for the other. */
-  .vplayer { display: block; background: #000; max-width: 88vw; max-height: 78vh; }
+  .vplayer { display: block; background: var(--dark); max-width: 88vw; max-height: 78vh; }
 
   /* Typed-DELETE confirmation modal */
   .modal-bg {
     position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center;
-    background: rgba(15, 20, 30, .45); backdrop-filter: blur(2px); padding: 20px;
+    background: rgba(31, 28, 23, .40); backdrop-filter: blur(2px); padding: 20px;
   }
   .modal {
-    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
-    box-shadow: 0 12px 40px rgba(0,0,0,.25); padding: 22px 24px; width: 420px; max-width: 100%;
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: var(--shadow-lg); padding: 22px 24px; width: 420px; max-width: 100%;
   }
   .modal h3 { margin: 0 0 10px; font-size: 17px; font-weight: 760; letter-spacing: -.01em; }
   .m-run { margin: 0 0 2px; font-size: 13.5px; font-weight: 600; }
@@ -268,16 +272,16 @@
   .m-prompt { margin: 0 0 8px; font-size: 12.5px; }
   .m-input {
     width: 100%; box-sizing: border-box; font-size: 13px; padding: 9px 12px;
-    border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2);
     letter-spacing: .08em;
   }
-  .m-input:focus { outline: none; border-color: var(--red); box-shadow: 0 0 0 3px rgba(220,53,69,.15); }
+  .m-input:focus { outline: none; border-color: var(--red); box-shadow: 0 0 0 3px rgba(156, 59, 47, .18); }
   .m-err { margin: 10px 0 0; font-size: 12px; color: var(--red); }
   .m-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
-  .m-cancel, .m-del { font-family: inherit; font-size: 13px; font-weight: 620; padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border); }
+  .m-cancel, .m-del { font-family: inherit; font-size: 13px; font-weight: 620; padding: 8px 16px; border-radius: var(--radius-sm); border: 1px solid var(--border); }
   .m-cancel { background: var(--surface); color: var(--muted); }
   .m-cancel:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
-  .m-del { background: var(--red); color: #fff; border-color: var(--red); }
+  .m-del { background: var(--red); color: var(--bg); border-color: var(--red); }
   .m-del:hover:not(:disabled) { filter: brightness(.93); }
   .m-del:disabled, .m-cancel:disabled { opacity: .45; cursor: not-allowed; }
 </style>

@@ -161,13 +161,14 @@
       {@const cy = ys(p.y)}
       {@const lx = rightSide ? cx - 9 : cx + 9}
       {@const ly = labelY.get(p.label) ?? cy + 3.3}
+      {@const s = onFrontier(p) ? 11 : 9}
       <g class="pt" class:oss={p.openSource} class:front={onFrontier(p)} class:hot={hovered === p}
          onmouseenter={() => hovered = p} onmouseleave={() => hovered = null}
          onclick={() => onpick && onpick(p.slug)} onkeydown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && onpick) { e.preventDefault(); onpick(p.slug) } }} role="button" tabindex="0">
         {#if Math.abs(ly - (cy + 3.3)) > 4}
-          <line x1={rightSide ? cx - 5 : cx + 5} y1={cy} x2={lx} y2={ly - 3.3} class="leader" />
+          <line x1={rightSide ? cx - 6 : cx + 6} y1={cy} x2={lx} y2={ly - 3.3} class="leader" />
         {/if}
-        <circle cx={cx} cy={cy} r={onFrontier(p) ? 6 : 5} />
+        <rect x={cx - s / 2} y={cy - s / 2} width={s} height={s} shape-rendering="crispEdges" />
         <text x={lx} y={ly}
               class="plabel" text-anchor={rightSide ? 'end' : 'start'}>{fmtLabel(p.label)}</text>
       </g>
@@ -196,7 +197,7 @@
   .nolist-items { display: flex; flex-direction: column; gap: 3px; }
   .nolist-item { text-align: left; border: none; background: none; padding: 0; font-size: 9.5px; font-weight: 600; color: var(--muted); cursor: pointer; line-height: 1.25; white-space: normal; }
   .nolist-item:hover { color: var(--text); text-decoration: underline; }
-  .nolist-item.oss { color: #0d9488; }
+  .nolist-item.oss { color: var(--oss); }
   .chart { width: 100%; height: auto; display: block; }
   .leader { stroke: var(--border-2); stroke-width: 1; opacity: .8; }
   .zone { fill: var(--accent-soft); opacity: .45; }
@@ -207,25 +208,28 @@
   .ytick, .xtick { fill: var(--faint); font-size: 10.5px; font-variant-numeric: tabular-nums; }
   .ytick.acc { fill: var(--accent); font-weight: 700; }
   .axislabel { fill: var(--muted); font-size: 10.5px; font-weight: 600; }
-  .frontier { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 6 4; opacity: .8; }
+  .frontier { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 6 4;
+    stroke-linecap: butt; stroke-linejoin: miter; opacity: .8; }
   .pt { cursor: pointer; }
-  .pt circle { fill: var(--accent); stroke: #fff; stroke-width: 1.5; transition: r .1s; }
+  .pt rect { fill: var(--accent); stroke: var(--bg); stroke-width: 1.5; }
   .pt .plabel { fill: var(--muted); font-size: 8.5px; font-weight: 600; }
-  .pt.oss circle { fill: #0d9488; }
-  .pt.oss .plabel { fill: #0d9488; }
-  .pt.front circle { stroke: var(--accent); stroke-width: 2; }
-  .pt.hot circle { r: 7.5; filter: drop-shadow(0 1px 3px rgba(79,70,229,.5)); }
+  .pt.oss rect { fill: var(--oss); }
+  .pt.oss .plabel { fill: var(--oss); }
+  .pt.front rect { stroke: var(--accent); stroke-width: 2; }
+  /* No radius to grow on a rect, so a hot marker gains a printed halo
+     instead — a second square drawn by the stroke. */
+  .pt.hot rect { stroke: var(--text); stroke-width: 3; }
   .pt.hot .plabel { fill: var(--text); font-weight: 700; }
 
   .tip {
     position: absolute; transform: translate(-50%, -116%); pointer-events: none;
-    background: #1b2030; color: #fff; border-radius: 8px; padding: 9px 11px;
+    background: var(--dark); color: var(--dark-text); border-radius: var(--radius); padding: 9px 11px;
     box-shadow: var(--shadow-lg); min-width: 150px; z-index: 5;
   }
   .tip-m { font-size: 12px; font-weight: 700; margin-bottom: 6px; }
   .tip-row { display: flex; justify-content: space-between; gap: 14px; font-size: 11px; line-height: 1.7; }
-  .tip-row span { color: #9aa3b8; }
+  .tip-row span { color: var(--dark-faint); }
   .tip-row b { font-weight: 650; }
-  .tip-row b.full { color: #4ade80; }
-  .tip-go { font-size: 10px; color: #8b94e8; margin-top: 6px; font-weight: 600; }
+  .tip-row b.full { color: var(--dark-green); }
+  .tip-go { font-size: 10px; color: var(--dark-accent); margin-top: 6px; font-weight: 600; }
 </style>

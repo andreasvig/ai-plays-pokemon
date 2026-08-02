@@ -16,15 +16,14 @@
 
   // handback + error are present in the real event stream (static/index.html)
   // but were omitted from the mock; wired in here for P6 parity.
-  const boxIcon = { thinking: '💭', output: '💬', action: '🎮', tool: '🔧', memory: '🧠', ocr: '📝', settle: '⏱', handback: '↩️', retry: '🔄', error: '❌' }
   const boxName = { thinking: 'Thinking', output: 'Output', action: 'Action', tool: 'Tool', memory: 'Memory', ocr: 'OCR', settle: 'Screen settling', handback: 'Return to TaskMaster', retry: 'Retry', error: 'Error' }
 
   // TaskMaster's verdict on the PREVIOUS task → labeled chip + tone.
   const VERDICT = {
-    succeeded: { label: '✅ Succeeded', tone: 'ok' },
-    failed: { label: '❌ Failed', tone: 'no' },
-    partial: { label: '🟡 Partial', tone: 'partial' },
-    other: { label: '⚪ Other', tone: 'partial' },
+    succeeded: { label: 'Succeeded', tone: 'ok' },
+    failed: { label: 'Failed', tone: 'no' },
+    partial: { label: 'Partial', tone: 'partial' },
+    other: { label: 'Other', tone: 'partial' },
   }
   function verdict(status) {
     return VERDICT[String(status || '').toLowerCase()] || { label: status || 'Rated', tone: 'partial' }
@@ -63,19 +62,19 @@
     {#each turns as entry (entry.id)}
       {#if entry.kind === 'master'}
         <div class="master-block">
-          <div class="master-head">🧭 TaskMaster{#if entry.model}<span class="m-meta mono">{entry.model}</span>{/if}{#if entry.cost != null}<span class="m-meta mono">{usd(entry.cost)}</span>{/if}</div>
+          <div class="master-head">TaskMaster{#if entry.model}<span class="m-meta mono">{entry.model}</span>{/if}{#if entry.cost != null}<span class="m-meta mono">{usd(entry.cost)}</span>{/if}</div>
           <div class="master-body">
             {#if entry.rating}
               {@const verd = verdict(entry.rating.status)}
               <div class="m-row m-rating {verd.tone}">
-                <span class="m-lab">📊 Verdict on previous task</span>
+                <span class="m-lab">Verdict on previous task</span>
                 <span class="m-verdict">{verd.label}</span>
                 {#if entry.rating.reasoning}<div class="m-desc">{entry.rating.reasoning}</div>{/if}
               </div>
             {/if}
-            {#if entry.title}<div class="m-row"><span class="m-lab">📋 Task</span>{entry.title}</div>{/if}
-            {#if entry.description}<div class="m-row"><span class="m-lab">🧭 Plan</span><div class="m-desc">{entry.description}</div></div>{/if}
-            {#if entry.success}<div class="m-row"><span class="m-lab">🎯 Success criteria</span><span class="mono">{entry.success}</span></div>{/if}
+            {#if entry.title}<div class="m-row"><span class="m-lab">Task</span>{entry.title}</div>{/if}
+            {#if entry.description}<div class="m-row"><span class="m-lab">Plan</span><div class="m-desc">{entry.description}</div></div>{/if}
+            {#if entry.success}<div class="m-row"><span class="m-lab">Success criteria</span><span class="mono">{entry.success}</span></div>{/if}
           </div>
         </div>
       {:else}
@@ -87,7 +86,7 @@
           <button class="turn-head" onclick={() => toggle(turn.turn)}>
             <span class="arr">{isOpen ? '▾' : '▸'}</span>
             <span class="t-n mono">Turn {turn.turn}</span>
-            {#if nRetry}<span class="retry-tag">🔄 {nRetry} {nRetry === 1 ? 'retry' : 'retries'}</span>{/if}
+            {#if nRetry}<span class="retry-tag">{nRetry} {nRetry === 1 ? 'retry' : 'retries'}</span>{/if}
             {#if isCurrent}<span class="cur-tag"><span class="dot live"></span>current</span>{/if}
             {#if !isOpen}<span class="t-sum faint">{turn.boxes.find((b) => b.k === 'thinking')?.t.slice(0, 52)}…</span>{/if}
           </button>
@@ -95,7 +94,7 @@
             <div class="boxes">
               {#each turn.boxes as b}
                 <div class="ebox {b.k}">
-                  <div class="ebox-h"><span class="ico">{boxIcon[b.k]}</span>{boxName[b.k]}{#if b.meta}<span class="ebox-meta faint">{b.meta}</span>{/if}</div>
+                  <div class="ebox-h">{boxName[b.k]}{#if b.meta}<span class="ebox-meta faint">{b.meta}</span>{/if}</div>
                   <div class="ebox-b">
                     {#if b.k === 'action'}<span class="act">{#each actionTokens(b.t) as tok}<Action token={tok} />{/each}</span>
                     {:else if b.k === 'tool'}{#if b.args}<div class="mono call">{b.name}({b.args})</div>{/if}{#if b.resp != null}<div class="resp faint">→ {b.resp}</div>{/if}
@@ -125,48 +124,47 @@
   .hidden-note { flex: none; font-size: 11px; color: var(--faint); text-align: center; padding: 6px 4px; }
 
   /* TaskMaster card — amber "strategy" layer, visually heavier than turn cards */
-  .master-block { background: var(--surface); border: 1px solid #f0d9a0; border-left: 3px solid #ffce54; border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; flex: none; }
-  .master-head { display: flex; align-items: center; gap: 8px; padding: 9px 13px; font-size: 12.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: #b8860b; background: rgba(255, 206, 84, 0.12); border-bottom: 1px solid #f0d9a0; }
+  .master-block { background: var(--surface); border: 1px solid var(--tm-rule); border-left: 3px solid var(--tm); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; flex: none; }
+  .master-head { display: flex; align-items: center; gap: 8px; padding: 9px 13px; font-size: 12.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--tm); background: var(--tm-wash); border-bottom: 1px solid var(--tm-rule); }
   .m-meta { margin-left: 8px; font-size: 10.5px; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--muted); }
   .m-meta:first-of-type { margin-left: auto; }
   .master-body { padding: 11px 14px; display: flex; flex-direction: column; gap: 10px; }
   .m-row { font-size: 13px; line-height: 1.55; }
-  .m-lab { display: block; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: #c79a18; margin-bottom: 3px; }
+  .m-lab { display: block; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--tm); margin-bottom: 3px; }
   .m-desc { white-space: pre-wrap; color: var(--muted); }
   /* Verdict on the previous task — shown ABOVE the new task. */
   .m-verdict { font-size: 13px; font-weight: 750; }
   .m-rating.ok .m-verdict { color: var(--green); }
   .m-rating.no .m-verdict { color: var(--red); }
-  .m-rating.partial .m-verdict { color: #c79a18; }
+  .m-rating.partial .m-verdict { color: var(--tm); }
 
   .turn-block { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; flex: none; }
-  .turn-block.current { border-color: #c7c8f7; }
+  .turn-block.current { border-color: var(--accent-rule); }
   .turn-head { width: 100%; display: flex; align-items: center; gap: 8px; padding: 9px 12px; border: none; background: none; text-align: left; }
   .turn-block.collapsed .turn-head:hover { background: var(--surface-2); }
   .arr { color: var(--faint); font-size: 10px; flex: none; }
   .t-n { font-size: 12px; font-weight: 750; color: var(--accent); flex: none; }
   .cur-tag { font-size: 10px; font-weight: 700; color: var(--green); display: inline-flex; align-items: center; gap: 4px; }
-  .retry-tag { font-size: 10px; font-weight: 800; color: #c4670a; background: rgba(240, 147, 43, 0.16); border: 1px solid rgba(240, 147, 43, 0.45); border-radius: 999px; padding: 1px 7px; letter-spacing: .02em; }
-  .turn-block.retried { border-left: 3px solid #f0932b; }
+  .retry-tag { font-size: 10px; font-weight: 800; color: var(--retry); background: var(--retry-wash); border: 1px solid var(--retry-rule); border-radius: var(--radius-sm); padding: 1px 7px; letter-spacing: .02em; }
+  .turn-block.retried { border-left: 3px solid var(--retry); }
   .t-sum { font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .boxes { padding: 2px 11px 10px; display: flex; flex-direction: column; gap: 7px; }
-  .ebox { border-left: 3px solid var(--border); border-radius: 0 6px 6px 0; background: var(--surface-2); padding: 6px 10px; }
+  .ebox { border-left: 3px solid var(--border); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; background: var(--surface-2); padding: 6px 10px; }
   .ebox-h { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); display: flex; align-items: center; gap: 5px; margin-bottom: 2px; }
   .ebox-meta { margin-left: auto; font-size: 9.5px; text-transform: none; letter-spacing: 0; }
   .ebox-b { font-size: 12px; line-height: 1.45; }
-  .ico { font-size: 10px; }
-  .ebox.thinking { border-color: #8b7cf0; }
-  .ebox.output   { border-color: #14a8c4; }
+  .ebox.thinking { border-color: var(--ev-thinking); }
+  .ebox.output   { border-color: var(--ev-output); }
   .ebox.action   { border-color: var(--red); }
   .ebox.tool     { border-color: var(--amber); }
   .ebox.memory   { border-color: var(--green); }
-  .ebox.ocr      { border-color: #e8804a; }
-  .ebox.settle   { border-color: #d8a93b; }
-  .ebox.handback { border-color: #6ca4ff; }
-  .ebox.retry    { border-color: #f0932b; background: rgba(240, 147, 43, 0.12); }
-  .ebox.retry .ebox-h { color: #c4670a; }
-  .ebox.error    { border-color: var(--red); background: var(--red-soft, #fdeeee); }
+  .ebox.ocr      { border-color: var(--ev-ocr); }
+  .ebox.settle   { border-color: var(--ev-settle); }
+  .ebox.handback { border-color: var(--ev-handback); }
+  .ebox.retry    { border-color: var(--retry); background: var(--retry-wash); }
+  .ebox.retry .ebox-h { color: var(--retry); }
+  .ebox.error    { border-color: var(--red); background: var(--red-soft); }
   /* Action is 2.35em tall — considerably bigger than the emoji it replaced.
      Shrink the container's font-size (not the glyph's own height) so it reads
      at roughly the old emoji's footprint inside a compact trace row. */
@@ -190,6 +188,6 @@
   .hb-verdict { font-size: 13px; font-weight: 750; margin-bottom: 6px; }
   .hb-verdict.ok { color: var(--green); }
   .hb-verdict.no { color: var(--red); }
-  .hb-verdict.partial { color: #c79a18; }
+  .hb-verdict.partial { color: var(--tm); }
   .hb-summary { font-size: 12px; line-height: 1.5; color: var(--muted); }
 </style>

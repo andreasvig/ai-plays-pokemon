@@ -23,10 +23,10 @@
   .gatebar { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
   .track { display: flex; gap: 2px; height: 8px; }
   .seg {
-    flex: 1; border-radius: 2px; background: #e9ecf2; transition: background .2s;
+    flex: 1; border-radius: 2px; background: var(--wash); transition: background .2s;
   }
-  .seg.badge { border-radius: 2px; box-shadow: inset 0 0 0 1px #d7c98a55; }
-  .seg.badge.on { box-shadow: inset 0 0 0 1.5px #ffffff88; }
+  .seg.badge { border-radius: 2px; box-shadow: inset 0 0 0 1px var(--tm-rule); }
+  .seg.badge.on { box-shadow: inset 0 0 0 1.5px rgba(251, 249, 245, .6); }
   .meta { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
   .furthest { font-size: 12.5px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .count { font-size: 12px; font-weight: 700; color: var(--muted); flex: none; }

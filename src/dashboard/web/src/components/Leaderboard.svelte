@@ -78,7 +78,7 @@
   <ol class="rows">
     {#each shown as r (r.runId)}
       <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
-      <li class="row" class:top={r.displayRank <= 3} onclick={() => oninspect(r)} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); oninspect(r) } }} role="button" tabindex="0">
+      <li class="row" class:top={r.displayRank <= 3} style={`--medal:${medal(r.displayRank)}`} onclick={() => oninspect(r)} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); oninspect(r) } }} role="button" tabindex="0">
         <span class="c-rank"><span class="ranknum" style={`color:${medal(r.displayRank)}`}>{r.displayRank}</span></span>
         <span class="c-model">
           <span class="mname mono">{r.model}</span>
@@ -104,36 +104,36 @@
 
 <style>
   .hero { max-width: var(--maxw); margin: 0 auto; padding: 40px 24px 8px; }
-  h1 { font-size: 40px; font-weight: 800; letter-spacing: -.03em; margin: 0 0 10px; }
+  h1 { font-size: 31px; font-weight: 700; letter-spacing: .01em; margin: 0 0 10px; }
   .tagline { max-width: 680px; font-size: 15px; line-height: 1.6; color: var(--muted); margin: 0; }
   .tagline em { color: var(--text); font-style: italic; }
   .chips { display: flex; gap: 8px; margin-top: 18px; flex-wrap: wrap; }
-  .chip { font-size: 12px; color: var(--muted); background: var(--surface); border: 1px solid var(--border); padding: 5px 11px; border-radius: 999px; }
+  .chip { font-size: 12px; color: var(--muted); background: var(--surface); border: 1px solid var(--border); padding: 5px 10px; border-radius: var(--radius-sm); }
   .chip b { color: var(--text); font-weight: 750; }
 
   .board { max-width: var(--maxw); margin: 18px auto 50px; padding: 0 24px; }
 
   .bench-pick { margin-bottom: 18px; }
-  .bench-tabs { display: inline-flex; background: #eef1f5; border-radius: 10px; padding: 4px; gap: 3px; }
+  .bench-tabs { display: inline-flex; background: var(--wash); border-radius: var(--radius); padding: 4px; gap: 3px; }
   .bench-tabs button {
-    border: none; background: none; padding: 8px 16px; border-radius: 7px;
+    border: none; background: none; padding: 8px 16px; border-radius: var(--radius-sm);
     font-size: 13px; font-weight: 650; color: var(--muted); transition: all .12s;
   }
-  .bench-tabs button.on { background: var(--surface); color: var(--accent-ink); box-shadow: var(--shadow); }
+  .bench-tabs button.on { background: var(--surface); color: var(--accent-ink); box-shadow: inset 0 0 0 1px var(--border); }
   .bench-goal { margin: 10px 2px 0; font-size: 13px; line-height: 1.5; color: var(--muted); max-width: 680px; }
   .board-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; flex-wrap: wrap; }
   h2 { font-size: 18px; font-weight: 750; margin: 0; }
   .rule-note { font-size: 12px; margin: 0 0 14px; }
   .filters { display: flex; align-items: center; gap: 14px; }
-  .segs { display: flex; background: #eef1f5; border-radius: 8px; padding: 3px; gap: 2px; }
-  .segs button { border: none; background: none; padding: 5px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--muted); }
-  .segs button.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+  .segs { display: flex; background: var(--wash); border-radius: var(--radius); padding: 3px; gap: 2px; }
+  .segs button { border: none; background: none; padding: 5px 12px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 600; color: var(--muted); }
+  .segs button.on { background: var(--surface); color: var(--text); box-shadow: inset 0 0 0 1px var(--border); }
 
   .slider { display: flex; flex-direction: column; gap: 4px; }
   .sl-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .sl-label { font-size: 10.5px; color: var(--faint); font-weight: 650; text-transform: uppercase; letter-spacing: .03em; }
   .slider.active .sl-label { color: var(--accent); }
-  .sl-field { display: flex; align-items: center; gap: 1px; border: 1px solid var(--border); border-radius: 6px; padding: 1px 5px; background: var(--surface); }
+  .sl-field { display: flex; align-items: center; gap: 1px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 1px 5px; background: var(--surface); }
   .slider.active .sl-field { border-color: var(--accent); }
   .dollar { font-size: 11px; color: var(--faint); }
   .num { width: 56px; border: none; background: none; font-family: inherit; font-size: 12px; font-weight: 700; color: var(--text); padding: 2px 0; }
@@ -153,14 +153,17 @@
     padding: 13px 16px; box-shadow: var(--shadow); cursor: pointer;
     transition: border-color .12s, box-shadow .12s, transform .06s;
   }
-  .row:hover { border-color: #d3d9e3; box-shadow: var(--shadow-lg); }
+  .row:hover { border-color: var(--faint); }
   .row:active { transform: translateY(1px); }
-  .row.top { background: linear-gradient(180deg, #fff, #fcfdff); }
+  /* Rank 1-3 get a medal-coloured left rule instead of the old white-on-white
+     gradient (invisible on cream). --medal is set inline from the same medal()
+     helper that inks the rank numeral, so the rule and the digit can't drift. */
+  .row.top { box-shadow: inset 3px 0 0 var(--medal); }
 
   .ranknum { font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; }
   .c-model { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .mname { font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .oss { font-size: 9px; font-weight: 800; letter-spacing: .03em; color: var(--accent-ink); background: var(--accent-soft); padding: 2px 5px; border-radius: 4px; flex: none; }
+  .oss { font-size: 9px; font-weight: 800; letter-spacing: .03em; color: var(--oss); background: var(--oss-soft); padding: 2px 5px; border-radius: var(--radius-sm); flex: none; }
   .c-comp { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
   .pct { font-size: 15px; font-weight: 750; }
   .pct.full { color: var(--green); }
@@ -170,6 +173,6 @@
   .c-time b, .c-cost b { font-size: 14px; font-weight: 700; }
   .sub { font-size: 10.5px; color: var(--muted); }
 
-  .showmore { display: block; margin: 16px auto 0; border: 1px solid var(--border); background: var(--surface); color: var(--muted); font-size: 12.5px; font-weight: 600; padding: 8px 18px; border-radius: 999px; }
-  .showmore:hover { border-color: #d3d9e3; color: var(--text); }
+  .showmore { display: block; margin: 16px auto 0; border: 1px solid var(--border); background: var(--surface); color: var(--muted); font-size: 12.5px; font-weight: 600; padding: 8px 18px; border-radius: var(--radius-sm); }
+  .showmore:hover { border-color: var(--faint); color: var(--text); }
 </style>

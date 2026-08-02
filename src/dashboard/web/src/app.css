@@ -1,35 +1,92 @@
-/* PokeBench — design tokens (benchmark-site cards, light, minimal) */
+/* PokeBench — design tokens.
+   PAPER: cream stock, mono type, square edges. Lifted from the SimpleView
+   recording aesthetic (docs/simple-view-mock.html) and generalised to the whole
+   control center (Andreas, 2026-08-02). The rule the whole sheet follows:
+   everything is printed ink on one piece of paper — hairline rules instead of
+   drop shadows, flat tint blocks instead of glows, no colour emoji anywhere,
+   and nothing rounder than 3px. */
 :root {
-  --bg:        #f7f8fa;
-  --surface:   #ffffff;
-  --surface-2: #fbfcfd;
-  --text:      #161a22;
-  --muted:     #5b6472;
-  --faint:     #98a1b0;
-  --border:    #e6e9ef;
-  --border-2:  #eef1f5;
+  /* stock */
+  --bg:        #f2efe9;   /* the sheet */
+  --surface:   #fbf9f5;   /* a card laid on it */
+  --surface-2: #f5f2eb;   /* a recessed well */
+  --wash:      #e7e2d7;   /* tint block: segmented tracks, inset chips */
 
-  --accent:      #4f46e5;
-  --accent-soft: #eef0fe;
-  --accent-ink:  #3730a3;
+  /* ink */
+  --text:      #1f1c17;
+  --ink:       #1f1c17;   /* alias — Report/Spectate already referenced it */
+  --muted:     #3b362e;
+  --faint:     #9a9184;
+  --border:    #ddd7cc;
+  --border-2:  #e8e3d9;
 
-  --green:   #15a34a;
-  --green-soft: #e7f6ec;
-  --amber:   #c2820a;
-  --red:     #dc2626;
-  --red-soft: #fbeaea;
+  /* coloured inks, mixed to sit on cream rather than on white */
+  --accent:      #2b5279;
+  --accent-soft: #e0e7ef;
+  --accent-ink:  #1d3c5c;
+  --accent-rule: #b9c8d8;
 
-  --gold:    #cf9d1f;
-  --silver:  #9aa3ad;
-  --bronze:  #b3793f;
+  --green:      #3f6b46;
+  --green-soft: #e1e9dd;
+  --green-rule: #bacdb8;
+  --amber:      #8a6a1d;
+  --red:        #9c3b2f;
+  --red-soft:   #f0e1dc;
+  --red-rule:   #dcbfb6;
 
-  --radius:   12px;
-  --radius-sm: 8px;
-  --shadow:   0 1px 2px rgba(16,22,40,.04), 0 2px 8px rgba(16,22,40,.05);
-  --shadow-lg: 0 8px 30px rgba(16,22,40,.12);
+  --gold:    #a8842c;
+  --silver:  #8b8578;
+  --bronze:  #8f6339;
 
-  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Menlo", monospace;
+  --oss:      #2f6f66;    /* open-weights marker */
+  --oss-soft: #dfeae6;
+
+  /* TaskMaster / strategy layer — the old amber, re-inked */
+  --tm:      #8a6a1d;
+  --tm-rule: #d9c99f;
+  --tm-wash: rgba(138, 106, 29, .10);
+
+  --retry:      #a4551a;
+  --retry-wash: rgba(164, 85, 26, .11);
+  --retry-rule: rgba(164, 85, 26, .40);
+
+  /* trace-event left rules (TraceFeed) */
+  --ev-thinking: #6b5a94;
+  --ev-output:   #2f6f7c;
+  --ev-ocr:      #a75f34;
+  --ev-settle:   #9a7a2a;
+  --ev-handback: #4a739e;
+
+  /* JSON syntax (JsonTree) */
+  --json-key:  #2b5279;
+  --json-str:  #3f6b46;
+  --json-num:  #8a6a1d;
+  --json-bool: #6b4a86;
+
+  /* The only dark surfaces on the site: the spectate letterbox behind the
+     kiosk frame, the chart tooltip, and a video's own background. */
+  --dark:        #1c1a16;
+  --dark-text:   #f2efe9;
+  --dark-faint:  #9a9184;
+  --dark-green:  #8fbf8a;
+  --dark-accent: #9db4cc;
+
+  /* Square edges. 2–3px rather than a hard 0: at a 1px rule a true zero
+     aliases into a ragged corner, and the mock uses these exact values. */
+  --radius:    3px;
+  --radius-sm: 2px;
+
+  /* Paper casts no shadow. --shadow is deliberately `none` so the ~30
+     `box-shadow: var(--shadow)` sites across the components go flat from one
+     place; --shadow-lg survives only for the things that genuinely float above
+     the sheet (modals, the chart tooltip). */
+  --shadow:    none;
+  --shadow-lg: 0 10px 30px rgba(31, 28, 23, .20);
+
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, monospace;
+  /* One typeface for the whole page — the mock's defining move. --font stays as
+     its own token so a component that wants "body type" still reads correctly. */
+  --font: var(--mono);
 
   --maxw: 1080px;
 }
@@ -40,9 +97,12 @@ body {
   font-family: var(--font);
   background: var(--bg);
   color: var(--text);
-  font-size: 14px;
+  /* 13px, not 14: the same measure in mono runs ~8% wider than in the old
+     sans, and the dense grids (leaderboard, history) are laid out in px. */
+  font-size: 13px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  font-variant-ligatures: none;
 }
 /* Round 11: /spectate kiosk view locks page scroll (App toggles this class). */
 body.spectate-lock { overflow: hidden; }
@@ -60,39 +120,40 @@ button { font-family: inherit; cursor: pointer; }
   color: var(--text);
   padding: 7px 13px;
   border-radius: var(--radius-sm);
-  font-size: 13px; font-weight: 550;
-  transition: border-color .12s, background .12s, box-shadow .12s;
+  font-size: 12.5px; font-weight: 550;
+  transition: border-color .12s, background .12s;
 }
-.btn:hover { border-color: #cfd5df; background: var(--surface-2); }
+.btn:hover { border-color: var(--faint); background: var(--surface-2); }
 .btn.primary {
-  background: var(--accent); border-color: var(--accent); color: #fff;
+  background: var(--accent); border-color: var(--accent); color: var(--bg);
 }
-.btn.primary:hover { background: #4338ca; border-color: #4338ca; }
+.btn.primary:hover { background: var(--accent-ink); border-color: var(--accent-ink); }
 .btn.ghost { border-color: transparent; background: transparent; color: var(--muted); }
-.btn.ghost:hover { background: #eef1f5; color: var(--text); }
+.btn.ghost:hover { background: var(--wash); color: var(--text); }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 
 .badge {
   display: inline-flex; align-items: center; gap: 5px;
-  font-size: 11px; font-weight: 650; letter-spacing: .02em;
-  padding: 2px 8px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .06em;
+  padding: 2px 7px; border-radius: var(--radius-sm);
   text-transform: uppercase;
 }
 .badge.official { background: var(--accent-soft); color: var(--accent-ink); }
-.badge.casual   { background: #f0f2f6; color: #5b6472; }
+.badge.casual   { background: var(--wash); color: var(--muted); }
 
 .pill {
   display: inline-flex; align-items: center; gap: 6px;
-  font-size: 12px; font-weight: 600;
-  padding: 4px 10px; border-radius: 999px;
+  font-size: 11.5px; font-weight: 600;
+  padding: 4px 9px; border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--surface);
 }
 
-.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
+/* A printer's mark, not a bullet — square, like everything else. */
+.dot { width: 7px; height: 7px; border-radius: 0; background: var(--faint); flex: none; }
 .dot.live { background: var(--green); box-shadow: 0 0 0 3px var(--green-soft); }
 
-.status { font-size: 11.5px; font-weight: 650; text-transform: capitalize; }
+.status { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
 .status.completed  { color: var(--green); }
 .status.terminated { color: var(--red); }
 .status.running    { color: var(--accent); }
@@ -105,4 +166,4 @@ button { font-family: inherit; cursor: pointer; }
 .faint { color: var(--faint); }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb { background: #d7dce4; border-radius: 8px; border: 2px solid var(--bg); }
+::-webkit-scrollbar-thumb { background: #cfc8ba; border-radius: 0; border: 2px solid var(--bg); }

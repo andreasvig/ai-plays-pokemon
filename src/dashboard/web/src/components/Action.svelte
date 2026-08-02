@@ -12,62 +12,94 @@
 </script>
 
 <script>
-  // One GBA control glyph as inline SVG. Draws in `currentColor` and sizes in
-  // `em`, so a parent tints and scales it with a single rule — that is what
-  // lets the same component serve the paper-themed simple view and the dark
-  // trace feed. Paths are ported verbatim from docs/simple-view-mock.html;
-  // the 2.35em height is load-bearing, not a default: at 1.8em the d-pad
+  // One GBA control glyph, drawn as chunky pixels on the same 12x12 grid as
+  // Icon.svelte (Andreas, 2026-08-02 — "the up/down/left/right logos similar
+  // also"). Draws in `currentColor` and sizes in `em`, so a parent tints and
+  // scales it with a single rule — that is what lets the same component serve
+  // the paper-themed simple view, the trace feed and the run report.
+  //
+  // The 2.35em height is load-bearing, not a default: at 1.8em the d-pad
   // direction was not readable at a glance, which defeats the point of using
   // real hardware icons instead of emoji.
   //
+  // One thing the pixel rewrite gives up: start/select used to be a pill
+  // rotated -16deg, a nice nod to the hardware. Rotation destroys crisp edges,
+  // so the pill is now square-on — and slightly longer, because the label has
+  // to fit a 12-unit-tall box instead of a 24-unit one.
+  //
   // `delay` (ms) opts into the staggered pop the simple view uses for its
   // fake streaming. Leave it null everywhere else and the glyph is static.
+  import { RING } from './Icon.svelte'
+
   let { token, delay = null } = $props()
 
-  const DIR = {
-    up: 'M12 5.4 15.4 10.2 8.6 10.2Z',
-    down: 'M12 18.6 15.4 13.8 8.6 13.8Z',
-    left: 'M5.4 12 10.2 8.6 10.2 15.4Z',
-    right: 'M18.6 12 13.8 8.6 13.8 15.4Z',
+  // The d-pad body as a 1px OUTLINE, drawn faint. Filled bars were the first
+  // attempt and they cross: the shared centre composited its opacity twice and
+  // the glyph read as a mottled grey plus.
+  const CROSS = [
+    [4, 0, 4, 1], [4, 0, 1, 4], [7, 0, 1, 4],
+    [0, 4, 4, 1], [0, 4, 1, 4], [0, 7, 4, 1],
+    [4, 8, 1, 4], [4, 11, 4, 1], [7, 8, 1, 4],
+    [8, 7, 4, 1], [11, 4, 1, 4], [8, 4, 4, 1],
+  ]
+  // The pressed arm, filled solid. At 17px a filled quadrant reads as the
+  // direction instantly; a three-row arrowhead inside the arm did not.
+  // One unit longer than the arm, so the fill plugs the mouth the outline
+  // leaves open and the two read as one shape rather than a block floating
+  // beside a cross.
+  const ARROW = {
+    up:    [[4, 0, 4, 5]],
+    down:  [[4, 7, 4, 5]],
+    left:  [[0, 4, 5, 4]],
+    right: [[7, 4, 5, 4]],
   }
-  const CROSS = 'M9.1 2.6h5.8v6.5h6.5v5.8h-6.5v6.5H9.1v-6.5H2.6V9.1h6.5z'
+  // Square-on pill for start/select, on a 22x12 grid so six characters fit.
+  const PILL = [[3, 4, 16, 1], [3, 7, 16, 1], [2, 5, 1, 2], [19, 5, 1, 2]]
+  // Clock hands for `wait`, meeting at the ring's centre pixel.
+  const HANDS = [[5, 3, 1, 3], [6, 5, 3, 1]]
 
   let k = $derived(String(token ?? '').toLowerCase())
-  let dir = $derived(DIR[k] ?? null)
+  let dir = $derived(ARROW[k] ?? null)
   let face = $derived(k === 'a' || k === 'b')
   let pill = $derived(k === 'start' || k === 'select')
   let style = $derived(delay == null ? null : `animation-delay:${delay}ms`)
 </script>
 
+{#snippet px(rects, opacity)}
+  <g {opacity}>{#each rects as [x, y, w, h]}<rect {x} {y} width={w} height={h} />{/each}</g>
+{/snippet}
+
 {#if dir}
-  <svg class="g" class:pop={delay != null} {style} viewBox="0 0 24 24"
-       width="2.35em" height="2.35em" role="img" aria-label={k}>
-    <path d={CROSS} fill="none" stroke="currentColor" stroke-width="1.3" opacity=".45" />
-    <path d={dir} fill="currentColor" />
+  <svg class="g" class:pop={delay != null} {style} viewBox="0 0 12 12"
+       width="2.35em" height="2.35em" fill="currentColor" shape-rendering="crispEdges"
+       role="img" aria-label={k}>
+    {@render px(CROSS, .38)}
+    {@render px(dir, 1)}
   </svg>
 {:else if face}
-  <svg class="g" class:pop={delay != null} {style} viewBox="0 0 24 24"
-       width="2.35em" height="2.35em" role="img" aria-label={k}>
-    <circle cx="12" cy="12" r="8.6" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".55" />
-    <text x="12" y="12" fill="currentColor" font-size="9.4" font-weight="700"
+  <svg class="g" class:pop={delay != null} {style} viewBox="0 0 12 12"
+       width="2.35em" height="2.35em" fill="currentColor" shape-rendering="crispEdges"
+       role="img" aria-label={k}>
+    {@render px(RING, .55)}
+    <text x="6" y="6.4" fill="currentColor" font-size="6.6" font-weight="700"
           font-family="ui-monospace,monospace" text-anchor="middle"
           dominant-baseline="central">{k.toUpperCase()}</text>
   </svg>
 {:else if pill}
-  <svg class="g" class:pop={delay != null} {style} viewBox="0 0 34 24"
-       width="3.33em" height="2.35em" role="img" aria-label={k}>
-    <rect x="2.4" y="8.6" width="29" height="6.6" rx="3.3" fill="none" stroke="currentColor"
-          stroke-width="1.3" opacity=".55" transform="rotate(-16 17 12)" />
-    <text x="17" y="12.4" fill="currentColor" font-size="6.4" font-weight="700"
+  <svg class="g" class:pop={delay != null} {style} viewBox="0 0 22 12"
+       width="4.31em" height="2.35em" fill="currentColor" shape-rendering="crispEdges"
+       role="img" aria-label={k}>
+    {@render px(PILL, .55)}
+    <text x="11" y="6.2" fill="currentColor" font-size="4.6" font-weight="700"
           font-family="ui-monospace,monospace" text-anchor="middle"
-          dominant-baseline="central" letter-spacing=".6">{k.toUpperCase()}</text>
+          dominant-baseline="central" letter-spacing=".3">{k.toUpperCase()}</text>
   </svg>
 {:else if k === 'wait'}
-  <svg class="g" class:pop={delay != null} {style} viewBox="0 0 24 24"
-       width="2.35em" height="2.35em" role="img" aria-label="wait">
-    <circle cx="12" cy="12" r="8.6" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".55" />
-    <path d="M12 7.2V12l3.2 2.1" fill="none" stroke="currentColor" stroke-width="1.5"
-          stroke-linecap="round" />
+  <svg class="g" class:pop={delay != null} {style} viewBox="0 0 12 12"
+       width="2.35em" height="2.35em" fill="currentColor" shape-rendering="crispEdges"
+       role="img" aria-label="wait">
+    {@render px(RING, .55)}
+    {@render px(HANDS, 1)}
   </svg>
 {:else}
   <!-- Unknown token: render it as text rather than dropping it, so a button

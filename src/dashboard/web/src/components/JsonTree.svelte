@@ -27,10 +27,10 @@
 <style>
   .row { font-family: var(--mono); font-size: 11.5px; line-height: 1.7; }
   .children { display: flex; flex-direction: column; }
-  .key { color: #0e7490; }
+  .key { color: var(--json-key); }
   .punc { color: var(--faint); }
-  .str { color: #15803d; }
-  .num { color: #b45309; }
-  .bool { color: #7c3aed; }
+  .str { color: var(--json-str); }
+  .num { color: var(--json-num); }
+  .bool { color: var(--json-bool); }
   .null { color: var(--faint); }
 </style>

@@ -10,6 +10,7 @@
   import { mdToHtml } from '../lib/md.js'
   import * as api from '../lib/api.js'
   import Action, { actionTokens } from './Action.svelte'
+  import Icon from './Icon.svelte'
   let { run = null, onback, oncontinue } = $props()
 
   let summary = $state(null)     // raw nested run_summary.json (KPIs + referee.gates)
@@ -42,7 +43,7 @@
 
   const verdict = $derived(() => {
     if (!summary) return ''
-    if (totalN > 0 && reachedN >= totalN) return '🏁 All gates cleared — full ladder'
+    if (totalN > 0 && reachedN >= totalN) return 'All gates cleared — full ladder'
     if (termination && termination.startsWith('missed_gate:')) {
       const missed = gates.find((g) => g.status === 'missed' || g.status === 'failed')
         || gates.find((g) => g.id === termination.split(':')[1])
@@ -105,16 +106,16 @@
   }
 
   // E9.5: map a self_assessment string → labeled verdict (mirrors Phase 2
-  // Spectate.fmtHandback exactly). succeeded→✅ / failed→❌ / partial→🟡 /
+  // Spectate.fmtHandback exactly). succeeded→✓ / failed→✗ / partial→~ /
   // free-text→verbatim.
   function fmtVerdict(rawAssessment) {
     const raw = (rawAssessment ?? '').toString().trim()
     const lc = raw.toLowerCase()
-    if (/^succe/.test(lc) || lc === 'true' || lc === 'complete') return { label: '✅ Task complete', tone: 'ok' }
-    if (/^fail/.test(lc) || lc === 'false' || /not (complete|done|succeed)/.test(lc)) return { label: '❌ Task not complete', tone: 'no' }
-    if (/^partial/.test(lc) || /partly/.test(lc)) return { label: '🟡 Partial', tone: 'partial' }
+    if (/^succe/.test(lc) || lc === 'true' || lc === 'complete') return { label: '✓ Task complete', tone: 'ok' }
+    if (/^fail/.test(lc) || lc === 'false' || /not (complete|done|succeed)/.test(lc)) return { label: '✗ Task not complete', tone: 'no' }
+    if (/^partial/.test(lc) || /partly/.test(lc)) return { label: '~ Partial', tone: 'partial' }
     if (raw) return { label: raw, tone: 'partial' }   // free-text → verbatim
-    return { label: '🟡 Returned to TaskMaster', tone: 'partial' }
+    return { label: 'Returned to TaskMaster', tone: 'partial' }
   }
 
   // E9.5/E9.6 fix: `t.action` is BACKEND-PRE-STRINGIFIED (e.g. "[left, left, up]",
@@ -138,7 +139,7 @@
     const hb = coerceHandback(a && a.return_to_taskmaster)
     if (hb) {
       const v = fmtVerdict(hb.self_assessment)
-      return v?.label ?? '↩️ Returned to TaskMaster'
+      return v?.label ?? 'Returned to TaskMaster'
     }
     // fallback: raw action, but the bare "?" sentinel → a dash, never a stray "?"
     if (t.action && t.action !== '?') return actionTokens(t.action).join(' ')
@@ -158,17 +159,17 @@
     }
     return null
   }
-  const ratingIcon = { succeeded: '✅', failed: '❌', partial: '🟡' }
+  const ratingIcon = { succeeded: '✓', failed: '✗', partial: '~' }
 
   // Task header badge (parity with report.py _task_badge_html). No rating yet =
   // the CURRENT (in-progress) task.
   function taskBadge(g) {
     const status = (g.rating?.status || '').toLowerCase()
-    if (!g.rating) return { icon: '⏳', label: 'current', cls: 'badge-current' }
-    if (status === 'succeeded') return { icon: '✅', label: 'succeeded', cls: 'badge-succeeded' }
-    if (status === 'failed') return { icon: '❌', label: 'failed', cls: 'badge-failed' }
-    if (status === 'partial') return { icon: '🟡', label: 'partial', cls: 'badge-partial' }
-    return { icon: '➖', label: status || '?', cls: 'badge-other' }
+    if (!g.rating) return { icon: '·', label: 'current', cls: 'badge-current' }
+    if (status === 'succeeded') return { icon: '✓', label: 'succeeded', cls: 'badge-succeeded' }
+    if (status === 'failed') return { icon: '✗', label: 'failed', cls: 'badge-failed' }
+    if (status === 'partial') return { icon: '~', label: 'partial', cls: 'badge-partial' }
+    return { icon: '–', label: status || '?', cls: 'badge-other' }
   }
 
   function turnUsage(t) {
@@ -179,9 +180,9 @@
     return [cost, tok].filter(Boolean).join(' · ')
   }
   function turnGrade(succeeded) {
-    if (succeeded === true) return '✅ succeeded'
-    if (succeeded === false) return '❌ failed'
-    return '➖ n/a (first turn)'
+    if (succeeded === true) return '✓ succeeded'
+    if (succeeded === false) return '✗ failed'
+    return '– n/a (first turn)'
   }
   function shotUrl(t) {
     return `/api/runs/${encodeURIComponent(run.runId)}/screenshots/${t.screenshot}`
@@ -193,12 +194,12 @@
 
 <section class="wrap">
   {#if !run}
-    <div class="empty"><p>No run selected.</p><button class="btn" onclick={() => onback()}>← Back</button></div>
+    <div class="empty"><p>No run selected.</p><button class="btn" onclick={() => onback()}><Icon name="back" size={13} /> Back</button></div>
   {:else}
     <div class="bar">
-      <button class="btn ghost" onclick={() => onback()}>← Back</button>
+      <button class="btn ghost" onclick={() => onback()}><Icon name="back" size={13} /> Back</button>
       <span class="badge {run.kind}">{run.kind}</span>
-      <button class="btn cont full-report" disabled={run.status === 'running'} onclick={() => oncontinue(run)}>⟳ Continue this run</button>
+      <button class="btn cont full-report" disabled={run.status === 'running'} onclick={() => oncontinue(run)}><Icon name="rerun" size={13} /> Continue this run</button>
     </div>
 
     <!-- meta bar -->
@@ -229,7 +230,7 @@
     {#if gates.length}
       <section class="score">
         <div class="score-head">
-          <h3>🏁 Benchmark gates</h3>
+          <h3>Benchmark gates</h3>
           <span class="cleared">{reachedN}/{totalN} cleared</span>
           <span class="verdict" class:fail={termination && termination.startsWith('missed_gate:')} class:win={reachedN >= totalN && totalN > 0}>{verdict()}</span>
         </div>
@@ -265,7 +266,7 @@
               <div class="master-block">
                 <button class="master-head" onclick={() => toggleGroup(gk)}>
                   <span class="arr amber">{gOpen ? '▾' : '▸'}</span>
-                  <span class="m-title">🧭 Task {g.task_index} (Master){#if g.title}: {g.title}{/if}</span>
+                  <span class="m-title">Task {g.task_index} (Master){#if g.title}: {g.title}{/if}</span>
                   <span class="task-badge {badge.cls}">{badge.icon} {badge.label}</span>
                   <span class="m-meta tnum">{g.turns?.length ?? 0} turn{(g.turns?.length ?? 0) === 1 ? '' : 's'}</span>
                   {#if g.master_cost != null}<span class="m-meta mono">{usd(g.master_cost)}</span>{/if}
@@ -273,7 +274,7 @@
                 {#if gOpen}
                   <div class="master-body">
                     <!-- master label + FULL master trace (chronological: trace then output) -->
-                    <div class="master-label">🧭 TaskMaster</div>
+                    <div class="master-label">TaskMaster</div>
 
                     {#if mt}
                       <div class="trace-section">
@@ -346,11 +347,11 @@
                     <!-- master OUTPUT card at the BOTTOM (chronological): the task it
                          set + its rating of the PREVIOUS task. -->
                     <div class="master-verdict">
-                      {#if g.title}<div class="dec-row"><span class="dec-lab">📋 Task</span><span class="dec-val">{g.title}</span></div>{/if}
-                      {#if g.description}<div class="dec-row"><span class="dec-lab">🧭 Plan</span><div class="dec-desc">{g.description}</div></div>{/if}
-                      {#if g.success_criteria}<div class="dec-row"><span class="dec-lab">🎯 Success criteria</span><span class="dec-val">{g.success_criteria}</span></div>{/if}
+                      {#if g.title}<div class="dec-row"><span class="dec-lab">Task</span><span class="dec-val">{g.title}</span></div>{/if}
+                      {#if g.description}<div class="dec-row"><span class="dec-lab">Plan</span><div class="dec-desc">{g.description}</div></div>{/if}
+                      {#if g.success_criteria}<div class="dec-row"><span class="dec-lab">Success criteria</span><span class="dec-val">{g.success_criteria}</span></div>{/if}
                       {#if rop}
-                        <div class="dec-row"><span class="dec-lab">⚖️ Rating of the previous task</span><span class="dec-val">{ratingIcon[(rop.status || '').toLowerCase()] ?? '➖'} {rop.status}</span></div>
+                        <div class="dec-row"><span class="dec-lab">Rating of the previous task</span><span class="dec-val">{ratingIcon[(rop.status || '').toLowerCase()] ?? '–'} {rop.status}</span></div>
                         {#if rop.reasoning}<div class="dec-row"><span class="dec-lab">Reasoning</span><div class="dec-desc">{rop.reasoning}</div></div>{/if}
                       {:else}
                         <div class="dec-row faint"><span class="dec-val">First task — no previous task to rate.</span></div>
@@ -362,12 +363,12 @@
                     {#if g.player_self_assessment || g.player_task_summary}
                       {@const v = fmtVerdict(g.player_self_assessment)}
                       <div class="handback {v.tone}">
-                        <span class="hb-verdict">↩️ {v.label}</span>
+                        <span class="hb-verdict">{v.label}</span>
                         {#if g.player_task_summary}<span class="hb-summary">{g.player_task_summary}</span>{/if}
                       </div>
                     {:else if !g.rating}
                       <div class="handback partial">
-                        <span class="hb-verdict">⏳ Current task — in progress (no verdict yet)</span>
+                        <span class="hb-verdict">Current task — in progress (no verdict yet)</span>
                       </div>
                     {/if}
                   </div>
@@ -441,7 +442,7 @@
                                      not buried inside the Output card where it reads as absent. -->
                                 {#if step.thinking}
                                   <details class="trace-step trace-thinking-only" open>
-                                    <summary><span class="step-label">💭 Thinking</span></summary>
+                                    <summary><span class="step-label">Thinking</span></summary>
                                     <div class="step-content md">{@html mdToHtml(step.thinking)}</div>
                                   </details>
                                 {/if}
@@ -457,7 +458,7 @@
                                         {#if p.reasoning}<div class="dec-row"><span class="dec-lab">Reasoning</span><div class="dec-desc">{p.reasoning}</div></div>{/if}
                                         {#if hbObj}
                                           {@const hb = fmtVerdict(hbObj.self_assessment)}
-                                          <div class="dec-row"><span class="dec-lab">↩️ Return to TaskMaster</span><span class="dec-val">{hb.label}{#if hbObj.task_summary} — {hbObj.task_summary}{/if}</span></div>
+                                          <div class="dec-row"><span class="dec-lab">Return to TaskMaster</span><span class="dec-val">{hb.label}{#if hbObj.task_summary} — {hbObj.task_summary}{/if}</span></div>
                                         {:else}
                                           <div class="dec-row"><span class="dec-lab">Action</span><span class="dec-val acts">{#each actionTokens(p.inputs ?? '') as tok}<Action token={tok} />{/each}</span></div>
                                         {/if}
@@ -530,7 +531,7 @@
   .verdict.fail { color: var(--red); }
   .verdict.win { color: var(--green); }
   .gtable { display: flex; flex-direction: column; }
-  .grow { display: grid; grid-template-columns: 22px 1fr 60px 50px; gap: 10px; align-items: center; padding: 6px 8px; border-radius: 6px; font-size: 12.5px; }
+  .grow { display: grid; grid-template-columns: 22px 1fr 60px 50px; gap: 10px; align-items: center; padding: 6px 8px; border-radius: var(--radius-sm); font-size: 12.5px; }
   .grow.grp { padding-left: 18px; }
   .grow.done { background: var(--green-soft); }
   .grow.missed, .grow.failed { background: var(--red-soft); }
@@ -545,28 +546,28 @@
 
   /* master/TaskMaster node = group header — amber "strategy" layer */
   .group { margin-bottom: 8px; }
-  .master-block { background: var(--surface); border: 1px solid #f0d9a0; border-left: 3px solid #ffce54; border-radius: var(--radius-sm); box-shadow: var(--shadow); overflow: hidden; }
-  .master-head { width: 100%; display: flex; align-items: center; gap: 8px; padding: 10px 13px; border: none; text-align: left; font-size: 12.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: #b8860b; background: rgba(255, 206, 84, 0.12); cursor: pointer; }
-  .master-head:hover { background: rgba(255, 206, 84, 0.2); }
-  .master-block:has(.master-body) .master-head { border-bottom: 1px solid #f0d9a0; }
-  .arr.amber { color: #c79a18; }
+  .master-block { background: var(--surface); border: 1px solid var(--tm-rule); border-left: 3px solid var(--tm); border-radius: var(--radius-sm); box-shadow: var(--shadow); overflow: hidden; }
+  .master-head { width: 100%; display: flex; align-items: center; gap: 8px; padding: 10px 13px; border: none; text-align: left; font-size: 12.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--tm); background: var(--tm-wash); cursor: pointer; }
+  .master-head:hover { background: rgba(138, 106, 29, .17); }
+  .master-block:has(.master-body) .master-head { border-bottom: 1px solid var(--tm-rule); }
+  .arr.amber { color: var(--tm); }
   .m-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .m-meta { font-size: 10.5px; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--muted); }
   .m-meta:first-of-type { margin-left: auto; }
-  .task-badge { font-size: 10.5px; font-weight: 750; text-transform: uppercase; letter-spacing: .03em; padding: 1px 8px; border-radius: 10px; background: var(--surface-2); color: var(--muted); white-space: nowrap; }
+  .task-badge { font-size: 10.5px; font-weight: 750; text-transform: uppercase; letter-spacing: .03em; padding: 1px 8px; border-radius: var(--radius-sm); background: var(--surface-2); color: var(--muted); white-space: nowrap; }
   .task-badge.badge-succeeded { background: var(--green-soft); color: var(--green); }
   .task-badge.badge-failed { background: var(--red-soft); color: var(--red); }
-  .task-badge.badge-partial { background: rgba(255, 206, 84, 0.2); color: #b8860b; }
+  .task-badge.badge-partial { background: var(--tm-wash); color: var(--tm); }
   .task-badge.badge-current { background: var(--surface-2); color: var(--muted); }
 
   .master-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; }
-  .master-label { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: #c79a18; }
+  .master-label { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--tm); }
 
   /* deep trace container (master + player share these) */
   .trace-section { display: flex; flex-direction: column; gap: 6px; }
   .trace-header { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); }
   .trace-container { display: flex; flex-direction: column; gap: 5px; }
-  .trace-step { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; font-size: 12.5px; }
+  .trace-step { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 12.5px; }
   .trace-step > summary { cursor: pointer; padding: 7px 10px; display: flex; align-items: center; gap: 8px; list-style: none; }
   .trace-step > summary::-webkit-details-marker { display: none; }
   .trace-step > summary::before { content: '▸'; color: var(--faint); font-size: 10px; }
@@ -581,9 +582,9 @@
   /* Action is 2.35em tall — shrink the container's font-size (not the glyph's
      own height) so it reads at the old emoji's footprint in this dense row. */
   .step-action-code { display: inline-flex; align-items: center; gap: 3px; font-size: 7.5px; }
-  .step-content, .trace-step pre { margin: 0; padding: 8px 10px; white-space: pre-wrap; word-break: break-word; font-size: 11.5px; line-height: 1.5; color: var(--muted); background: var(--surface); border-top: 1px solid var(--border); border-radius: 0 0 6px 6px; max-height: 360px; overflow: auto; }
+  .step-content, .trace-step pre { margin: 0; padding: 8px 10px; white-space: pre-wrap; word-break: break-word; font-size: 11.5px; line-height: 1.5; color: var(--muted); background: var(--surface); border-top: 1px solid var(--border); border-radius: 0 0 var(--radius-sm) var(--radius-sm); max-height: 360px; overflow: auto; }
   .step-body { padding: 6px 10px 10px; display: flex; flex-direction: column; gap: 8px; }
-  .step-body pre { border: 1px solid var(--border); border-radius: 5px; }
+  .step-body pre { border: 1px solid var(--border); border-radius: var(--radius-sm); }
   .sub-label { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); margin-bottom: 3px; }
   .step-thinking .md { font-size: 12.5px; line-height: 1.55; color: var(--ink); }
   .step-thinking .md :global(strong) { color: var(--accent); }
@@ -593,7 +594,7 @@
   .trace-retry { padding: 7px 10px; }
 
   /* decision / output rows (master verdict + player decision) */
-  .master-verdict { display: flex; flex-direction: column; gap: 7px; padding: 10px 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 7px; }
+  .master-verdict { display: flex; flex-direction: column; gap: 7px; padding: 10px 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); }
   .dec-row { font-size: 12.5px; line-height: 1.5; }
   .dec-lab { display: block; font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); margin-bottom: 2px; }
   .dec-val { color: var(--ink); }
@@ -601,24 +602,24 @@
      own height) so the decision row's glyphs don't dwarf the surrounding text. */
   .dec-val.acts { display: inline-flex; align-items: center; gap: 3px; font-size: 7.5px; }
   .dec-desc { white-space: pre-wrap; color: var(--muted); }
-  .dec-mem { margin: 3px 0 0; padding: 5px 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 5px; font-size: 11px; white-space: pre-wrap; }
+  .dec-mem { margin: 3px 0 0; padding: 5px 8px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 11px; white-space: pre-wrap; }
 
   /* task verdict / handback banner */
-  .handback { display: flex; flex-direction: column; gap: 3px; padding: 9px 12px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface-2); }
+  .handback { display: flex; flex-direction: column; gap: 3px; padding: 9px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface-2); }
   .handback.ok { background: var(--green-soft); border-color: transparent; }
   .handback.no { background: var(--red-soft); border-color: transparent; }
-  .handback.partial { background: rgba(255, 206, 84, 0.16); border-color: transparent; }
+  .handback.partial { background: var(--tm-wash); border-color: transparent; }
   .hb-verdict { font-size: 12.5px; font-weight: 750; }
   .hb-summary { font-size: 12px; color: var(--muted); line-height: 1.5; }
 
   .master-thumbs { display: flex; gap: 8px; flex-wrap: wrap; padding: 8px 10px; }
   .master-thumb { margin: 0; text-align: center; }
-  .master-thumb img { width: 130px; image-rendering: pixelated; border: 1px solid var(--border); border-radius: 4px; display: block; }
-  .master-thumb figcaption { font-size: 9.5px; color: #c79a18; text-transform: uppercase; letter-spacing: .04em; margin-top: 3px; }
+  .master-thumb img { width: 130px; image-rendering: pixelated; border: 1px solid var(--border); border-radius: var(--radius-sm); display: block; }
+  .master-thumb figcaption { font-size: 9.5px; color: var(--tm); text-transform: uppercase; letter-spacing: .04em; margin-top: 3px; }
 
   .casual-head { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; font-weight: 700; margin: 4px 2px 8px; }
   .turns.nested { margin: 0 0 12px 16px; padding-left: 10px; border-left: 2px solid var(--border); }
-  .turn-shot { width: 240px; max-width: 100%; image-rendering: pixelated; border: 1px solid var(--border); border-radius: 6px; display: block; margin-top: 2px; }
+  .turn-shot { width: 240px; max-width: 100%; image-rendering: pixelated; border: 1px solid var(--border); border-radius: var(--radius-sm); display: block; margin-top: 2px; }
   .turn { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 8px; overflow: hidden; }
   .thead { width: 100%; display: grid; grid-template-columns: 18px 56px auto 1fr auto; gap: 10px; align-items: center; padding: 11px 14px; border: none; background: none; text-align: left; }
   .thead:hover { background: var(--surface-2); }

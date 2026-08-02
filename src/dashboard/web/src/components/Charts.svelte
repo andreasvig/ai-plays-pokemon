@@ -23,7 +23,7 @@
     <header>
       <div>
         <h3>Cost</h3>
-        <p class="faint">Performance vs price per turn (log). Up = further / fewer turns; left = cheaper. Dashed = cost-performance frontier. Hover a dot for values; click to open the run.</p>
+        <p class="faint">Performance vs price per turn (log). Up = further / fewer turns; left = cheaper. Dashed = cost-performance frontier. Hover a marker for values; click to open the run.</p>
       </div>
       <div class="segs">{#each MODES as [v, label]}<button class:on={costMode === v} onclick={() => costMode = v}>{label}</button>{/each}</div>
     </header>
@@ -34,7 +34,7 @@
     <header>
       <div>
         <h3>Speed</h3>
-        <p class="faint">Performance vs seconds per turn. Up = further / fewer turns; left = faster. Dashed = speed-performance frontier. Hover a dot for values; click to open the run.</p>
+        <p class="faint">Performance vs seconds per turn. Up = further / fewer turns; left = faster. Dashed = speed-performance frontier. Hover a marker for values; click to open the run.</p>
       </div>
       <div class="segs">{#each MODES as [v, label]}<button class:on={speedMode === v} onclick={() => speedMode = v}>{label}</button>{/each}</div>
     </header>
@@ -42,8 +42,8 @@
   </div>
 
   <p class="legend faint">
-    <span class="key prop">●</span> proprietary
-    <span class="key oss">●</span> open-source
+    <span class="key prop"></span> proprietary
+    <span class="key oss"></span> open-source
     <span class="sep">·</span>
     y-axis: 0–100% = gate completion; above 100% = turn efficiency among full clears (top = fewest turns to complete).
   </p>
@@ -55,12 +55,15 @@
   header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 8px; }
   h3 { font-size: 16px; font-weight: 750; margin: 0; }
   header p { font-size: 12px; margin: 2px 0 0; max-width: 460px; }
-  .segs { display: flex; background: #eef1f5; border-radius: 8px; padding: 3px; gap: 2px; flex: none; }
-  .segs button { border: none; background: none; padding: 5px 10px; border-radius: 6px; font-size: 11.5px; font-weight: 600; color: var(--muted); white-space: nowrap; }
-  .segs button.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+  .segs { display: flex; background: var(--wash); border-radius: var(--radius); padding: 3px; gap: 2px; flex: none; }
+  .segs button { border: none; background: none; padding: 5px 10px; border-radius: var(--radius-sm); font-size: 11.5px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+  .segs button.on { background: var(--surface); color: var(--text); box-shadow: inset 0 0 0 1px var(--border); }
   .legend { font-size: 11.5px; text-align: center; display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; }
-  .key { font-size: 13px; }
+  /* The legend key IS the marker: a square, drawn the same way the plot
+     draws it, rather than a ● that no longer matches anything. */
+  .key { display: inline-block; width: 9px; height: 9px; background: currentColor;
+    vertical-align: -1px; }
   .key.prop { color: var(--accent); }
-  .key.oss { color: #0d9488; }
+  .key.oss { color: var(--oss); }
   .sep { opacity: .5; }
 </style>

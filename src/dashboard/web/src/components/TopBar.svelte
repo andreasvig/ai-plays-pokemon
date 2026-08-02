@@ -1,4 +1,5 @@
 <script>
+  import Icon from './Icon.svelte'
   let { active = null, emulatorUp = false, queue = [], view = 'home', muted = true, ontogglemute,
         roms = [], emulator = {}, onrom, onnav, onspectate } = $props()
   // green/live = a run is active AND the emulator is up; grey/idle otherwise.
@@ -18,7 +19,7 @@
 <header class="topbar">
   <div class="left">
     <button class="brand" onclick={() => onnav('/')}>
-      <span class="logo">◓</span>
+      <span class="logo"><Icon name="ball" size={20} title="PokeBench" /></span>
       <span class="name">PokeBench</span>
       <span class="ver mono">pokebench-v1</span>
     </button>
@@ -52,7 +53,7 @@
     <button class="btn ghost mute" class:muted onclick={() => ontogglemute && ontogglemute()}
             title={muted ? 'Game audio muted — click to unmute' : 'Game audio on — click to mute'}
             aria-label={muted ? 'Unmute game audio' : 'Mute game audio'}>
-      {muted ? '🔇' : '🔊'}
+      <Icon name={muted ? 'muted' : 'audio'} size={17} />
     </button>
     <button class="btn ghost" class:active={view === 'history'} onclick={() => onnav('/history')}>History</button>
     <button class="btn ghost" class:active={view === 'about'} onclick={() => onnav('/about')}>About</button>
@@ -64,7 +65,7 @@
     position: sticky; top: 0; z-index: 20;
     display: flex; align-items: center; gap: 18px;
     padding: 12px 24px;
-    background: rgba(255,255,255,.82);
+    background: rgba(251, 249, 245, .88);
     backdrop-filter: saturate(180%) blur(10px);
     border-bottom: 1px solid var(--border);
   }
@@ -72,32 +73,32 @@
   .center { flex: 1; display: flex; align-items: center; gap: 12px; min-width: 0; }
 
   .brand { display: flex; align-items: center; gap: 9px; border: none; background: none; padding: 0; }
-  .logo { font-size: 20px; color: var(--accent); line-height: 1; }
-  .name { font-size: 16px; font-weight: 750; letter-spacing: -.01em; }
-  .ver { font-size: 10.5px; color: var(--faint); background: #f0f2f6; padding: 2px 6px; border-radius: 5px; }
+  .logo { color: var(--red); display: grid; place-items: center; }
+  .name { font-size: 15px; font-weight: 700; letter-spacing: .02em; }
+  .ver { font-size: 10px; letter-spacing: .04em; color: var(--faint); background: var(--wash); padding: 2px 6px; border-radius: var(--radius-sm); }
 
   .spectate {
     display: inline-flex; align-items: center; gap: 8px;
     border: 1px solid var(--border); background: var(--surface);
     color: var(--faint); font-weight: 650; font-size: 13px;
-    padding: 7px 14px; border-radius: 999px; transition: all .12s;
+    padding: 7px 13px; border-radius: var(--radius-sm); transition: all .12s;
   }
   .spectate.on {
-    color: var(--green); border-color: #bfe6cc; background: var(--green-soft);
+    color: var(--green); border-color: var(--green-rule); background: var(--green-soft);
   }
-  .spectate.on:hover { box-shadow: 0 0 0 4px var(--green-soft); }
+  .spectate.on:hover { border-color: var(--green); }
 
-  .btn.ghost.active { color: var(--text); background: #eef1f5; }
-  .mute { font-size: 15px; line-height: 1; padding: 6px 10px; }
+  .btn.ghost.active { color: var(--text); background: var(--wash); }
+  .mute { padding: 6px 8px; display: grid; place-items: center; }
   .mute.muted { opacity: .55; }
 
   .rom { display: inline-flex; align-items: center; gap: 8px; }
   .rom select {
     font-family: inherit; font-size: 12px; font-weight: 600; color: var(--text);
-    padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px;
+    padding: 5px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm);
     background: var(--surface); max-width: 170px;
   }
   .rom select:disabled { color: var(--muted); background: var(--surface-2); }
   .rom.pending select { border-style: dashed; }
-  .romnote { font-size: 10.5px; font-weight: 650; color: var(--accent, #3b82f6); white-space: nowrap; }
+  .romnote { font-size: 10.5px; font-weight: 650; color: var(--accent); white-space: nowrap; }
 </style>
