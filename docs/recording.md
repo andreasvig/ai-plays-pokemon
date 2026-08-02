@@ -132,7 +132,47 @@ A 1080×1080 30fps recording runs roughly 3–8 MB per minute of *kept* video.
 
 In the UI, any **History** row whose run has a video gets a **▶** button that
 opens it in a player over the list (Esc or the backdrop closes it; **↓** saves
-the file under the run's name). Rows without one show no button.
+the file). Rows without one show no button.
+
+### The name it saves under
+
+On disk every clip is `recording.mp4` — unambiguous next to its own
+`config.json`, useless in a Downloads folder with thirty siblings. So the
+download carries a name rebuilt from the run's settings:
+
+```
+2026-08-02_1556_firered_casual-exploration_config-4.0_claude-opus-5-medium
+_17turns_1.03usd_cap1.00usd_cap20turns_stop-starter-chosen
+_simple-cut-thinking_hit-budget.mp4
+```
+
+Fixed order, absent parts dropped, so two names line up column-wise for as far
+as they agree: date + time · game · kind (`casual-exploration` /
+`casual-speed`, or `official-<benchmark>`, since every official run is a speed
+run and the ladder is the informative half) · config stem · model + effort
+tier · `cont-from-t<N>` on a continue · turns · spend · the caps it ran under,
+fired or not · `stop-<event>` · the recording's own view + speed · and a
+trailing marker when the run did **not** simply finish (`hit-budget`,
+`cancelled`, `crashed`, `terminated`, `no-output`). That last one is the
+guardrail: a clip of a crashed run looks exactly like a clip of a finished one.
+
+Built by `src/app/recording_name.py`, read off `config.json` +
+`run_summary.json`, defensive on every field and falling back to the bare run
+id for a folder that predates one. Truncated at 200 bytes — a hand-rolled
+config can carry an arbitrarily long alias, and macOS caps a path component at
+255.
+
+The **run folder** is deliberately not renamed to match. `run_id` is the primary
+key across the queue, the run index, savepoints and the continue chain — it is
+keyed on, joined on and parsed — and a folder already sits next to its own
+config, so prettifying it would ripple through all of that for nothing.
+
+Two facts had to start being persisted for this to work: `run_summary.json` now
+records `max_turns` (the cap arrives as a `run_loop` argument, not a config key,
+so it was previously unrecoverable) and records `max_spend_usd` whether or not
+the ceiling fired (it used to be written only by the stop that fired, which
+made "came in under a $2 budget" indistinguishable from "unbounded"). Runs
+recorded before 2026-08-02 have neither, and simply omit those segments.
 
 `has_recording` is derived from the run dir on every request rather than stored
 on `RunSummary`. The index is a projection written once when a run finishes, so

@@ -806,6 +806,10 @@ class TurnManager:
         self._spend_baseline_usd: float = 0.0
         # Latched when the ceiling ended the run, so the summary can say so.
         self._budget_stopped: bool = False
+        # The turn cap this run is launched with. Arrives as a run_loop argument
+        # rather than a config key, so _run_loop_async records it here for the
+        # summary; None until a loop starts.
+        self._turn_limit: Optional[int] = None
 
         # Cooperative stop hook. A long-lived caller (the control-center executor)
         # sets this to a predicate checked at the top of every turn; when it
@@ -1587,6 +1591,11 @@ class TurnManager:
         """Run the turn loop."""
         self._run_start_time = time.time()
         limit = max_turns or self.max_turns
+        # Remember the cap the run actually ran under. It arrives as a call
+        # argument, not a config key, so without this it is unrecoverable from
+        # the run folder afterwards — and the summary is where the recording
+        # filename and any later comparison read a run's bounds from.
+        self._turn_limit = limit
         # Anchor the spend budget to what this segment adds, not to the lineage
         # total a continue inherited. Taken BEFORE the cold start so the opening
         # TaskMaster call is charged to this segment too.
@@ -2761,16 +2770,27 @@ class TurnManager:
                 self._abort_error or "no valid model output (retries + fallbacks exhausted)"
             )
 
+        # The bounds this run was given, recorded whether or not they fired. A
+        # cap that never fired still describes the run — "1500 turns, no budget"
+        # and "20 turns, $1" are different experiments even when both end at
+        # turn 12. Writing them only on the stop that fired would mean the
+        # answer exists only for the losing condition.
+        # getattr, not attribute access: several callers build a TurnManager via
+        # __new__ to exercise this writer without constructing an agent, so the
+        # __init__ defaults are not there to read.
+        _turn_limit = getattr(self, "_turn_limit", None)
+        if _turn_limit is not None:
+            summary["max_turns"] = _turn_limit
+        _spend_cap = getattr(self, "max_spend_usd", None)
+        if _spend_cap is not None:
+            summary["max_spend_usd"] = _spend_cap
+
         # Which of the three casual stop conditions actually fired, when it was
         # the budget. Deliberately NOT `termination_reason`: projection.py reads
         # that key as a missed-gate kill and would derive status `terminated`.
         # A run that spent its budget finished as asked — it stays `completed`.
-        # getattr, not attribute access: several callers build a TurnManager via
-        # __new__ to exercise this writer without constructing an agent, so the
-        # __init__ defaults are not there to read.
         if getattr(self, "_budget_stopped", False):
             summary["stop_reason"] = "max_spend"
-            summary["max_spend_usd"] = getattr(self, "max_spend_usd", None)
 
         # Referee scorecard (observe-only this phase). Best-effort: a scorecard
         # failure must not block writing the rest of the summary.

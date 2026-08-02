@@ -1,5 +1,46 @@
 # Changelog
 
+## 2026-08-02 — A downloaded recording is named after the run's settings
+
+### What
+- **`src/app/recording_name.py`** (new) builds a settings-bearing filename from
+  a run folder: date + time · game · kind + playstyle (or
+  `official-<benchmark>`) · config stem · model + effort tier · continue marker ·
+  turns · spend · the caps it ran under · `stop-<event>` · the recording's view
+  and speed · and a trailing marker when the run did not simply finish.
+- **`GET /api/runs/{run_id}/recording.mp4`** carries that name on
+  `Content-Disposition` instead of the bare run id. Still `inline`, still Range,
+  so the in-page player and its scrub bar are unchanged.
+- **`run_summary.json` records the bounds a run ran under.** New top-level
+  `max_turns`; `max_spend_usd` is now written whether or not the ceiling fired.
+- `docs/recording.md` gains a "The name it saves under" section.
+- 35 tests in `tests/test_recording_filename.py`; suite baseline 527 → 562.
+
+### Why
+On disk every clip is `recording.mp4`. That is unambiguous while it sits beside
+its own `config.json` and useless the moment it is downloaded — and a clip is
+made to be sent somewhere. The old download name was the run id, which carries
+date, config stem and model but not the game, not casual vs official, not the
+playstyle, not a cap, and not whether the run crashed. Two runs differing only
+in effort tier were distinguishable; a finished run and a cancelled one were not.
+
+Two facts were not recoverable from a finished run at all. The turn cap arrives
+as a `run_loop` argument rather than a config key, so nothing on disk recorded
+it. And `max_spend_usd` was written only inside the `_budget_stopped` branch,
+which made "ran under a $2 ceiling and came in below it" look exactly like
+"unbounded" — the answer existed only for the condition that won.
+
+### Notes
+The **run folder is deliberately not renamed.** `run_id` is the primary key
+across the queue, the run index, savepoints and the continue chain; it is keyed
+on, joined on and parsed. A folder already sits next to its own config, so
+prettifying it would ripple through all of that for no gain.
+
+Every field is read defensively and the fallback is the bare run id, so the five
+recordings already on disk (which predate `max_turns`) name everything else and
+simply omit the cap. Truncated at 200 bytes: a hand-rolled config can carry an
+arbitrarily long alias, and macOS caps a single path component at 255.
+
 ## 2026-08-02 — A run records which provider answered and whether it thought
 
 ### What

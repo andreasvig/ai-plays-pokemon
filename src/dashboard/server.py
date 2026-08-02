@@ -32,6 +32,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from src.app.recording_name import recording_filename
 from src.app.trace_build import build_run_trace
 from src.dashboard.event_bridge import EventBridge
 from src.dashboard.screen_stream import ScreenStreamer
@@ -1405,8 +1406,12 @@ async def api_run_recording(run_id: str):
 
     ``inline`` disposition, not the default ``attachment``: this URL is the
     `<video>` element's source first and a download second. The filename is
-    still carried, so the ↓ button in the player saves it under the run's name
-    rather than a directory full of identical `recording.mp4`s.
+    still carried, so the ↓ button in the player saves it under a name that
+    spells out the run — date, game, kind + playstyle, config, model + tier,
+    what it spent, the caps it ran under and how it ended — rather than a
+    directory full of identical `recording.mp4`s. See
+    ``app.recording_name``; it falls back to the run id for a folder that
+    predates the fields.
     """
     _require_control()
     path = _recording_path(run_id)
@@ -1415,7 +1420,7 @@ async def api_run_recording(run_id: str):
     return FileResponse(
         str(path),
         media_type="video/mp4",
-        filename=f"{run_id}.mp4",
+        filename=recording_filename(path.parent, run_id=run_id),
         content_disposition_type="inline",
     )
 

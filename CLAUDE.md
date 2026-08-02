@@ -67,7 +67,7 @@ one-shot run and owns mGBA itself.
 ./venv/bin/python -m pytest tests/ -q
 ```
 
-**Baseline as of 2026-08-02: 527 pass, 8 fail.** Those 8 are pre-existing and
+**Baseline as of 2026-08-02: 562 pass, 8 fail.** Those 8 are pre-existing and
 unrelated to any current work — do not spend time diagnosing them unless that
 IS the work:
 
