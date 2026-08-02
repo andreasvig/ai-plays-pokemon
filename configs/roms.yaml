@@ -1,0 +1,48 @@
+# The ROM registry — which games the harness can boot.
+#
+# The emulator holds ONE ROM at a time; this file says which ones it may hold,
+# and everything downstream keys off the entry rather than off a path string:
+#
+#   game       joins to a ladder's `game:` field. A ROM is benchmark-capable iff
+#              some benchmark ladder declares the same game — DERIVED, never a
+#              flag here, so adding an Emerald ladder is the only thing needed
+#              to turn Emerald's benchmarks on.
+#   game_name  what the agent prompts call it ({game_name} in the system prompt,
+#              and the TaskMaster / research tool's phrasing).
+#   game_code  the 4-byte GBA header code at 0x080000AC. Read back over the Lua
+#              socket to check which ROM mGBA ACTUALLY has loaded, rather than
+#              trusting what we launched it with.
+#   sha1       of the ROM file. Checked against the ladder's `rom_sha1` before a
+#              benchmark arms, so a score can never come from a different dump.
+#   start_save a committed savepoint dir this ROM's casual runs start from.
+#              Absent → the run starts from the ROM's own boot (title screen).
+#              The default ROM deliberately has none: its start save is
+#              executor.CANONICAL_SAVE, which is also what the benchmark uses.
+#
+# The files themselves are NOT in the repo (`roms/` is gitignored) — supply your
+# own dumps at these paths.
+
+roms:
+  - id: firered
+    name: "Pokemon FireRed"
+    path: "roms/Pokemon - FireRed Version (USA, Europe) (Rev 1).gba"
+    game: firered-us
+    game_name: "Pokemon FireRed"
+    game_code: BPRE
+    sha1: dd5945db9b930750cb39d00c84da8571feebf417   # rev 1 (v1.1)
+    default: true
+
+  - id: emerald
+    name: "Pokemon Emerald"
+    path: "roms/Pokemon - Emerald Version (USA, Europe).gba"
+    game: emerald-us
+    game_name: "Pokemon Emerald"
+    game_code: BPEE
+    sha1: f3ae088181bf583e55daf962a92bb46f4f1d07b7
+    # Inside the moving truck at the very start (captured 2026-08-02), before the
+    # game has asked for a name or handed out a starter — the Emerald equivalent
+    # of FireRed's bedroom start, and the same kind of "everything is still ahead
+    # of you" opening. Every casual Emerald run resumes from here.
+    start_save: "configs/saves/emerald-truck"
+    # No benchmark ladder declares `game: emerald-us` yet, so Emerald is casual-
+    # only and the new-run dialog greys its Benchmark option out.

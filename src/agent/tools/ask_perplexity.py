@@ -38,14 +38,22 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 # ``task_master.search_model``.
 DEFAULT_SEARCH_MODEL = "perplexity/sonar-pro-search"
 
-# Short framing so the sonar model returns concise, actionable route/strategy
-# facts rather than an essay.
-_SYSTEM = (
-    "You are a research assistant for a Pokemon FireRed playthrough. Answer the "
-    "question concisely and factually with concrete, actionable detail (route "
-    "order, locations, levels, gym-leader teams, item spots). Prefer specifics "
-    "over generalities and cite your sources."
-)
+# The game this tool answers about when no caller says otherwise — the default
+# ROM's. Route order, gym-leader teams and item locations differ per game, so the
+# framing has to name the RIGHT one or the answer is confidently about another
+# cartridge.
+DEFAULT_GAME_NAME = "Pokemon FireRed"
+
+
+def _system(game_name: str) -> str:
+    """Short framing so the sonar model returns concise, actionable route/strategy
+    facts about ``game_name`` rather than an essay."""
+    return (
+        f"You are a research assistant for a {game_name} playthrough. Answer the "
+        "question concisely and factually with concrete, actionable detail (route "
+        "order, locations, levels, gym-leader teams, item spots). Prefer specifics "
+        "over generalities and cite your sources."
+    )
 
 
 def _get_api_key() -> str:
@@ -59,7 +67,9 @@ def _get_api_key() -> str:
     wait=wait_exponential(min=1, max=10),
     reraise=True,
 )
-async def _call_openrouter(api_key: str, model: str, query: str) -> dict:
+async def _call_openrouter(
+    api_key: str, model: str, query: str, game_name: str = DEFAULT_GAME_NAME
+) -> dict:
     """Raw OpenRouter chat-completions call against a Perplexity Sonar model.
 
     Retries on transport errors (connection/timeout); HTTP-status errors are
@@ -73,7 +83,7 @@ async def _call_openrouter(api_key: str, model: str, query: str) -> dict:
     payload = {
         "model": model,
         "messages": [
-            {"role": "system", "content": _SYSTEM},
+            {"role": "system", "content": _system(game_name)},
             {"role": "user", "content": query},
         ],
         "usage": {"include": True},
@@ -116,7 +126,12 @@ def _extract(data: dict) -> tuple[str, list[str], float]:
     return answer, citations, cost
 
 
-async def ask_perplexity(query: str, model: str = DEFAULT_SEARCH_MODEL) -> dict:
+async def ask_perplexity(
+    query: str,
+    model: str = DEFAULT_SEARCH_MODEL,
+    *,
+    game_name: str = DEFAULT_GAME_NAME,
+) -> dict:
     """Ask a Perplexity Sonar model (via OpenRouter) and return a synthesized answer.
 
     Returns a dict the agent can read directly:
@@ -140,7 +155,7 @@ async def ask_perplexity(query: str, model: str = DEFAULT_SEARCH_MODEL) -> dict:
         }
 
     try:
-        data = await _call_openrouter(api_key, model, query)
+        data = await _call_openrouter(api_key, model, query, game_name)
         answer, citations, cost = _extract(data)
         return {
             "query": query,

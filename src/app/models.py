@@ -148,6 +148,12 @@ class QueuedRun(BaseModel):
     # alongside ``max_turns`` — whichever lands first ends the run. None = turn
     # cap only. Official runs ignore it; a benchmark ends at its own ladder.
     stop_at: str | None = None
+    # Which game this run needs — a ROM id from ``configs/roms.yaml``. Casual-only
+    # and None by default (= the registry's default ROM), so every pre-existing
+    # queue item keeps meaning exactly what it meant. Official runs take their ROM
+    # from the benchmark's ladder instead: a score has to come from the dump the
+    # ladder was authored against. A continue inherits the source run's ROM.
+    rom: str | None = None
     continue_from: str | None = None
     # Optional TaskMaster model override (casual only). None → inherit the
     # source/config/freeplay-default resolution. The Player model rides on

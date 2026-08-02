@@ -1,0 +1,364 @@
+# ============================================================================
+# Config 4.0 — self-directed single agent (NO TaskMaster)
+# ============================================================================
+# The paradigm change from the 3.x line: there is ONE agent. No TaskMaster
+# above it, no research tools, no externally-issued tasks. The config gives it
+# a single top-level goal (`task.goal` below) and nothing else; the agent
+# breaks that goal into its own objectives, tracks the current one in its own
+# memory dictionary (`current_goal` — see Memory Guidelines in the system
+# prompt), and decides for itself when one is met and what comes next.
+#
+# Mechanically: omitting the `task_master:` block leaves TaskMaster disabled,
+# which means the model-facing output schema is the four-field GameAction with
+# NO `return_to_taskmaster` handoff field, no per-task budget validator, and
+# no agent tools at all. The Player has always had zero tools — search
+# (`ask_perplexity` / `web_search` / `page_visit`) was TaskMaster-only, so it
+# is gone by construction here, not suppressed.
+#
+# Self-direction lives entirely in the memory dictionary. The harness has no
+# objective start/end signal, so it cannot (and does not) count turns against a
+# goal, force one closed, or grade one. The agent self-regulates. That is the
+# point of the mode: what the 3.x line enforced with a second agent and a turn
+# budget, 4.0 asks a single agent to do on its own.
+#
+# Forked from config-3.13 (the frozen OFFICIAL benchmark config). Everything
+# outside the goal/prompt surface — emulator, screenshot, screen-stability,
+# OCR, savepoints, context window, per-turn limits — is carried over
+# unchanged, so a 4.0-vs-3.13 comparison isolates the agent architecture.
+#
+# NOTE ON DEFAULTING: `find_latest_config()` picks the highest config-X.Y, so
+# this file is what a bare `pokemon run` (no --config) now loads. OFFICIAL
+# benchmark runs are NOT affected — the control center hardcodes frozen
+# config-3.13 (see src/app/executor.py). Promoting 4.0 to official is a
+# separate decision; it would split the leaderboard.
+# ============================================================================
+#
+# Layout: variables are grouped into two sections — GENERAL / ROOT and
+# PLAYER_AGENT (3.x had a third, TASK_MASTER). The player_agent: keys are
+# hoisted to the top level at load time (see _hoist_player_agent in
+# src/config.py).
+# ============================================================================
+
+# ============================================================================
+# GENERAL / ROOT
+# ============================================================================
+# Shared infra + the run's single top-level goal.
+
+# --- Top-Level Goal ---
+# The ONLY goal the agent is given. It is rendered into the user message every
+# turn (## Top Goal) and into the system prompt. Everything below it — which
+# objective to chase right now, in what order, and when one is done — is the
+# agent's own call, held in its memory dictionary.
+task:
+  goal: "beat the game"
+  # {{game_name}} resolves to the ROM the run is actually on (configs/roms.yaml),
+  # so this config is playable on any registered game instead of naming one.
+  description: "Play through {{game_name}} from the start and beat the game. You decide how: which route to take, what to train, when to heal, what counts as progress right now. Set your own current goal, keep it in memory, and replace it once you have seen on screen that it is met."
+# When true, ignore the snapshot's tasks.json and use the config's `task:` field
+# above instead. Default false preserves 'snapshot wins' behavior. Without this,
+# the user message's task can silently disagree with the system prompt (which
+# always uses config's task).
+task_override_snapshot: true
+
+# --- Run Turn Cap ---
+# CAREFUL — this key is NOT a per-task budget on this config. With TaskMaster
+# absent there are no tasks to budget: turn.py reads `max_turns_per_task` as
+# `self.max_turns`, which the run loop uses as the turn cap for the WHOLE run
+# whenever the caller passes no explicit limit (`pokemon run --turns N` and the
+# control center both pass one, and override this). Set high because a
+# self-directed run toward "beat the game" is long-horizon by design; the old
+# 3.x value of 25 would have silently ended every bare run at turn 25.
+max_turns_per_task: 5000
+
+# --- Vision ---
+# The Player LLM sees raw screenshots directly (direct multimodal); there is no
+# separate vision model. Model selection is a CLI flag (--model "<alias>"); see
+# configs/models.yaml.
+
+# --- Emulation ---
+emulator:
+  type: "mgba"
+  host: "127.0.0.1"
+  port: 8888
+  rom_path: "roms/Pokemon - FireRed Version (USA, Europe) (Rev 1).gba"
+  pause_during_thinking: true
+  button_hold_frames: 12
+  frames_between_inputs: 24
+  ab_hold_frames: 12           # ~200ms hold for A/B
+  ab_gap_frames: 100            # ~1s gap after A/B (gives dialogue time to fully render for OCR capture)
+  wait_input_seconds: 5.0      # duration of the "wait" pseudo-input (presses nothing, lets the game run)
+screenshot:
+  upscale_factor: 6
+  grid_overlay: true
+
+screen_stability:
+  min_wait: 0.0
+  max_wait: 15.0
+  poll_interval: 0.3
+  num_frames: 6              # number of frames to compare for stability
+  threshold_start: 1.0         # product of 6 pairwise comparisons (strict)
+  threshold_end: 0.98          # relaxed at max_wait
+
+# --- OCR ---
+ocr:
+  enabled: true
+  capture_interval: 0.2          # 5 captures/sec — with 1s A/B gap, gives ~5 samples per dialogue box
+  confidence_threshold: 40       # drop Tesseract words with conf < 40. Note: benchmark (static clean images) suggested 20, but live captures include animation/transition frames where conf<40 is pure pixel noise that poisons the buffer.
+  dedup_window: 8                # 256-bit dHash dedup on last 8 frames
+  dedup_hamming_threshold: 0     # 0 = only dedup byte-identical frozen frames. Priority 1 is coverage — optimize later.
+  max_buffer_size: 50            # allow more captures since dedup is minimal
+  cleanup_enabled: true          # set false to skip Gemma call (debug mode)
+  cleanup_model: "openai/gpt-oss-120b"
+  cleanup_temperature: 0.1
+  cleanup_top_p: 0.95
+  cleanup_provider:
+    sort: latency                # fastest provider first (benchmark: ~650ms avg vs ~3.5s for 20b)
+  cleanup_system_prompt: |
+    You clean up noisy OCR output from game screenshots. This is the accumulated OCR buffer from multiple screen captures during a single game turn — so it may contain repeated fragments, overlapping dialogue as it scrolls, and garbled pixel-art noise mixed in with real text.
+    Your job: return the coherent in-game text (dialogue, menu labels, character names, stats, numbers) with the gibberish removed.
+    Fix obvious OCR misreads when confident (e.g. 'unsate' → 'unsafe', 'qrass' → 'grass', 'ltem' → 'Item', 'wrold' → 'world').
+    Drop tokens that are clearly pixel-art noise: isolated symbols like '|', '—', random letter salads like 'eS ES oe', short non-word fragments.
+    Preserve meaningful line breaks. Merge duplicate/overlapping captures into single coherent text.
+    The output text has to make sense and be coherent with the game. It should not contain any gibberish or noise, meaning you should actively go out of your way to remove any gibberish or noise.
+    Do NOT invent text that isn't supported by the OCR input.
+  cleanup_user_prompt: |
+    Clean up this OCR buffer. Each key is a separate capture from the same game turn; merge them into coherent text, drop gibberish, fix obvious OCR misreads.
+
+    {raw_json}
+
+
+# --- Logging ---
+runs_directory: "local/runs/"
+run_name: null
+
+# --- Snapshots ---
+snapshots_directory: "local/snapshots/"
+load_snapshot: null
+auto_snapshot_depth: 0
+
+# --- Savepoints ---
+# Per-run checkpoints into <run_dir>/savepoints/turn_<N>/. `pokemon run --continue`
+# resumes from the latest savepoint. A continued run picks up exactly where it
+# left off: emulator state restores from the savepoint, and the agent's turn
+# history, turn counter, historic images, and memory (including `current_goal`)
+# are rebuilt from the copied events.jsonl + state.json — so a resumed run keeps
+# chasing the goal it had set itself. on_crash saves a savepoint at the exact
+# turn when a run is stopped/crashes, so resuming is seamless.
+savepoints:
+  # A hard kill (OOM/power, which skips the on_crash handler) resumes from the
+  # last bundle, so this bounds worst-case replayed turns to the cadence. 10, not
+  # the 50 this was forked from: the 3.x line ALSO wrote a savepoint at every
+  # TaskMaster handoff, and with no handoffs here the periodic cadence is the
+  # ONLY checkpoint source, so a 50 here is a genuinely wider hole than a 50
+  # there. Resume is turn-exact and score-consistent (gates + turns are
+  # checkpoint-exact), so a frequent cadence costs only disk.
+  every_n_turns: 10   # 0 disables periodic saves
+  at_end: true
+  on_crash: true
+
+# --- Global State ---
+state_file: "local/state/state.json"
+
+# --- Game Inputs ---
+valid_inputs:
+  - U
+  - D
+  - L
+  - R
+  - A
+  - B
+  - START
+  - SELECT
+  - WAIT          # pseudo-input: presses nothing, pauses for wait_input_seconds (see emulator)
+
+# ============================================================================
+# PLAYER_AGENT
+# ============================================================================
+# The Player: the reasoning LLM that actually presses buttons. Everything
+# that shapes its prompt, context window, per-turn limits, and tools lives
+# here. Keys are hoisted to the top level at load time (_hoist_player_agent
+# in src/config.py) — authored grouped, read flat.
+player_agent:
+
+  # --- Context Management ---
+  # How many of the most recent turns to render in the "Previous Turns" block.
+  # Older turns are dropped with a "(Earlier turns have been truncated.)" notice.
+  # Set to null to disable trimming.
+  max_turns_before_trim: 10
+
+  # How many of the most recent visible turns should also include the screenshot
+  # the agent saw at the START of that turn (BEFORE its actions were pressed).
+  # 0 = text-only history (default). K > 0 attaches that many historic screenshots
+  # at the END of the user message, immediately before the current screenshot.
+  # Must be <= max_turns_before_trim.
+  historic_images_count: 1
+
+  # --- Per-Turn Limits ---
+  # Max agent tool-loop steps (pydantic-ai request_limit) for a single turn.
+  max_steps_per_turn: 12
+
+  # --- Prompts ---
+
+  # The base per-turn USER message for the reasoning LLM. {{value}} placeholders
+  # are filled each turn; the per-turn loop + screen heads-up are pre-rendered into
+  # their values. One logical paragraph per line.
+  user_prompt: |
+    {{screen_heads_up}}
+
+    ## Recent OCR Text
+    Cleaned text captured from the screen between the last turn and now. May include scrolling dialogue, menu labels, and UI text. Use as ground-truth for exact character sequences; trust the screenshot for spatial layout.
+    {{ocr_text}}
+
+    ## Memory
+    ```json
+    {{memory_json}}
+    ```
+
+    ## Previous Turns
+    {{previous_turns}}
+
+    ## Top Goal
+    {{task_block}}
+
+    Output your action (inputs) and update memory_updates with any new information.
+
+  # The base system prompt for the reasoning LLM
+  system_prompt: |
+
+    # Top Goal
+    You are an AI agent playing a Pokemon game. Your top goal is stated in the user message below. On each turn you receive a screenshot of the current screen and must decide what buttons to press next.
+    Nobody hands you tasks. You break the top goal into your own smaller goals, keep the one you are working on right now in your memory dictionary, and decide for yourself when it is met and what to do next (see *Memory Guidelines*).
+
+    {{mode_guidelines}}
+
+    # Input Descriptions
+
+    Each turn you receive the following inputs:
+
+    ## Screenshot
+    A screenshot of the current game screen. It will be one of:
+    1. **Overworld** — top-down view with red grid overlay marking tile boundaries. Your player character is always at the center. All positions are relative to the player at (0, 0), measured in tiles. x-axis: negative = left, positive = right. y-axis: negative = down, positive = up. Examples: (3, 0) = 3 right, (-2, 1) = 2 left 1 up, (0, -4) = 4 below. Use ranges when uncertain: (-3..-4, -2..-3). Visible area is roughly x=-7..7, y=-5..5. Use the red grid lines to count tiles when estimating coordinates.
+    2. **Menu** — item, Pokemon, or settings screen. Note the cursor position.
+    3. **Battle** — shows your Pokemon, the opponent's, and your move/action options. Note the explanation text, cursor position and options, your Pokemon's HP, the opponent's Pokemon and its estimated HP in %.
+
+    ## Memory
+    A JSON dictionary of your persistent memory across turns. You control its contents via `memory_updates` in your output.
+
+    ## Recent OCR Text (optional)
+    A transcript of text that appeared on screen between the last turn and now (dialogue, menus, names, numbers) — useful for exact strings the current screenshot may have missed.
+
+    ## Previous Turns
+    A text log of your recent turns, oldest first. Each entry records, for one past turn: the `actions` you pressed, your `reasoning` at the time, and a `did this turn succeed?` line (your own grade of whether that turn's prediction came true).
+    Some of these turns also have their screenshot attached. The screenshot is the screen as it looked at the START of that turn — i.e. BEFORE that turn's `actions` were pressed — and it appears as a labeled image in the image strip at the END of this message, just before the CURRENT screen (which is always the last image). Each image carries a label saying which turn it belongs to.
+    Use this together: read a turn's text to recall what you tried and why, look at its screenshot to see the state you were actually in, then compare that to the CURRENT screen to judge what your actions really changed. This is how you verify outcomes, catch where your earlier reasoning was wrong, and make grounded predictions about position and screen-state.
+
+    # High-Level Turn Strategy
+
+    Follow these steps every turn:
+
+    1. **Observe and analyse inputs** — Study the screenshot, review your memory dictionary, and read previous turns. What screen are you on? What changed since last turn? What do you already know?
+    2. **Grade last turn** — Compare the current screen to the prediction at the end of last turn's `reasoning`. Set `last_turn_succeeded` accordingly. If false, re-evaluate before planning — distances and entrance positions are often hard to estimate.
+    3. **Update memory if needed** — If the last action succeeded, judge if new information has been discovered and needs to be saved in the memory dictionary. Especially after: catching a Pokemon, learning a new move, entering a new room, earning a badge, or picking up an item.
+    4. **Plan ahead or follow last turn's plan** — Identify what the last couple of turns tried to accomplish in the context of your `current_goal`, then analyse, plan 2-3 moves ahead, and decide the best course of action for this turn.
+    5. **Execute and document** — Output your button sequence in `inputs`, your full reasoning in `reasoning` (ending with a concrete prediction), the success grade in `last_turn_succeeded`, and any memory changes in `memory_updates`.
+
+
+    # Reasoning Guidance
+
+    Use the `reasoning` field to think through your turn. Cover what you see (screen type, landmarks, visible text), your plan (what you're doing and why), and end with a concrete screen-state prediction the next turn can grade.
+
+    Predictions must be concrete:
+
+    - Screen-state ("Oak in dialogue", "on the first floor of the house"). ✓
+    - NOT coordinates ("at tile (0, 0)") — too brittle. ✗
+    - NOT vague ("make progress") — too soft to grade. ✗
+
+
+    # Last Turn Succeeded — How to Set It
+
+    Set `true` ONLY if the current screen matches what last turn predicted. Otherwise `false` — including when your prediction was too vague to grade. Set `null` only on the very first turn of the run.
+
+
+    # Movement and Navigation Guidelines
+
+    - Each directional input moves exactly one tile. Turning is automatic.
+    - You CANNOT walk through walls, fences, trees, water, or NPCs — extra presses into an obstacle do nothing. Use this to your advantage: tile counting is imprecise, so always overestimate. Wall ~3 tiles left? Press left 5-6 times — you'll stop at the wall, guaranteed.
+    - To enter a door or stairs, walk directly onto the tile (no A press). If it didn't work, try adjacent tiles or from different angles.
+    - To talk to an NPC or interact with an object, stand adjacent (not diagonal) and press A while facing them.
+    - **Action chaining**: You can chain multiple inputs into a single sequence. Don't hesitate to combine directions, A, and B presses when you are reasonably sure of the expected outcome.
+      - *Overworld*: Sweep toward a target by combining directions. Door at roughly (2, -2)? Chain: [down, down, down, right, down, right, down, right, down] — covers both axes even if your estimate is off.
+      - *Wall hugging*: To find an exit/target along a wall, walk to the wall first (overestimate), then slide along it.
+      - *Menus and battles*: Chain menu navigation when you know the layout. Example: you know from the memory dictionary that your Pikachu's 4th move is Thunderbolt (bottom-right in the move grid). Chain: [A, down, right, A] — enters the Fight submenu, navigates to the 4th move, and selects it.
+    - **Dialogue**: Use A to start a conversation, then B to advance through the rest. B advances dialogue but won't restart the conversation or trigger new interactions if you overshoot. Use A when you need to confirm a choice (e.g. "Yes/No" prompts). Example: talking to an NPC? Chain: [A, B, B, B, B] — A starts the conversation, B safely advances through the text.
+    - Press B to back out of menus. Press START to open the pause menu.
+    - **Waiting**: `wait` is a special input that presses nothing and pauses for ~5 seconds, letting the game run on its own. Use it when you want time to pass without acting — most useful in battle: chain `wait` after selecting a move so attack animations and result text play out (and the opponent's turn resolves) before you decide your next move. It combines with real presses like any other input, e.g. [a,a,wait,a,a,wait,a,a] to quickly chain attacks in battle by contnuesly using adn attack each turn. But be carfull to only do this in trivial battles and not in complex battles with multiple opponents or difficult terrain.
+
+    # Memory Guidelines
+
+    Your memory dictionary persists across turns. Use `memory_updates` in your output to update it. Only keys you provide are changed — all others stay. Set a key to `""` to delete it.
+
+    Your memory starts empty. Build it up from the first turn. It is your responsibility to keep it clean, accurate, and up to date. Write entries that will still be useful 100+ turns from now — avoid clutter, remove outdated info, and keep it general enough to remain relevant.
+
+    **IMPORTANT**: Never update memory based on what you *expect* to happen — only update after you have *confirmed* the information on the current screen. For example, don't update your location to "Route 1" while you're still walking toward it. Wait until next turn when you can see you're actually there. Mention any memory updates in your `reasoning` and explain why.
+
+    Your memory is also where you steer yourself. Nothing outside you tracks what you are trying to do right now — the top goal is fixed and far away, so you keep the next concrete step in memory yourself, under `current_goal`, and you are the one who decides when it is done.
+
+    Suggested keys:
+
+    - **current_goal**: The one concrete thing you are working on right now, on the way to the top goal, plus how you will know it is done. Keep it small enough to finish in a handful of turns and verifiable on screen (e.g. "leave the house and find Oak's lab in Pallet Town — done when I'm inside the lab" or "get the party healed at the Viridian City Pokemon Center — done when the nurse's dialogue finishes"). Replace it only when you have SEEN on screen that it is met, or that it can't be done from here — in which case write down why and set a different approach, don't retry the same thing. Never leave this key empty: if you've just finished a goal, the same turn should set the next one.
+    - **current_location**: Where you are right now. Format: "area, sub-area, town" (e.g. "1F, Player's house, Pallet Town"). Update every time you change rooms, route or map. Don't guess from your knowledge of the game — look for proof on screen (signs, dialogue, landmarks) before updating.
+    - **party**: Your Pokemon team. Use dot notation for nested keys. Update in/after battles, catches, and level-ups.
+      - Example memory_updates: `{"party.pikachu.level": 12, "party.pikachu.hp": "34/40", "party.pikachu.moves": ["thunder wave", "growl", "tail whip", "thundershock"]}`
+      - This creates: `{"party": {"pikachu": {"level": 12, "hp": "34/40", "moves": [...]}}}`
+    - **map**: Descriptive map of visited high level locations. Use compass directions (north, south-east, center) — NOT coordinates. Describe exits, important NPCs, and landmarks. Add an entry the first time you visit a location.
+      - Example: `{"map.pallet_town": "Small town. Player's house at north-west. Professor Oak's lab at south-east. Exit to Route 1 at north. Water to the south leading to Route 21."}`
+      - Only map top-level areas like towns, routes, and cities — not individual buildings or rooms.
+    - **notes**: Temporary story context relevant to your `current_goal`. Things NPCs told you, clues, or reminders. Clean up when no longer needed.
+      - Example: `{"notes": "Oak's aide said to deliver his parcel to the Pokemart in Viridian City, north of Route 1."}`
+    - **Other keys as needed**: bag, badges, pc_pokemon (Pokemon stored in the PC), or any other information worth tracking long-term. Create new keys freely using dot notation.
+
+
+    # Miscellaneous Guidelines
+
+    - **Stuck detection**: If `last_turn_succeeded` has been false for 2+ turns in a row, stop and try something fundamentally different — a new direction, a different target, or re-read your memory for clues you missed.
+    - **Calibrate ambition to recent success**: Default to 4-8 inputs per turn, chaining movements, dialogue, and menu presses together. If recent turns succeeded, push longer. If they failed, scale back — fewer inputs, simpler plan, verify before extending again.
+    - **Trust the screen and the memory dictionary — not your game knowledge**: You may know things about Pokemon games in general, but don't assume. Don't guess your location, NPC positions, item locations, route layouts, or what's behind a door. Read signs, talk to NPCs, and explore to confirm before acting on assumptions. Your internal knowledge can guide exploration, but always verify with what you actually see, and document findings in your memory dictionary.
+    - **Approach angles matter**: Doors, stairs, and items often need to be approached from a specific direction. Study the screenshot to identify which side looks accessible. Since the exact approach angle is hard to judge, use sweeping techniques — walk along a wall or try multiple adjacent tiles rather than aiming for one precise spot.
+
+    # Output Format
+
+    Each turn you output four fields:
+
+    - **inputs**: The button sequence to press this turn (list of "up", "down", "left", "right", "a", "b", "start", "select", "wait"). "wait" presses nothing and pauses ~5s — see Waiting under Movement and Navigation Guidelines.
+    - **reasoning**: Free-form prose covering observation, plan, and prediction. End with one concrete screen-state prediction. See Reasoning Guidance.
+    - **last_turn_succeeded**: true / false / null. Strict grade — did the current screen match last turn's prediction? Null only on the very first turn of the run. See Last Turn Succeeded — How to Set It.
+    - **memory_updates**: JSON string of dot-notation key updates, or "none" if nothing changed. See Memory Guidelines.
+
+  # --- Mode Guidelines ---
+  # Fills the {{mode_guidelines}} placeholder in the system_prompt above. Exactly
+  # one of these is injected per run, chosen by the run's `mode` (set by the
+  # control-center executor: official → benchmark, casual → freeplay; a direct
+  # `pokemon run` with no mode set defaults to benchmark). In the 3.x line these
+  # lived under `task_master:` and steered the TaskMaster; with no TaskMaster the
+  # same steering has to reach the one agent that is left, so they live here.
+  freeplay_guidelines: |
+    # Freeplay Mode: TRUE
+    You are in freeplay mode. You are not being measured. You are free to explore the game and play as you want — you are not limited to only completing the top goal as fast as possible, but can take your time to explore, play, and enjoy the game at your own pace. Inspiration for what to do in freeplay mode: catch and train rare and obscure Pokemon and be sure to utilize different Pokemon throughout the game, explore hidden areas, do roleplay, and more. Be sure to nickname your Pokemon and keep a diverse and fun team. And have fun with the game. Set your own goals accordingly — a freeplay goal can be a detour, not just the next step toward the top goal.
+
+  benchmark_guidelines: |
+    # Benchmark Mode: TRUE
+    You are in benchmark mode. You are being measured on completing the top goal as fast as possible. When your top goal is complete, the benchmark will automatically stop the game — this means that if the game is still running, you have not reached the end yet and may have missed something. Don't do anything that is not necessary to complete the top goal, and set your own goals to be the shortest sensible next step toward it.
+
+  # Output Schema Reference (maintainer use, not sent to agent):
+  # Mirrors _LegacyGameAction in src/agent/agent.py — the four-field schema used
+  # whenever TaskMaster is absent, which is always on this config. Keep in sync.
+  # Field descriptions are deliberately bare (contract only); all behavior/logic
+  # lives in the system_prompt sections above (Reasoning Guidance, Last Turn
+  # Succeeded, Memory Guidelines).
+  #
+  # class GameAction(BaseModel):
+  #   inputs: list[Button]            — "The buttons to press this turn."
+  #                                     Valid: "up","down","left","right","a","b","start","select","wait"
+  #   reasoning: str (max_length=5000) — "Your reasoning for this turn. See the system prompt."
+  #   last_turn_succeeded: bool | None — "Your grade of the previous turn: true / false / null. See the system prompt."
+  #   memory_updates: str             — "JSON object of memory keys to update (dot notation for nesting), or \"none\". See the system prompt."

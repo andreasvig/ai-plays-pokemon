@@ -47,6 +47,10 @@ class Benchmark:
     goal: str
     ladder: str
     is_default: bool = False
+    # The ladder's own ``game:`` (e.g. "firered-us") — the join key that decides
+    # which ROMs can play this benchmark (see ``src.app.roms.benchmark_games``).
+    # Optional: a ladder that omits it simply matches no ROM.
+    game: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         """Flat JSON shape for ``GET /api/benchmarks`` (the SPA's picker)."""
@@ -56,6 +60,7 @@ class Benchmark:
             "goal": self.goal,
             "ladder": self.ladder,
             "default": self.is_default,
+            "game": self.game,
         }
 
 
@@ -91,12 +96,18 @@ def _benchmark_from_ladder(ladder_entry: str, ladder_file: Path) -> Benchmark:
             raise ValueError(
                 f"{ladder_file.name}: benchmark block missing or invalid {field!r}"
             )
+    game = data.get("game")
     return Benchmark(
         id=block["id"],
         name=block["name"],
         goal=block["goal"],
         ladder=ladder_entry,
         is_default=bool(block.get("default", False)),
+        # Top-level, not inside the benchmark block: `game` belongs to the LADDER
+        # (it is what the gate addresses are valid for). Read leniently — the
+        # strict requirement lives in ``referee.checkpoints.load_ladder``, which
+        # every real ladder goes through at run time.
+        game=game if isinstance(game, str) else "",
     )
 
 

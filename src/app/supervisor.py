@@ -19,6 +19,7 @@ import-safe (no side effects at import; the emulator launches only on
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
@@ -43,6 +44,13 @@ class SupervisorStatus:
     process_up: bool
     connected: bool
     busy: bool
+    # Which ROM the emulator is holding (the path it was launched with), and
+    # whether a switch to another one is in flight. During a switch the old
+    # process is gone and the new one is up but not yet connected — the app is
+    # waiting for the Lua script to be re-loaded, which is a state the UI has to
+    # be able to explain rather than just showing "disconnected".
+    rom_path: str = ""
+    switching_to: Optional[str] = None
 
 
 # Type of the injectable prepare/connect/cleanup seam (lets tests run headless).
@@ -83,6 +91,10 @@ class AppSupervisor:
         self._handle: Optional[dict] = None
         self._connected: bool = False
         self._busy: bool = False
+        # Set for the duration of a :meth:`switch_rom` — the ROM path being
+        # switched TO, so the UI can say "loading Emerald, re-load the Lua
+        # script" instead of just going grey. Cleared when the switch settles.
+        self._switching_to: Optional[str] = None
         # Default muted: the emulator launches with `-C mute=1`, so audio never
         # plays to an empty room until something explicitly unmutes it.
         self.muted: bool = True
@@ -144,12 +156,157 @@ class AppSupervisor:
             self.muted = bool(mute)
         return self.muted
 
+    # ───────────────────────────────── ROM ───────────────────────────────────
+
+    @property
+    def rom_path(self) -> str:
+        """The ROM path the emulator was launched with (the currency mGBA takes).
+
+        The registry id/name are resolved FROM this by callers that need them
+        (``src.app.roms.rom_for_path``) — the supervisor deliberately doesn't
+        depend on the registry, so a hand-rolled config with an off-registry ROM
+        still supervises fine.
+        """
+        return str((self._config.get("emulator") or {}).get("rom_path", ""))
+
+    def switch_rom(self, rom_path: str, *, force: bool = False) -> dict:
+        """Point the emulator at a different ROM. Returns the (current) handle.
+
+        Two mechanisms, and which one runs decides whether you have to touch mGBA:
+
+        1. **In place** (preferred) — drive the running mGBA's ``File → Recent``
+           menu. Its script context outlives the cartridge, so the Lua script and
+           its socket survive: no re-load, no reconnect, ~2 seconds. Confirmed
+           against the cartridge header before it is believed.
+        2. **Relaunch** (fallback) — shutdown → start with the new path, for when
+           the ROM has never been opened on this machine (so it isn't in Recent),
+           when Accessibility is unavailable, or when the in-place swap fails to
+           verify. This one DOES cost a manual Lua re-load, and blocks on the
+           reconnect for up to ``connect_timeout``.
+
+        A no-op when the requested ROM is already loaded and the process is alive
+        — the common case, and the reason the executor can call this before every
+        single run.
+
+        Refuses while a run is executing: yanking the cartridge mid-run would
+        kill it. ``force=True`` waives ONLY that check, and exists for exactly one
+        caller — the executor's pre-dispatch reconcile, which already holds
+        ``busy`` for a run whose turn loop has not started yet. Nothing driven by
+        a user gets to pass it; the route checks ``status().busy`` and 409s.
+        """
+        rom_path = str(rom_path)
+        if not rom_path:
+            raise ValueError("switch_rom needs a rom path")
+        if rom_path == self.rom_path and self._process_up():
+            return self.handle
+        if self._busy and not force:
+            raise RuntimeError(
+                "cannot switch ROM while a run is executing — stop it first"
+            )
+        self._switching_to = rom_path
+        # `restart()` tears down through `shutdown()`, which clears `_busy` —
+        # so without this the supervisor would report IDLE mid-switch while the
+        # executor still holds the run, and a concurrent drain could dispatch a
+        # second run into an emulator that is in the middle of relaunching.
+        was_busy = self._busy
+        try:
+            emulator = self._config.get("emulator")
+            if not isinstance(emulator, dict):
+                emulator = {}
+                self._config["emulator"] = emulator
+            emulator["rom_path"] = rom_path
+            if self._swap_rom_in_place(rom_path):
+                return self.handle
+            # Deliberately NOT `restart()`: `shutdown()` clears `_busy`, and the
+            # gap that matters is the relaunch itself — `start()` blocks for as
+            # long as it takes a human to re-load the Lua script. Reporting idle
+            # for those minutes is what would let a second run dispatch.
+            self.shutdown()
+            self._busy = was_busy
+            return self.start()
+        finally:
+            self._busy = was_busy
+            self._switching_to = None
+
+    def _swap_rom_in_place(self, rom_path: str) -> bool:
+        """Try to change cartridge WITHOUT restarting mGBA. True iff verified.
+
+        Requires a live Lua connection (that is the thing being preserved, and
+        also the only way to check the result) and a registry entry for the ROM
+        (for the expected cartridge code). Anything missing → False, and the
+        caller relaunches instead.
+
+        The verification is the whole point and is deliberately end-to-end: the
+        game code is read over the SAME socket, by the SAME frame callback, out of
+        the NEW cartridge's header. It can only answer correctly if the swap took
+        AND the script survived AND its callback is still being driven by the
+        re-attached core — which is exactly the claim being made.
+        """
+        if not self._connected or self._handle is None:
+            return False
+        proc = self._handle.get("mgba_proc")
+        pid = getattr(proc, "pid", None)
+        if pid is None or (hasattr(proc, "poll") and proc.poll() is not None):
+            return False
+
+        from src.app.roms import rom_for_path
+
+        try:
+            rom = rom_for_path(rom_path)
+        except (FileNotFoundError, ValueError):
+            rom = None
+        if rom is None:
+            return False
+
+        from src.cli.runner import load_rom_in_mgba_for_pid
+
+        if not load_rom_in_mgba_for_pid(int(pid), rom_path):
+            return False
+
+        # The core needs a moment to come up before the frame callback resumes.
+        for _ in range(10):
+            time.sleep(0.5)
+            if self.verify_loaded_rom(rom.game_code):
+                print(f"  ROM swapped in place — {rom.name} (Lua connection kept).")
+                return True
+        return False
+
+    def verify_loaded_rom(self, expect_game_code: str) -> Optional[bool]:
+        """Check what mGBA ACTUALLY has in the slot. True/False, or None if unknown.
+
+        Reads the 4-byte game code from the cartridge header over the existing
+        ``READMEM`` (``src.app.roms.GAME_CODE_ADDR``) — the one signal that
+        survives the user loading a different ROM by hand in mGBA, which the
+        launch path would never notice. ``None`` means "couldn't ask" (no
+        connection, a fake handle in tests, a read error): an unanswerable check
+        must never be reported as a failed one.
+        """
+        from src.app.roms import GAME_CODE_ADDR, GAME_CODE_LEN
+
+        emu = self._handle.get("emu") if self._handle else None
+        if emu is None or not hasattr(emu, "read_memory"):
+            return None
+        try:
+            raw = emu.read_memory(GAME_CODE_ADDR, GAME_CODE_LEN)
+            code = bytes(raw).decode("ascii", errors="replace")
+        except Exception:
+            return None
+        return code == expect_game_code
+
     def status(self) -> SupervisorStatus:
-        """Current health snapshot (process up? connected? busy?)."""
+        """Current health snapshot (process up? connected? busy? which ROM?)."""
+        # `connected` is gated on the process being alive, not just on the flag:
+        # the flag only records that a handshake once happened, so quitting mGBA
+        # left the app reporting `process_up: false, connected: true` — a state
+        # that reads as healthy to every consumer and would accept runs into an
+        # emulator that no longer exists.
+        up = self._process_up()
         return SupervisorStatus(
-            process_up=self._process_up(),
-            connected=self._connected and self._handle is not None,
+            process_up=up,
+            connected=up and self._connected and self._handle is not None,
             busy=self._busy,
+            rom_path=self.rom_path,
+            switching_to=self._switching_to,
         )
 
     def restart(self) -> dict:

@@ -60,6 +60,14 @@ def launch_and_connect(config):
     return emu, mgba_proc
 
 
+def _add_rom_arg(parser) -> None:
+    """``--rom <id>`` — snapshot a game other than the config's own ROM."""
+    parser.add_argument(
+        "--rom", default=None,
+        help="ROM id from configs/roms.yaml (e.g. 'emerald'). Default: the config's ROM.",
+    )
+
+
 def cmd_save(args, config):
     """Save a snapshot."""
     emu, mgba_proc = launch_and_connect(config)
@@ -153,9 +161,11 @@ def main():
     save_parser = sub.add_parser("save", help="Save a snapshot")
     save_parser.add_argument("name", help="Name for the snapshot")
     save_parser.add_argument("--description", "-d", help="Description")
+    _add_rom_arg(save_parser)
 
     load_parser = sub.add_parser("load", help="Load a snapshot")
     load_parser.add_argument("path", help="Path to snapshot folder")
+    _add_rom_arg(load_parser)
 
     sub.add_parser("list", help="List all snapshots")
 
@@ -166,6 +176,19 @@ def main():
         return
 
     config = load_config()
+    # Which game to snapshot. Without this the tool would always launch the
+    # config's ROM, so a start state for any other game — the "inside the truck"
+    # Emerald save, say — would be uncapturable with the harness's own tooling.
+    rom_id = getattr(args, "rom", None)
+    if rom_id is not None:
+        from src.app.roms import apply_rom, get_rom, load_roms
+
+        known = {r.id for r in load_roms()}
+        if rom_id not in known:
+            sys.exit(f"ERROR: unknown rom {rom_id!r}; known: {', '.join(sorted(known))}")
+        rom = get_rom(rom_id)
+        apply_rom(config, rom)
+        print(f"Game: {rom.name}")
 
     if args.command == "list":
         cmd_list(args, config)

@@ -8,11 +8,18 @@
   // CONFIGS is a list of config stems, e.g. "config-3.13".
   // CHECKPOINTS is the full ladder flattened ([{id, name, type}]) — the story
   // events a casual run can be told to stop at, from /api/checkpoints.
-  let { open = false, continueFrom = null, models = [], configs = [], benchmarks = [], checkpoints = [], onclose, onsubmit } = $props()
+  // ROMS is the game registry from /api/roms ([{id, name, benchmark_ok,
+  // on_disk, default}]); benchmark_ok is false for a game no gate ladder is
+  // authored for, which is what greys the Benchmark option out.
+  let { open = false, continueFrom = null, models = [], configs = [], benchmarks = [], checkpoints = [], roms = [], onclose, onsubmit } = $props()
   const MODELS = $derived(models)
   const CONFIGS = $derived(configs)
   const BENCHMARKS = $derived(benchmarks)
   const CHECKPOINTS = $derived(checkpoints)
+  // Only games whose ROM is actually on this machine can be picked (`roms/` is
+  // gitignored, so a registered game may have no dump behind it).
+  const ROMS = $derived(roms.filter((r) => r.on_disk !== false))
+  const defaultRom = $derived(ROMS.find((r) => r.default)?.id ?? ROMS[0]?.id ?? '')
   // The registry-default benchmark (or the first), pre-selected on open.
   const defaultBenchmark = $derived(BENCHMARKS.find((b) => b.default)?.id ?? BENCHMARKS[0]?.id ?? '')
 
@@ -57,6 +64,9 @@
   // default: a stop event is a deliberate "play until X", never a surprise.
   // Set alongside max turns, not instead of it — whichever lands first wins.
   let stopAt = $state('')
+  // Which game. Casual-only — an official run plays the benchmark ladder's ROM,
+  // which is not a choice. Defaults to the registry default on open.
+  let rom = $state('')
 
   // ── recording (opt-in; off by default — it costs a headless browser + an
   // encoder for the whole run, so it is never something you get by accident) ──
@@ -110,8 +120,12 @@
           }
           maxTurns = continueFrom.maxTurns ?? 100
           if (!config) config = latestConfig(CONFIGS)
+          // A continue resumes on the game the source run was played on — the
+          // backend reads it off the resumed config, so there is nothing to pick.
+          rom = ''
         } else {
           kind = 'official'
+          rom = defaultRom
           const first = sortedModels[0]
           modelBase = first?.model ?? ''
           level = first?.default_level ?? ''   // default = highest level
@@ -131,6 +145,24 @@
   // Casual continue is the one mode that exposes a TaskMaster override picker.
   const casualContinue = $derived(isContinue && !isOfficial)
   const selectedBench = $derived(BENCHMARKS.find((b) => b.id === benchmark) ?? null)
+  // The picked game, and whether any benchmark ladder is authored for it. A
+  // game with none can only be played casually — the Benchmark segment is
+  // disabled rather than hidden, so the reason is visible instead of the option
+  // silently not existing.
+  const selectedRom = $derived(ROMS.find((r) => r.id === rom) ?? null)
+  const romCanBenchmark = $derived(selectedRom ? selectedRom.benchmark_ok !== false : true)
+  // Worth showing the picker at all only when there's a choice to make.
+  const showRomPicker = $derived(!isContinue && ROMS.length > 1)
+
+  // Picking a casual-only game has to move the kind with it — leaving 'official'
+  // selected while its button is disabled would submit a benchmark run on a game
+  // that has no gates. Done in the handler, not an $effect, so it can't fight a
+  // later manual change of kind.
+  function pickRom(id) {
+    rom = id
+    const picked = ROMS.find((r) => r.id === id)
+    if (picked && picked.benchmark_ok === false) kind = 'casual'
+  }
 
   // The picked model row + its thinking levels (second-axis dropdown).
   const selectedModel = $derived(MODELS.find((m) => m.model === modelBase) ?? null)
@@ -186,8 +218,12 @@
       benchmark: isOfficial ? benchmark : null,
       config: isOfficial ? null : config,
       maxTurns: isOfficial ? null : maxTurns,
-      // Official ends at its own ladder, so a stop event is casual-only.
-      stopAt: isOfficial ? null : (stopAt || null),
+      // Official ends at its own ladder, so a stop event is casual-only — and a
+      // game with no ladder has no detectable events at all.
+      stopAt: isOfficial || !romCanBenchmark ? null : (stopAt || null),
+      // Which game. Official plays the benchmark ladder's ROM; a continue
+      // resumes the source run's. Both send null.
+      rom: isOfficial || isContinue ? null : (rom || null),
       continueFrom: continueFrom?.runId ?? null,
       // Casual continue may override models. Player rides on `model` (the backend
       // treats it as reuse when it equals the source alias, else an override).
@@ -220,8 +256,10 @@
         </div>
       {:else}
         <div class="seg">
-          <button class:on={isOfficial} onclick={() => kind = 'official'}>
-            <b>Benchmark</b><small>gated · leaderboard</small>
+          <button class:on={isOfficial} disabled={!romCanBenchmark}
+                  onclick={() => kind = 'official'}
+                  title={romCanBenchmark ? null : `No gate ladder is authored for ${selectedRom?.name} yet`}>
+            <b>Benchmark</b><small>{romCanBenchmark ? 'gated · leaderboard' : 'no ladder for this game'}</small>
           </button>
           <button class:on={!isOfficial} onclick={() => kind = 'casual'}>
             <b>Casual</b><small>free config · max-turns · no gates</small>
@@ -230,6 +268,26 @@
       {/if}
 
       <div class="fields">
+        <!-- Which game. First field because it gates the rest: a game with no
+             gate ladder can only be played casually, and its runs start from
+             their own save state (or the title screen) rather than the FireRed
+             canonical one. -->
+        {#if showRomPicker}
+          <label class="field">
+            <span class="flabel">Game</span>
+            <select value={rom} onchange={(e) => pickRom(e.currentTarget.value)}>
+              {#each ROMS as r}<option value={r.id}>{r.name}</option>{/each}
+            </select>
+            {#if !romCanBenchmark}
+              <span class="faint tm-hint">
+                Casual only — no gate ladder is authored for {selectedRom?.name} yet, so
+                no gates, no score and no stop events.
+                {#if selectedRom && !selectedRom.has_start_save} Starts from the title screen.{/if}
+              </span>
+            {/if}
+          </label>
+        {/if}
+
         <div class="field">
           <span class="flabel">{casualContinue ? 'Player model' : 'Model'} {#if lockModel}<span class="locked">locked</span>{/if}</span>
           {#if lockModel}
@@ -312,7 +370,10 @@
           <!-- Optional early finish line. The ids come from the real gate
                ladder (/api/checkpoints) — the same events the referee stamps
                for a benchmark — so "play until Viridian Forest" is detected
-               from game memory, not guessed from the screen. -->
+               from game memory, not guessed from the screen. Hidden for a game
+               with no ladder: those events are read out of FireRed's RAM map,
+               so on another cartridge they address nothing. -->
+          {#if romCanBenchmark}
           <label class="field">
             <span class="flabel">Stop at</span>
             <select bind:value={stopAt}>
@@ -324,6 +385,7 @@
             <p class="rechint faint">
               Ends the run as soon as the referee detects this — or at {maxTurns} turns, whichever comes first.
             </p>
+          {/if}
           {/if}
         {/if}
 

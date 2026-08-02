@@ -19,8 +19,8 @@ pokemon app
 `pokemon run` launches a fresh mGBA for every run and exits when the run ends.
 The control center instead keeps **one warm emulator** and **one web server** up
 across many runs, draining a queue serially. That removes the per-run mGBA boot
-+ Lua handshake (the one manual step), and gives you a persistent leaderboard,
-run history, and a live spectate view.
++ Lua handshake, and gives you a persistent leaderboard, run history, and a live
+spectate view.
 
 ```
 pokemon app  (one process)
@@ -51,11 +51,14 @@ On `pokemon app` the process:
    or a `caffeinate` keep-awake. (Disable with `--no-reclaim`, which instead
    prints the manual fix and exits.)
 2. **Launches mGBA** and positions its window.
-3. **Waits for the manual Lua handshake** — the one step only you can do:
+3. **Loads the Lua connector script** by driving the Scripting window's
+   *File → Load recent script*, and waits for the handshake. If that automation
+   is unavailable (no Accessibility permission, or the script isn't in mGBA's
+   recent list yet) it prints the manual instruction instead:
    > In the mGBA **Scripting** window: **File → Load recent script → `socketserver-1.lua`**
 
-   The boot blocks here until the Lua client connects (timeout `--connect-timeout`,
-   default 300s).
+   Either way the boot blocks here until the Lua client connects (timeout
+   `--connect-timeout`, default 300s).
 4. **Binds the web server** on `--port` (default `3420`) and opens a browser tab
    (unless `--no-browser`).
 5. **Loads / backfills the run index** — if `runs_index.json` is empty but run
@@ -123,11 +126,54 @@ Two kinds (see [the benchmark doc](benchmark.md) for the full distinction):
   (`pokebench-easy` / `first-badge` / `full`). The benchmark selects the gate
   ladder and the goal; config (`config-3.13`) and the start save are locked.
   Counts on that benchmark's leaderboard.
-- **Casual** — you pick **model + config + max-turns**, and optionally a
+- **Casual** — you pick **game + model + config + max-turns**, and optionally a
   **Stop at** story event (`Entered Viridian Forest`, `Reached Pewter City`, …).
   The run then ends at whichever comes first, the event or the turn cap. Never
   on the leaderboard. For experiments. See
   [Stopping at a story event](benchmark.md#stopping-at-a-story-event).
+
+### Choosing a game
+
+The dialog's **Game** picker lists everything in
+[`configs/roms.yaml`](../configs/roms.yaml) whose ROM file is present. FireRed is
+the default; Emerald is there too.
+
+A game can be benchmarked only if a **gate ladder is authored for it** — the
+referee reads story flags out of that game's RAM map, so FireRed's gates address
+nothing on another cartridge. Nothing declares this: it is derived from the
+ladders' own `game:` field, so authoring `configs/checkpoints-emerald-*.yaml`
+is all it takes to turn Emerald benchmarks on. Until then, picking Emerald
+**greys out Benchmark** (and hides Stop at) and the run is casual.
+
+Casual runs on the default ROM start from the canonical FireRed save; a run on
+any other game starts from **that game's own `start_save`**, or from the title
+screen when it hasn't got one yet.
+
+### Switching the loaded game
+
+The emulator holds one cartridge at a time. The **game selector in the top bar**
+switches it, and the queue does it for you when the next run needs a different
+one — so runs on different games can sit in the same queue and dispatch back to
+back, with nothing to click between them.
+
+The switch takes about two seconds and **keeps the Lua connection**. mGBA holds
+one script context for the life of the *process* and merely re-attaches the core
+around it, so the script only dies if the process does — and it doesn't:
+the cartridge is changed by driving mGBA's own **File → Recent** menu. The result
+is confirmed by reading the cartridge header back over the socket, which can
+only answer correctly if the swap took, the script survived, and its frame
+callback is still running.
+
+It falls back to relaunching when the shortcut isn't available — a ROM that has
+never been opened on this machine (so it isn't in Recent yet), no Accessibility
+permission, or a swap that fails to verify. That path does cost a Lua re-load,
+and the top bar says *"load the Lua script in mGBA"* while it waits. Opening a
+game once puts it in Recent, so the fallback is normally a one-time cost per game.
+
+Switching to the game already loaded does nothing at all, which is why the queue
+can reconcile before every single run for the price of a string comparison.
+
+You can also boot straight into a game: `pokemon app --rom emerald`.
 
 Either kind can also be **recorded to MP4**. Tick "Record this run to MP4" in the
 dialog and pick the interface (the 1:1 simple view, or the full wide panel) and

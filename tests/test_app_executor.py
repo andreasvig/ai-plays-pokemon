@@ -98,14 +98,25 @@ def make_run_fn(runs_root: Path, *, recorder: list[str] | None = None):
 
 
 def fake_prepare_config(path, model, tm_model_alias=None):
-    """Stand-in for runner.prepare_config — no models.yaml / disk reads."""
+    """Stand-in for runner.prepare_config — no models.yaml / disk reads.
+
+    Mirrors ONE real property of the loaded YAML that the executor branches on:
+    whether the config carries a ``task_master`` block. Every 3.x config does
+    (with ``enabled: true``); config-4.0+ is the self-directed single-agent line
+    and has none, which is what tells the executor to skip TaskMaster wiring
+    entirely. A stub that always omitted the block would hide that branch and
+    make the TaskMaster-on assertions below vacuous.
+    """
     stem = Path(path).stem if path else "latest"
-    return {
+    cfg = {
         "_config_path": path,
         "_llm_alias": model,
         "llm_model": f"resolved/{model}",
         "run_name": f"{stem}__{model}",
     }
+    if not stem.startswith("config-4"):
+        cfg["task_master"] = {"enabled": True, "history_window_n": 20}
+    return cfg
 
 
 @pytest.fixture

@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, field_validator
 from pydantic_ai import Agent, ModelRetry, NativeOutput, PromptedOutput, RunContext
 from pydantic_ai.models.openai import OpenAIModel
 
-from src.agent.coerce import coerce_stringified_object
+from src.agent.coerce import coerce_object_to_json_string, coerce_stringified_object
 
 Button = Literal["up", "down", "left", "right", "a", "b", "start", "select", "wait"]
 
@@ -90,6 +90,15 @@ class GameAction(BaseModel):
         mode="before", check_fields=False,
     )(coerce_stringified_object)
 
+    # The mirror case: memory_updates is typed str (turn.py json.loads it into
+    # memory-key updates) but described as "a JSON object", so a capable model
+    # (claude-sonnet-5) emits a REAL object here instead of a JSON string.
+    # Re-serialize it losslessly rather than dying on string_type. check_fields
+    # inherited by _LegacyGameAction (the field exists on both).
+    _coerce_memory = field_validator(
+        "memory_updates", mode="before", check_fields=False,
+    )(coerce_object_to_json_string)
+
 
 # Model-facing schema for the legacy (TaskMaster-disabled) path. Mirrors
 # GameAction's four base fields EXACTLY and omits `return_to_taskmaster`, so the
@@ -136,6 +145,28 @@ class AgentDeps:
 
 
 # --- Build the agent ---
+
+def _player_mode_guidelines(config: dict[str, Any]) -> str:
+    """Text for the ``{{mode_guidelines}}`` placeholder in the PLAYER prompt.
+
+    The exact mirror of ``task_master._mode_guidelines``, reading the Player's
+    own ``freeplay_guidelines`` / ``benchmark_guidelines`` (authored under
+    ``player_agent:`` and hoisted to the top level) and the run-wide ``mode``
+    the executor stamps: ``"benchmark"`` for official runs, ``"freeplay"`` for
+    casual ones. Anything else — including an unset mode on a direct
+    ``pokemon run`` — selects benchmark, the same safe default the TaskMaster
+    uses. Missing guidelines keys yield an empty string, so the placeholder
+    collapses to nothing and a config that doesn't use it is unaffected.
+
+    This exists because on a TaskMaster-less config (4.0+) the freeplay vs
+    benchmark steering has nowhere else to land: in the 3.x line those blocks
+    lived under ``task_master:`` and only ever reached the TaskMaster's prompt,
+    so a single-agent run would silently lose the distinction entirely.
+    """
+    mode = str(config.get("mode") or "benchmark").lower()
+    key = "freeplay_guidelines" if mode == "freeplay" else "benchmark_guidelines"
+    return config.get(key, "") or ""
+
 
 def create_agent(config: dict[str, Any]) -> tuple[Agent, Any, list[str]]:
     """Create a Pydantic AI agent configured for OpenRouter.
@@ -212,10 +243,14 @@ def create_agent(config: dict[str, Any]) -> tuple[Agent, Any, list[str]]:
     raw_prompt = config.get("system_prompt", "You are an AI agent playing a Pokemon game.")
     system_prompt = fill_prompt(
         raw_prompt,
-        game_name="Pokemon FireRed",
+        # Which game this run is actually playing. Stamped onto the config from
+        # the ROM registry (``src.app.roms.apply_rom``); the fallback is the
+        # default ROM's game, for a config prepared outside the app.
+        game_name=config.get("game_name") or "Pokemon FireRed",
         button_list=", ".join(config.get("valid_inputs", [])),
         current_task=config.get("task", {}).get("goal", "Play the game."),
         previous_turns_description=previous_turns_description,
+        mode_guidelines=_player_mode_guidelines(config),
     )
 
     # The Player drives the game purely through its structured output

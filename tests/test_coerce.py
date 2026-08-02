@@ -19,7 +19,7 @@ import json
 import pytest
 
 from src.agent.agent import GameAction, _LegacyGameAction
-from src.agent.coerce import coerce_stringified_object
+from src.agent.coerce import coerce_object_to_json_string, coerce_stringified_object
 from src.agent.task_master import Rating, TaskMasterOutput, TaskSpec
 
 _TASK_OBJ = {
@@ -141,6 +141,61 @@ def test_player_stringified_inputs_list_decodes():
         }
     )
     assert g.inputs == ["down", "a"]
+
+
+# --- memory_updates: object-emitted-for-a-str-field (claude-sonnet-5, 2026-07-01) ---
+
+# The VERBATIM shape claude-sonnet-5 emitted at Oak's Lab: memory_updates as a
+# real nested object with a "notes" key instead of a JSON string. pydantic's str
+# field rejected it (string_type) and the turn burned ModelRetry attempts.
+_MEM_OBJ = {
+    "notes": (
+        "In Oak's Lab, dialogue cutscene in progress - Oak explaining Pokemon "
+        "are held in Poke Balls. Need to keep pressing A until I regain control."
+    )
+}
+
+
+def test_coerce_object_to_json_string_helper():
+    # A real object/array -> a JSON string (round-trips losslessly).
+    assert json.loads(coerce_object_to_json_string(_MEM_OBJ)) == _MEM_OBJ
+    assert json.loads(coerce_object_to_json_string(["a", "b"])) == ["a", "b"]
+    # A correctly-encoded string passes through untouched.
+    assert coerce_object_to_json_string("none") == "none"
+    assert coerce_object_to_json_string('{"loc": "lab"}') == '{"loc": "lab"}'
+    # None -> the schema's no-update sentinel.
+    assert coerce_object_to_json_string(None) == "none"
+    # Unicode is preserved (ensure_ascii=False), not escaped.
+    assert coerce_object_to_json_string({"x": "café"}) == '{"x": "café"}'
+
+
+def test_player_gameaction_coerces_object_memory_updates():
+    """The exact failure from the live run: memory_updates emitted as an object.
+    It must validate (not string_type-reject) AND stay downstream-parseable."""
+    g = GameAction.model_validate(
+        {
+            "inputs": ["a"],
+            "reasoning": "keep advancing dialogue",
+            "last_turn_succeeded": True,
+            "memory_updates": _MEM_OBJ,
+        }
+    )
+    assert isinstance(g.memory_updates, str)
+    # turn.py does json.loads(memory_updates) into a dict of memory-key updates.
+    assert json.loads(g.memory_updates) == _MEM_OBJ
+
+
+def test_player_gameaction_memory_updates_string_unaffected():
+    """A model that correctly sends a JSON string (or 'none') is pure passthrough."""
+    g = GameAction.model_validate(
+        {
+            "inputs": ["a"],
+            "reasoning": "r",
+            "last_turn_succeeded": True,
+            "memory_updates": '{"location": "oaks_lab"}',
+        }
+    )
+    assert g.memory_updates == '{"location": "oaks_lab"}'
 
 
 def test_legacy_gameaction_unaffected_and_has_no_handoff_field():

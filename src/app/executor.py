@@ -33,6 +33,7 @@ from typing import Any, Callable, Optional
 from src.app.benchmarks import get_benchmark
 from src.app.catalog import stop_at_referee_config
 from src.app.models import QueuedRun, RunKind, RunStatus
+from src.app.roms import apply_rom, get_rom, rom_for_game
 from src.app.projection import project_run_dir
 from src.app.trace_build import build_and_cache_trace
 
@@ -160,6 +161,12 @@ class RunExecutor:
         Both casual branches also take the item's optional ``stop_at`` story
         event (see :meth:`_apply_stop_at`), which bounds the run alongside
         max-turns rather than replacing it.
+
+        Which ROM each branch plays: official takes the benchmark ladder's, casual
+        fresh takes the item's (``None`` → the registry default), and a continue
+        inherits the source run's — its config already carries the ``rom_path``
+        and ``game_name`` it was played with, so a resumed Emerald run resumes on
+        Emerald without the queue item having to say so.
         """
         prepare_config = self._resolve_prepare_config()
 
@@ -201,9 +208,9 @@ class RunExecutor:
                 task["goal"] = benchmark.goal
                 cfg["task"] = task
                 cfg["referee"] = {"checkpoints": benchmark.ladder, "enforce": True}
-                cfg.setdefault("task_master", {})["mode"] = "benchmark"
+                self._stamp_mode(cfg, "benchmark")
                 return cfg, str(savepoint_dir), self._OFFICIAL_TURN_SENTINEL
-            cfg.setdefault("task_master", {})["mode"] = "freeplay"  # casual continue
+            self._stamp_mode(cfg, "freeplay")  # casual continue
             # Casual continue may swap the Player and/or TaskMaster model (UI
             # pickers). ``item.model`` carries the chosen Player model. Re-resolve
             # it ONLY when it (a) is a genuine registry selection and (b) actually
@@ -223,7 +230,7 @@ class RunExecutor:
                 and is_valid_model_selection(item.model, _load_models_registry())
             ):
                 _resolve_player_model(cfg, item.model)
-            if item.task_master_model:
+            if item.task_master_model and self._tm_enabled(cfg):
                 _resolve_task_master_model(cfg, item.task_master_model)
             # A continue picks its OWN stop event (like max-turns) — it is a
             # property of this segment, not something inherited from the source.
@@ -254,23 +261,94 @@ class RunExecutor:
                 "checkpoints": benchmark.ladder,
                 "enforce": True,
             }
-            # Official = benchmark mode: TaskMaster gets benchmark_guidelines.
-            cfg.setdefault("task_master", {})["mode"] = "benchmark"
+            # The ROM is the BENCHMARK's, never the item's: a score has to come
+            # from the dump the ladder's gate addresses were authored against, so
+            # an official run has no ROM choice to make. (``item.rom`` is
+            # casual-only and the API refuses to set it on an official run.)
+            apply_rom(cfg, rom_for_game(benchmark.game))
+            # Official = benchmark mode: the frozen config's TaskMaster (and the
+            # Player) get benchmark_guidelines.
+            self._stamp_mode(cfg, "benchmark")
             # NO max-turns: pace is the only bound (locked #8). We still pass a
             # large sentinel turn cap to the loop (it never owns termination —
             # the referee's gate deadlines do).
             turns = self._OFFICIAL_TURN_SENTINEL
             return cfg, self.canonical_save, turns
 
-        # Casual fresh = custom/freeplay mode: TaskMaster gets freeplay_guidelines.
+        # Casual fresh = custom/freeplay mode: whichever agent owns the
+        # guidelines on the chosen config gets freeplay_guidelines. A config with
+        # no task_master block (4.0+) skips TM model resolution entirely — there
+        # is no TaskMaster to give a model to.
         cfg = prepare_config(self._resolve_config_path(item.config), item.model)
-        cfg.setdefault("task_master", {})["mode"] = "freeplay"
-        from src.cli.runner import _resolve_task_master_model
+        self._stamp_mode(cfg, "freeplay")
+        if self._tm_enabled(cfg):
+            from src.cli.runner import _resolve_task_master_model
 
-        _resolve_task_master_model(cfg, None)
+            _resolve_task_master_model(cfg, None)
         self._apply_stop_at(cfg, item.stop_at)
+        # Which game. None → the registry default, so an item enqueued before
+        # ROMs existed behaves exactly as it did. The start state travels with
+        # the ROM: the canonical save is FireRed's bedroom, and loading it under
+        # another cartridge would restore garbage — so a non-default ROM starts
+        # from its OWN committed savepoint, or from the title screen when it
+        # hasn't got one yet.
+        rom = get_rom(item.rom)
+        apply_rom(cfg, rom)
+        snapshot = self.canonical_save if rom.is_default else rom.start_save
         turns = item.max_turns or 1500
-        return cfg, self.canonical_save, turns
+        return cfg, snapshot, turns
+
+    def _ensure_rom_loaded(self, cfg: dict) -> None:
+        """Make the emulator hold the ROM this run's config asks for.
+
+        Called once per dispatch, after the config is built and before the turn
+        loop. Almost always a no-op — the supervisor returns immediately when it
+        already has that ROM — so the cost of supporting mixed-game queues is one
+        string comparison per run.
+
+        When it is NOT a no-op, mGBA relaunches and the Lua script has to be
+        re-loaded by hand before the run can start (see
+        :meth:`AppSupervisor.switch_rom`); the dispatch blocks on that reconnect.
+        That is why the switch happens HERE rather than at enqueue time: the
+        queue stays freely editable, and the interruption lands on the run that
+        actually needs the other cartridge.
+
+        Tolerates a supervisor without ``switch_rom`` (the fakes injected by
+        tests) and a config with no ``rom_path`` — both mean "nothing to
+        reconcile", not "fail the run".
+        """
+        wanted = str((cfg.get("emulator") or {}).get("rom_path") or "")
+        switch = getattr(self.supervisor, "switch_rom", None)
+        if not wanted or not callable(switch):
+            return
+        switch(wanted, force=True)
+
+    @staticmethod
+    def _tm_enabled(cfg: dict) -> bool:
+        """True when this config actually runs the TaskMaster meta-agent."""
+        return bool((cfg.get("task_master") or {}).get("enabled", False))
+
+    @classmethod
+    def _stamp_mode(cls, cfg: dict, mode: str) -> None:
+        """Stamp the run mode (``"benchmark"`` / ``"freeplay"``) onto the config.
+
+        Two sinks, because two different agents consume it:
+          - top-level ``mode`` — read by the PLAYER
+            (``agent._player_mode_guidelines``). The only sink that exists on a
+            TaskMaster-less config (4.0+), where the Player carries the
+            freeplay/benchmark guidelines itself.
+          - ``task_master.mode`` — read by the TASKMASTER
+            (``task_master._mode_guidelines``), and only stamped when a
+            task_master block is already present. Deliberately NOT setdefault'd
+            into existence: on a 4.0 config that would conjure a phantom
+            ``task_master:`` block which reads as "TaskMaster is configured" in
+            logs and makes ``_resolve_task_master_model`` resolve a model for an
+            agent that is never constructed.
+        """
+        cfg["mode"] = mode
+        tm = cfg.get("task_master")
+        if isinstance(tm, dict):
+            tm["mode"] = mode
 
     @staticmethod
     def _apply_stop_at(cfg: dict, stop_at: str | None) -> None:
@@ -337,6 +415,7 @@ class RunExecutor:
         captured: dict = {}
         try:
             config, snapshot, turns = self.build_run_config(item)
+            self._ensure_rom_loaded(config)
             # Opt-in MP4 recording. Stamped onto the config rather than passed as
             # a run_fn argument: `run_single_loop` is the one place both entry
             # points (this executor and `pokemon run --record`) converge, and it

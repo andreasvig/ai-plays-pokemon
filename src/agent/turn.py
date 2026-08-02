@@ -631,6 +631,11 @@ class TaskMasterRunner:
                 search_model=self._search_model,
                 tool_costs=[],
                 max_searches=self._max_searches,
+                # Which game the research tool should answer about. Route order
+                # and gym teams are per-GAME facts, so asking a web model about
+                # FireRed while the screen shows Emerald returns confident,
+                # wrong answers.
+                game_name=self.config.get("game_name") or "Pokemon FireRed",
             )
 
             kwargs: dict[str, Any] = {}

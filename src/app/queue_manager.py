@@ -71,6 +71,7 @@ class QueueManager:
         benchmark: str | None = None,
         max_turns: int | None = None,
         stop_at: str | None = None,
+        rom: str | None = None,
         continue_from: str | None = None,
         task_master_model: str | None = None,
         record: dict | RecordSpec | None = None,
@@ -81,7 +82,9 @@ class QueueManager:
         ``benchmark`` is the official benchmark id (which ladder + goal); ``None``
         for casual runs. ``stop_at`` is a casual run's early finish line — the
         story event that ends it before its turn cap (``None`` = turn cap only).
-        ``record`` opts the run into an MP4 capture (``None`` = no recording).
+        ``rom`` is which game a casual run needs — a ROM id from the registry
+        (``None`` = the default ROM). ``record`` opts the run into an MP4 capture
+        (``None`` = no recording).
         ``enqueued_at`` is overridable so tests can pin a deterministic
         timestamp; it defaults to the current UTC ISO time.
         """
@@ -93,6 +96,7 @@ class QueueManager:
             benchmark=benchmark,
             max_turns=max_turns,
             stop_at=stop_at,
+            rom=rom,
             continue_from=continue_from,
             task_master_model=task_master_model,
             record=RecordSpec.model_validate(record) if record is not None else None,

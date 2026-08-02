@@ -141,6 +141,12 @@ class _FakeSupervisor:
     def __init__(self) -> None:
         self._busy = False
         self.handle = None
+        # Carries a ROM like the real one, and swaps it instantly — so headless
+        # serve exercises the game picker and the switch, which would otherwise
+        # be the one part of the UI no browser test could reach.
+        from src.app.roms import default_rom
+
+        self.rom_path = default_rom().path
 
     def start(self) -> dict:
         return {"fake": True}
@@ -148,8 +154,14 @@ class _FakeSupervisor:
     def set_busy(self, busy: bool) -> None:
         self._busy = bool(busy)
 
+    def switch_rom(self, rom_path: str, *, force: bool = False) -> dict:
+        self.rom_path = str(rom_path)
+        return {"fake": True}
+
     def status(self) -> SupervisorStatus:
-        return SupervisorStatus(process_up=True, connected=True, busy=self._busy)
+        return SupervisorStatus(
+            process_up=True, connected=True, busy=self._busy, rom_path=self.rom_path,
+        )
 
     def restart(self) -> dict:
         return {"fake": True}
@@ -282,6 +294,14 @@ def main() -> None:
         help="Don't open a browser tab on boot.",
     )
     parser.add_argument(
+        "--rom", default=None,
+        help=(
+            "Which game to boot — a ROM id from configs/roms.yaml (e.g. "
+            "'emerald'). Default: the registry's default ROM. The game can also "
+            "be switched later from the UI, without restarting the app."
+        ),
+    )
+    parser.add_argument(
         "--connect-timeout", type=float, default=300.0,
         help="Timeout (seconds) for the initial Lua connection. Default: 300.",
     )
@@ -316,6 +336,20 @@ def main() -> None:
 
     config = _build_supervisor_config()
 
+    # Which game the emulator boots with. The registry is authoritative over the
+    # config's own rom_path, so `--rom emerald` doesn't need an Emerald config —
+    # and the default ROM resolves to the same file the configs already name.
+    from src.app.roms import apply_rom, get_rom, load_roms
+
+    try:
+        known = {r.id for r in load_roms()}
+    except (FileNotFoundError, ValueError) as exc:
+        sys.exit(f"ERROR: rom registry: {exc}")
+    if args.rom is not None and args.rom not in known:
+        sys.exit(f"ERROR: unknown rom {args.rom!r}; known: {', '.join(sorted(known))}")
+    rom = get_rom(args.rom)
+    apply_rom(config, rom)
+
     rom_path = config["emulator"]["rom_path"]
 
     if not os.path.exists(rom_path):
@@ -336,7 +370,7 @@ def main() -> None:
     )
 
     print("Starting PokeBench Local Control Center...")
-    print("Launching emulator (mGBA + Lua connector)...")
+    print(f"Launching emulator (mGBA + Lua connector) — {rom.name}...")
     supervisor.start()
     print("Emulator connected. Starting web server...")
     # Default-muted: mGBA now launches with audio ENABLED (the old `-C mute=1`

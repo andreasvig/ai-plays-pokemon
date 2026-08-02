@@ -33,12 +33,16 @@ drive everything from the browser at <http://localhost:3420/>. Full guide:
 pokemon app                          # boot the control center on :3420
 pokemon app --port 8080              # different web port
 pokemon app --no-browser             # don't auto-open a tab
+pokemon app --rom emerald            # boot a different game (configs/roms.yaml)
 pokemon app --fake-emulator --seed-runs local/runs   # headless UI dev, no mGBA
 ```
 
-On boot it reclaims stale processes, launches mGBA, and **blocks for the one
-manual step** — in the mGBA Scripting window: **File → Load recent script →
-`socketserver-1.lua`** — then binds the server and starts draining the queue.
+On boot it reclaims stale processes, launches mGBA, **loads the Lua connector
+script for you** (driving the Scripting window's *File → Load recent script*),
+waits for the handshake, then binds the server and starts draining the queue.
+If that automation is unavailable — no Accessibility permission, or the script
+isn't in mGBA's recent list yet — it prints the manual instruction and waits for
+you to do it, exactly as it always did.
 
 ### Flags
 
@@ -48,12 +52,15 @@ manual step** — in the mGBA Scripting window: **File → Load recent script �
 | `--no-browser`        | off     | Don't open a browser tab on boot.                           |
 | `--connect-timeout S` | `300`   | Seconds to wait for the Lua handshake.                      |
 | `--no-reclaim`        | off     | Don't auto-kill stale processes; print the manual fix instead.|
+| `--rom ID`            | registry default | Which game to boot — a ROM id from `configs/roms.yaml` (`firered`, `emerald`). Switchable later from the UI. |
 | `--fake-emulator`     | off     | Headless dev mode — fake supervisor + seeded index, no mGBA.|
 | `--seed-runs PATH`    | —       | With `--fake-emulator`, seed the index from a runs dir / index file. |
 
 Runs are enqueued from the UI as **official** (frozen benchmark — pick a model)
-or **casual** (pick model + config + max-turns), and finished runs can be
-**continued** from their latest savepoint. See [benchmark.md](benchmark.md) for
+or **casual** (pick game + model + config + max-turns), and finished runs can be
+**continued** from their latest savepoint. A casual run may pick any game in the
+registry; benchmarks are limited to games a gate ladder is authored for (see
+[control-center.md](control-center.md#choosing-a-game)). See [benchmark.md](benchmark.md) for
 the official/casual distinction and the gate ladder.
 
 ---
@@ -176,7 +183,15 @@ pokemon snapshot list
 
 # Load: launches mGBA and restores the snapshot for manual play
 pokemon snapshot load local/snapshots/bedroom_start
+
+# Another game (configs/roms.yaml) — how a non-FireRed start state gets made
+pokemon snapshot save emerald_truck --rom emerald -d "Inside the truck, before Littleroot"
 ```
+
+To make a captured state the **start state** for that game's casual runs, copy it
+to `configs/saves/<name>/` (committed, like the canonical FireRed save) and point
+the registry entry's `start_save:` at it. Until a game has one, its runs boot from
+the title screen.
 
 ---
 

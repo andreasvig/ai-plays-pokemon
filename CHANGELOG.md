@@ -1,5 +1,73 @@
 # Changelog
 
+## 2026-08-01 — More than one game: Emerald, and a ROM registry
+
+### What
+- `configs/roms.yaml` — the games the harness can boot (id, path, `game`,
+  `game_name`, cartridge `game_code`, `sha1`, optional `start_save`). FireRed is
+  the default; **Pokemon Emerald** is now registered alongside it.
+- A **Game** picker in the new-run dialog (casual only), a **game selector in
+  the top bar** that switches the loaded cartridge, `pokemon app --rom emerald`,
+  and `GET /api/roms` / `POST /api/emulator/rom`.
+- The chosen game reaches the models: `game_name` is stamped on the run config
+  and fills `{{game_name}}` in the Player and TaskMaster prompts and the framing
+  of the `ask_perplexity` research tool.
+
+### Why
+The harness was FireRed-shaped in five separate places — the launch path, the
+referee, three prompts, the start save — none of which was a *choice*. One
+registry entry now carries all five, so a second game is data rather than a
+branch.
+
+### Notes
+- **Benchmark availability is DERIVED, never declared.** A ROM can be
+  benchmarked iff some ladder's `game:` matches its own. Emerald is casual-only
+  purely because no ladder claims `emerald-us`; authoring one is the whole of
+  what turns it on. The dialog greys Benchmark out for such a game and hides
+  Stop at (those gates address FireRed's RAM map and would never fire).
+- **Switching keeps the Lua connection.** mGBA holds one script context per
+  *process* and re-attaches the core around it, so the script survives a
+  cartridge change but not a relaunch — and 0.10.5 has no Lua binding to load a
+  ROM. The switch therefore drives mGBA's own `File → Recent` menu over
+  Accessibility (the mechanism the mute toggle already used) and confirms it by
+  reading the cartridge header back over the socket: a check that can only pass
+  if the swap took, the script lived, and its frame callback is still running.
+  ~2s, nothing to click. Relaunch remains the fallback (ROM not in Recent yet, no
+  Accessibility, or a swap that fails to verify), and switching to the
+  already-loaded game is a no-op, so the executor reconciles before every run for
+  the cost of a string compare.
+- **The Lua script now loads itself at boot**, through the same mechanism — the
+  Scripting window's `File → Load recent script`. The manual step the harness has
+  always ended on is gone; the printed instruction remains as the fallback.
+- Fixed: `shutdown()` cleared the supervisor's `busy` flag, so during a relaunch
+  it reported idle while the executor still held a run — with two items queued
+  the drain could have dispatched a second run into a relaunching emulator.
+- The ladders' long-inert `rom_sha1` finally has a counterpart: a test asserts
+  the registry's FireRed hash is one the ladders accept, and both hashes are
+  checked against the actual dumps on disk.
+- **The prompts name the game that is loaded.** `{{game_name}}` is resolved
+  centrally in `roms.apply_rom` — across `task.goal`, `task.description`, the
+  Player `system_prompt` and `task_master.system_prompt` — rather than by each
+  consumer. The task text is why: the prompts' builders are handed a `game_name`,
+  but the goal is passed through as a VALUE, so a placeholder in it survived
+  substitution and reached the model raw. `run_single_loop` resolves it too, for
+  the `pokemon run` path that never calls `apply_rom`.
+  `config-4.0`'s goal and `config-3.13`'s research-tool blurb now use the
+  placeholder; on FireRed both render byte-identically to what they said before,
+  so no official score is against a changed prompt.
+- **Emerald starts inside the truck.** `configs/saves/emerald-truck/` is its
+  committed start save (captured 2026-08-02) — the Emerald analogue of FireRed's
+  bedroom. A game without one boots to its title screen; neither ever gets handed
+  the other game's save, which would restore garbage.
+- A game switch is refused (409) while a run is executing, and the executor's own
+  pre-dispatch switch is the only caller allowed through — so a mixed-game queue
+  reconciles between runs and never mid-run.
+- Fixed: quitting mGBA left the supervisor reporting `process_up: false,
+  connected: true`, which reads as healthy everywhere and would dispatch runs
+  into a process that no longer exists. `connected` is now gated on the process.
+- `roms/` stays gitignored — the registry names files it does not ship, and the
+  picker only offers what is present on this machine.
+
 ## 2026-08-01 — Stop a casual run at a story event
 
 ### What

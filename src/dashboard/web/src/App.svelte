@@ -29,7 +29,7 @@
   let queue = $state([])           // upcoming queue items (camelCase cards)
   let activeId = $state(null)      // queue_id of the running run (or null)
   let active = $state(null)        // RunSummary of the running run, joined below
-  let emulator = $state({ configured: false, process_up: false, connected: false, busy: false, active_run_id: null, muted: true })
+  let emulator = $state({ configured: false, process_up: false, connected: false, busy: false, active_run_id: null, muted: true, rom: null, switching_to: null, awaiting_lua: false })
   let selectedRun = $state(null)   // resolved run for the report view (P6)
 
   // active run id for spectate streams (Plan §P6) — the run-dir id the executor
@@ -43,6 +43,7 @@
   let configs = $state([])         // casual config stems for the dialog
   let benchmarks = $state([])      // benchmark registry [{id,name,goal,...}]
   let checkpoints = $state([])     // full ladder [{id,name,type}] — casual "Stop at"
+  let roms = $state([])            // game registry [{id,name,benchmark_ok,on_disk}]
   let benchmark = $state('')       // selected benchmark id (scopes the leaderboard)
 
   // spectate pill is green when the emulator is up AND a run is active
@@ -117,13 +118,14 @@
   }
   async function loadEmulator() { emulator = await api.fetchEmulatorStatus() }
   async function loadCatalog() {
-    const [m, c, b, k] = await Promise.all([
+    const [m, c, b, k, r] = await Promise.all([
       api.fetchModels().catch(() => []),
       api.fetchConfigs().catch(() => []),
       api.fetchBenchmarks().catch(() => []),
       api.fetchCheckpoints().catch(() => []),
+      api.fetchRoms().catch(() => []),
     ])
-    models = m; configs = c; benchmarks = b; checkpoints = k
+    models = m; configs = c; benchmarks = b; checkpoints = k; roms = r
     // Default the leaderboard filter to the registry-default benchmark (or the
     // first) once, without clobbering a selection the user already made.
     if (!benchmark && b.length) benchmark = (b.find((x) => x.default) ?? b[0]).id
@@ -223,6 +225,23 @@
       emulator = { ...emulator, muted: !next }      // rollback
     }
   }
+  // Load a different game. mGBA relaunches, so the Lua script has to be
+  // re-loaded by hand afterwards — the TopBar chip says so while
+  // `awaiting_lua` holds. Poll status until it settles rather than awaiting the
+  // POST: it returns 202 the moment the switch STARTS.
+  async function switchRom(romId) {
+    try {
+      await api.setEmulatorRom(romId)
+    } catch (e) {
+      console.error('rom switch failed', e)
+      return
+    }
+    for (let i = 0; i < 600; i++) {
+      await new Promise((r) => setTimeout(r, 1000))
+      await loadEmulator().catch(() => {})
+      if (emulator.rom?.id === romId && emulator.connected) break
+    }
+  }
   async function removeFromQueue(id) {
     queue = queue.filter((q) => q.queueId !== id)   // optimistic
     try { await api.cancelQueued(id) } catch (e) { console.error('cancel failed', e) }
@@ -242,7 +261,8 @@
 </script>
 
 {#if view !== 'spectate'}
-  <TopBar {active} {emulatorUp} {queue} {view} muted={emulator.muted} ontogglemute={toggleMute} onnav={go} onspectate={() => go('/spectate')} onnew={openNew} />
+  <TopBar {active} {emulatorUp} {queue} {view} muted={emulator.muted} ontogglemute={toggleMute}
+          {roms} {emulator} onrom={switchRom} onnav={go} onspectate={() => go('/spectate')} onnew={openNew} />
 {/if}
 
 <main class:kiosk={view === 'spectate'}>
@@ -275,7 +295,7 @@
   {/if}
 </main>
 
-<AddRunDialog open={dialogOpen} continueFrom={dialogContinueFrom} {models} {configs} {benchmarks} {checkpoints}
+<AddRunDialog open={dialogOpen} continueFrom={dialogContinueFrom} {models} {configs} {benchmarks} {checkpoints} {roms}
   onclose={() => { dialogOpen = false; dialogContinueFrom = null }} onsubmit={submitRun} />
 
 <style>

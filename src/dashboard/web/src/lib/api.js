@@ -133,6 +133,13 @@ export async function fetchCheckpoints() {
   return getJSON('/api/checkpoints')
 }
 
+export async function fetchRoms() {
+  // GET /api/roms → [{id, name, game, game_name, default, benchmark_ok,
+  // has_start_save, on_disk}, ...]. Which games the emulator can boot;
+  // benchmark_ok is what greys the dialog's Benchmark option out.
+  return getJSON('/api/roms')
+}
+
 export async function fetchLeaderboard(benchmark = null) {
   // GET /api/leaderboard[?benchmark=] → best official run per model for that
   // benchmark, gates desc / turns asc. Add displayed rank + perfScore (the same
@@ -173,6 +180,8 @@ export async function fetchQueue() {
       config: q.config ?? null,
       maxTurns: q.max_turns ?? null,
       stopAt: q.stop_at ?? null,
+      // Which game — only shown on a card when it is NOT the default ROM.
+      rom: q.rom ?? null,
       continueFrom: q.continue_from ?? null,
       enqueuedAt: q.enqueued_at,
     })),
@@ -296,6 +305,9 @@ export function enqueueRun(spec) {
     // '' is the picker's "no stop event" option — omit it rather than sending
     // an empty string the server would have to special-case.
     if (spec.stopAt) body.stop_at = spec.stopAt
+    // Which game. Omitted for the default ROM so the request stays what it has
+    // always been; the server reads absent as "the registry default".
+    if (spec.rom) body.rom = spec.rom
     if (spec.continueFrom != null) body.continue_from = spec.continueFrom
   } else if (spec.benchmark != null) {
     // Official: send WHICH benchmark (ladder + goal). config/max_turns are
@@ -343,4 +355,12 @@ export function continueRun(runId, { maxTurns = null, stopAt = null, playerModel
 
 export function setEmulatorMute(mute) {
   return send('POST', '/api/emulator/mute', { mute })
+}
+
+export function setEmulatorRom(rom) {
+  // POST /api/emulator/rom → 202 {switching_to} while mGBA relaunches with the
+  // other cartridge (200 + switching_to:null if it already has it). The switch
+  // finishes only once the Lua script is re-loaded by hand, so callers watch
+  // /api/emulator/status for `connected` rather than awaiting anything here.
+  return send('POST', '/api/emulator/rom', { rom })
 }

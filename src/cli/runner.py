@@ -223,6 +223,191 @@ def set_mgba_mute_for_pid(pid: int, mute: bool) -> bool:
     return result.stdout.strip() == "ok"
 
 
+def load_lua_script_in_mgba_for_pid(pid: int, lua_path: str) -> bool:
+    """Load the connector script via the Scripting window's ``File → Load recent script``.
+
+    This is the manual step the harness has always ended on — *"in the Scripting
+    window: File → Load recent script → socketserver-1.lua"* — done for you. The
+    Scripting window's own File menu is as drivable as any other
+    (:func:`load_rom_in_mgba_for_pid` is the sibling), so the only reason it was
+    ever manual is that nobody automated it.
+
+    Matched on the FULL path first, basename second: the recent list accumulates
+    same-named scripts from other checkouts of this project, and loading one of
+    those would connect a stale script to a live harness.
+
+    Best-effort by design. A failure here is not fatal — the caller still blocks
+    on the handshake, so the printed instructions remain the fallback and the
+    only cost is that you do it yourself, as before.
+    """
+    if sys.platform != "darwin":
+        return False
+    full = str(Path(lua_path).resolve())
+    basename = os.path.basename(full)
+    if not basename or '"' in full:
+        return False
+    script = f'''
+        tell application "System Events"
+            set targetProc to first process whose unix id is {pid}
+            set priorApp to missing value
+            try
+                set priorApp to first application process whose frontmost is true
+            end try
+            set outcome to "fail"
+            repeat 5 times
+                try
+                    tell targetProc
+                        set frontmost to true
+                    end tell
+                    delay 0.4
+                    tell targetProc
+                        perform action "AXRaise" of (first window whose name is "Scripting")
+                    end tell
+                    delay 0.3
+                    tell targetProc
+                        set recentMenu to menu 1 of menu item "Load recent script" ¬
+                            of menu 1 of menu bar item "File" of menu bar 1
+                        set target to missing value
+                        repeat with mi in (every menu item of recentMenu)
+                            set n to name of mi
+                            if n is not missing value then
+                                if n is "{full}" then set target to mi
+                            end if
+                        end repeat
+                        if target is missing value then
+                            repeat with mi in (every menu item of recentMenu)
+                                set n to name of mi
+                                if n is not missing value then
+                                    if n ends with "{basename}" and target is missing value then
+                                        set target to mi
+                                    end if
+                                end if
+                            end repeat
+                        end if
+                        if target is not missing value then
+                            click target
+                            set outcome to "ok"
+                        else
+                            set outcome to "absent"
+                        end if
+                    end tell
+                    exit repeat
+                on error
+                    delay 0.5
+                end try
+            end repeat
+            try
+                if priorApp is not missing value then
+                    set frontmost of priorApp to true
+                end if
+            end try
+            return outcome
+        end tell
+    '''
+    try:
+        result = subprocess.run(
+            ['osascript', '-e', script], capture_output=True, timeout=25, text=True,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+    return result.stdout.strip() == "ok"
+
+
+def load_rom_in_mgba_for_pid(pid: int, rom_path: str) -> bool:
+    """Load ``rom_path`` into the ALREADY-RUNNING mGBA via ``File → Recent``.
+
+    The point of this is the Lua connection. mGBA's Qt frontend keeps ONE script
+    context for the life of the process and merely attaches/detaches the core
+    around it (``ScriptingController::setController`` → ``mScriptContextAttachCore``),
+    so changing cartridge in place leaves the loaded script — and the socket it
+    holds — completely untouched. Relaunching does not: the context dies with the
+    process, and the script has to be re-loaded by hand. Sibling of
+    :func:`set_mgba_mute_for_pid`; same Accessibility mechanism, same
+    raise-the-game-window-first trick (the Scripting window collapses the menu
+    bar to just ``File``).
+
+    Matches the Recent entry by BASENAME: mGBA lists each entry as the path it
+    was opened with, so the same dump appears under several spellings (relative
+    from one launch, absolute from another). A ROM that has never been opened on
+    this machine is simply not in the menu — that returns False, and the caller
+    falls back to relaunching, which also seeds Recent so the next switch can do
+    it in place.
+
+    **mGBA has to be frontmost for this, not merely raised.** macOS gives a
+    background app a STUB menu bar — for mGBA that is ``File`` alone, carrying
+    the Scripting window's items, with no ``Recent`` anywhere in it. Raising the
+    game window (what the mute helper does) reorders windows inside the app but
+    does not activate the app, so the full bar never materialises. We therefore
+    activate mGBA, do the click, and hand focus back to whatever had it — a brief
+    flicker, once per game change, in exchange for never re-loading the script.
+
+    macOS-only. Returns True iff the menu item was found and clicked — which is
+    NOT proof the swap took: the caller must confirm against the cartridge header
+    (``AppSupervisor.verify_loaded_rom``) before trusting it.
+    """
+    if sys.platform != "darwin":
+        return False
+    basename = os.path.basename(str(rom_path))
+    if not basename or '"' in basename:
+        return False
+    script = f'''
+        tell application "System Events"
+            set targetProc to first process whose unix id is {pid}
+            set priorApp to missing value
+            try
+                set priorApp to first application process whose frontmost is true
+            end try
+            set outcome to "fail"
+            repeat 5 times
+                try
+                    tell targetProc
+                        set frontmost to true
+                    end tell
+                    delay 0.4
+                    tell targetProc
+                        set gameWin to first window whose name starts with "mGBA -"
+                        perform action "AXRaise" of gameWin
+                    end tell
+                    delay 0.25
+                    tell targetProc
+                        set recentMenu to menu 1 of menu item "Recent" of menu 1 ¬
+                            of menu bar item "File" of menu bar 1
+                        repeat with mi in (every menu item of recentMenu)
+                            set n to name of mi
+                            if n is not missing value then
+                                if n ends with "{basename}" then
+                                    click mi
+                                    set outcome to "ok"
+                                    exit repeat
+                                end if
+                            end if
+                        end repeat
+                    end tell
+                    if outcome is "fail" then set outcome to "absent"
+                    exit repeat
+                on error
+                    delay 0.4
+                end try
+            end repeat
+            -- Give focus back: a game switch shouldn't leave the emulator
+            -- sitting on top of whatever the user was actually doing.
+            try
+                if priorApp is not missing value then
+                    set frontmost of priorApp to true
+                end if
+            end try
+            return outcome
+        end tell
+    '''
+    try:
+        result = subprocess.run(
+            ['osascript', '-e', script], capture_output=True, timeout=20, text=True,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+    return result.stdout.strip() == "ok"
+
+
 # Default TaskMaster for custom/casual (freeplay) runs. Gemma-as-Player is fine,
 # but Gemma prompted JSON is too flaky for TaskMaster handoffs — Gemini tool mode
 # is reliable. Overridable via task_master.model in the config YAML or --task-master-model.
@@ -387,8 +572,14 @@ def run_prepare_phase(config: dict, saves_dir: Path) -> dict:
     position_mgba_window_for_pid(mgba_proc.pid, win_x, win_y)
     open_scripting_window_for_pid(mgba_proc.pid)
 
-    print(f"window at ({win_x},{win_y}). "
-          f"In its Scripting window: File > Load recent script > socketserver-1.lua")
+    # Load the connector script for the user. Best-effort: on success the
+    # handshake happens with nothing to click; on failure we fall back to the
+    # instructions below, which is exactly the old behaviour.
+    if load_lua_script_in_mgba_for_pid(mgba_proc.pid, slot_cfg["lua_path"]):
+        print(f"window at ({win_x},{win_y}). Lua connector script loaded automatically.")
+    else:
+        print(f"window at ({win_x},{win_y}). "
+              f"In its Scripting window: File > Load recent script > socketserver-1.lua")
 
     return {
         "emu": emu,
@@ -441,6 +632,24 @@ def run_single_loop(
     paths["screenshot"] = slot_cfg["screenshot_path"]
     paths["lua"] = str(slot_cfg["lua_path"])
     config["emulator"]["port"] = slot_cfg["port"]
+
+    # Last-resort resolution of {{game_name}}, for configs that arrive without
+    # having gone through ``roms.apply_rom`` — i.e. every `pokemon run`. The
+    # PROMPTS would still resolve (their builders are handed a game_name), but
+    # the task goal is passed through as a VALUE, so a placeholder in it would
+    # reach the model verbatim. This is the one point both entry paths converge.
+    if not config.get("game_name"):
+        from src.app.roms import rom_for_path
+
+        try:
+            rom = rom_for_path((config.get("emulator") or {}).get("rom_path"))
+        except Exception:
+            rom = None
+        if rom is not None:
+            config["game_name"] = rom.game_name
+    from src.app.roms import fill_game_name
+
+    fill_game_name(config, config.get("game_name") or "Pokemon FireRed")
 
     logger = RunLogger(config)
     run_dir = Path(logger.run_dir)

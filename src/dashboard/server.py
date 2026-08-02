@@ -717,6 +717,29 @@ def _validate_stop_at(stop_at: Any) -> str | None:
         raise HTTPException(status_code=400, detail=str(e))
 
 
+def _validate_rom(rom: Any) -> str | None:
+    """Return a known ROM id, or None (→ the registry default). 400 otherwise.
+
+    Rejected outright rather than falling back, for the same reason as the stop
+    event: silently running the wrong GAME is not a lesser failure than refusing.
+    Also refuses a ROM whose file is missing — ``roms/`` is gitignored, so a
+    registry entry with no dump behind it is a normal state, and finding out at
+    dispatch (after mGBA fails to boot) is far worse than finding out here.
+    """
+    from src.app.roms import get_rom, validate_rom
+
+    try:
+        rom_id = validate_rom(rom)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if rom_id is not None and not get_rom(rom_id).exists():
+        raise HTTPException(
+            status_code=400,
+            detail=f"rom {rom_id!r} is registered but its file is not on disk",
+        )
+    return rom_id
+
+
 @app.get("/api/queue")
 async def api_queue_get():
     """`{active, items}` — the serial queue (active queue_id + ordered items)."""
@@ -737,7 +760,7 @@ def _enqueue_kwargs(spec: dict) -> dict:
     frozen config + no max-turns (request config/max_turns/stop_at ignored — a
     benchmark ends at its own ladder) and takes only the request's
     ``benchmark``; casual keeps the request's
-    config/max_turns/stop_at/continue_from.
+    config/max_turns/stop_at/rom/continue_from.
     Pure validation — no enqueue, no side effects — so the single and batch
     routes share exactly the same rules.
     """
@@ -762,12 +785,34 @@ def _enqueue_kwargs(spec: dict) -> dict:
             "kind": kind, "model": model, "config": None,
             "benchmark": benchmark, "max_turns": None, "record": record,
         }
+    stop_at = _validate_stop_at(spec.get("stop_at"))
+    # Which game. Casual-only: an official run's ROM is the benchmark ladder's,
+    # so a request that sets one on an official run has it dropped above rather
+    # than honoured.
+    rom_id = _validate_rom(spec.get("rom"))
+    if stop_at and rom_id is not None:
+        # Stop events are gates on a FireRed ladder, addressed at FireRed's RAM
+        # map. On another cartridge those reads land on unrelated memory, so the
+        # event would never fire (or worse, fire on noise) and the run would
+        # quietly become a plain turn-capped one.
+        from src.app.roms import get_rom, rom_supports_benchmarks
+
+        rom = get_rom(rom_id)
+        if not rom_supports_benchmarks(rom):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"stop events are not available for {rom.name} — no gate "
+                    f"ladder is authored for {rom.game}"
+                ),
+            )
     return {
         "kind": kind,
         "model": model,
         "config": spec.get("config"),
         "max_turns": spec.get("max_turns"),
-        "stop_at": _validate_stop_at(spec.get("stop_at")),
+        "stop_at": stop_at,
+        "rom": rom_id,
         "continue_from": spec.get("continue_from"),
         "record": record,
     }
@@ -963,6 +1008,49 @@ async def api_emulator_mute(body: dict):
     return JSONResponse({"muted": muted})
 
 
+@app.post("/api/emulator/rom")
+async def api_emulator_rom(body: dict):
+    """Load a different game — ``{rom: "<id>"}`` → 202 ``{switching_to, rom}``.
+
+    mGBA has to be relaunched to change cartridge (no Lua binding for it), and
+    the Lua script then has to be re-loaded by hand, so this can block for as
+    long as it takes a human to click through the Scripting window. It therefore
+    runs on a background thread and returns immediately; the UI watches
+    ``/api/emulator/status`` for ``connected`` to come back true.
+
+    409 while a run is executing — the switch would kill it. Already-loaded is a
+    200 no-op rather than an error, so the button is idempotent.
+    """
+    _queue, executor, _index = _require_control()
+    supervisor = getattr(executor, "supervisor", None)
+    if supervisor is None or not hasattr(supervisor, "switch_rom"):
+        raise HTTPException(status_code=503, detail="no supervised emulator")
+
+    rom_id = _validate_rom(body.get("rom"))
+    from src.app.roms import get_rom
+
+    rom = get_rom(rom_id)
+
+    if supervisor.status().busy:
+        raise HTTPException(
+            status_code=409,
+            detail="a run is executing — stop it before switching game",
+        )
+    if str(getattr(supervisor, "rom_path", "")) == rom.path:
+        return JSONResponse({"switching_to": None, "rom": rom.id})
+
+    def _switch():
+        try:
+            supervisor.switch_rom(rom.path)
+        except Exception as exc:  # noqa: BLE001 — surfaced via status, not raised
+            print(f"  ROM switch to {rom.id} failed: {exc}")
+        notify_control()
+
+    threading.Thread(target=_switch, name=f"rom-switch-{rom.id}", daemon=True).start()
+    notify_control()
+    return JSONResponse({"switching_to": rom.id, "rom": rom.id}, status_code=202)
+
+
 @app.delete("/api/runs/{run_id}")
 async def api_run_delete(run_id: str):
     """Delete a HISTORICAL run: move its folder to the Trash + drop the index entry.
@@ -1029,6 +1117,30 @@ async def api_benchmarks():
     except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(status_code=500, detail=f"benchmark registry: {exc}")
     return JSONResponse([b.to_dict() for b in benchmarks])
+
+
+@app.get("/api/roms")
+async def api_roms():
+    """The ROM registry — ``[{id, name, game, game_name, default, benchmark_ok,
+    has_start_save, on_disk}, ...]``.
+
+    Backs the new-run dialog's game picker. ``benchmark_ok`` is derived (some
+    ladder is authored for that game), which is what greys the dialog's Benchmark
+    option out for a casual-only game. ``on_disk`` is added here rather than in
+    the registry layer because it's a property of THIS machine, not of the
+    registry: ``roms/`` is gitignored, so a checkout legitimately has entries
+    with no dump behind them, and the picker should say so rather than offer a
+    game that can't boot.
+    """
+    from src.app.roms import get_rom, list_roms
+
+    try:
+        roms = list_roms()
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=500, detail=f"rom registry: {exc}")
+    for row in roms:
+        row["on_disk"] = get_rom(row["id"]).exists()
+    return JSONResponse(roms)
 
 
 @app.get("/api/checkpoints")
@@ -1268,6 +1380,9 @@ async def api_emulator_status():
                 "busy": live,
                 "active_run_id": active_run_id,
                 "muted": True,
+                "rom": None,
+                "switching_to": None,
+                "awaiting_lua": False,
             }
         )
 
@@ -1286,6 +1401,29 @@ async def api_emulator_status():
     payload["active_run_id"] = getattr(executor, "_active_run_id", None)
     # Current audio mute state (drives the Home + Spectate mute toggles).
     payload["muted"] = bool(getattr(getattr(executor, "supervisor", None), "muted", True))
+    # Which game is in the slot, named. Resolved from the launched path through
+    # the registry; an off-registry ROM (a hand-rolled config) yields None rather
+    # than a guess. `awaiting_lua` is the state a ROM switch parks in: the process
+    # is up but the script hasn't been re-loaded, which the UI has to explain —
+    # it looks identical to "broken" otherwise.
+    from src.app.roms import rom_for_path
+
+    rom_path = payload.pop("rom_path", "") or ""
+    try:
+        rom = rom_for_path(rom_path)
+    except (FileNotFoundError, ValueError):
+        rom = None
+    payload["rom"] = (
+        {"id": rom.id, "name": rom.name, "game": rom.game} if rom else None
+    )
+    switching_path = payload.get("switching_to") or ""
+    if switching_path:
+        try:
+            target = rom_for_path(switching_path)
+        except (FileNotFoundError, ValueError):
+            target = None
+        payload["switching_to"] = target.id if target else switching_path
+    payload["awaiting_lua"] = bool(payload["process_up"]) and not payload["connected"]
     return JSONResponse(payload)
 
 

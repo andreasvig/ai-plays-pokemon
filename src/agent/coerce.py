@@ -44,3 +44,29 @@ def coerce_stringified_object(value: Any) -> Any:
         return json.loads(stripped)
     except (ValueError, TypeError):
         return value
+
+
+def coerce_object_to_json_string(value: Any) -> Any:
+    """Serialize a nested object/array back to a JSON string for a str-typed field.
+
+    The mirror image of ``coerce_stringified_object``. Some fields are typed
+    ``str`` but described to the model as "a JSON object" because a downstream
+    consumer does ``json.loads`` on them (e.g. ``GameAction.memory_updates``,
+    which ``turn.py`` parses into memory-key updates). A capable model
+    (observed: ``anthropic/claude-sonnet-5``, 2026-07-01, at Oak's Lab) reads
+    "JSON object" literally and emits a REAL nested object ``{"notes": "..."}``
+    instead of a JSON *string*, so pydantic's ``str`` field rejects it
+    (``string_type``) and the run burns ModelRetry attempts before recovering.
+
+    Re-serializing is lossless — the downstream ``json.loads`` recovers exactly
+    what the model meant, and a correctly-encoded string passes through
+    untouched. ``None`` maps to ``"none"`` (the schema's no-update sentinel).
+    """
+    if value is None:
+        return "none"
+    if isinstance(value, (dict, list)):
+        try:
+            return json.dumps(value, ensure_ascii=False)
+        except (TypeError, ValueError):
+            return value
+    return value

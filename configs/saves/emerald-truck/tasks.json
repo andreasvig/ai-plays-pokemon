@@ -1,0 +1,6 @@
+{
+  "goal": "Get out of the truck and start the adventure",
+  "description": "You are standing in the back of the moving truck at the very start of Pokemon Emerald, before the game has asked your name or given you a Pokemon. Walk out of the truck to arrive in Littleroot Town, then go into your house and up the stairs to set the clock, which the game requires before it will let the story continue. After that, head to Professor Birch's lab area — Birch is being attacked on Route 101 and hands you the bag with the starter Pokemon.",
+  "success_criteria": "You are outside the truck and standing in Littleroot Town.",
+  "status": "in_progress"
+}

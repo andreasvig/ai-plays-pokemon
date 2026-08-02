@@ -30,8 +30,12 @@ def _patch_search(monkeypatch):
     """Replace the real Perplexity call with a counting stub; return the counter."""
     calls = {"n": 0}
 
-    async def _fake(query, model):
+    # Mirrors the real ``ask_perplexity`` signature, ``game_name`` included: the
+    # tool passes which game to research (per-game route facts), and a stub that
+    # didn't accept it would pass here while the production call raised.
+    async def _fake(query, model, *, game_name="Pokemon FireRed"):
         calls["n"] += 1
+        calls["game_name"] = game_name
         return {"answer": f"answer for {query!r}", "cost_usd": 0.01}
 
     monkeypatch.setattr(tm, "_ask_perplexity", _fake)
