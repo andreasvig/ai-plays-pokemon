@@ -349,10 +349,17 @@ def _extract_provider_from_messages(messages) -> str:
     which backend the router actually picked — especially when
     sort:"throughput" produces flaky results from one specific provider.
 
-    The exact key location varies by pydantic-ai version: tried
-    msg.provider_details["provider"], msg.vendor_details["provider"],
-    msg.model_name. Falls back to scanning provider_details for any
-    string field with a known provider name.
+    `provider_details["provider"]` is the real source and is populated by
+    ``src.core.patches`` (pydantic-ai drops it, so without that patch there is
+    nothing here to find). The remaining lookups are version-tolerance for
+    pydantic-ai moving the key.
+
+    Deliberately NOT falling back to ``msg.model_name``: on OpenRouter that is
+    the model slug (``moonshotai/kimi-k2.7-code``), whose prefix is the model's
+    AUTHOR, not the endpoint that served the request — Moonshot's own model is
+    routed to DeepInfra, Together, Fireworks and a dozen others. Returning it
+    here would put a confident wrong provider in the logs, which is worse than
+    the empty string that says "unknown".
     """
     _KNOWN_PROVIDERS = {
         "deepinfra", "chutes", "ambient", "siliconflow", "novita",
@@ -380,13 +387,45 @@ def _extract_provider_from_messages(messages) -> str:
                 v = vd.get(key)
                 if v:
                     return str(v)
-            # Last resort: model_name often encodes provider via OpenRouter
-            mn = getattr(msg, "model_name", "")
-            if mn:
-                return str(mn)
         except Exception:
             pass
     return ""
+
+
+def _usage_event(turn: int, usage, turn_cost: float, provider: str) -> dict:
+    """Build the ``turn_usage`` payload for one turn.
+
+    Split out as a pure function so the two fields added on 2026-08-02 —
+    ``reasoning_tokens`` and ``provider`` — are testable without a live model.
+
+    ``reasoning_tokens`` is the only ground truth for "did this model actually
+    think on this turn". The ``llm_thinking`` event is not: it requires the
+    provider to return a human-readable SUMMARY, and the two come apart — a
+    gpt-5.6-sol probe returned 183 reasoning tokens with zero summary
+    characters, and across the run archive gpt-5.6-luna logs thinking on 54% of
+    turns while billing for it on all of them. OpenRouter reports the count in
+    ``completion_tokens_details``, which pydantic-ai copies verbatim into
+    ``usage.details`` (``models/openai.py:1408``).
+
+    ABSENT IS NOT ZERO. A provider that never reports the field (Novita and
+    StepFun both do this for step-3.7-flash, while DeepInfra reports ~2600 on
+    identical output) means "unknown"; 0 means "measured, and it did not
+    think". Collapsing them would turn a routing artifact into evidence that a
+    thinking tier is dead, so an absent key stays None.
+    """
+    details = getattr(usage, "details", None) or {}
+    return {
+        "turn": turn,
+        "request_tokens": usage.request_tokens,
+        "response_tokens": usage.response_tokens,
+        "total_tokens": usage.total_tokens,
+        "reasoning_tokens": details.get("reasoning_tokens"),
+        "cost_usd": turn_cost,
+        # Which endpoint served the turn. Capability and token accounting both
+        # vary by provider on the same model, and the harness re-rolls routing
+        # per retry attempt, so this can differ turn to turn within one run.
+        "provider": provider,
+    }
 
 
 def _should_retry_without_thinking(error: Exception) -> bool:
@@ -753,6 +792,21 @@ class TurnManager:
         self.config = config
         self.max_turns = config.get("max_turns_per_task", 50)
 
+        # Third stop condition for a casual run, alongside the turn cap and the
+        # `stop_at` story event: an all-in USD ceiling. None = unbounded (the
+        # historical behaviour, and what every official run gets — locked #8
+        # says pace is the only bound there). Validated in src/config.py.
+        _ms = config.get("max_spend_usd")
+        self.max_spend_usd: Optional[float] = float(_ms) if _ms is not None else None
+        # Spend already on the clock when this SEGMENT started. A continue seeds
+        # total_cost_usd from the source run so the reported cost is cumulative,
+        # but the budget — like max_turns and stop_at — is a property of the
+        # segment you are launching, not of the whole lineage. Set in
+        # _run_loop_async before the cold start.
+        self._spend_baseline_usd: float = 0.0
+        # Latched when the ceiling ended the run, so the summary can say so.
+        self._budget_stopped: bool = False
+
         # Cooperative stop hook. A long-lived caller (the control-center executor)
         # sets this to a predicate checked at the top of every turn; when it
         # returns True the loop raises KeyboardInterrupt so the existing
@@ -833,6 +887,18 @@ class TurnManager:
         # (locked decision #8) — the run loop breaks as a WIN and the summary is
         # stamped `completed`. Stays False on every other exit path.
         self._referee_completed: bool = False
+        # Latched when the loop gives up because a turn produced NO valid Player
+        # output — every retry and every fallback model exhausted (a provider
+        # 400/403, a dead model id, all attempts timing out). Such a run is not
+        # a result: nothing was played, and on the leaderboard it would read as
+        # the model scoring zero rather than never having answered. The summary
+        # is stamped `crashed`, which `SummaryRow.leaderboard_eligible` already
+        # excludes and `_finalize_run` already voids by withholding
+        # `benchmark_version`. Without this the loop exited with status None and
+        # the executor's fallback stamped `completed` — see
+        # src/app/executor.py's `_finalize_run`.
+        self._aborted_no_output: bool = False
+        self._abort_error: Optional[str] = None
         # Finalisation guards. The loop's clean exit writes the summary +
         # restores stdout, but a crash or a cooperative stop aborts before that;
         # run_single_loop then calls finalize_run_summary() so a killed/failed
@@ -1486,6 +1552,28 @@ class TurnManager:
         self.task_master_turns = int(session.get("task_master_turns", 0) or 0)
         self._prior_duration_s = float(session.get("duration_seconds", 0) or 0)
 
+    def _all_in_spend_usd(self) -> float:
+        """Everything this run has paid for so far, in USD.
+
+        The same figure the summary reports as ``cost.total_usd``: Player LLM +
+        OCR (both accumulated in ``total_cost_usd``) plus TaskMaster, which is
+        counted separately for the strategy-vs-tactics split (Decision 10). A
+        budget that ignored the TaskMaster would be a lie on any 3.x config —
+        strategy is a real share of the bill.
+        """
+        return float(self.total_cost_usd) + float(self.task_master_cost_usd)
+
+    def _budget_exhausted(self) -> bool:
+        """True once this SEGMENT has spent its ceiling.
+
+        Segment-relative (see ``_spend_baseline_usd``) and inclusive: at exactly
+        the cap the budget is gone, so no further turn starts. No ceiling set →
+        always False, which is the unbounded default.
+        """
+        if self.max_spend_usd is None:
+            return False
+        return (self._all_in_spend_usd() - self._spend_baseline_usd) >= self.max_spend_usd
+
     def run_loop(self, max_turns: Optional[int] = None) -> None:
         """Run the turn loop synchronously."""
         try:
@@ -1499,6 +1587,10 @@ class TurnManager:
         """Run the turn loop."""
         self._run_start_time = time.time()
         limit = max_turns or self.max_turns
+        # Anchor the spend budget to what this segment adds, not to the lineage
+        # total a continue inherited. Taken BEFORE the cold start so the opening
+        # TaskMaster call is charged to this segment too.
+        self._spend_baseline_usd = self._all_in_spend_usd()
 
         # Tee stdout to a terminal log file in the run folder
         self._terminal_log = open(self.logger.run_dir / "terminal.log", "w")
@@ -1520,6 +1612,26 @@ class TurnManager:
             if self._should_stop is not None and self._should_stop():
                 print("\n  Stop requested — ending run at turn boundary.")
                 raise KeyboardInterrupt
+
+            # Spend ceiling. Checked at the turn boundary — a turn's cost is only
+            # known once it has been paid, so this is a "start no turn you cannot
+            # afford to have started" bound: the final total can exceed the cap by
+            # up to one turn. Break (not KeyboardInterrupt): hitting the budget is
+            # the run finishing as instructed, exactly like the turn cap, so it
+            # finalises `completed` rather than `cancelled`.
+            if self._budget_exhausted():
+                spent = self._all_in_spend_usd() - self._spend_baseline_usd
+                self._budget_stopped = True
+                print(
+                    f"\n  Spend budget reached — ${spent:.4f} of "
+                    f"${self.max_spend_usd:.4f}. Ending run at turn boundary."
+                )
+                self.logger.log_custom("budget_exhausted", {
+                    "turn": self.turn_number,
+                    "spent_usd": round(spent, 6),
+                    "max_spend_usd": self.max_spend_usd,
+                })
+                break
 
             self.turn_number += 1
             print(f"\n{'─'*60}")
@@ -1545,6 +1657,7 @@ class TurnManager:
                         break
                     continue
                 print(f"  [Turn {self.turn_number}] No result. Stopping.")
+                self._aborted_no_output = True
                 break
 
             # TaskMaster handoff: when the Player hands control back
@@ -1665,14 +1778,20 @@ class TurnManager:
         print(f"  Tokens: {self.total_input_tokens} in / {self.total_output_tokens} out")
         print(f"{'═'*60}")
 
-        # Clean exit. A referee success-exit (final ladder rung reached) is a
-        # WIN → stamp `completed`; other clean exits leave status None so the
-        # writer/executor infers it (referee missed-gate → `terminated`, casual
-        # max-turns → `completed`). Crash/stop exits finalise via
-        # run_single_loop instead (see finalize_run_summary).
-        self.finalize_run_summary(
-            status="completed" if self._referee_completed else None
-        )
+        # Exit status. A referee success-exit (final ladder rung reached) is a
+        # WIN → `completed`. A loop that gave up because the model never
+        # produced a valid output is NOT a result → `crashed`, so it can't post
+        # a leaderboard row (see `_aborted_no_output`). Every other clean exit
+        # leaves status None so the writer/executor infers it (referee
+        # missed-gate → `terminated`, casual max-turns → `completed`). Crash and
+        # stop exits finalise via run_single_loop instead.
+        if self._referee_completed:
+            exit_status = "completed"
+        elif self._aborted_no_output:
+            exit_status = "crashed"
+        else:
+            exit_status = None
+        self.finalize_run_summary(status=exit_status)
 
     def _referee_should_break(self) -> bool:
         """Poll the referee at the current turn and act on its verdict.
@@ -1974,21 +2093,21 @@ class TurnManager:
 
             # Log usage
             tokens_str = ""
+            provider = _extract_provider_from_messages(messages)
             if result.usage():
                 usage = result.usage()
                 self.total_input_tokens += usage.request_tokens or 0
                 self.total_output_tokens += usage.response_tokens or 0
-                tokens_str = f" | {usage.request_tokens}→{usage.response_tokens} tokens"
-                self.logger.log_custom("turn_usage", {
-                    "turn": t,
-                    "request_tokens": usage.request_tokens,
-                    "response_tokens": usage.response_tokens,
-                    "total_tokens": usage.total_tokens,
-                    "cost_usd": turn_cost,
-                })
+                event = _usage_event(t, usage, turn_cost, provider)
+                reasoning_tokens = event["reasoning_tokens"]
+                tokens_str = (
+                    f" | {usage.request_tokens}→{usage.response_tokens} tokens"
+                )
+                if reasoning_tokens is not None:
+                    tokens_str += f" ({reasoning_tokens} reasoning)"
+                self.logger.log_custom("turn_usage", event)
 
             duration = round(time.time() - turn_start, 1)
-            provider = _extract_provider_from_messages(messages)
             prov_str = f" | provider={provider}" if provider else ""
             print(f"  [Turn {t}] Done ({duration}s | ${turn_cost:.4f}{tokens_str}{prov_str})")
 
@@ -2022,6 +2141,10 @@ class TurnManager:
                 "turn": t,
                 "provider": provider,
             })
+            # Remembered for the run summary. Returning None ends the run (see
+            # the `No result. Stopping.` break), and "why" is otherwise only in
+            # events.jsonl — not in the one file the control plane reads.
+            self._abort_error = str(e)
             return None
 
     async def _run_agent_iter(self, user_message, deps, model, usage_limits, model_settings=None):
@@ -2628,6 +2751,26 @@ class TurnManager:
                 for i, exp in enumerate(self.turn_explanations)
             ],
         }
+
+        # Why the run ended, when it ended badly. Only written on the
+        # no-valid-output abort, so a normal summary keeps its exact old shape.
+        # This is the one line that distinguishes "the model played and lost"
+        # from "the model never answered" without reading events.jsonl.
+        if self._aborted_no_output:
+            summary["error"] = (
+                self._abort_error or "no valid model output (retries + fallbacks exhausted)"
+            )
+
+        # Which of the three casual stop conditions actually fired, when it was
+        # the budget. Deliberately NOT `termination_reason`: projection.py reads
+        # that key as a missed-gate kill and would derive status `terminated`.
+        # A run that spent its budget finished as asked — it stays `completed`.
+        # getattr, not attribute access: several callers build a TurnManager via
+        # __new__ to exercise this writer without constructing an agent, so the
+        # __init__ defaults are not there to read.
+        if getattr(self, "_budget_stopped", False):
+            summary["stop_reason"] = "max_spend"
+            summary["max_spend_usd"] = getattr(self, "max_spend_usd", None)
 
         # Referee scorecard (observe-only this phase). Best-effort: a scorecard
         # failure must not block writing the rest of the summary.

@@ -72,12 +72,25 @@ src/
 │   ├── emulator.py          # TCP socket client to mGBA (screenshots, buttons)
 │   ├── vision.py            # VLM screen analysis
 │   └── ocr.py               # Background Tesseract + LLM cleanup
+├── referee/
+│   ├── referee.py           # Out-of-band memory reads; latches checkpoints (agent never sees this)
+│   └── checkpoints.py       # Loads + validates the gate ladder
+├── app/
+│   ├── executor.py          # Serial run dispatcher (queue → run → finalise)
+│   ├── queue_manager.py     # queue.json, single-active invariant
+│   ├── run_index.py         # History index behind /api/runs + the leaderboard
+│   └── catalog.py, roms.py, benchmarks.py   # The registries (models, ROMs, benchmarks, stop events)
 ├── dashboard/
 │   ├── server.py            # FastAPI + WebSocket API; serves the SPA
+│   ├── recorder.py          # Headless MP4 capture of a run
 │   └── web/                 # Svelte SPA (the control-center UI; built to web/dist/)
 └── cli/
     ├── main.py              # `pokemon` console-script dispatcher
+    ├── status.py            # `pokemon status` — what's running right now
+    ├── ls.py                # `pokemon ls` — models / roms / configs / events / benchmarks
     ├── app.py               # `pokemon app` — long-lived control center (UI + queue)
+    ├── queue.py             # `pokemon queue` — add / inspect / cancel queued runs
+    ├── runs.py              # `pokemon runs` — history, continue, stop, leaderboard
     ├── runner.py            # `pokemon run` — single or sequential agent runs
     ├── launch.py            # `pokemon launch` — manual mGBA + Lua session
     ├── snapshot.py          # `pokemon snapshot` — snapshot save/load/list

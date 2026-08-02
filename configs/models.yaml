@@ -78,6 +78,7 @@ gemini-3.1-flash-lite:
       sample_turns: 0
 
 # Google Gemini 3.1 Pro — frontier (AA ~57). $2.00/$12.00 per M, 1M ctx. Strong actual game progress (Pro low/medium cleared the early arc).
+# UNRESOLVED 2026-08-02 — this entry may carry two PHANTOM rungs. Google's thinking docs give the PRO tier only `low` and `high` (the flash models are the ones with minimal/medium), which would make `medium` and `minimal` here clamps of a documented level. NOT changed, because the doc row names `gemini-3-pro-preview` and this slug is `gemini-3.1-pro-preview` — a later model whose ladder may differ. Resolve by probing medium/minimal against low and high (n>=3: this model's n=1 reasoning counts swung 9661-22865 on one prompt), not by assuming the row transfers. Both rungs have real run telemetry below, so dropping either rewrites a benchmark identity.
 gemini-3.1-pro:
   openrouter_id: google/gemini-3.1-pro-preview
   reasoning_type: effort
@@ -107,6 +108,8 @@ gemini-3.1-pro:
       last_updated: 2026-04-24
 
 # Google Gemini 3.5 Flash — $1.50/$9.00 per M, 1M ctx, slug has no -preview. Best capability-per-dollar in registry on this task; recommended default. medium is Google's documented default level.
+# LADDER CONFIRMED 2026-08-02 — the cap at `high` is now DOCUMENTED, not inferred: Google's thinking docs (ai.google.dev/gemini-api/docs/thinking) list the Gemini 3 flash levels as exactly minimal/low/medium/high, with NO max and NO xhigh on any Gemini 3 model. Do not add them. Probing them here is worse than useless — uncapped on a hard prompt this model returned high=15321 reasoning tokens, max=11812 and xhigh=7324, i.e. `high` "beat" both, and on gemini-3.1-pro the same probe put xhigh above max. That ordering is noise at n=1, and it is the reason a single measurement must not be allowed to argue against the vendor's own table.
+# COST, UNCAPPED — $0.0741-0.1508/call on that hard prompt (8224-16742 completion tokens). Every other cost figure in the Gemini entries here came from a probe with max_tokens set, so they are floors, not ceilings: with no max_tokens (which is what the harness actually sends — no config or registry entry sets one) a reasoning-heavy turn can cost an order of magnitude more than those numbers suggest.
 gemini-3.5-flash:
   openrouter_id: google/gemini-3.5-flash
   reasoning_type: effort
@@ -273,7 +276,7 @@ grok-4.3:
       last_updated: 2026-05-01
       notes: 'LEGACY always-on observation (pre-4.3 effort split), mapped to high as the closest effort. 3/35 grade=true (8.3%). Stuck in 1F Player''s House — never reached overworld. ~6× slower per turn than Pro low at similar cost. Latency variance huge (24s–250s). Re-benchmark per-effort under the current config.'
 
-# xAI Grok Build 0.1 — effort-tiered (high/medium/low/minimal, probed 2026-05-21). 256K ctx, $1.00/$2.00 per M, multimodal, full structured-output stack. Slow (118.6s/turn, climbs with context). Reasoning summary returned natively (no summary:auto needed).
+# xAI Grok Build 0.1 — effort-tiered (high/medium/low/minimal, probed 2026-05-21). 256K ctx, $1.00/$2.00 per M, multimodal, full structured-output stack. Slow (118.6s/turn, climbs with context). Reasoning summary returned natively (no summary:auto needed). DO NOT "correct" reasoning_type to binary from the catalog: OpenRouter's model entry omits reasoning_effort from supported_parameters for this model, but the ladder is real and monotonic — measured 2026-08-02 at high=13082 / medium=11344 / low=7458 reasoning tokens. The catalog UNDER-reports here, so it is evidence about a tier, never proof.
 grok-build-0.1:
   openrouter_id: x-ai/grok-build-0.1
   reasoning_type: effort
@@ -391,9 +394,16 @@ kimi-k2.6:
 kimi-k2.7-code:
   openrouter_id: moonshotai/kimi-k2.7-code
   reasoning_type: binary
+  # `non-thinking` REMOVED 2026-08-02: it is not a level this model has.
+  # `reasoning: {enabled: false}` returns HTTP 400 "Reasoning is mandatory for
+  # this endpoint and cannot be disabled" — and OpenRouter reported the same
+  # 400 from all 15 endpoints it tried before giving up, so no routing or
+  # fallback recovers it. Leaving it listed meant the picker offered a level
+  # that could only ever produce a dead run. Sibling kimi-k2.6 is NOT affected
+  # (probed the same day: {enabled: false} returns 200 with 0 reasoning
+  # tokens), so this is per-model, not a Kimi-family rule.
   thinking_levels:
   - thinking
-  - non-thinking
   temperature: 0.3
   top_p: 0.95
   provider:
@@ -403,9 +413,11 @@ kimi-k2.7-code:
     thinking: true
   observed:
     thinking:
-      sample_turns: 0
-    non-thinking:
-      sample_turns: 0
+      avg_turn_cost_usd: 0.0072
+      avg_turn_latency_s: 6.5
+      sample_turns: 19
+      last_updated: 2026-08-02
+      notes: 'Backfilled from the 2026-06-17 run (19 turns, config-3.13); telemetry had never been recorded. Not slow in practice despite the defensive slow flag. Thinking is ADAPTIVE on this model: reasoning appeared on only 2 of 19 turns (response_tokens 109-237 on the quiet ones, 1381 and 1009 on the two that thought) and both thinking turns were the ones diagnosing a move that had failed. Chased twice as a defect on 2026-08-02 and it is neither: forced tool_choice does NOT suppress it (text arm 1237 vs tool arm 922 reasoning tokens) and neither does provider routing (all 10 pinned providers returned reasoning). Do not re-open it.'
 
 # OpenAI GPT-5.4 nano — cheap-at-scale, 400K ctx, $0.20/$1.25 per M. Effort-tiered + summary:auto. 'Do small models at max effort beat large models at low effort?' probe.
 gpt-5.4-nano:
@@ -440,7 +452,21 @@ perceptron-mk1:
     non-thinking:
       sample_turns: 0
 
-# Anthropic Claude Haiku 4.5 — effort-tiered (high/medium/low/minimal) on Anthropic extended_thinking budget. 200K ctx, $1.00/$5.00 per M, multimodal. output_mode prompted REQUIRED: tool_choice=required silently strips extended thinking on Anthropic routes (verified 2026-05-20).
+# Anthropic Claude Haiku 4.5 — effort-tiered (high/medium/low/minimal) on Anthropic extended_thinking budget. 200K ctx, $1.00/$5.00 per M, multimodal. output_mode prompted REQUIRED: tool_choice=required silently strips extended thinking on Anthropic routes (verified 2026-05-20, re-confirmed 2026-08-02 on claude-sonnet-5 — text arm 100 reasoning tokens, forced-tool arm 0).
+# TIER WARNING (measured 2026-08-02, n=3 per tier, all served by Amazon Bedrock):
+#   high    640/559/513  mean 571
+#   medium  374/392/367  mean 378
+#   low     421/395/421  mean 412
+#   minimal 455/480/375  mean 437
+# Only `high` separates. medium/low/minimal sit in one 370-480 band AND are
+# ordered BACKWARDS against the "thinking_levels HIGHEST FIRST" contract at the
+# top of this file — medium is the lowest of the three. Within-tier spread is
+# small, so the inversion is not noise. This is also the only Anthropic entry
+# whose OpenRouter endpoint advertises `reasoning` but NOT `reasoning_effort`,
+# which is consistent with the sub-high tiers being collapsed upstream.
+# Consequence: benchmarking haiku(medium) vs haiku(low) vs haiku(minimal)
+# produces three leaderboard identities that differ only by noise. NOT changed
+# here — dropping a level rewrites benchmark identity, so it is Andreas's call.
 claude-haiku-4.5:
   openrouter_id: anthropic/claude-haiku-4.5
   reasoning_type: effort
@@ -468,13 +494,22 @@ claude-haiku-4.5:
 claude-sonnet-4.6:
   openrouter_id: anthropic/claude-sonnet-4.6
   reasoning_type: effort
+  # TIER AUDIT 2026-08-02 — `max` added (documented for Sonnet 4.6 and measured
+  # clearly distinct: 1547 reasoning / 6332 completion / 89.4s / $0.0951 vs high
+  # at 549 / 2786 / 45.4s / $0.0419). `xhigh` is deliberately NOT added: Anthropic
+  # does not list it for this model, and probing it returned 200 with 588 / 2764 /
+  # 43.1s / $0.0416 — indistinguishable from high, i.e. a silent clamp that would
+  # duplicate an existing benchmark identity under a second name.
   thinking_levels:
+  - max
   - high
   - medium
   - low
   - minimal
   output_mode: prompted
   observed:
+    max:
+      sample_turns: 0
     high:
       sample_turns: 0
     medium:
@@ -519,7 +554,13 @@ claude-sonnet-5:
 claude-opus-4.7:
   openrouter_id: anthropic/claude-opus-4.7
   reasoning_type: effort
+  # TIER AUDIT 2026-08-02 — `max` added (documented for Opus 4.7, and by far the
+  # widest gap measured in this sweep: 2704 reasoning / 12737 completion / 127.0s
+  # / $0.3187 vs xhigh at 261 / 2267 / 26.4s / $0.0570). That is ~5.6x the cost
+  # and ~5x the latency of xhigh on one prompt — a deliberate ceiling tier, not a
+  # routine pick, and slow enough to be worth a slow flag if it ever gets used.
   thinking_levels:
+  - max
   - xhigh
   - high
   - medium
@@ -527,6 +568,8 @@ claude-opus-4.7:
   - minimal
   output_mode: prompted
   observed:
+    max:
+      sample_turns: 0
     xhigh:
       avg_turn_cost_usd: 0.0551
       avg_turn_latency_s: 8.7
@@ -550,7 +593,14 @@ claude-opus-4.7:
 claude-opus-4.8:
   openrouter_id: anthropic/claude-opus-4.8
   reasoning_type: effort
+  # TIER AUDIT 2026-08-02 — `max` added (documented for Opus 4.8). Weakest
+  # separation in the sweep, and the one to re-measure before trusting: max gave
+  # 1116 reasoning / 5836 completion / 63.9s / $0.1462 against xhigh at 862 /
+  # 5623 / 60.4s / $0.1408 — ~10% apart at n=1, which is inside the noise a
+  # single prompt produces. Distinct per the docs; treat the NUMBERS as
+  # provisional until repeated.
   thinking_levels:
+  - max
   - xhigh
   - high
   - medium
@@ -558,6 +608,8 @@ claude-opus-4.8:
   - minimal
   output_mode: prompted
   observed:
+    max:
+      sample_turns: 0
     xhigh:
       sample_turns: 0
     high:
@@ -824,7 +876,7 @@ claude-fable-5:
     low:
       sample_turns: 0
 
-# Google Gemini 3.6 Flash (released 2026-07-21) — effort-tiered, multimodal (text/image/video/audio), 1M ctx, $1.50/$7.50 per M. Default tool output mode (tool_choice + structured_outputs both advertised), same as every other Gemini entry here. Probed 2026-07-30: 200, read the screenshot, solved the spatial task; high/medium/low/minimal all accepted. `minimal` returned 0 reasoning tokens at BOTH probe budgets (700 and 2500 max_tokens) — that is a clean signal, so minimal genuinely turns thinking off. Ladder capped at high to match the rest of the Gemini family: max/xhigh also return 200, but Google's native ladder does not go that high, so they are very likely clamped onto high and would duplicate it as a benchmark identity. Latency 1.5-14.8s, cost $0.008-0.020/call.
+# Google Gemini 3.6 Flash (released 2026-07-21) — effort-tiered, multimodal (text/image/video/audio), 1M ctx, $1.50/$7.50 per M. Default tool output mode (tool_choice + structured_outputs both advertised), same as every other Gemini entry here. Probed 2026-07-30: 200, read the screenshot, solved the spatial task; high/medium/low/minimal all accepted. `minimal` returned 0 reasoning tokens at BOTH probe budgets (700 and 2500 max_tokens) — that is a clean signal, so minimal genuinely turns thinking off. Ladder capped at high to match the rest of the Gemini family: max/xhigh also return 200, but Google's native ladder does not go that high, so they are very likely clamped onto high and would duplicate it as a benchmark identity. CONFIRMED 2026-08-02 — that "very likely" is now documented fact: Google's thinking docs list this model's levels as exactly minimal/low/medium/high, with no max or xhigh anywhere in the Gemini 3 family. Latency 1.5-14.8s, cost $0.008-0.020/call — but those came from a CAPPED probe and are floors, not ceilings; see the uncapped gemini-3.5-flash numbers for what an uncapped reasoning-heavy call actually costs on a flash model. This entry has NOT been re-measured uncapped.
 gemini-3.6-flash:
   openrouter_id: google/gemini-3.6-flash
   reasoning_type: effort
@@ -889,12 +941,23 @@ grok-4.5:
 kimi-k3:
   openrouter_id: moonshotai/kimi-k3
   reasoning_type: effort
+  # TIER AUDIT 2026-08-02 — `none` added. Probed uncapped on a hard prompt:
+  # none -> 0 reasoning / 1166 completion / 16.5s / $0.0178, against low at
+  # 1116 / 1552 / 20.7s / $0.0234. Zero reasoning tokens is unambiguous, so this
+  # is a real off-switch, not an adaptive model declining to think — and it was
+  # simply not exposed before. `none` as a rung is already the convention on
+  # every gpt-5.6-* entry here.
+  # `minimal` is deliberately NOT added: it returned 1846 reasoning / 2251
+  # completion, i.e. MORE thinking than the tier below it. Whatever OpenRouter
+  # maps it to on this model, it is not a rung under `low`, and adding it would
+  # put an inverted step in the ladder.
   thinking_levels:
   - max
   - xhigh
   - high
   - medium
   - low
+  - none
   slow: true              # 18-54s/call, and provider routing swings it further
   observed:
     max:
@@ -906,6 +969,8 @@ kimi-k3:
     medium:
       sample_turns: 0
     low:
+      sample_turns: 0
+    none:
       sample_turns: 0
 
 # Qwen3.7 Flash (released 2026-07-28, the newest model in this sweep) — BINARY thinking toggle like the other Qwen entries (it advertises `reasoning` but NOT reasoning_effort), multimodal (text/image/video), 1M ctx. output_mode prompted, matching qwen3.6-plus / qwen3.7-plus: it advertises tool_choice but NOT structured_outputs, and the Qwen family has needed prompted mode throughout. Probed 2026-07-30 (after an initial upstream 429 cleared — a rate limit, not a model limit): both rungs 200 and it read the screenshot in each. ABSURDLY CHEAP — $0.03/$0.13 per M, i.e. $0.00026/call thinking and $0.000048 non-thinking, ~500x cheaper per call than opus-5; a full long run costs cents. Caveat worth knowing before trusting it as a Player: in thinking mode it described the screenshot as "a pixel-art map editor interface", while non-thinking mode correctly read the room (bed, desk, character on a rug) — so on this model more thinking made the perception WORSE on a single observation. slow flag is thinking-only: 43s with thinking on, 2.6s with it off.
@@ -924,7 +989,7 @@ qwen3.7-flash:
     non-thinking:
       sample_turns: 0
 
-# Thinking Machines Inkling (released 2026-07-18) — effort-tiered, multimodal (text/image/audio), 1M ctx, $1/$4.05 per M. output_mode prompted REQUIRED: the model advertises NEITHER response_format NOR structured_outputs, so both tool mode and native_json are unavailable and prompted is the only path. Probed 2026-07-30 via Together: 200, read the screenshot, solved the spatial task; max/high/medium/low accepted. slow: true — 14.8-58.3s/call. First entry from this lab in the registry, so treat the whole entry as first-run-confirms.
+# Thinking Machines Inkling (released 2026-07-18) — effort-tiered, multimodal (text/image/audio), 1M ctx, $1/$4.05 per M. output_mode prompted, but NOT for the reason first written here. The old note said "advertises NEITHER response_format NOR structured_outputs, so both tool mode and native_json are unavailable" — the native_json half is right, the tool-mode half is wrong: tool mode needs `tools` + `tool_choice`, neither of which is response_format, and BaseTen and Together both advertise them. The REAL reason is routing (re-probed 2026-08-02): of the 3 endpoints, DeepInfra is the cheapest ($0.95/M vs $1.00/M) and default price/uptime routing served it on all 7 probe calls — and DeepInfra is the ONE endpoint with tools=False. So prompted is correct in practice while routing is unpinned; pinning provider: {order: [BaseTen, Together]} would make tool mode reachable if ever wanted. Effort ladder measured 2026-08-02: max=2955 / high=3126 / low=971 reasoning tokens — `max` and `high` are indistinguishable (max scored LOWER), so `max` is likely a clamp of `high`, the same shape as opus-5's omitted `minimal`. n=1 per tier; repeat before collapsing them. Probed 2026-07-30 via Together: 200, read the screenshot, solved the spatial task; max/high/medium/low accepted. slow: true — 14.8-58.3s/call. First entry from this lab in the registry, so treat the whole entry as first-run-confirms.
 inkling:
   openrouter_id: thinkingmachines/inkling
   reasoning_type: effort
@@ -945,7 +1010,7 @@ inkling:
     low:
       sample_turns: 0
 
-# StepFun Step 3.7 Flash (released 2026-05-28) — effort-tiered, multimodal (text/image/video), 262K ctx, $0.20/$1.15 per M. Default tool output mode (tool_choice + structured_outputs advertised). Probed 2026-07-30: 200 via StepFun, and on a SHORT prompt it read the screenshot correctly (identified the bedroom, rug, PC). KEPT BUT RANKED LOW because of a real failure mode observed on the harder prompt: at max_tokens 2500 it consumed the entire budget and returned HTTP 200 with EMPTY content — which for the Player is a dead turn, not an error the retry logic recognises as one. Its reasoning telemetry is also inconsistent (752 reasoning tokens reported with no reasoning block sent, 0 reported with effort=high), so the counts here are not trustworthy for tuning. If you run it, give it a generous max_tokens and watch for empty outputs before drawing any conclusion about its play.
+# StepFun Step 3.7 Flash (released 2026-05-28) — effort-tiered, multimodal (text/image/video), 262K ctx, $0.20/$1.15 per M. Default tool output mode (tool_choice + structured_outputs advertised). Probed 2026-07-30: 200 via StepFun, and on a SHORT prompt it read the screenshot correctly (identified the bedroom, rug, PC). KEPT BUT RANKED LOW because of a real failure mode observed on the harder prompt: at max_tokens 2500 it consumed the entire budget and returned HTTP 200 with EMPTY content — which for the Player is a dead turn, not an error the retry logic recognises as one. Its reasoning telemetry is also inconsistent (752 reasoning tokens reported with no reasoning block sent, 0 reported with effort=high), so the counts here are not trustworthy for tuning. CAUSE FOUND 2026-08-02: it is provider-dependent, not model-dependent. Three identical calls landed on three endpoints and reported reasoning tokens 0 (Novita), 0 (StepFun) and 2637 (DeepInfra) — while the reasoning TEXT came back at 9050/9465/10363 chars every time. The model thinks consistently; two of three endpoints just do not report the count. Cost was identical, so billing is unaffected, but any per-tier reasoning measurement on this model is a coin flip on routing unless the provider is pinned. If you run it, give it a generous max_tokens and watch for empty outputs before drawing any conclusion about its play.
 step-3.7-flash:
   openrouter_id: stepfun/step-3.7-flash
   reasoning_type: effort

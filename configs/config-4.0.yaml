@@ -61,14 +61,16 @@ task:
 task_override_snapshot: true
 
 # --- Run Turn Cap ---
-# CAREFUL — this key is NOT a per-task budget on this config. With TaskMaster
-# absent there are no tasks to budget: turn.py reads `max_turns_per_task` as
-# `self.max_turns`, which the run loop uses as the turn cap for the WHOLE run
-# whenever the caller passes no explicit limit (`pokemon run --turns N` and the
-# control center both pass one, and override this). Set high because a
-# self-directed run toward "beat the game" is long-horizon by design; the old
-# 3.x value of 25 would have silently ended every bare run at turn 25.
-max_turns_per_task: 5000
+# Deliberately ABSENT. `max_turns_per_task` is a TaskMaster construct — a budget
+# per task — and 4.0 has no TaskMaster and no tasks, so there is nothing for it
+# to budget. Every caller supplies the whole-run cap instead: `pokemon run
+# --turns N` (default 10) and the control center / queue (`max_turns`, else
+# 1500). Setting it here only ever shadowed that with a number nobody read.
+# Note for anyone re-adding it: turn.py's `self.max_turns` falls back to 50, and
+# on this config its ONLY remaining use is `limit = max_turns or self.max_turns`
+# in the run loop — reachable solely by a caller that passes no limit, which no
+# production path does. The per-task budget checks are all behind
+# `task_master_enabled`.
 
 # --- Vision ---
 # The Player LLM sees raw screenshots directly (direct multimodal); there is no
@@ -359,6 +361,6 @@ player_agent:
   # class GameAction(BaseModel):
   #   inputs: list[Button]            — "The buttons to press this turn."
   #                                     Valid: "up","down","left","right","a","b","start","select","wait"
-  #   reasoning: str (max_length=5000) — "Your reasoning for this turn. See the system prompt."
+  #   reasoning: str              — "Your reasoning for this turn. See the system prompt."
   #   last_turn_succeeded: bool | None — "Your grade of the previous turn: true / false / null. See the system prompt."
   #   memory_updates: str             — "JSON object of memory keys to update (dot notation for nesting), or \"none\". See the system prompt."

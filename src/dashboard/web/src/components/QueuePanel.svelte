@@ -47,7 +47,7 @@
             </div>
             <div class="cmodel mono">{q.model}</div>
             <div class="cmeta faint">
-              {#if q.kind === 'casual'}<span class="mono">{q.config}</span> · {q.maxTurns}t{#if q.stopAt} · ⇥ <span class="mono">{q.stopAt}</span>{/if}{#if q.rom} · <span class="mono">{q.rom}</span>{/if}{:else}pokebench-v1{/if}
+              {#if q.kind === 'casual'}<span class="mono">{q.config}</span> · {q.maxTurns}t{#if q.stopAt} · ⇥ <span class="mono">{q.stopAt}</span>{/if}{#if q.maxSpend} · ≤${q.maxSpend}{/if}{#if q.gameplay === 'speed'} · speed{/if}{#if q.rom} · <span class="mono">{q.rom}</span>{/if}{:else}pokebench-v1{/if}
             </div>
           </div>
           <button class="rm" onclick={() => onremove(q.queueId)} title="Remove from queue"><Icon name="close" size={12} /></button>

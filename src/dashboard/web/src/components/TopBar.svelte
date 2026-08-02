@@ -1,19 +1,9 @@
 <script>
   import Icon from './Icon.svelte'
   let { active = null, emulatorUp = false, queue = [], view = 'home', muted = true, ontogglemute,
-        roms = [], emulator = {}, onrom, onnav, onspectate } = $props()
+        emulator = {}, onnav, onspectate } = $props()
   // green/live = a run is active AND the emulator is up; grey/idle otherwise.
   const hasActive = $derived(!!active && emulatorUp)
-
-  // Which game is in the slot, and whether it can be changed right now. Only
-  // shown when there is more than one playable ROM on this machine.
-  const playable = $derived(roms.filter((r) => r.on_disk !== false))
-  const currentRom = $derived(emulator.rom?.id ?? '')
-  const switching = $derived(!!emulator.switching_to)
-  // A run holds the cartridge; so does an unfinished switch (the Lua script has
-  // not been re-loaded yet, so the emulator isn't usable either way).
-  const romLocked = $derived(switching || !!emulator.busy || !!emulator.awaiting_lua)
-  const showRom = $derived(playable.length > 1 && !!emulator.configured)
 </script>
 
 <header class="topbar">
@@ -34,21 +24,15 @@
   </div>
 
   <nav class="right">
-    <!-- Which game the emulator is holding. Changing it relaunches mGBA, which
-         drops the Lua script — hence the explicit "load the script" state
-         rather than the app just going quiet. -->
-    {#if showRom}
-      <span class="rom" class:pending={romLocked}>
-        <select value={currentRom} disabled={romLocked}
-                onchange={(e) => onrom && onrom(e.currentTarget.value)}
-                title={romLocked ? 'Busy — the emulator is in use' : 'Load a different game'}
-                aria-label="Game">
-          {#each playable as r}<option value={r.id}>{r.name}</option>{/each}
-        </select>
-        {#if emulator.awaiting_lua}
-          <span class="romnote">load the Lua script in mGBA</span>
-        {/if}
-      </span>
+    <!-- The game is chosen per RUN in Add run, not here: the executor loads
+         whichever cartridge the queued item needs (`_ensure_rom_loaded`), so a
+         separate global switcher could only ever disagree with the run about to
+         start. What survives is the one state a person has to ACT on — a ROM
+         switch relaunches mGBA and drops the Lua script, and until it is
+         re-loaded the emulator is simply unusable, so the app must say so
+         rather than going quiet. -->
+    {#if emulator.awaiting_lua}
+      <span class="romnote">load the Lua script in mGBA</span>
     {/if}
     <button class="btn ghost mute" class:muted onclick={() => ontogglemute && ontogglemute()}
             title={muted ? 'Game audio muted — click to unmute' : 'Game audio on — click to mute'}
@@ -92,13 +76,5 @@
   .mute { padding: 6px 8px; display: grid; place-items: center; }
   .mute.muted { opacity: .55; }
 
-  .rom { display: inline-flex; align-items: center; gap: 8px; }
-  .rom select {
-    font-family: inherit; font-size: 12px; font-weight: 600; color: var(--text);
-    padding: 5px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm);
-    background: var(--surface); max-width: 170px;
-  }
-  .rom select:disabled { color: var(--muted); background: var(--surface-2); }
-  .rom.pending select { border-style: dashed; }
   .romnote { font-size: 10.5px; font-weight: 650; color: var(--accent); white-space: nowrap; }
 </style>

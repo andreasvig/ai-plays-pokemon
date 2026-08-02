@@ -71,6 +71,8 @@ class QueueManager:
         benchmark: str | None = None,
         max_turns: int | None = None,
         stop_at: str | None = None,
+        max_spend_usd: float | None = None,
+        gameplay: str | None = None,
         rom: str | None = None,
         continue_from: str | None = None,
         task_master_model: str | None = None,
@@ -82,6 +84,10 @@ class QueueManager:
         ``benchmark`` is the official benchmark id (which ladder + goal); ``None``
         for casual runs. ``stop_at`` is a casual run's early finish line — the
         story event that ends it before its turn cap (``None`` = turn cap only).
+        ``max_spend_usd`` is the casual all-in USD ceiling — the third stop
+        condition alongside those two (``None`` = no ceiling). ``gameplay`` is
+        the casual playstyle — ``"exploration"`` (default, ``None``) or
+        ``"speed"`` — which selects the steering block the agent is given.
         ``rom`` is which game a casual run needs — a ROM id from the registry
         (``None`` = the default ROM). ``record`` opts the run into an MP4 capture
         (``None`` = no recording).
@@ -96,6 +102,8 @@ class QueueManager:
             benchmark=benchmark,
             max_turns=max_turns,
             stop_at=stop_at,
+            max_spend_usd=max_spend_usd,
+            gameplay=gameplay,
             rom=rom,
             continue_from=continue_from,
             task_master_model=task_master_model,

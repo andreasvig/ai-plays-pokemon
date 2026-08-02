@@ -220,9 +220,18 @@ def _run_headless(args) -> None:
     from src.app.run_index import RunIndex
     from src.dashboard import server as _dash_server
 
-    app_dir = Path(os.environ.get("POKEBENCH_APP_DIR", "local/app"))
+    # Its OWN state dir, not the real app's. This used to default to `local/app`
+    # — the same queue.json a live `pokemon app` holds — so a throwaway fake
+    # instance (started on another port to poke at the API) wrote real queue
+    # items into it. The live app keeps its queue in memory and only reads that
+    # file at boot, so nothing looked wrong until the NEXT restart, which would
+    # then dispatch runs nobody asked for. `runs_root` is deliberately still the
+    # real one: reading run folders is harmless, and --seed-runs wants them.
+    # POKEBENCH_APP_DIR still overrides, for anyone who does want the live state.
+    app_dir = Path(os.environ.get("POKEBENCH_APP_DIR", "local/app-fake"))
     runs_root = Path("local/runs")
     app_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Fake instance state dir: {app_dir}  (the live app uses local/app)")
 
     queue_manager = QueueManager(app_dir / "queue.json")
     queue_manager.load()

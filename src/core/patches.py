@@ -6,6 +6,11 @@
 2. Cost: OpenRouter returns cost in response.usage.model_extra["cost"], but
    Pydantic AI doesn't propagate this to provider_details. We inject it.
 
+2b. Serving provider: OpenRouter returns it top-level as response["provider"],
+   which model_validate discards the same way. We inject it too, so a run
+   records WHICH endpoint answered each turn — capability and token accounting
+   both vary by provider on the same model.
+
 3. JSON fence stripping: Pydantic AI's strip_markdown_fences only handles the
    exact ```json\\n{...}\\n``` shape. Real-world LLM output (especially Qwen3.6-Plus
    under PromptedOutput) drops the opening `{`, drops first-key quotes, prepends
@@ -142,7 +147,8 @@ def patch_strip_markdown_fences():
 
 
 def patch_openai_model_response():
-    """Patch OpenAIChatModel._process_response for OpenRouter reasoning + cost."""
+    """Patch OpenAIChatModel._process_response for OpenRouter reasoning, cost
+    and serving provider."""
     try:
         from pydantic_ai.models.openai import OpenAIChatModel
         from pydantic_ai.messages import ThinkingPart
@@ -163,6 +169,24 @@ def patch_openai_model_response():
             try:
                 usage_extra = getattr(response.usage, 'model_extra', None) or {}
                 openrouter_cost = usage_extra.get('cost')
+            except (AttributeError, TypeError):
+                pass
+
+            # Same treatment for the SERVING PROVIDER. OpenRouter puts `provider`
+            # ("Moonshot AI", "DeepInfra", "Amazon Bedrock", ...) at the TOP LEVEL
+            # of the response body — not inside usage — so it lands in the
+            # ChatCompletion's model_extra and is dropped by model_validate.
+            # Without this, `_extract_provider_from_messages` in turn.py had
+            # nothing to find: every agent_error across the whole run archive
+            # recorded provider ''. Which provider answered is load-bearing —
+            # capability varies by endpoint on the same model (3 of gemma-4-31b's
+            # 18 endpoints expose no tools; step-3.7-flash reports reasoning
+            # tokens on DeepInfra and 0 on Novita/StepFun for identical output),
+            # and the harness re-rolls routing per retry attempt.
+            openrouter_provider = None
+            try:
+                resp_extra = getattr(response, 'model_extra', None) or {}
+                openrouter_provider = resp_extra.get('provider')
             except (AttributeError, TypeError):
                 pass
 
@@ -197,10 +221,18 @@ def patch_openai_model_response():
                     result.provider_details = {}
                 result.provider_details['cost'] = float(openrouter_cost)
 
+            # Inject the serving provider alongside it.
+            if openrouter_provider:
+                if result.provider_details is None:
+                    result.provider_details = {}
+                result.provider_details['provider'] = str(openrouter_provider)
+
             return result
 
         OpenAIChatModel._process_response = _patched
-        logger.debug("Patched OpenAIChatModel for OpenRouter reasoning + cost")
+        logger.debug(
+            "Patched OpenAIChatModel for OpenRouter reasoning + cost + provider"
+        )
     except Exception as e:
         logger.warning(f"Failed to patch: {e}")
 

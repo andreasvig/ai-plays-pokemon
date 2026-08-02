@@ -129,7 +129,7 @@ class RunSummary(BaseModel):
 class QueuedRun(BaseModel):
     """One item in the serial queue — the spec "add new run" produces.
 
-    ``config``/``max_turns``/``stop_at`` are casual-only (official uses the
+    ``config``/``max_turns``/``stop_at``/``max_spend_usd``/``gameplay`` are casual-only (official uses the
     frozen pokebench config + no max-turns, and ends at its own ladder). ``benchmark`` is official-only — which benchmark
     (e.g. ``pokebench-easy``) this run plays; it selects the gate ladder + the
     goal override. ``continue_from`` is set by Continue; it inherits the source
@@ -148,6 +148,21 @@ class QueuedRun(BaseModel):
     # alongside ``max_turns`` — whichever lands first ends the run. None = turn
     # cap only. Official runs ignore it; a benchmark ends at its own ladder.
     stop_at: str | None = None
+    # Casual-only spend ceiling in USD, all-in (Player + OCR + TaskMaster). The
+    # third stop condition: whichever of max_turns / stop_at / max_spend_usd
+    # lands first ends the run. None = no ceiling, which is what every existing
+    # queue item means and what official runs always get (locked #8 — pace is
+    # the only bound on a benchmark).
+    max_spend_usd: float | None = None
+    # Casual-only playstyle. Picks WHICH steering block the agent is given:
+    # "exploration" -> freeplay_guidelines (wander, catch, roleplay),
+    # "speed"       -> benchmark_guidelines (shortest path to the top goal).
+    # Until now that choice was welded to `kind` — official always raced, casual
+    # always explored — so there was no way to time a model on a casual run, or
+    # to watch an official-style config just play. None = exploration, which is
+    # what every casual run has always done, so existing queue items are
+    # unchanged. Official ignores it: a benchmark always races.
+    gameplay: str | None = None
     # Which game this run needs — a ROM id from ``configs/roms.yaml``. Casual-only
     # and None by default (= the registry's default ROM), so every pre-existing
     # queue item keeps meaning exactly what it meant. Official runs take their ROM

@@ -54,9 +54,13 @@ class GameAction(BaseModel):
     inputs: list[Button] = Field(
         description="The buttons to press this turn.",
     )
+    # No max_length. A cap here is enforced by pydantic AFTER the model has been
+    # billed for the tokens: an over-long reasoning is rejected as a validation
+    # error, burns a ModelRetry, and re-rolls the whole turn — so the only thing
+    # the cap buys is a more expensive turn. Verbose thinkers were the models
+    # paying it. TaskMasterOutput.reasoning has never been capped either.
     reasoning: str = Field(
         description="Your reasoning for this turn. See the system prompt.",
-        max_length=5000,
     )
     last_turn_succeeded: Optional[bool] = Field(
         description="Your grade of the previous turn: true / false / null. See the system prompt.",

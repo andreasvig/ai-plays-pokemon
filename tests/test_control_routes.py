@@ -85,7 +85,7 @@ def _some_alias() -> str:
 def test_queue_get_empty(client):
     r = client["tc"].get("/api/queue")
     assert r.status_code == 200
-    assert r.json() == {"active": None, "items": []}
+    assert r.json() == {"active": None, "items": [], "last_error": None}
 
 
 def test_enqueue_casual_then_get_in_order(client):
@@ -305,3 +305,90 @@ def test_routes_503_when_unconfigured():
     server._CONTROL["index"] = None
     tc = TestClient(server.app)
     assert tc.get("/api/queue").status_code == 503
+
+
+# ───────────── casual config: defaulted, not silently dropped ─────────────
+#
+# A casual spec with no `config` used to be accepted verbatim (201) and then
+# rejected by the executor at DISPATCH — after the item had been dequeued, where
+# `drain_loop` swallowed the error. The run vanished and the caller saw a 201.
+# These pin the edge behaviour that replaced it.
+
+
+def test_casual_enqueue_without_config_gets_the_latest(client):
+    from src.app.catalog import list_configs
+
+    tc = client["tc"]
+    r = tc.post("/api/queue", json={"kind": "casual", "model": _some_alias()})
+    assert r.status_code == 201
+    # Not None — that was the bug. And specifically the newest config, matching
+    # what a bare `pokemon run` loads.
+    assert r.json()["config"] == list_configs()[-1]
+
+
+def test_casual_enqueue_with_unknown_config_is_rejected(client):
+    tc = client["tc"]
+    r = tc.post(
+        "/api/queue",
+        json={"kind": "casual", "model": _some_alias(), "config": "config-99.9"},
+    )
+    assert r.status_code == 400
+    # The message has to carry the valid values — this is the whole point of
+    # failing here instead of at dispatch.
+    assert "config-99.9" in r.json()["detail"]
+    assert "config-" in r.json()["detail"].split(";")[-1]
+
+
+def test_casual_enqueue_accepts_a_config_path_unchanged(client):
+    # The dialog sends a stem, but a path is still legal (the executor's
+    # _resolve_config_path is idempotent for one) and must not be stem-checked.
+    tc = client["tc"]
+    r = tc.post(
+        "/api/queue",
+        json={
+            "kind": "casual",
+            "model": _some_alias(),
+            "config": "configs/config-3.13.yaml",
+        },
+    )
+    assert r.status_code == 201
+    assert r.json()["config"] == "configs/config-3.13.yaml"
+
+
+def test_continue_enqueue_needs_no_config(client):
+    # A continue reads its config off the SOURCE run, so defaulting one in would
+    # attach a config that then gets ignored — misleading in the queue view.
+    tc = client["tc"]
+    r = tc.post(
+        "/api/queue",
+        json={
+            "kind": "casual",
+            "model": _some_alias(),
+            "continue_from": "2026-01-01_whatever",
+        },
+    )
+    assert r.status_code == 201
+    assert r.json()["config"] is None
+
+
+def test_unknown_model_error_suggests_instead_of_dumping_the_registry(client):
+    tc = client["tc"]
+    r = tc.post("/api/queue", json={"kind": "casual", "model": "gpt-5.6-sil(medium)"})
+    assert r.status_code == 400
+    msg = r.json()["detail"]
+    assert "did you mean" in msg
+    # The old message pasted every selection; the registry is >100 pairs, so a
+    # length ceiling is the assertion that actually bites.
+    assert len(msg) < 400, f"error message is a wall again ({len(msg)} chars)"
+
+
+def test_queue_get_exposes_last_error(client):
+    # `last_error` is how a dispatch failure stops being invisible: the item is
+    # gone from the queue either way, so the queue alone cannot tell you.
+    tc, queue = client["tc"], client["queue"]
+    executor = server._CONTROL["executor"]
+    item = queue.enqueue(kind="casual", model=_some_alias(), config="config-3.13")
+    executor._record_failure(item, "ValueError: boom")
+    body = tc.get("/api/queue").json()
+    assert body["last_error"]["queue_id"] == item.queue_id
+    assert body["last_error"]["error"] == "ValueError: boom"

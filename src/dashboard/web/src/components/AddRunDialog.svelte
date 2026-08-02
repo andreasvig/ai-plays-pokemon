@@ -65,6 +65,16 @@
   // default: a stop event is a deliberate "play until X", never a surprise.
   // Set alongside max turns, not instead of it — whichever lands first wins.
   let stopAt = $state('')
+  // Casual spend ceiling in USD, all-in. '' = no cap, which stays the default:
+  // a budget is a deliberate "spend at most this", and silently capping a run
+  // would be worse than not offering one. Sits alongside max turns and the stop
+  // event — first of the three to land ends the run.
+  let maxSpend = $state('')
+  // Casual playstyle. Until now this was welded to kind — official raced,
+  // casual explored — and 'exploration' keeps that as the default so nothing
+  // changes unless you say so. 'speed' hands the agent the same shortest-path
+  // steering an official run gets, without making the run official.
+  let gameplay = $state('exploration')
   // Which game. Casual-only — an official run plays the benchmark ladder's ROM,
   // which is not a choice. Defaults to the registry default on open.
   let rom = $state('')
@@ -120,6 +130,11 @@
             level = parsed.level
           }
           maxTurns = continueFrom.maxTurns ?? 100
+          // Per-segment, like the stop event: a continue chooses its own budget
+          // rather than inheriting one the source run already spent.
+          maxSpend = ''
+          // Per-segment too: you may be continuing precisely to switch style.
+          gameplay = 'exploration'
           if (!config) config = latestConfig(CONFIGS)
           // A continue resumes on the game the source run was played on — the
           // backend reads it off the resumed config, so there is nothing to pick.
@@ -222,6 +237,12 @@
       // Official ends at its own ladder, so a stop event is casual-only — and a
       // game with no ladder has no detectable events at all.
       stopAt: isOfficial || !romCanBenchmark ? null : (stopAt || null),
+      // Casual-only, like the stop event — an official run is bounded by pace
+      // alone. '' / 0 / nonsense all send null (= no cap) rather than a 400.
+      maxSpend: isOfficial ? null : (Number(maxSpend) > 0 ? Number(maxSpend) : null),
+      // Official always races, so it sends null rather than a value the server
+      // would drop anyway.
+      gameplay: isOfficial ? null : gameplay,
       // Which game. Official plays the benchmark ladder's ROM; a continue
       // resumes the source run's. Both send null.
       rom: isOfficial || isContinue ? null : (rom || null),
@@ -364,9 +385,28 @@
               {#each CONFIGS as c}<option value={c}>{c}</option>{/each}
             </select>
           </label>
+          <!-- Which steering block the agent gets. Not a scoring switch: a
+               'speed' casual run is still casual and still off the leaderboard;
+               it just gets told to take the shortest path. -->
+          <label class="field">
+            <span class="flabel">Gameplay</span>
+            <select bind:value={gameplay}>
+              <option value="exploration">Exploration — wander, catch, roleplay</option>
+              <option value="speed">Speed — shortest path to the goal</option>
+            </select>
+          </label>
           <label class="field">
             <span class="flabel">Max turns</span>
             <input type="number" bind:value={maxTurns} min="1" step="50" />
+          </label>
+          <!-- Optional spend ceiling. Counts the whole bill — Player LLM, OCR
+               and TaskMaster — not just the Player, because a 3.x run pays for
+               strategy too. Checked at the turn boundary, so the final total
+               can overshoot by one turn's cost. -->
+          <label class="field">
+            <span class="flabel">Max spend (USD)</span>
+            <input type="number" bind:value={maxSpend} min="0" step="0.25"
+                   placeholder="no cap" />
           </label>
           <!-- Optional early finish line. The ids come from the real gate
                ladder (/api/checkpoints) — the same events the referee stamps
@@ -427,7 +467,7 @@
 
       <footer class="df">
         <span class="hint faint">
-          {#if isOfficial}Ends on the final gate (win) or a missed deadline.{:else if stopAt}Ends at the chosen event or max turns. Never on the leaderboard.{:else}Runs until max turns. Never on the leaderboard.{/if}
+          {#if isOfficial}Ends on the final gate (win) or a missed deadline.{:else if stopAt}Ends at the chosen event, max turns{#if Number(maxSpend) > 0}, or ${Number(maxSpend)}{/if} — whichever first. Never on the leaderboard.{:else if Number(maxSpend) > 0}Ends at max turns or ${Number(maxSpend)}, whichever first. Never on the leaderboard.{:else}Runs until max turns. Never on the leaderboard.{/if}
         </span>
         <div class="actions">
           <button class="btn ghost" onclick={() => onclose()}>Cancel</button>

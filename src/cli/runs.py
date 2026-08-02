@@ -145,7 +145,25 @@ def _cmd_board(args) -> int:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        prog="pokemon runs", description="Inspect + manage historical runs."
+        prog="pokemon runs",
+        description="Inspect + manage historical runs (the app must be running).",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""\
+Examples:
+  pokemon runs list                          # newest first
+  pokemon runs list --status terminated      # the ones a gate killed
+  pokemon runs list --model "gpt-5.6-sol(medium)"
+  pokemon runs board --benchmark pokebench-easy
+  pokemon runs continue <run_id>             # resume from its latest savepoint
+  pokemon runs stop                          # stop whatever is running now
+  pokemon runs delete <run_id> --yes         # folder → Trash, and de-index
+
+`pokemon status` is the quicker look: what is running plus the last few runs.
+Statuses: completed (ran to its end) · terminated (referee killed it on a
+missed gate) · cancelled (you stopped it; an official run is then voided) ·
+crashed (it died, or the model never produced a valid turn — neither reaches
+the leaderboard).
+""",
     )
     # A shared parent so --port / --json work BEFORE or AFTER the subcommand.
     common = argparse.ArgumentParser(add_help=False)

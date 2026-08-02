@@ -1,5 +1,123 @@
 # Changelog
 
+## 2026-08-02 — A run records which provider answered and whether it thought
+
+### What
+- **`turn_usage` gains `reasoning_tokens` and `provider`.** Built as a pure
+  `_usage_event()` helper in `src/agent/turn.py` so both are testable without a
+  live model. The terminal line shows the reasoning count too.
+- **`patches.py` now rescues the serving provider.** OpenRouter returns
+  `provider` top-level ("Parasail", "Amazon Bedrock", ...); pydantic-ai's
+  `model_validate` dropped it exactly as it dropped `cost`.
+- **`_extract_provider_from_messages` no longer falls back to `model_name`.**
+  On OpenRouter that is the model slug, whose prefix is the model's *author*,
+  not the endpoint that served the request.
+- **`scripts/probe_output_mode.py`** — answers "is this model in the right
+  `output_mode`?" by sending the same prompt with and without a forced
+  `tool_choice` and comparing reasoning tokens.
+- Registry corrections to `inkling`, `grok-build-0.1`, `step-3.7-flash`,
+  `claude-haiku-4.5`, `kimi-k2.7-code` (details below).
+
+### Why
+An audit of whether each model uses the right pydantic-ai output mode could not
+be answered from the run archive. `turn_usage` had no reasoning count, so "did
+this model think?" was only inferable from whether an `llm_thinking` event
+fired — which needs the provider to return a human-readable *summary*. Those
+come apart: a gpt-5.6-sol probe returned 183 reasoning tokens with **zero**
+summary characters, and across the archive gpt-5.6-luna logs thinking on 54% of
+turns while billing for it on all of them. The provider was worse than missing:
+the extractor existed and was called at two sites, but nothing ever populated
+its source, so all 122 runs recorded `provider: ''`.
+
+### Notes
+- **The output-mode assignment itself was correct** — all 40 entries hold up.
+  Re-verified the load-bearing case live: claude-sonnet-5 returns 209 reasoning
+  tokens with no tools and **0** under `tool_choice: required`. Every Anthropic
+  entry is on `prompted` for this reason.
+- **`inkling`'s stated reason was wrong, its mode right.** The comment blamed
+  missing `response_format`/`structured_outputs`; tool mode depends on neither.
+  The real cause is routing — DeepInfra is its cheapest endpoint, served all 7
+  probe calls, and is the one endpoint of three with no tools.
+- **`kimi-k2.7-code` lost its `non-thinking` level.** `reasoning:{enabled:false}`
+  returns HTTP 400 "Reasoning is mandatory for this endpoint" from all 15
+  endpoints OpenRouter tried. The picker was offering a level that could only
+  produce a dead run. `kimi-k2.6` is unaffected.
+- **`claude-haiku-4.5`'s tiers do not separate** (n=3 each, Amazon Bedrock):
+  high 571 mean, medium 378, low 412, minimal 437 — the bottom three sit in one
+  band and are ordered *backwards*. Documented, not changed: dropping a level
+  rewrites benchmark identity.
+- **`step-3.7-flash`'s "inconsistent reasoning telemetry" has a cause.** It is
+  per-provider: 0 from Novita, 0 from StepFun, 2637 from DeepInfra, with the
+  reasoning *text* present in all three.
+- **Two false alarms, recorded so they are not re-chased.** kimi-k2.7-code
+  logged thinking on 2 of 19 real turns; that is adaptive behaviour (both were
+  turns diagnosing a failed move), not tool_choice suppression (1237 vs 922)
+  and not provider roulette (all 10 providers reasoned).
+- Deliberately left alone: `TaskMasterOutput` still uses pydantic-ai's default
+  `PromptedOutput` template while the Player passes a hardened one, and
+  `native_json` remains unused by all 40 entries.
+
+## 2026-08-02 — A run that fails says so, and the CLI tells you what to type
+
+### What
+- **`pokemon status`** — one command for "what is running right now": app +
+  port, emulator + ROM + busy, the active run with its turn/cost/elapsed, the
+  queue, recent runs. `--json`.
+- **`pokemon ls models|roms|configs|events|benchmarks`** — the vocabulary every
+  other command asks you to name, with a substring filter. Reads `configs/` off
+  disk, so it works with the app down.
+- **`pokemon queue add --rom`** — the API always took a per-run ROM for casual
+  runs; the CLI had no way to pass it.
+- A casual run with **no `--config` now gets the latest** config, the same rule
+  a bare `pokemon run` already used.
+- **Removed `max_length=5000`** from `GameAction.reasoning`.
+- Rewritten top-level help (grouped by task, with recipes), epilogs with real
+  examples on `queue`/`runs`/`ls`/`status`, and a "did you mean" on an unknown
+  subcommand.
+
+### Why
+Starting one 20-turn FireRed run took ~20 tool calls. Five went on orientation
+(`ps`, `lsof`, three `/api` reads), four on hunting names across four files,
+and **seven on a silent failure**: the enqueue returned 201 and the run simply
+never happened.
+
+### Notes
+- **The silent drop.** `_enqueue_kwargs` accepted `config: null` for a casual
+  run; `_resolve_config_path` then raised at *dispatch*, after the item was
+  dequeued, where `drain_loop` swallows everything so one poisoned item can't
+  freeze the serial queue. The item vanished, the queue read as idle, and the
+  only trace was a traceback on the app's stdout. Fixed at both ends: the config
+  is defaulted (or 400s if unknown) at the edge, and `RunExecutor.last_error`
+  records any dispatch failure for `GET /api/queue`, `pokemon queue get` and
+  `pokemon status`.
+- **A dead model was scoring 0%.** A run whose model never returned a valid
+  output — provider 400, dead model id, every attempt timing out — broke the
+  turn loop with no status, and the executor's fallback stamped it `completed`,
+  which is leaderboard-eligible. Leaderboard row 10
+  (`gemma-4-26b-a4b-fast`, 0%, 2 turns, $0.0000) is exactly this: its one
+  `agent_error` is `400 … is not a valid model ID`. Such a run is now `crashed`
+  — already excluded from the board and already voided — with the provider's
+  message in `run_summary.json`'s new `error` key. `crashed` is reused rather
+  than a new status precisely because it already has both properties.
+- **Unknown-model errors** listed all 163 `model(level)` selections. Now: the
+  closest few, the count, and where the full list lives. The CLI adds a
+  `try: pokemon ls …` line under any 400 that names a registry.
+- Every registry value is validated at **enqueue**, never at dispatch — the
+  general form of the bug above. `queue add` also echoes back what the server
+  *stored*, so a defaulted config or a dropped official-only flag is visible.
+- **`pokemon app --fake-emulator` had its own trap**: it defaulted to
+  `local/app`, the live app's state dir, so a throwaway instance on another port
+  wrote real items into the live `queue.json`. The running app keeps its queue
+  in memory and only reads that file at boot, so nothing looked wrong until the
+  next restart — which would then dispatch runs nobody asked for. It now
+  defaults to `local/app-fake` and prints which dir it took;
+  `POKEBENCH_APP_DIR` still overrides. Found by walking into it while testing
+  the above.
+- New: `CLAUDE.md` (env gotchas, the 8 known-failing tests, conventions), a
+  Recipes block plus `queue`/`runs`/`status`/`ls` sections in `docs/cli.md`, and
+  the README's architecture tree — which had never listed `queue`, `runs`,
+  `referee/` or `app/`.
+
 ## 2026-08-02 — Chunky pixel icons, and square markers in the charts
 
 ### What

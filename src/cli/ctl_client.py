@@ -17,13 +17,19 @@ from typing import Any
 
 
 def api(
-    method: str, path: str, *, port: int, body: dict | None = None
+    method: str, path: str, *, port: int, body: dict | None = None, soft: bool = False
 ) -> tuple[int, Any]:
     """Call ``METHOD http://localhost:<port><path>`` → ``(status, json|None)``.
 
     ``body`` is JSON-encoded when given. HTTP error responses (4xx/5xx) are
     returned as ``(status, parsed_body)`` rather than raised, so callers can show
-    the server's ``detail`` message. A refused connection is fatal (exit 3).
+    the server's ``detail`` message. A refused connection is fatal (exit 3) —
+    for every command except ``pokemon status``, "the app isn't running" is a
+    dead end worth exiting on.
+
+    ``soft=True`` inverts that: a refused connection returns ``(0, None)`` and
+    prints nothing. ``status`` uses it because "the app is down" is one of the
+    answers it exists to give, not a failure to give one.
     """
     url = f"http://localhost:{port}{path}"
     data = json.dumps(body).encode() if body is not None else None
@@ -41,9 +47,12 @@ def api(
         except json.JSONDecodeError:
             return exc.code, {"detail": raw.decode(errors="replace")}
     except urllib.error.URLError as exc:
+        if soft:
+            return 0, None
         print(
             f"ERROR: cannot reach the control center at {url}\n"
-            f"  ({exc.reason}) — is `pokemon app` running on port {port}?",
+            f"  ({exc.reason}) — is `pokemon app` running on port {port}?\n"
+            f"  `pokemon status` shows what is up; `pokemon app` starts it.",
             file=sys.stderr,
         )
         sys.exit(3)

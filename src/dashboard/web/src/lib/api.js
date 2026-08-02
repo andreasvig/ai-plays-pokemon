@@ -180,6 +180,8 @@ export async function fetchQueue() {
       config: q.config ?? null,
       maxTurns: q.max_turns ?? null,
       stopAt: q.stop_at ?? null,
+      maxSpend: q.max_spend_usd ?? null,
+      gameplay: q.gameplay ?? null,
       // Which game — only shown on a card when it is NOT the default ROM.
       rom: q.rom ?? null,
       continueFrom: q.continue_from ?? null,
@@ -305,6 +307,11 @@ export function enqueueRun(spec) {
     // '' is the picker's "no stop event" option — omit it rather than sending
     // an empty string the server would have to special-case.
     if (spec.stopAt) body.stop_at = spec.stopAt
+    // Same treatment for the budget: the dialog sends null for "no cap", and
+    // the server rejects <= 0, so only a real ceiling reaches the body.
+    if (spec.maxSpend != null) body.max_spend_usd = spec.maxSpend
+    // Omitted when it's the default, so the request stays what it always was.
+    if (spec.gameplay && spec.gameplay !== 'exploration') body.gameplay = spec.gameplay
     // Which game. Omitted for the default ROM so the request stays what it has
     // always been; the server reads absent as "the registry default".
     if (spec.rom) body.rom = spec.rom
@@ -338,13 +345,16 @@ export function deleteRun(runId) {
   return send('DELETE', `/api/runs/${encodeURIComponent(runId)}`)
 }
 
-export function continueRun(runId, { maxTurns = null, stopAt = null, playerModel = null, taskMasterModel = null, record = null } = {}) {
+export function continueRun(runId, { maxTurns = null, stopAt = null, maxSpend = null, gameplay = null, playerModel = null, taskMasterModel = null, record = null } = {}) {
   // Casual continues may swap models (UI pickers); official continues are
   // model-locked server-side (a sent override 400s). Send only what's set.
   const body = {}
   if (maxTurns != null) body.max_turns = maxTurns
   // Chosen per continue, like max_turns — never inherited from the source run.
   if (stopAt) body.stop_at = stopAt
+  // Per-segment too: the budget bounds this continue, not the lineage.
+  if (maxSpend != null) body.max_spend_usd = maxSpend
+  if (gameplay && gameplay !== 'exploration') body.gameplay = gameplay
   if (playerModel != null) body.player_model = playerModel
   if (taskMasterModel != null) body.task_master_model = taskMasterModel
   // A continue is a fresh run dir, so recording is chosen per-continue and is

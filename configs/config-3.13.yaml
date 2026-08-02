@@ -470,7 +470,7 @@ player_agent:
   # class GameAction(BaseModel):
   #   inputs: list[Button]            — "The buttons to press this turn."
   #                                     Valid: "up","down","left","right","a","b","start","select","wait"
-  #   reasoning: str (max_length=5000) — "Your reasoning for this turn. See the system prompt."
+  #   reasoning: str              — "Your reasoning for this turn. See the system prompt."
   #   last_turn_succeeded: bool | None — "Your grade of the previous turn: true / false / null. See the system prompt."
   #   memory_updates: str             — "JSON object of memory keys to update (dot notation for nesting), or \"none\". See the system prompt."
   #   return_to_taskmaster: ReturnToTaskMaster | None — optional handoff; null for a normal turn. See the system prompt.

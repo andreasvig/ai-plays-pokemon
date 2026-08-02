@@ -41,6 +41,8 @@ def _manager(run_dir):
     m.turn_explanations = []
     m._explanation_turns = []
     m.referee = None
+    m._aborted_no_output = False   # no-valid-output abort latch (writer reads it)
+    m._abort_error = None
     m.logger = _Logger(run_dir)
     return m
 

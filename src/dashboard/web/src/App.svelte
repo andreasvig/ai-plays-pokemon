@@ -197,6 +197,8 @@
         await api.continueRun(spec.continueFrom, {
           maxTurns: spec.maxTurns,
           stopAt: spec.stopAt ?? null,
+          maxSpend: spec.maxSpend ?? null,
+          gameplay: spec.gameplay ?? null,
           playerModel: spec.playerModel ?? null,
           taskMasterModel: spec.taskMasterModel ?? null,
           record: spec.record ?? null,
@@ -225,23 +227,12 @@
       emulator = { ...emulator, muted: !next }      // rollback
     }
   }
-  // Load a different game. mGBA relaunches, so the Lua script has to be
-  // re-loaded by hand afterwards — the TopBar chip says so while
-  // `awaiting_lua` holds. Poll status until it settles rather than awaiting the
-  // POST: it returns 202 the moment the switch STARTS.
-  async function switchRom(romId) {
-    try {
-      await api.setEmulatorRom(romId)
-    } catch (e) {
-      console.error('rom switch failed', e)
-      return
-    }
-    for (let i = 0; i < 600; i++) {
-      await new Promise((r) => setTimeout(r, 1000))
-      await loadEmulator().catch(() => {})
-      if (emulator.rom?.id === romId && emulator.connected) break
-    }
-  }
+  // No global "load a different game" here any more: the game is a property of
+  // a RUN, picked in Add run, and the executor loads whichever cartridge the
+  // queued item needs before dispatch. `POST /api/emulator/rom` and
+  // `api.setEmulatorRom` are deliberately left in place — `pokemon app --rom`
+  // and the switch the executor performs still go through that path; it just no
+  // longer has a button.
   async function removeFromQueue(id) {
     queue = queue.filter((q) => q.queueId !== id)   // optimistic
     try { await api.cancelQueued(id) } catch (e) { console.error('cancel failed', e) }
@@ -262,7 +253,7 @@
 
 {#if view !== 'spectate'}
   <TopBar {active} {emulatorUp} {queue} {view} muted={emulator.muted} ontogglemute={toggleMute}
-          {roms} {emulator} onrom={switchRom} onnav={go} onspectate={() => go('/spectate')} onnew={openNew} />
+          {emulator} onnav={go} onspectate={() => go('/spectate')} onnew={openNew} />
 {/if}
 
 <main class:kiosk={view === 'spectate'}>

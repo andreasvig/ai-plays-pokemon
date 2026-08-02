@@ -11,14 +11,95 @@ pokemon --help
 
 Top-level subcommands:
 
-| Subcommand          | Purpose                                                         |
-|---------------------|-----------------------------------------------------------------|
-| `pokemon app`       | Long-lived control center: persistent emulator + queue + web UI.|
-| `pokemon run`       | Launch mGBA + Lua and run the agent for one or more pairs.      |
-| `pokemon launch`    | Launch mGBA + Lua and idle (no agent — manual play / debug).    |
-| `pokemon snapshot`  | Save / load / list game snapshots.                              |
+| Subcommand          | Purpose                                                          |
+|---------------------|------------------------------------------------------------------|
+| `pokemon status`    | What is running right now: app, emulator, ROM, active run, queue.|
+| `pokemon ls`        | List models / roms / configs / stop events / benchmarks.         |
+| `pokemon app`       | Long-lived control center: persistent emulator + queue + web UI. |
+| `pokemon queue`     | Add / inspect / reorder / cancel runs on the running app.        |
+| `pokemon run`       | Launch mGBA + Lua and run the agent for one or more pairs.       |
+| `pokemon launch`    | Launch mGBA + Lua and idle (no agent — manual play / debug).     |
+| `pokemon runs`      | History: list, continue, stop, delete, leaderboard.              |
+| `pokemon snapshot`  | Save / load / list game snapshots.                               |
 
-Every subcommand has its own `--help`.
+Every subcommand has its own `--help`, with examples.
+
+---
+
+## Recipes
+
+The five things you actually do, in full.
+
+```bash
+# 0. Orient. The control center is usually already running.
+pokemon status
+
+# 1. A scored benchmark run, recorded.
+pokemon queue add "claude-opus-5(high)" --benchmark pokebench-easy --record simple
+
+# 2. A casual run — your own game, turn cap and finish line.
+pokemon queue add "gpt-5.6-sol(medium)" --kind casual --rom firered \
+    --max-turns 20 --stop-at starter_chosen \
+    --record simple --record-speed cut-thinking
+
+# 3. Resume one that ran out of turns (from its latest savepoint).
+pokemon runs continue <run_id>
+
+# 4. Call off whatever is running. An official run is voided by this.
+pokemon runs stop
+
+# 5. Look at the results.
+pokemon runs board --benchmark pokebench-easy
+pokemon runs list --status terminated
+```
+
+Don't know a name? `pokemon ls models sol`, `pokemon ls roms`,
+`pokemon ls configs`, `pokemon ls events`, `pokemon ls benchmarks`. Every one of
+those flags is validated at enqueue, and a wrong value is rejected with the
+valid ones named — never accepted and dropped later.
+
+Casual defaults: the latest config, the default ROM, no early stop, no
+recording. Official runs ignore `--config` / `--max-turns` / `--stop-at` /
+`--rom` — a benchmark is frozen, and takes its ROM from its own ladder.
+
+---
+
+## `pokemon status` — what is going on
+
+The intended first command of a session. Replaces `ps` + `lsof` + three `/api`
+calls: whether the app answers, which ROM is loaded, whether the emulator is
+busy, the active run with its turn/cost/elapsed, the pending queue, and the last
+few runs.
+
+```bash
+pokemon status               # the usual
+pokemon status --limit 10    # more history
+pokemon status --json        # {emulator, queue, runs}
+```
+
+It exits 0 whether the app is up or down — "down" is one of the answers it
+exists to give, and it prints how to start it. Every other CLI that needs the
+app exits 3 with the same hint.
+
+It also surfaces `last_error`: the last queued item that was dequeued but never
+became a run. Without it such a failure is invisible — the item is gone from the
+queue either way, so the queue alone looks idle.
+
+---
+
+## `pokemon ls` — the vocabulary
+
+```bash
+pokemon ls                   # the categories
+pokemon ls models sol        # aliases + thinking levels, substring-filtered
+pokemon ls roms              # which games are registered AND on disk
+pokemon ls configs           # config stems; the last is the casual default
+pokemon ls events            # ids accepted by --stop-at (FireRed only)
+pokemon ls benchmarks
+```
+
+Reads `configs/` directly, so unlike `queue` and `runs` it does **not** need the
+app running. `--json` on any of them.
 
 ---
 
@@ -152,6 +233,87 @@ savepoints:
 `pokemon run --continue <run_dir>` finds the highest `turn_<N>/` in that run's `savepoints/`, copies events.jsonl + screenshots + ocr + terminal.log into a new `<ts>_<run_name>_continued_from_turn_<N>/` run dir, then **resumes exactly where it left off**: the emulator state and TaskMaster task tree restore from the savepoint, and the Player's turn history, turn counter, historic-image buffer, and in-progress-task evidence are rebuilt from the copied events.jsonl (so the agent's "## Previous Turns" context and turn numbering carry over, not just `state.json`). Only the cost counters reset — the new run reports only its own spend; for a cumulative view, read both run dirs' `run_summary.json`.
 
 The control center serves the UI at <http://localhost:3420/>: live runs at `/spectate`, finished runs under `/history/<run_id>`. (`pokemon app` opens it at boot.)
+
+---
+
+## `pokemon queue` — Drive the running app's queue
+
+The control center runs one run at a time off a serial queue. This is the shell
+face of it (the new-run dialog in the UI is the other). Requires `pokemon app`
+to be up.
+
+```bash
+pokemon queue get                       # active + pending, and the last dispatch failure
+pokemon queue add <model> [...]         # enqueue one or more
+pokemon queue events                    # same list as `pokemon ls events`
+pokemon queue reorder q_ab12 q_99ff     # the full order, as a permutation
+pokemon queue cancel q_ab12             # drop a PENDING item
+pokemon queue clear --yes               # drop all pending, keep the active run
+```
+
+`add` takes a **list** of models and `--repeat N`, so a sweep is one command:
+
+```bash
+# four models, one benchmark
+pokemon queue add --benchmark pokebench-easy \
+    "claude-opus-5(high)" "gpt-5.6-sol(medium)" "gemini-3.6-flash(high)" "grok-4.5(high)"
+
+# one model three times, to see the spread
+pokemon queue add "gemini-3.5-flash(high)" --kind casual --max-turns 50 --repeat 3
+```
+
+| Flag | Kind | Meaning |
+|---|---|---|
+| `--kind official\|casual` | — | `official` (default) is the frozen scored benchmark. `casual` is everything else. |
+| `--benchmark ID` | official | Which ladder + goal. Omit for the registry default. |
+| `--config STEM` | casual | e.g. `config-4.0`. Omit for the latest. |
+| `--rom ID` | casual | e.g. `firered`. Omit for the default ROM. The executor switches the emulator for you. |
+| `--max-turns N` | casual | Turn cap. Official runs end at their ladder. |
+| `--stop-at EVENT` | casual | End early on a story event. `--max-turns` still caps it. FireRed only. |
+| `--repeat N` | both | Enqueue each model N times. |
+| `--record simple\|detailed` | both | MP4 to `<run_dir>/recording.mp4`, rendered server-side. |
+| `--record-speed realtime\|cut-thinking` | both | `cut-thinking` drops the model's response time from the video. |
+
+Enqueue is where every value is checked. An unknown model, config, ROM, stop
+event or benchmark is a 400 naming the valid ones — including the values the
+server **defaulted** for you, which the confirmation line echoes back:
+
+```
+$ pokemon queue add "gpt-5.6-sol(medium)" --kind casual --rom firered --max-turns 20
+enqueued 1 run(s):
+  q_6b65abdb  casual   gpt-5.6-sol(medium)  config-4.0  rom=firered  max_turns=20
+```
+
+Cancel removes a *pending* item. To remove a finished run from history, use
+`pokemon runs delete`.
+
+---
+
+## `pokemon runs` — History, continue, stop, leaderboard
+
+```bash
+pokemon runs list                        # newest first
+pokemon runs list --status terminated    # the ones a gate killed
+pokemon runs list --model "gpt-5.6-sol(medium)" --limit 20
+pokemon runs board --benchmark pokebench-easy
+pokemon runs continue <run_id>           # enqueue a casual continue from its savepoint
+pokemon runs stop                        # stop the active run
+pokemon runs delete <run_id> --yes       # folder → Trash, and de-index
+```
+
+Statuses:
+
+| Status | Means | On the leaderboard? |
+|---|---|---|
+| `completed` | Ran to its natural end (official: final gate; casual: turn cap) | yes, if official |
+| `terminated` | The referee killed it on a missed gate deadline | yes, if official |
+| `cancelled` | You stopped it. An official run is voided | no |
+| `crashed` | It died — or the model never produced a valid turn at all | no |
+
+That last clause matters: a run whose model 400s or times out on every attempt
+is `crashed`, not a zero. It played nothing, so it scores nothing.
+
+`delete` and `stop` on an official run are destructive and require `--yes`.
 
 ---
 

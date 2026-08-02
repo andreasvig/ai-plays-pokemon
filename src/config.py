@@ -421,6 +421,19 @@ def _validate_config(config: dict[str, Any], *, require_llm_model: bool = True) 
                     f"task_master.enabled is true, got {mtp!r}"
                 )
 
+    # max_spend_usd: optional all-in USD ceiling for the run — the third casual
+    # stop condition next to the turn cap and `stop_at`. Absent/None = unbounded
+    # (and that is what official runs always get). Rejecting 0 is deliberate:
+    # a zero budget can only ever produce an empty run, so it is a typo, not a
+    # request. Floats are the point (`--max-spend 0.50`), so bools — which are
+    # ints in Python — are excluded explicitly.
+    msu = config.get("max_spend_usd")
+    if msu is not None:
+        if isinstance(msu, bool) or not isinstance(msu, (int, float)) or msu <= 0:
+            raise ValueError(
+                f"max_spend_usd must be a positive number of USD, got {msu!r}"
+            )
+
     # historic_images_count: how many of the most recent visible turns should
     # have their start-of-turn screenshot included inline alongside the current
     # screenshot. 0 = text-only history (default).

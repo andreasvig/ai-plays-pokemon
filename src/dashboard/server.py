@@ -664,7 +664,15 @@ def _require_control() -> tuple[Any, Any, Any]:
 
 
 def _validate_model_alias(model: str) -> None:
-    """Reject a model that's neither a known ``model(level)`` selection nor a raw id."""
+    """Reject a model that's neither a known ``model(level)`` selection nor a raw id.
+
+    The message names the CLOSEST few selections rather than all of them. The
+    registry is past 160 ``model(level)`` pairs, and a wall that long is read as
+    noise — the useful content is "did you mean this one", plus where the full
+    list lives.
+    """
+    import difflib
+
     from src.config import (
         _load_models_registry,
         is_valid_model_selection,
@@ -672,12 +680,28 @@ def _validate_model_alias(model: str) -> None:
     )
 
     registry = _load_models_registry()
-    if not is_valid_model_selection(model, registry):
-        known = ", ".join(list_competitor_aliases(registry)) or "(registry empty)"
-        raise HTTPException(
-            status_code=400,
-            detail=f"unknown model {model!r}; known selections: {known}",
-        )
+    if is_valid_model_selection(model, registry):
+        return
+    known = list_competitor_aliases(registry)
+    if not known:
+        raise HTTPException(status_code=400, detail=f"unknown model {model!r} (registry empty)")
+    # Match on the whole selection first, then on the bare model name, so both
+    # "gpt-5.6-sil(medium)" (typo'd model) and "gpt-5.6-sol(mdium)" (typo'd
+    # level) land on something useful.
+    base = model.split("(")[0].strip()
+    close = difflib.get_close_matches(model, known, n=4, cutoff=0.6)
+    if not close:
+        close = [k for k in known if k.split("(")[0] == base][:6]
+    if not close:
+        close = difflib.get_close_matches(base, [k.split("(")[0] for k in known], n=3, cutoff=0.4)
+    suffix = f"; did you mean: {', '.join(close)}" if close else ""
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            f"unknown model {model!r}{suffix}. "
+            f"{len(known)} selections known — `pokemon ls models <substring>` lists them."
+        ),
+    )
 
 
 def _validate_benchmark_id(benchmark: Any) -> str | None:
@@ -717,6 +741,50 @@ def _validate_stop_at(stop_at: Any) -> str | None:
         raise HTTPException(status_code=400, detail=str(e))
 
 
+def _validate_max_spend(raw: Any) -> float | None:
+    """Return a positive USD ceiling, or None for unbounded. 400 otherwise.
+
+    Rejected rather than coerced, on the same reasoning as ``_validate_stop_at``:
+    a budget you asked for and silently didn't get is only discovered by the
+    bill. ``0`` is refused too — a zero budget can only produce an empty run, so
+    it is a typo. Bools are ints in Python, hence the explicit exclusion.
+    """
+    if raw is None or raw == "":
+        return None
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        raise HTTPException(
+            status_code=400,
+            detail=f"max_spend_usd must be a number of USD, got {raw!r}",
+        )
+    if raw <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"max_spend_usd must be greater than 0, got {raw!r}",
+        )
+    return float(raw)
+
+
+def _validate_gameplay(raw: Any) -> str | None:
+    """Return a known casual playstyle, or None (= exploration). 400 otherwise.
+
+    Rejected rather than defaulted, for the same reason as ``_validate_stop_at``:
+    a typo'd playstyle that silently fell back to exploration would produce a run
+    that looks right in the queue and plays the other way, and you would only
+    find out by reading the agent's prompt.
+    """
+    from src.app.executor import RunExecutor
+
+    if raw is None or raw == "":
+        return None
+    if not isinstance(raw, str) or raw.lower() not in RunExecutor.GAMEPLAY_MODES:
+        known = ", ".join(sorted(RunExecutor.GAMEPLAY_MODES))
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown gameplay {raw!r}; known: {known}",
+        )
+    return raw.lower()
+
+
 def _validate_rom(rom: Any) -> str | None:
     """Return a known ROM id, or None (→ the registry default). 400 otherwise.
 
@@ -740,14 +808,66 @@ def _validate_rom(rom: Any) -> str | None:
     return rom_id
 
 
+def _validate_config_stem(config: Any, *, is_continue: bool) -> str | None:
+    """Return a config stem for a casual run: the request's, or the latest.
+
+    Three cases, and the reason each is what it is:
+
+    - **A continue** carries no config of its own — ``continue_from_run`` reads
+      it off the source run — so ``None`` passes straight through.
+    - **Absent** defaults to the newest ``config-X.Y``, matching what a bare
+      ``pokemon run`` already does (``src.config.find_latest_config``). It used
+      to pass ``None`` through, and the executor's ``_resolve_config_path`` then
+      raised ``"casual run requires a config"`` at DISPATCH — after the item had
+      been dequeued, where the only trace was a traceback on the app's stdout.
+      The item vanished and the caller saw a 201. The UI always sent a config,
+      so only the API and ``pokemon queue add`` (which omits the key unless
+      ``--config`` is passed) could hit it.
+    - **Unknown** is a 400 here rather than the same silent drop at dispatch.
+    """
+    if is_continue:
+        return None
+    from src.app.catalog import list_configs
+
+    known = list_configs()
+    if config is None:
+        if not known:
+            raise HTTPException(
+                status_code=400,
+                detail="no configs found in configs/ (expected config-X.Y.yaml)",
+            )
+        return known[-1]  # list_configs is version-sorted; last = latest
+    if not isinstance(config, str) or not config:
+        raise HTTPException(status_code=400, detail="config must be a stem like 'config-4.0'")
+    # Accept a path/filename unchanged (the executor is idempotent for those);
+    # only a bare stem is checked against the registry.
+    if "/" in config or config.endswith(".yaml"):
+        return config
+    if config not in known:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown config {config!r}; known: {', '.join(known)}",
+        )
+    return config
+
+
 @app.get("/api/queue")
 async def api_queue_get():
-    """`{active, items}` — the serial queue (active queue_id + ordered items)."""
-    queue, _executor, _index = _require_control()
+    """`{active, items, last_error}` — the serial queue + the last dispatch failure.
+
+    ``last_error`` is ``None`` in the normal case. It is set when an item was
+    dequeued and then failed before its run could start (a bad config, a ROM
+    that won't load, a recorder that won't boot). Without it that failure is
+    invisible: ``drain_loop`` catches everything so one poisoned item can't
+    freeze the queue, which also means the item simply disappears and the queue
+    looks idle. See ``RunExecutor.last_error``.
+    """
+    queue, executor, _index = _require_control()
     return JSONResponse(
         {
             "active": queue.active,
             "items": [it.model_dump(mode="json") for it in queue.items],
+            "last_error": getattr(executor, "last_error", None),
         }
     )
 
@@ -757,10 +877,10 @@ def _enqueue_kwargs(spec: dict) -> dict:
 
     Raises ``HTTPException(400)`` on a bad kind / missing-or-unknown model /
     unknown benchmark / unknown stop event. Official (locked #4/#7) FORCES the
-    frozen config + no max-turns (request config/max_turns/stop_at ignored — a
-    benchmark ends at its own ladder) and takes only the request's
-    ``benchmark``; casual keeps the request's
-    config/max_turns/stop_at/rom/continue_from.
+    frozen config + no max-turns (request config/max_turns/stop_at/max_spend_usd/
+    gameplay ignored — a benchmark ends at its own ladder and always races) and
+    takes only the request's ``benchmark``; casual keeps the request's
+    config/max_turns/stop_at/max_spend_usd/gameplay/rom/continue_from.
     Pure validation — no enqueue, no side effects — so the single and batch
     routes share exactly the same rules.
     """
@@ -809,9 +929,16 @@ def _enqueue_kwargs(spec: dict) -> dict:
     return {
         "kind": kind,
         "model": model,
-        "config": spec.get("config"),
+        # Defaulted to the latest config when absent, 400 when unknown — either
+        # way the item that reaches the queue is dispatchable. See
+        # :func:`_validate_config_stem`.
+        "config": _validate_config_stem(
+            spec.get("config"), is_continue=bool(spec.get("continue_from"))
+        ),
         "max_turns": spec.get("max_turns"),
         "stop_at": stop_at,
+        "max_spend_usd": _validate_max_spend(spec.get("max_spend_usd")),
+        "gameplay": _validate_gameplay(spec.get("gameplay")),
         "rom": rom_id,
         "continue_from": spec.get("continue_from"),
         "record": record,
@@ -982,6 +1109,11 @@ async def api_run_continue(run_id: str, body: dict | None = None):
         # rather than inheriting the source run's. Ignored for an official
         # continue (the executor's official branch never reads it).
         stop_at=_validate_stop_at(body.get("stop_at")),
+        # Also per-segment: the budget bounds the continue you are launching,
+        # not the lineage. An official continue never reads it.
+        max_spend_usd=_validate_max_spend(body.get("max_spend_usd")),
+        # Per-segment as well — a continue may deliberately switch playstyle.
+        gameplay=_validate_gameplay(body.get("gameplay")),
         continue_from=spec["continue_from"],
         task_master_model=spec.get("task_master_model"),
         # A continue is a fresh run with its own run dir, so it gets its own

@@ -300,7 +300,7 @@ system_prompt: |
 #     — "Button presses to send to the game. Aim for 6-12 for predictable actions."
 #     — Valid: "up", "down", "left", "right", "a", "b", "start", "select"
 #
-#   reasoning: str (max_length=5000)
+#   reasoning: str
 #     — "Free-form prose where you observe the screen, plan your action, and predict
 #        the outcome. End with one sentence stating what you expect to see next turn —
 #        concrete enough to grade. Use a screen-state claim ('I expect to see Oak in

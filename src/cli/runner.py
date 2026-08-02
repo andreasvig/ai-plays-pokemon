@@ -1115,6 +1115,22 @@ Examples:
              "first ends the run.",
     )
     parser.add_argument(
+        "--gameplay", choices=["exploration", "speed"], default=None,
+        help="How the agent is told to play: `exploration` = wander, catch, "
+             "roleplay; `speed` = shortest path to the top goal. Selects which "
+             "of the config's guideline blocks is injected. Default on this "
+             "path is `speed` (a bare `pokemon run` has always been given the "
+             "benchmark block), unlike the control center where casual runs "
+             "default to exploration.",
+    )
+    parser.add_argument(
+        "--max-spend", type=float, dest="max_spend", default=None,
+        help="All-in USD ceiling for the run: Player + OCR + TaskMaster. Ends "
+             "the run at the first turn boundary where the spend is reached, so "
+             "the final bill can exceed it by up to one turn. Runs alongside "
+             "--turns and --stop-at; whichever lands first ends it. Default: no cap.",
+    )
+    parser.add_argument(
         "--snapshot", default="local/snapshots/bedroom_start",
         help="Snapshot reloaded before each run's turn loop.",
     )
@@ -1181,6 +1197,27 @@ Examples:
             sys.exit(f"ERROR: {e}")
         for c in prepared:
             c["referee"] = block
+
+    # Playstyle: sets the same top-level `mode` the executor stamps, so one key
+    # drives `agent._player_mode_guidelines` and `task_master._mode_guidelines`
+    # on every path. Left ALONE when unset — an unset mode already reads as
+    # benchmark in both selectors, and writing "benchmark" here explicitly would
+    # look like a choice nobody made.
+    if args.gameplay:
+        from src.app.executor import RunExecutor
+
+        for c in prepared:
+            c["mode"] = RunExecutor.GAMEPLAY_MODES[args.gameplay]
+
+    # Spend ceiling: rides on the config under the same public key the queue
+    # executor writes (`_apply_max_spend`), so TurnManager has exactly one place
+    # to look. Rejected here rather than at load time so a bad number costs you
+    # nothing — mGBA has not launched yet.
+    if args.max_spend is not None:
+        if args.max_spend <= 0:
+            sys.exit(f"ERROR: --max-spend must be greater than 0, got {args.max_spend}")
+        for c in prepared:
+            c["max_spend_usd"] = float(args.max_spend)
 
     # Recording rides on the config under `_record` (the same private-key
     # convention as `_llm_alias` / `_config_path`), so it reaches run_single_loop

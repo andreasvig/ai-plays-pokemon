@@ -64,11 +64,19 @@ def test_top_level_goal_is_the_only_goal_given(raw_4_0):
     assert "success_criteria" not in task
 
 
-def test_run_turn_cap_is_not_the_old_per_task_budget(raw_4_0):
-    """`max_turns_per_task` is read as the WHOLE-run turn cap on this path
-    (turn.py: self.max_turns), so 3.x's per-task value of 25 would silently end
-    every bare run at turn 25."""
-    assert raw_4_0["max_turns_per_task"] > 25
+def test_no_per_task_turn_budget(raw_4_0):
+    """`max_turns_per_task` is a TaskMaster construct and 4.0 has no tasks, so
+    the key is deliberately absent. The whole-run cap comes from the caller
+    (`pokemon run --turns N`, or the queue's `max_turns`), never from here."""
+    assert "max_turns_per_task" not in raw_4_0
+
+
+def test_config_4_0_loads_without_a_turn_budget():
+    """Its absence must not trip the loader — the positive-int check on
+    `max_turns_per_task` is gated on `task_master.enabled`, which 4.0 lacks."""
+    cfg = load_config(str(CONFIG_4_0), llm_alias="gemini-3.5-flash(medium)")
+    assert cfg.get("task_master", {}).get("enabled", False) is False
+    assert "max_turns_per_task" not in cfg
 
 
 # --- 2. The output schema ----------------------------------------------------

@@ -616,6 +616,8 @@ def test_turn_loop_win_stamps_completed_status(tmp_path):
     tm._prior_duration_s = 0.0        # cumulative-resume accounting baseline
     tm.referee = None
     tm._referee_completed = True
+    tm._aborted_no_output = False   # no-valid-output abort latch (writer reads it)
+    tm._abort_error = None
 
     # Mirror the loop's call on a referee success-exit.
     tm._write_run_summary(status="completed" if tm._referee_completed else None)
@@ -623,3 +625,163 @@ def test_turn_loop_win_stamps_completed_status(tmp_path):
     with open(run_dir / "run_summary.json") as f:
         summary = json.load(f)
     assert summary["status"] == "completed"
+
+
+# ─────────── a dropped item leaves a trace, and a dead model isn't a score ───────────
+
+
+def test_dispatch_failure_is_recorded_and_the_item_still_leaves_the_queue(harness):
+    """A failure between dequeue and run start must be visible somewhere.
+
+    ``drain_loop`` catches everything so one poisoned item can't freeze the
+    serial queue — which also means the item disappears and the queue looks
+    idle. ``last_error`` is the trace that makes those two states
+    distinguishable. Both halves are asserted: the queue still drains (the
+    original invariant) AND the reason survives (the new one).
+    """
+    queue = harness["queue"]
+    executor = harness["executor"]
+
+    def boom(*a, **k):
+        raise RuntimeError("mGBA would not load the rom")
+
+    executor._run_fn = boom
+    item = queue.enqueue(kind=RunKind.casual, model="model-x", config="cfg", max_turns=3)
+
+    with pytest.raises(RuntimeError):
+        executor.drain_once()   # re-raised for drain_loop's traceback
+
+    assert executor.last_error is not None
+    assert executor.last_error["queue_id"] == item.queue_id
+    assert executor.last_error["model"] == "model-x"
+    assert "mGBA would not load the rom" in executor.last_error["error"]
+    # The queue must not be wedged by the failure — the finally still fires.
+    assert queue.items == []
+    assert queue.active is None
+
+
+def test_last_error_clears_once_a_run_actually_starts(harness):
+    queue = harness["queue"]
+    executor = harness["executor"]
+    executor.last_error = {"queue_id": "q_old", "error": "stale"}
+
+    queue.enqueue(kind=RunKind.casual, model="model-a", config="cfg", max_turns=3)
+    assert executor.drain_once() is not None
+    assert executor.last_error is None
+
+
+def test_no_valid_output_abort_stamps_crashed_not_completed(tmp_path):
+    """A run whose model never answered must not read as a played-and-lost run.
+
+    Anchored on a real one: `2026-06-19_17-11-32_..._gemma-4-26b-a4b-fast-...`
+    ended after a provider 400 ("not a valid model ID") on turn 1, was stamped
+    `completed`, and posted a 0% / 2-turn row to the leaderboard. `crashed` is
+    reused rather than a new status because it already has the two properties
+    wanted here — excluded by `leaderboard_eligible`, and `_finalize_run`
+    withholds `benchmark_version` from it.
+    """
+    import json as _json
+    import time as _time
+
+    from src.agent.turn import TurnManager
+
+    tm = TurnManager.__new__(TurnManager)
+    run_dir = tmp_path / "dead_run"
+    run_dir.mkdir()
+
+    class _Logger:
+        def __init__(self, rd):
+            self.run_dir = rd
+
+    tm.logger = _Logger(run_dir)
+    tm.config = {"_llm_alias": "m", "llm_model": "resolved/m", "thinking": None, "task": {"goal": "x"}}
+    tm.fallback_models = []
+    tm.tasks = None
+    tm.turn_number = 1
+    tm._run_start_time = _time.time()
+    tm.total_cost_usd = 0.0
+    tm.task_master_cost_usd = 0.0
+    tm.task_master_turns = 0
+    tm.ocr = None
+    tm.total_input_tokens = 0
+    tm.total_output_tokens = 0
+    tm.turn_costs = []
+    tm.turn_explanations = []
+    tm._explanation_turns = []
+    tm._prior_duration_s = 0.0
+    tm.referee = None
+    tm._referee_completed = False
+    tm._aborted_no_output = True
+    tm._abort_error = "status_code: 400 ... is not a valid model ID"
+
+    # Mirror the loop's exit-status decision.
+    if tm._referee_completed:
+        status = "completed"
+    elif tm._aborted_no_output:
+        status = "crashed"
+    else:
+        status = None
+    tm._write_run_summary(status=status, kind="official", run_id="r1")
+
+    summary = _json.loads((run_dir / "run_summary.json").read_text())
+    assert summary["status"] == "crashed"
+    assert "not a valid model ID" in summary["error"]
+
+    # ...and the projection of that summary can never post a row.
+    from src.app.models import RunKind as _Kind, RunStatus as _Status, RunSummary
+
+    row = RunSummary(
+        run_id="r1", kind=_Kind.official, model="m", status=_Status.crashed
+    )
+    assert row.leaderboard_eligible is False
+    # Control: the same row as `completed` WOULD have posted — which is exactly
+    # what the gemma-4-26b row on the published board is.
+    assert RunSummary(
+        run_id="r1", kind=_Kind.official, model="m", status=_Status.completed
+    ).leaderboard_eligible is True
+
+
+def test_a_clean_run_is_unaffected_by_the_abort_latch(tmp_path):
+    """Control: with the latch False the summary keeps its old shape exactly.
+
+    Without this the previous test passes for a version that stamps `crashed`
+    on every run.
+    """
+    import json as _json
+    import time as _time
+
+    from src.agent.turn import TurnManager
+
+    tm = TurnManager.__new__(TurnManager)
+    run_dir = tmp_path / "ok_run"
+    run_dir.mkdir()
+
+    class _Logger:
+        def __init__(self, rd):
+            self.run_dir = rd
+
+    tm.logger = _Logger(run_dir)
+    tm.config = {"_llm_alias": "m", "llm_model": "resolved/m", "thinking": None, "task": {"goal": "x"}}
+    tm.fallback_models = []
+    tm.tasks = None
+    tm.turn_number = 20
+    tm._run_start_time = _time.time()
+    tm.total_cost_usd = 1.0
+    tm.task_master_cost_usd = 0.0
+    tm.task_master_turns = 0
+    tm.ocr = None
+    tm.total_input_tokens = 0
+    tm.total_output_tokens = 0
+    tm.turn_costs = []
+    tm.turn_explanations = []
+    tm._explanation_turns = []
+    tm._prior_duration_s = 0.0
+    tm.referee = None
+    tm._referee_completed = False
+    tm._aborted_no_output = False
+    tm._abort_error = None
+
+    tm._write_run_summary(status=None)
+    summary = _json.loads((run_dir / "run_summary.json").read_text())
+    assert "status" not in summary          # left for the executor to infer
+    assert "error" not in summary           # key only exists on the abort path

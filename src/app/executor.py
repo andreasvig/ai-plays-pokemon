@@ -99,6 +99,17 @@ class RunExecutor:
         self._active_run_id: Optional[str] = None
         self._active_kind: Optional[RunKind] = None
 
+        # Last dispatch failure — an item that was dequeued but never became a
+        # run (bad config, ROM that won't load, recorder that won't boot).
+        # ``drain_loop`` deliberately swallows every such failure so one poisoned
+        # item can't freeze the serial queue; the cost was that the item just
+        # VANISHED — the caller saw its 201, the queue went back to empty, and
+        # the only trace was a traceback on the app's stdout, which nothing
+        # tails. This is that trace, kept somewhere the API can read it.
+        # ``{queue_id, kind, model, error, at}``; cleared when the next run
+        # actually starts.
+        self.last_error: Optional[dict] = None
+
         self._lock = threading.Lock()
         self._stopped = threading.Event()
 
@@ -118,6 +129,27 @@ class RunExecutor:
             pass
 
     # --- seam resolution ------------------------------------------------------
+
+    def _record_failure(self, item: QueuedRun, error: str) -> None:
+        """Remember why an item was dequeued without producing a run, and say so.
+
+        Two audiences: the terminal (one loud line, so someone watching the app
+        sees it immediately) and ``GET /api/queue``'s ``last_error`` (so a client
+        that only ever sees the 201 can find out afterwards). Best-effort — a
+        failure to record a failure must never derail the drain.
+        """
+        try:
+            self.last_error = {
+                "queue_id": item.queue_id,
+                "kind": item.kind.value if hasattr(item.kind, "value") else str(item.kind),
+                "model": item.model,
+                "error": error,
+                "at": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()),
+            }
+            print(f"QUEUE: dispatch FAILED for {item.queue_id} ({item.model}) — {error}")
+            self._notify_control()
+        except Exception:
+            pass
 
     def _resolve_run_fn(self) -> RunFn:
         if self._run_fn is not None:
@@ -159,8 +191,10 @@ class RunExecutor:
           max-turns, snapshot = that savepoint dir.
 
         Both casual branches also take the item's optional ``stop_at`` story
-        event (see :meth:`_apply_stop_at`), which bounds the run alongside
-        max-turns rather than replacing it.
+        event (see :meth:`_apply_stop_at`) and its optional ``max_spend_usd``
+        ceiling (see :meth:`_apply_max_spend`). Both bound the run alongside
+        max-turns rather than replacing it — first one to land ends it. Neither
+        is offered to an official run: pace is its only bound (locked #8).
 
         Which ROM each branch plays: official takes the benchmark ladder's, casual
         fresh takes the item's (``None`` → the registry default), and a continue
@@ -210,7 +244,10 @@ class RunExecutor:
                 cfg["referee"] = {"checkpoints": benchmark.ladder, "enforce": True}
                 self._stamp_mode(cfg, "benchmark")
                 return cfg, str(savepoint_dir), self._OFFICIAL_TURN_SENTINEL
-            self._stamp_mode(cfg, "freeplay")  # casual continue
+            # Casual continue. Playstyle is per-SEGMENT like stop_at and the
+            # budget: you may well be continuing precisely because you now want
+            # the other one.
+            self._stamp_mode(cfg, self._mode_for_gameplay(item.gameplay))
             # Casual continue may swap the Player and/or TaskMaster model (UI
             # pickers). ``item.model`` carries the chosen Player model. Re-resolve
             # it ONLY when it (a) is a genuine registry selection and (b) actually
@@ -235,6 +272,7 @@ class RunExecutor:
             # A continue picks its OWN stop event (like max-turns) — it is a
             # property of this segment, not something inherited from the source.
             self._apply_stop_at(cfg, item.stop_at)
+            self._apply_max_spend(cfg, item.max_spend_usd)
             turns = item.max_turns or 1500
             return cfg, str(savepoint_dir), turns
 
@@ -280,12 +318,13 @@ class RunExecutor:
         # no task_master block (4.0+) skips TM model resolution entirely — there
         # is no TaskMaster to give a model to.
         cfg = prepare_config(self._resolve_config_path(item.config), item.model)
-        self._stamp_mode(cfg, "freeplay")
+        self._stamp_mode(cfg, self._mode_for_gameplay(item.gameplay))
         if self._tm_enabled(cfg):
             from src.cli.runner import _resolve_task_master_model
 
             _resolve_task_master_model(cfg, None)
         self._apply_stop_at(cfg, item.stop_at)
+        self._apply_max_spend(cfg, item.max_spend_usd)
         # Which game. None → the registry default, so an item enqueued before
         # ROMs existed behaves exactly as it did. The start state travels with
         # the ROM: the canonical save is FireRed's bedroom, and loading it under
@@ -328,6 +367,32 @@ class RunExecutor:
         """True when this config actually runs the TaskMaster meta-agent."""
         return bool((cfg.get("task_master") or {}).get("enabled", False))
 
+    # The two playstyles a casual run can pick, and the steering block each one
+    # selects. The VALUES are the existing run modes, so nothing downstream
+    # changes: `agent._player_mode_guidelines` and `task_master._mode_guidelines`
+    # already switch on exactly these strings.
+    GAMEPLAY_MODES = {"exploration": "freeplay", "speed": "benchmark"}
+    DEFAULT_GAMEPLAY = "exploration"
+
+    @classmethod
+    def _mode_for_gameplay(cls, gameplay: str | None) -> str:
+        """Run mode for a CASUAL item's playstyle.
+
+        ``None`` → exploration → ``"freeplay"``, which is what every casual run
+        has always been given, so an item enqueued before this field existed
+        behaves identically. An unrecognised value falls back the same way
+        rather than raising: the API rejects a bad playstyle at enqueue time
+        (:func:`server._validate_gameplay`), so anything reaching here is either
+        valid or a hand-edited queue.json, and wedging the drain over it would
+        be worse than playing it the default way.
+
+        Official runs never call this — a benchmark always races.
+        """
+        return cls.GAMEPLAY_MODES.get(
+            (gameplay or cls.DEFAULT_GAMEPLAY).lower(),
+            cls.GAMEPLAY_MODES[cls.DEFAULT_GAMEPLAY],
+        )
+
     @classmethod
     def _stamp_mode(cls, cfg: dict, mode: str) -> None:
         """Stamp the run mode (``"benchmark"`` / ``"freeplay"``) onto the config.
@@ -367,6 +432,22 @@ class RunExecutor:
         block = stop_at_referee_config(stop_at)
         if block is not None:
             cfg["referee"] = block
+
+    @staticmethod
+    def _apply_max_spend(cfg: dict, max_spend_usd: float | None) -> None:
+        """Wire a casual run's USD ceiling onto its config, in place.
+
+        Rides on the config rather than a new dispatch parameter because that is
+        where ``TurnManager`` already looks for its bounds, and it means the same
+        key serves the queue and ``pokemon run --max-spend``. Like ``stop_at``,
+        a continue picks its OWN ceiling — the budget bounds the segment you are
+        launching, not the lineage.
+
+        No ceiling → the key is not written, so the config keeps its exact prior
+        shape and the run is unbounded, as every casual run was before.
+        """
+        if max_spend_usd is not None:
+            cfg["max_spend_usd"] = float(max_spend_usd)
 
     @staticmethod
     def _resolve_config_path(config: str | None) -> str:
@@ -434,6 +515,8 @@ class RunExecutor:
             def _publish(rd):
                 captured["run_dir"] = Path(rd)
                 self._active_run_id = Path(rd).name
+                # A run really started, so whatever failed last time is history.
+                self.last_error = None
                 # Re-notify now that the active run id is known (the earlier
                 # run-became-active ping fired before run_fn set it). This second
                 # push lets the SPA refetch and open the live spectate stream.
@@ -475,6 +558,17 @@ class RunExecutor:
                 run_id = run_dir.name
                 self._active_run_id = run_id
                 self._finalize_run(run_dir, item)
+            elif captured.get("run_dir") is None:
+                # The run_fn returned without ever publishing a run dir, so there
+                # is no folder to finalise and nothing on disk to explain it.
+                self._record_failure(item, "run produced no run directory")
+        except Exception as exc:
+            # Record it somewhere readable BEFORE re-raising. drain_loop still
+            # catches (and still prints the traceback) — this only adds a trace
+            # the API can serve, so a dequeued-then-dropped item stops being
+            # indistinguishable from one that never existed.
+            self._record_failure(item, f"{type(exc).__name__}: {exc}")
+            raise
         finally:
             with self._lock:
                 # Remove the just-run item from the queue and clear active.
