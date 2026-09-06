@@ -110,3 +110,5 @@ Whether an endpoint tokenizes replayed reasoning is a per-endpoint fact, not a p
 measures it from billed prompt tokens (results in `artifacts/provider-compatibility/reasoning-replay-probe.md`). Endpoint tags
 carry the quantization (fp4, fp8, bf16, mxfp4); providers can serve degraded quants or sampling defaults, which Artificial
 Analysis tracks as an Endpoint Accuracy Index. Pin endpoints deliberately and record the tag in results.
+
+Consolidated lessons from the 2026-09-06 probes and samples: [openrouter-reasoning-and-caching-lessons.md](openrouter-reasoning-and-caching-lessons.md).
