@@ -188,3 +188,49 @@ def test_trace_attaches_billing_implied_cache_when_pricing_snapshot_exists(tmp_p
     assert trace["cache"]["implied_cached_tokens"] == 0 and trace["cache"]["implied_agreement"] == {"matches": 1}
     event = trace["tasks"][0]["turns"][0]["diagnostics"][0]
     assert event["implied_cache"]["status"] == "no_discount_billed"
+
+
+
+def test_split_turn_is_folded_back_into_one_observation():
+    """`final_turn_text_only` profiles send user[text, screenshot] → assistant "Observed." → user prompt.
+    The turn view must still show the observation (OCR text) as the input, not the acknowledgement or
+    the bare prompt, and the synthetic assistant message must not flip a segment start to "continued".
+    The fixture goes through display_messages, the projection turn_trace events actually carry."""
+    from src.app.trace_build import _project_turn
+    from src.agent.append_agent import TURN_ACK, display_messages
+    image = {"type": "image_url", "image_url": {"url": "data:image/png;base64,c2NyZWVu"}}
+    call = {"role": "assistant", "content": None, "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "gameplay", "arguments": "{\"inputs\": [\"a\"]}"}}]}
+    observation = {"role": "user", "content": [{"type": "text", "text": "Turn 1\n\nText observed since your last action:\nOAK: Hello!"}, image]}
+    ack = {"role": "assistant", "content": TURN_ACK}
+    prompt = {"role": "user", "content": "Turn 1: respond with your next action now."}
+    head = [{"role": "system", "content": "You play the game."}, {"role": "user", "content": "Top goal: beat the game."}]
+    split = display_messages(head + [observation, ack, prompt, call])
+    plain = display_messages(head + [observation, call])
+    diagnostics = [{"type": "llm_request_usage", "turn": 1}]
+    folded = _project_turn({"turn": 1, "trace": split, "events": diagnostics})["trace"]
+    control = _project_turn({"turn": 1, "trace": plain, "events": diagnostics})["trace"]
+    for trace in (folded, control):
+        assert trace["conversation"] == "start"
+        assert "Top goal: beat the game." in trace["segment_context"]
+        assert "OAK: Hello!" in json.dumps(trace)
+    assert TURN_ACK not in json.dumps(folded["steps"])
+    assert "respond with your next action now" in json.dumps(folded)
+    # A later turn: the acknowledgement must not hide the real model reply, and "continued" still holds.
+    later = display_messages(head + [observation, ack, prompt, call, {"role": "tool", "tool_call_id": "c1", "content": "Accepted."}, observation, ack, prompt, call])
+    view = _project_turn({"turn": 2, "trace": later, "events": diagnostics})["trace"]
+    assert view["conversation"] == "continued"
+    assert TURN_ACK not in json.dumps(view["steps"])
+    assert "OAK: Hello!" in json.dumps(view)
+
+
+def test_compaction_view_skips_the_split_turn_acknowledgement():
+    from src.app.trace_build import _compaction_trace
+    from src.agent.append_agent import TURN_ACK, display_messages
+    image = {"type": "image_url", "image_url": {"url": "data:image/png;base64,c2NyZWVu"}}
+    observation = {"role": "user", "content": [{"type": "text", "text": "Turn 16\n\nText observed since your last action:\nRIVAL: Smell ya later!"}, image]}
+    prompt = {"role": "user", "content": "Pause gameplay after turn 15 and prepare a handover for yourself."}
+    reply = {"role": "assistant", "content": None, "tool_calls": [{"id": "c9", "type": "function", "function": {"name": "compaction", "arguments": "{\"continuation_summary\": \"x\", \"memory\": {}}"}}]}
+    messages = display_messages([{"role": "system", "content": "sys"}, observation, {"role": "assistant", "content": TURN_ACK}, prompt, reply])
+    view = _compaction_trace([{"type": "compaction_trace", "messages": messages}])
+    assert "RIVAL: Smell ya later!" in view["user_input"] and "Pause gameplay" in view["user_input"]
+    assert TURN_ACK not in json.dumps(view)

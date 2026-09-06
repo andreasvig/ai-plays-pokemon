@@ -52,7 +52,7 @@
     }
     const furthest = summary?.referee?.furthest
     const fg = gates.find((g) => g.id === furthest)
-    return fg ? `Reached ${fg.name}` : `${reachedN}/${totalN} gates`
+    return fg ? `Furthest: ${fg.name}` : `${reachedN}/${totalN} gates`  // gate names are sentences ("Reached Route 1"), so no "Reached" prefix
   })
   const stIcon = { done: '✓', missed: '✗', failed: '✗', pending: '·', unmet: '·' }
 

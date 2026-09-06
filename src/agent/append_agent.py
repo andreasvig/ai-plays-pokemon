@@ -43,6 +43,11 @@ class SpendLimitReached(RuntimeError):
     pass
 
 
+# Synthetic assistant message that closes a screenshot turn on `final_turn_text_only` profiles.
+# The trace builder folds it back into the observation, so keep the text constant.
+TURN_ACK = "Observed."
+
+
 class ProviderTransportError(RuntimeError):
     """The gateway or upstream failed mid-request and returned no completion.
 
@@ -217,8 +222,13 @@ def implied_cache(attempt: dict, endpoints: list[dict] | None, tolerance: float 
         return {"status": "unpriced", "billed_prompt_rate_per_m": rate * 1e6}
     tag = (attempt.get("continuity") or {}).get("configured_endpoint")
     provider = attempt.get("provider")
-    named = [t for t in tiers if (tag and (t[3].get("tag") or "").startswith(tag))
-             or (provider and t[3].get("provider_name") == provider)]
+    # The configured tag is exact: `openai` must not also match `openai/flex` (half price), or the
+    # cheapest-qualifying rule below picks the flex tier and under-implies the cache (Astra 2026-09-06:
+    # 87% reported, 62% "implied"). Fall back to prefix/provider matching only when nothing is exact.
+    named = [t for t in tiers if tag and t[3].get("tag") == tag]
+    if not named:
+        named = [t for t in tiers if (tag and (t[3].get("tag") or "").startswith(tag))
+                 or (provider and t[3].get("provider_name") == provider)]
     # Remove each tier's cache-write premium before comparing rates: on the first
     # request of a segment nearly every token is a write billed above list, which
     # would otherwise push the rate past the true tier (Anthropic 1.25x writes).
@@ -476,7 +486,7 @@ class AppendAgent:
             {"type": "image_url", "image_url": {"url": image}}]}
         if not self._splits_turn():
             return [observation]
-        return [observation, {"role": "assistant", "content": "Observed."}]
+        return [observation, {"role": "assistant", "content": TURN_ACK}]
 
     def _splits_turn(self):
         return bool(self.profile and self.profile.get("final_turn_text_only"))

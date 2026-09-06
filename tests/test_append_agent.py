@@ -542,3 +542,23 @@ def test_final_turn_text_only_closes_the_screenshot_turn(tmp_path):
     control, control_provider, _ = engine(control_cfg, tmp_path / "control")
     asyncio.run(control.play(1, "first screen", IMAGE))
     assert control_provider.requests[0]["messages"][-1]["content"][1]["type"] == "image_url"
+
+
+def test_implied_cache_prefers_the_exact_endpoint_tag_over_cheaper_prefix_matches():
+    """`openai` must not resolve to `openai/flex` (half price) just because the tag is a prefix and the
+    cheapest qualifying tier wins. Astra rerun turn 2: 4,701 prompt tokens, 2,932 cached at $1/M,
+    1,766 written at $12.50/M, billed $0.025037 — exactly the provider's numbers on the `openai` tier."""
+    endpoints = [
+        {"tag": "openai/flex", "provider_name": "OpenAI", "name": "flex", "pricing": {"prompt": "0.000005", "input_cache_read": "0.0000005", "input_cache_write": "0.00000625"}},
+        {"tag": "openai", "provider_name": "OpenAI", "name": "standard", "pricing": {"prompt": "0.00001", "input_cache_read": "0.000001", "input_cache_write": "0.0000125"}},
+    ]
+    attempt = {"request_tokens": 4701, "cached_tokens": 2932, "cache_write_tokens": 1766, "provider": "OpenAI",
+               "continuity": {"configured_endpoint": "openai"},
+               "raw_usage": {"cost_details": {"upstream_inference_prompt_cost": 0.025037}}}
+    result = implied_cache(attempt, endpoints)
+    assert result["tier"] == "standard"
+    assert result["agreement"] == "matches"
+    assert abs(result["implied_cached_tokens"] - 2932) <= 64
+    # Without an exact tag the prefix fallback still works (and here still picks the cheapest qualifying tier).
+    loose = implied_cache({**attempt, "continuity": {"configured_endpoint": "openai/"}}, endpoints)
+    assert loose["tier"] == "flex"

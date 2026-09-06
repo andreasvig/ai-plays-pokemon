@@ -14,6 +14,7 @@ These helpers depend ONLY on :mod:`pathlib` and :mod:`src.core.event_parsing`
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from pathlib import Path
 
 TRACE_VERSION = 5
@@ -46,6 +47,11 @@ def _trace_steps(messages: list[dict]) -> dict:
     return event_parsing._group_trace_into_steps(messages or [])
 
 
+def _is_turn_ack(message: dict) -> bool:
+    from src.agent.append_agent import TURN_ACK
+    return message.get("role") == "assistant" and message.get("content") == TURN_ACK and not message.get("tool_calls")
+
+
 def _project_turn(turn: dict) -> dict:
     """Project one per-turn dict (from ``group_events_by_turn``) for the SPA."""
     exp = turn.get("explanation") or {}
@@ -61,6 +67,21 @@ def _project_turn(turn: dict) -> dict:
         user_indices = [i for i, m in enumerate(messages) if m.get("role") == "user"]
         if user_indices:
             last_user = user_indices[-1]
+            first_user = last_user
+            # Split-turn profiles (`final_turn_text_only`) deliver one observation as three messages:
+            # user[text, screenshot], the synthetic assistant acknowledgement, user action prompt.
+            # Fold them back into one observation so the turn shows its OCR text and screenshot,
+            # and so the acknowledgement does not count as model output when deciding "start".
+            if last_user >= 2 and _is_turn_ack(messages[last_user - 1]) and messages[last_user - 2].get("role") == "user":
+                first_user = last_user - 2
+                observation = deepcopy(messages[first_user])
+                prompt = messages[last_user].get("content", "")
+                if isinstance(observation.get("content"), list):  # raw wire shape
+                    observation["content"] = observation["content"] + [{"type": "text", "text": prompt}]
+                else:  # display projection (display_messages): text with "[image]" placeholders
+                    observation["content"] = f"{observation.get('content', '')}\n\n{prompt}"
+                messages = messages[:first_user] + [observation] + messages[last_user + 1:]
+                last_user = first_user
             prior = messages[:last_user]
             start = not any(m.get("role") not in ("system", "user") for m in prior)
             conversation = "start" if start else "continued"
@@ -105,9 +126,11 @@ def _compaction_trace(events: list[dict]) -> dict:
         # The latest observation and compaction instruction are consecutive
         # user messages appended to the existing segment.
         first = last = users[-1]
-        while first > 0 and messages[first - 1].get("role") == "user":
+        # Consecutive user messages; a split-turn profile's synthetic acknowledgement sits between the
+        # observation and the compaction prompt and is skipped, not shown.
+        while first > 0 and (messages[first - 1].get("role") == "user" or _is_turn_ack(messages[first - 1])):
             first -= 1
-        inputs = messages[first:last + 1]
+        inputs = [m for m in messages[first:last + 1] if not _is_turn_ack(m)]
         trace = _trace_steps(messages[last + 1:])
         trace["user_input"] = "\n\n".join(m.get("content", "") for m in inputs)
         trace["user_messages"] = inputs
