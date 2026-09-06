@@ -54,13 +54,16 @@ pokemon runs list --status terminated
 ```
 
 Don't know a name? `pokemon ls models sol`, `pokemon ls roms`,
-`pokemon ls configs`, `pokemon ls events`, `pokemon ls benchmarks`. Every one of
-those flags is validated at enqueue, and a wrong value is rejected with the
-valid ones named — never accepted and dropped later.
+`pokemon ls starts`, `pokemon ls configs`, `pokemon ls events`,
+`pokemon ls benchmarks`. Every one of those flags is validated at enqueue, and a
+wrong value is rejected with the valid ones named — never accepted and dropped
+later.
 
-Casual defaults: the latest config, the default ROM, no early stop, no
-recording. Official runs ignore `--config` / `--max-turns` / `--stop-at` /
-`--rom` — a benchmark is frozen, and takes its ROM from its own ladder.
+Casual defaults: the latest config, the default ROM, that ROM's default opening,
+no early stop, no recording. Official runs ignore `--config` / `--max-turns` /
+`--stop-at` / `--rom` / `--start` — a benchmark is frozen, takes its ROM from its
+own ladder, and always begins at the canonical savepoint so two scores stay
+comparable.
 
 ---
 
@@ -93,6 +96,7 @@ queue either way, so the queue alone looks idle.
 pokemon ls                   # the categories
 pokemon ls models sol        # aliases + thinking levels, substring-filtered
 pokemon ls roms              # which games are registered AND on disk
+pokemon ls starts            # choosable openings per game (boy/girl on FireRed)
 pokemon ls configs           # config stems; the last is the casual default
 pokemon ls events            # ids accepted by --stop-at (FireRed only)
 pokemon ls benchmarks
@@ -268,21 +272,32 @@ pokemon queue add "gemini-3.5-flash(high)" --kind casual --max-turns 50 --repeat
 | `--benchmark ID` | official | Which ladder + goal. Omit for the registry default. |
 | `--config STEM` | casual | e.g. `config-4.0`. Omit for the latest. |
 | `--rom ID` | casual | e.g. `firered`. Omit for the default ROM. The executor switches the emulator for you. |
+| `--start LABEL` | casual | Which opening to play from — e.g. `girl`. Labels are scoped to `--rom`; `pokemon ls starts` lists them. Omit for that game's default opening. |
 | `--max-turns N` | casual | Turn cap. Official runs end at their ladder. |
 | `--stop-at EVENT` | casual | End early on a story event. `--max-turns` still caps it. FireRed only. |
+| `--max-spend USD` | casual | All-in spend ceiling (Player + OCR + TaskMaster). Checked at the turn boundary, so the final total overshoots by up to one turn's cost. |
+| `--gameplay exploration\|speed` | casual | Which steering block the agent gets. `exploration` (default) wanders and roleplays; `speed` races the top goal. Official runs always race. |
 | `--repeat N` | both | Enqueue each model N times. |
 | `--record simple\|detailed` | both | MP4 to `<run_dir>/recording.mp4`, rendered server-side. |
 | `--record-speed realtime\|cut-thinking` | both | `cut-thinking` drops the model's response time from the video. |
 
-Enqueue is where every value is checked. An unknown model, config, ROM, stop
-event or benchmark is a 400 naming the valid ones — including the values the
+Enqueue is where every value is checked. An unknown model, config, ROM, start,
+stop event or benchmark is a 400 naming the valid ones — including the values the
 server **defaulted** for you, which the confirmation line echoes back:
 
 ```
 $ pokemon queue add "gpt-5.6-sol(medium)" --kind casual --rom firered --max-turns 20
 enqueued 1 run(s):
   q_6b65abdb  casual   gpt-5.6-sol(medium)  config-4.0  rom=firered  max_turns=20
+
+$ pokemon queue add "claude-opus-5(high)" --kind casual --rom firered --start gril
+ERROR: unknown start 'gril' for rom 'firered'; known: boy, girl
+  try: pokemon ls starts
 ```
+
+A start label is validated against *that item's* ROM, because labels are only
+unique within a game — `--rom emerald --start girl` is refused even though
+FireRed has a `girl`.
 
 Cancel removes a *pending* item. To remove a finished run from history, use
 `pokemon runs delete`.
@@ -350,10 +365,40 @@ pokemon snapshot load local/snapshots/bedroom_start
 pokemon snapshot save emerald_truck --rom emerald -d "Inside the truck, before Littleroot"
 ```
 
-To make a captured state the **start state** for that game's casual runs, copy it
-to `configs/saves/<name>/` (committed, like the canonical FireRed save) and point
-the registry entry's `start_save:` at it. Until a game has one, its runs boot from
-the title screen.
+To make a captured state the **default** start for that game's casual runs, copy
+it to `configs/saves/<name>/` (committed, like the canonical FireRed save) and
+point the registry entry's `start_save:` at it. Until a game has one, its runs
+boot from the title screen.
+
+To make it a **choosable** opening instead — one of several the same game can be
+started from — add it to `configs/starts.yaml` and it becomes a `--start` label
+plus an option in the new-run dialog:
+
+```yaml
+starts:
+  - rom: firered
+    label: girl
+    name: "Leaf (girl)"
+    path: "configs/saves/firered-girl"
+    description: "Bedroom, start of game, playing as Leaf."
+```
+
+```bash
+pokemon ls starts
+pokemon queue add "claude-opus-5(high)" --kind casual --rom firered --start girl
+```
+
+A start directory needs all three of `emulator.state`, `state.json` and
+`tasks.json` — the same shape as a run savepoint, because the executor resumes it
+through the same path as a continue. An entry whose directory is incomplete is
+listed as `on disk: NO`, hidden from the dialog, and refused at enqueue rather
+than failing several minutes into dispatch.
+
+Two notes on the semantics. `default: true` only decides which option the CLI
+help and the dialog **preselect** — a run that passes no `--start` keeps the exact
+pre-registry behaviour (the canonical save for the default ROM, else that ROM's
+own `start_save`). And a **continue** ignores `--start` entirely: it resumes its
+source run's savepoint, so the opening was decided one run earlier.
 
 ---
 

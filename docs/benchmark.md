@@ -141,7 +141,7 @@ diagnostics only — it never decides.
 | 5 | `rival1_done` — First rival battle done | flag | T125 |
 | 6 | `route1_reached` — Reached Route 1 | map | T150 |
 | 7 | `viridian_reached` — Reached Viridian City | map | T200 |
-| 8 | `parcel_delivered` — Delivered Oak's Parcel | var | T250 |
+| 8 | `parcel_delivered` — Received Oak's Parcel at Viridian Mart | var | T250 |
 | 9 | `pokedex_received` — Received the Pokédex | flag | T300 |
 | 10 | `viridian_forest_reached` — Entered Viridian Forest | map | T350 |
 | 11 | `pewter_reached` — Reached Pewter City | map | T400 |
@@ -154,6 +154,15 @@ diagnostics only — it never decides.
 | 18 | `vermilion_reached` — Reached Vermilion City | map | T1000 |
 | 19 | `ss_anne_boarded` — Boarded the S.S. Anne | map | T1100 |
 | 20 | `thunder_badge` — Defeated Lt. Surge (Thunder Badge) | flag | T1200 |
+
+The first-badge benchmark has its own deadlines: receive Oak's Parcel by T120,
+receive the Pokédex by T150, and earn the Boulder Badge by T400. The full
+benchmark above keeps its Boulder Badge deadline at T500.
+
+The parcel checkpoint retains the legacy ID `parcel_delivered` for saved-run
+compatibility. Its detector now checks the Mart scene variable for ≥1 (pickup),
+rather than ≥2 (the end of Oak's Pokédex scene). Historical stamps were recorded
+under the old detector and are not retroactively changed.
 
 **Multigate (#17):** Nugget Bridge opens the moment you reach Cerulean, so the
 agent may beat Misty first *or* fetch Bill's S.S. Ticket first. The rung holds

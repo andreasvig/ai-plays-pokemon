@@ -370,6 +370,16 @@
       return
     }
     if (t === 'llm_thinking') { pushBox(evt.turn, { k: 'thinking', t: evt.content || '' }); return }
+    if (t === 'llm_request_usage') {
+      const cache = evt.cache_read_fraction == null ? 'unknown' : `${(evt.cache_read_fraction * 100).toFixed(1)}% of input`
+      const c = evt.continuity || {}
+      pushBox(evt.turn, { k: 'settle', t: `${evt.phase} · cache ${cache} · reasoning replay ${c.replayed_blocks ?? 0}/${c.expected_blocks ?? 0} (${c.local_replay || 'unknown'}) · provider feedback: ${c.provider_feedback || 'not reported'}` })
+      return
+    }
+    if (t === 'compaction_start') { pushBox(evt.turn, { k: 'settle', t: `Compacting after turn ${evt.after_turn} (${evt.reason})…` }); return }
+    if (t === 'compaction_complete') { pushBox(evt.turn, { k: 'memory', t: `Handover saved; private reasoning reset expected. ${evt.handover?.continuation_summary || ''}` }); return }
+    if (t === 'compaction_thinking') { pushBox(evt.turn, { k: 'thinking', t: `Compaction: ${evt.content || ''}` }); return }
+    if (t === 'llm_request_error') { pushBox(evt.turn, { k: 'error', t: `${evt.phase}: ${evt.error}` }); return }
     if (t === 'llm_output') {
       const args = parseArgs(evt.args || '')
       if (args && typeof args === 'object') {

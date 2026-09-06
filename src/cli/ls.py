@@ -28,7 +28,7 @@ import json
 import sys
 from typing import Any
 
-CATEGORIES = ("models", "roms", "configs", "events", "benchmarks")
+CATEGORIES = ("models", "roms", "starts", "configs", "events", "benchmarks")
 
 
 def _emit(rows: Any) -> None:
@@ -89,6 +89,29 @@ def _ls_roms(args) -> int:
     return 0
 
 
+def _ls_starts(args) -> int:
+    from src.app.starts import load_starts
+
+    rows = [s.to_dict() for s in load_starts()]
+    rows = [r for r in rows if _match(args.filter, r["rom"], r["label"], r["name"])]
+    if args.json:
+        _emit(rows)
+        return 0
+    print(f"{'rom':<10} {'label':<8} {'name':<14} {'on disk':<8} {'default':<8} description")
+    for r in rows:
+        print(
+            f"{r['rom']:<10} {r['label']:<8} {r['name']:<14} "
+            f"{('yes' if r['exists'] else 'NO'):<8} "
+            f"{('*' if r.get('default') else ''):<8} "
+            f"{r.get('description', '')}"
+        )
+    print()
+    print("Use with `pokemon queue add --rom <rom> --start <label>` (casual only).")
+    print("Labels are scoped to a rom. Omit --start for the game's default opening;")
+    print("an official run always starts from the frozen benchmark savepoint.")
+    return 0
+
+
 def _ls_configs(args) -> int:
     from src.app.catalog import list_configs
 
@@ -139,6 +162,7 @@ def _ls_benchmarks(args) -> int:
 DISPATCH = {
     "models": _ls_models,
     "roms": _ls_roms,
+    "starts": _ls_starts,
     "configs": _ls_configs,
     "events": _ls_events,
     "benchmarks": _ls_benchmarks,
@@ -148,13 +172,14 @@ DISPATCH = {
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="pokemon ls",
-        description="List the models / roms / configs / stop events / benchmarks you can name.",
+        description="List the models / roms / starts / configs / stop events / benchmarks you can name.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 Examples:
   pokemon ls models sol            # find the alias for "that GPT Sol model"
   pokemon ls models --json         # every level of every model, for scripting
   pokemon ls roms                  # which games are registered AND on disk
+  pokemon ls starts                # which openings a casual run can pick
   pokemon ls events                # the ids --stop-at accepts
   pokemon ls configs               # config stems; the last one is the default
 
@@ -176,6 +201,7 @@ Reads the registries on disk — works whether or not `pokemon app` is running.
         print("pokemon ls <what> [filter]\n")
         print("  models       model aliases + thinking levels   (configs/models.yaml)")
         print("  roms         registered games                  (configs/roms.yaml)")
+        print("  starts       choosable openings per game       (configs/starts.yaml)")
         print("  configs      config stems                      (configs/config-*.yaml)")
         print("  events       story events for --stop-at        (the gate ladder)")
         print("  benchmarks   scored benchmarks                 (configs/benchmarks.yaml)")

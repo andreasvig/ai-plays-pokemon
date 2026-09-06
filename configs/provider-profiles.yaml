@@ -1,0 +1,127 @@
+# Append/compaction only. These are serving contracts, not claims of verified
+# private reasoning use. Sources and probe results: docs/openrouter-provider-compatibility.md.
+# Endpoint tags are OpenRouter tags (including quantization/tier where available).
+version: 1
+reviewed: '2026-09-06'
+# Named variants inherit the model's base profile. Only replay policy differs
+# in the Gemma experiment; names and reasoning_use are diagnostic metadata.
+variants:
+  gemma-guidance:
+    model: google/gemma-4-31b-it
+    settings:
+      reasoning_replay: omit_prior
+      reasoning_use: not_preserved_between_user_turns
+  gemma-replay:
+    model: google/gemma-4-31b-it
+    settings:
+      reasoning_replay: all
+      reasoning_use: unverified
+defaults:
+  output_mode: tool
+  tool_choice: auto
+  reasoning_replay: all
+  reasoning_mandatory: false
+  reasoning_efforts: []
+  reasoning_default: {enabled: true}
+  reasoning_use: unverified
+  cache_mode: implicit
+  cache_control: {type: ephemeral}
+  sampling: {}
+  excluded_endpoints: []
+  allow_json_fence: false
+  allow_unwrapped_json: false
+  memory_encoding: object
+  memory_wire_description: 'The complete flexible memory dictionary serialized as a JSON object string. Choose keys freely; the harness parses it back into a dictionary.'
+  tool_descriptions:
+    gameplay: 'Return the next game action on an ordinary observation turn. Use exactly this tool unless the user explicitly requests a handover.'
+    compaction: 'Return the complete handover only when the user explicitly asks to pause gameplay and prepare a handover. Do not call gameplay on that request.'
+profiles:
+  meta/muse-spark-1.3:
+    endpoint: meta
+    context_length: 1048576
+    max_completion_tokens: 943718
+    reasoning_mandatory: true
+    reasoning_efforts: [max, xhigh, high, medium, low, minimal]
+    reasoning_default: {effort: medium}
+    cache_mode: unknown
+    notes: 'Encrypted replay supported by OpenRouter normalization; endpoint access and cache activation require a live probe.'
+  google/gemini-3.8-flash:
+    endpoint: google-ai-studio
+    context_length: 1048576
+    max_completion_tokens: 65536
+    reasoning_mandatory: true
+    reasoning_efforts: [high, medium, low]
+    reasoning_default: {effort: medium}
+    notes: 'Return complete signed assistant parts. Signature validation is not proof that all prior private thoughts were used.'
+  google/gemma-4-31b-it:
+    endpoint: deepinfra/turbo
+    context_length: 262144
+    max_completion_tokens: 16384
+    output_mode: prompted
+    allow_json_fence: true
+    allow_unwrapped_json: true
+    reasoning_default: {enabled: true}
+    reasoning_replay: omit_prior
+    reasoning_use: not_preserved_between_user_turns
+    sampling: {temperature: 0.3, top_p: 0.95}
+    notes: 'Live host rejects json_schema despite catalog advertising support; use locally validated prompted JSON. Google specifies omitting old raw thoughts between ordinary user turns; originals remain archived.'
+  anthropic/claude-opus-5:
+    endpoint: anthropic
+    context_length: 1000000
+    max_completion_tokens: 128000
+    output_mode: prompted
+    reasoning_efforts: [max, xhigh, high, medium, low]
+    reasoning_default: {effort: high}
+    cache_mode: automatic
+    notes: 'Prompted JSON allows flexible memory and avoids forced tool choice with thinking. Replay signed blocks unchanged.'
+  anthropic/claude-fable-5.1:
+    endpoint: anthropic
+    context_length: 1000000
+    max_completion_tokens: 128000
+    output_mode: prompted
+    reasoning_mandatory: true
+    reasoning_efforts: [max, xhigh, high, medium, low]
+    reasoning_default: {effort: high}
+    cache_mode: automatic
+    notes: 'Mandatory thinking; no tool_choice advertised. Preserve signed blocks including empty thinking blocks.'
+  qwen/qwen3.8-flash:
+    endpoint: alibaba
+    output_mode: prompted
+    allow_json_fence: true
+    context_length: 1000000
+    max_completion_tokens: 131072
+    cache_mode: system_breakpoint
+    notes: 'Live routing rejects required tool choice; auto can skip tools, and native JSON failed the envelope during compaction. Use validated prompted JSON. Explicit cache marker covers the stable system prefix; native preserve_thinking defaults on, gateway use remains unverified.'
+  z-ai/glm-5.3-flash:
+    endpoint: z-ai/fp8
+    context_length: 1048576
+    max_completion_tokens: 131072
+    reasoning_mandatory: true
+    reasoning_efforts: [max, high, low]
+    reasoning_default: {effort: high}
+    notes: 'Tools supported on direct endpoint. Native clear_thinking:false has no confirmed OpenRouter passthrough; do not claim preserved internal reasoning.'
+  deepseek/deepseek-v4-flash-vision-exp:
+    endpoint: deepseek
+    context_length: 1048576
+    max_completion_tokens: 384000
+    reasoning_efforts: [max, high, low]
+    reasoning_default: {effort: high}
+    notes: 'Use tools: native API requires previous reasoning_content in thinking tool conversations; non-tool history may be ignored.'
+  x-ai/grok-4.6:
+    endpoint: xai
+    excluded_endpoints: [xai/zdr, xai/zdr/priority]
+    memory_encoding: json_string
+    context_length: 500000
+    max_completion_tokens: 450000
+    reasoning_mandatory: true
+    reasoning_efforts: [xhigh, high, medium, low]
+    reasoning_default: {effort: high}
+    notes: 'OpenRouter documents xai-responses-v1 normalized encrypted blocks; verify returned payload through chat gateway.'
+  moonshotai/kimi-k3:
+    endpoint: moonshotai/mxfp4
+    context_length: 1048576
+    max_completion_tokens: 943718
+    reasoning_mandatory: true
+    reasoning_efforts: [max, high, low]
+    reasoning_default: {effort: high}
+    notes: 'Native documentation says always-on thinking (catalog disagrees). Auto tool choice avoids incompatible named forced calls.'

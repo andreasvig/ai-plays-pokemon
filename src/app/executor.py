@@ -333,9 +333,85 @@ class RunExecutor:
         # hasn't got one yet.
         rom = get_rom(item.rom)
         apply_rom(cfg, rom)
-        snapshot = self.canonical_save if rom.is_default else rom.start_save
+        snapshot = self._resolve_start(rom, item.start)
+        self._stamp_start(cfg, rom, item.start, snapshot)
         turns = item.max_turns or 1500
         return cfg, snapshot, turns
+
+    @staticmethod
+    def _stamp_start(
+        cfg: dict, rom, label: str | None, snapshot: str | None
+    ) -> None:
+        """Record WHICH opening this run began from, on the config.
+
+        Informational only — an ``_``-prefixed key like ``_llm_alias`` and
+        ``_record``, read by nobody who decides behaviour. Deliberately NOT
+        written to ``load_snapshot``, which the run loop acts on: the snapshot is
+        already passed to the loop as an argument, and stamping it there as well
+        would risk a second load.
+
+        This exists because the opening was otherwise **unrecoverable from a
+        finished run** — ``config.json`` shows ``load_snapshot: null`` on runs
+        that provably resumed a savepoint, so nothing on disk said whether the
+        agent had played as Red or Leaf. Same failure as ``max_turns`` arriving
+        as a call argument and touching nothing (see ``turn.py``): record a
+        setting where it is DECIDED, not only where it is acted on.
+
+        ``label`` is reverse-resolved from the path when the run named none, so a
+        run enqueued with no ``--start`` still records ``boy`` rather than a
+        blank — the registry's boy entry points at the same directory.
+        """
+        if snapshot is None:
+            return
+        cfg["_start_path"] = str(snapshot)
+        if label is None:
+            from src.app.starts import starts_for_rom
+
+            try:
+                match = next(
+                    (
+                        s
+                        for s in starts_for_rom(rom.id)
+                        if Path(s.path) == Path(str(snapshot))
+                    ),
+                    None,
+                )
+            except (FileNotFoundError, ValueError):
+                match = None
+            label = match.label if match else None
+        if label is not None:
+            cfg["_start_label"] = label
+
+    def _resolve_start(self, rom, label: str | None) -> str | None:
+        """Savepoint dir a CASUAL run on ``rom`` opens from.
+
+        Two tiers only:
+
+        1. an explicit ``--start`` label → that registry entry's path;
+        2. no label → the pre-registry behaviour, unchanged: ``self.canonical_save``
+           for the default ROM, else the ROM's own ``start_save`` (``None`` →
+           title screen).
+
+        Tier 2 deliberately does NOT consult the registry's ``default: true``,
+        even though FireRed has one. Two reasons. It keeps every queue item
+        enqueued before this registry existed meaning exactly what it meant. And
+        ``canonical_save`` is a constructor-injected seam — tests substitute a
+        fixture savepoint through it — so resolving the default through a
+        hard-coded registry path would silently shadow the injection and make
+        those tests exercise the real repo save instead of their fixture.
+        ``default: true`` therefore means only "the option the pickers
+        preselect", which is where a default belongs.
+
+        An unknown label raises ``KeyError``; the API validates at enqueue so a
+        typo is a 400 long before dispatch, and reaching here with a bad label
+        means a hand-edited queue.json — better to skip that one run loudly than
+        to silently play a different opening than was asked for.
+        """
+        if label is not None:
+            from src.app.starts import get_start
+
+            return get_start(rom.id, label).path
+        return self.canonical_save if rom.is_default else rom.start_save
 
     def _ensure_rom_loaded(self, cfg: dict) -> None:
         """Make the emulator hold the ROM this run's config asks for.

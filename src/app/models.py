@@ -169,6 +169,13 @@ class QueuedRun(BaseModel):
     # from the benchmark's ladder instead: a score has to come from the dump the
     # ladder was authored against. A continue inherits the source run's ROM.
     rom: str | None = None
+    # Casual-only opening: a `label` from ``configs/starts.yaml``, scoped to this
+    # run's ROM (e.g. "girl" on firered). None = that ROM's default start, which
+    # is what every pre-existing queue item means. Official runs ignore it — a
+    # benchmark starts from executor.CANONICAL_SAVE, because a choosable opening
+    # would make two scores incomparable. A continue ignores it too: it resumes
+    # the source run's own savepoint, so the opening was decided one run ago.
+    start: str | None = None
     continue_from: str | None = None
     # Optional TaskMaster model override (casual only). None → inherit the
     # source/config/freeplay-default resolution. The Player model rides on

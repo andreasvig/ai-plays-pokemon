@@ -231,7 +231,7 @@ Each phase builds on the previous one and ends with a concrete evaluation to ver
 
 *Live Dashboard (`src/dashboard/`):*
 - FastAPI + vanilla JS at localhost:3000, no build step
-- **Live GBA screen:** Lua auto-capture at 15fps + ScreenStreamer + WebSocket PNG frames
+- **Live GBA screen:** Lua auto-capture at 60fps + ScreenStreamer + WebSocket PNG frames (recording samples at 30fps)
 - **Streaming chat:** boxed sections (Vision, Thinking w/ markdown, Output, Action, Tools, Errors)
 - **State viewer:** collapsible JSON tree, live-updating
 - **Header:** task, cost, turns, tokens — all live
@@ -253,7 +253,7 @@ Each phase builds on the previous one and ends with a concrete evaluation to ver
 **Evaluation results:**
 - 8-turn run: zero timeout errors, $0.044 total
 - Agent consistently navigates bedroom → downstairs → 1F → toward exit
-- Dashboard streams at 15fps, smooth quality
+- Dashboard source streams at 60fps; recording samples genuine game frames at 30fps
 - Per-tool budgets prevent update_state loops (capped at 3/turn)
 
 ---

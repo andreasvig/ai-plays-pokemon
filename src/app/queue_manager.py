@@ -74,6 +74,7 @@ class QueueManager:
         max_spend_usd: float | None = None,
         gameplay: str | None = None,
         rom: str | None = None,
+        start: str | None = None,
         continue_from: str | None = None,
         task_master_model: str | None = None,
         record: dict | RecordSpec | None = None,
@@ -89,8 +90,10 @@ class QueueManager:
         the casual playstyle — ``"exploration"`` (default, ``None``) or
         ``"speed"`` — which selects the steering block the agent is given.
         ``rom`` is which game a casual run needs — a ROM id from the registry
-        (``None`` = the default ROM). ``record`` opts the run into an MP4 capture
-        (``None`` = no recording).
+        (``None`` = the default ROM). ``start`` is which opening it begins from —
+        a ``label`` from ``configs/starts.yaml`` scoped to that ROM, e.g.
+        ``"girl"`` (``None`` = the ROM's default opening). ``record`` opts the run
+        into an MP4 capture (``None`` = no recording).
         ``enqueued_at`` is overridable so tests can pin a deterministic
         timestamp; it defaults to the current UTC ISO time.
         """
@@ -105,6 +108,7 @@ class QueueManager:
             max_spend_usd=max_spend_usd,
             gameplay=gameplay,
             rom=rom,
+            start=start,
             continue_from=continue_from,
             task_master_model=task_master_model,
             record=RecordSpec.model_validate(record) if record is not None else None,

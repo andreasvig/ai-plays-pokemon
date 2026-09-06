@@ -32,15 +32,16 @@ your window size, your focus, and Chrome's background throttling (which stops
 animation frames outright on a minimised window).
 
 So the recorder never touches your browser. It launches **its own headless
-Chrome**, loads a pinned URL, and streams frames out of it over the DevTools
-protocol into ffmpeg:
+Chrome** and loads a pinned URL. For simple recordings, it combines Chrome's
+presentation with the independent raw emulator feed before encoding:
 
 ```
-headless Chrome ──Page.startScreencast──▶ latest JPEG frame
-                                              │
-                       sampler @ N fps ───────┤   (skipped while the gate is shut)
-                                              ▼
-                                 ffmpeg -f image2pipe ──▶ H.264 MP4
+headless Chrome ──quality-100 JPEG──▶ card + typography
+emulator ──60fps native PNG────────▶ game rectangle
+                                      │
+                       sampler @ 30fps composites raw RGB
+                                      ▼
+                                  ffmpeg ──▶ H.264 MP4
 ```
 
 The pinned URL is `/spectate?record=1&view=<view>&run=<run_id>`. The `run` id is
@@ -77,24 +78,59 @@ length, model latency included.
 **`cut-thinking`** records only each turn's *execution* window:
 
 ```
-turn_start ─────── thinking ─────── llm_output ── pressing ── screen_settled ──┐
-           └──────── NOT recorded ─────────────┘└──── recorded ───────────┘ +0.9s
+turn_start ─── thinking ─── llm_output ── pressing ── screen_settling ── settled
+           └── NOT recorded ───────────┘              │                 │
+                                                      └─ buffered ──────┘
+                                            activity → commit; final quiet → drop
 ```
 
-The gate opens at `llm_output` (the model has answered; the turn starts
-executing) and shuts a beat after `screen_settled` (the emulator has stopped
-moving). The dead time is simply never sampled, so it does not exist in the
-file — no post-hoc editing, no timestamp arithmetic, and the result is still a
-plain constant-frame-rate MP4.
+The gate opens immediately at `llm_output`; there is no fixed front trim. A
+0.5-second rolling pre-roll is prepended when it opens, because button dispatch
+and the recorder's event WebSocket are not an atomic clock: this preserves any
+first movement frames produced while the open event is in flight. After
+button execution ends, rendered frames enter a short rolling buffer while a
+second socket watches the raw emulator PNG stream. A materially new game frame
+commits the buffer, preserving pauses followed by delayed dialogue or transition
+animation. When `screen_settled` arrives, only the final quiet buffer is dropped,
+leaving a 0.12s payoff hold. The model's response time never enters the file, and
+the result is still a plain constant-frame-rate MP4.
 
 Those event names match `SimpleView`'s phase machine exactly. Note that
 `button_sequence` is **not** used: it is logged *after* `press_button_list()`
 returns, so it marks the END of pressing — keying on it would start each clip
 after the action it is meant to show.
 
-Measured on a synthetic 4-turn run (3s think + 2s execute per turn):
-realtime **22.3s**, cut-thinking **11.8s** — 47% removed, and the 11.8s is within
-2% of the predicted 4 × (2.0 + 0.9).
+### Why the trim is activity-based (`src/dashboard/recorder.py`)
+
+The earlier recorder used two constants: 0.5s off the front and zero seconds
+after `screen_settled`. Review of a real Sol clip found both wrong in opposite
+directions: the front constant removed the first movement frames, while waiting
+for `screen_settled` retained roughly 2.1s of frozen stability confirmation.
+
+Closing blindly at `screen_settling` is also wrong: a measured busy turn kept
+moving for 4.6s after that event. The rolling tail solves the actual distinction.
+It recognises materially novel 120×80 grayscale emulator frames while treating
+already-seen cyclic animation as quiet. Delayed activity flushes everything held
+before it; only the last quiet buffer is discarded. `TAIL_HOLD_S = 0.12` prevents
+the clip landing on the exact final motion frame without recreating the long hold.
+
+The first quality fix used lossless CDP PNGs. Frame-level review rejected it:
+Chrome delivered only about 6 fresh 1080-square PNGs per second, producing sharp
+stills but severe judder in a nominal 30fps file. The corrected simple pipeline
+uses Chrome only for the mostly-static card at JPEG quality 100 and overwrites
+the game rectangle from mGBA's native 240×160 PNG feed. Lua publishes 60fps;
+the recorder samples genuine game frames at 30fps and hands the composited frame
+to ffmpeg as raw RGB. H.264 CRF 14 (`tune=animation`, yuv420p) is the delivery
+encode. The encoder writer runs independently so it cannot stall the sampler.
+On the restarted real mGBA process, a 3-second probe observed **53.5 complete
+native PNGs/s** (invalid mid-write file versions excluded), leaving headroom for
+the 30fps sampler.
+
+The boundary/cadence proof starts motion before `llm_output`, pauses after
+`screen_settling`, resumes, and finally holds still. Its first source position is
+present, the normal forward step is two 60fps source frames per 30fps output
+frame, and the final still is 0.3s. It uses the real SPA, DOM geometry query,
+both WebSockets, compositor and ffmpeg without a model call.
 
 ---
 
@@ -141,20 +177,21 @@ On disk every clip is `recording.mp4` — unambiguous next to its own
 download carries a name rebuilt from the run's settings:
 
 ```
-2026-08-02_1556_firered_casual-exploration_config-4.0_claude-opus-5-medium
-_17turns_1.03usd_cap1.00usd_cap20turns_stop-starter-chosen
+2026-08-03_1434_firered_as-girl_casual-speed_config-4.0_claude-opus-5-high
+_3turns_0.18usd_cap0.15usd_cap2000turns
 _simple-cut-thinking_hit-budget.mp4
 ```
 
 Fixed order, absent parts dropped, so two names line up column-wise for as far
-as they agree: date + time · game · kind (`casual-exploration` /
-`casual-speed`, or `official-<benchmark>`, since every official run is a speed
-run and the ladder is the informative half) · config stem · model + effort
-tier · `cont-from-t<N>` on a continue · turns · spend · the caps it ran under,
-fired or not · `stop-<event>` · the recording's own view + speed · and a
-trailing marker when the run did **not** simply finish (`hit-budget`,
-`cancelled`, `crashed`, `terminated`, `no-output`). That last one is the
-guardrail: a clip of a crashed run looks exactly like a clip of a finished one.
+as they agree: date + time · game · `as-<start>` when the run played a choosable
+opening · kind (`casual-exploration` / `casual-speed`, or `official-<benchmark>`,
+since every official run is a speed run and the ladder is the informative half) ·
+config stem · model + effort tier · `cont-from-t<N>` on a continue · turns ·
+spend · the caps it ran under, fired or not · `stop-<event>` · the recording's own
+view + speed · and a trailing marker when the run did **not** simply finish
+(`hit-budget`, `cancelled`, `crashed`, `terminated`, `no-output`). That last one
+is the guardrail: a clip of a crashed run looks exactly like a clip of a finished
+one.
 
 Built by `src/app/recording_name.py`, read off `config.json` +
 `run_summary.json`, defensive on every field and falling back to the bare run
@@ -167,12 +204,25 @@ key across the queue, the run index, savepoints and the continue chain — it is
 keyed on, joined on and parsed — and a folder already sits next to its own
 config, so prettifying it would ripple through all of that for nothing.
 
-Two facts had to start being persisted for this to work: `run_summary.json` now
-records `max_turns` (the cap arrives as a `run_loop` argument, not a config key,
-so it was previously unrecoverable) and records `max_spend_usd` whether or not
-the ceiling fired (it used to be written only by the stop that fired, which
-made "came in under a $2 budget" indistinguishable from "unbounded"). Runs
-recorded before 2026-08-02 have neither, and simply omit those segments.
+Three facts had to start being persisted for this to work, each of them
+previously unrecoverable from a finished run:
+
+- `run_summary.json` records **`max_turns`** — the cap arrives as a `run_loop`
+  argument, not a config key, so nothing on disk held it.
+- `run_summary.json` records **`max_spend_usd`** whether or not the ceiling
+  fired. It used to be written only by the stop that fired, which made "came in
+  under a $2 budget" indistinguishable from "unbounded".
+- `config.json` records **`_start_label`** / **`_start_path`** — which opening the
+  run began from. `load_snapshot` reads `null` even on runs that provably resumed
+  a savepoint, because the snapshot is passed to the loop as an argument, so
+  nothing said whether the agent had played as Red or Leaf. These are
+  informational `_`-prefixed keys (the `_llm_alias` convention) and deliberately
+  *not* written to `load_snapshot`, which the run loop acts on. A run that named
+  no `--start` still records a label, reverse-resolved from the path.
+
+All three are the same lesson: record a setting where it is **decided**, not only
+where it is acted on. Runs recorded before 2026-08-02 (or 2026-08-03 for the
+start) lack these fields and simply omit those segments.
 
 `has_recording` is derived from the run dir on every request rather than stored
 on `RunSummary`. The index is a projection written once when a run finishes, so

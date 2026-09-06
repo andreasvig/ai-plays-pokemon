@@ -1,0 +1,48 @@
+# The START-STATE registry — the committed savepoints a CASUAL run may begin from.
+#
+# A ROM's `start_save` in roms.yaml is its ONE default opening. This file adds
+# the *choosable* ones, so the same game can be started as a different character
+# or from a different moment without inventing a second ROM entry.
+#
+#   rom          joins to a roms.yaml `id`. The pair (rom, label) is the key.
+#   label        what you pass: `--start girl`. Scoped to the rom, so two games
+#                may both offer a `girl` without colliding.
+#   name         display string for the picker.
+#   path         a committed savepoint dir — emulator.state + state.json +
+#                tasks.json, exactly like a run savepoint, so the executor
+#                resumes it through the same code path as a continue.
+#   default      the option the CLI help and the new-run dialog PRESELECT. At most
+#                one per rom. It is deliberately NOT what the executor falls back
+#                to: a run with no --start keeps the exact pre-registry behaviour
+#                (executor.CANONICAL_SAVE for the default rom, else the rom's own
+#                start_save), so nothing about existing runs moved when this file
+#                appeared. See RunExecutor._resolve_start.
+#
+# Official runs IGNORE this file entirely: a benchmark starts from
+# executor.CANONICAL_SAVE, because a frozen benchmark cannot have a choosable
+# opening and still be comparable across runs.
+#
+# `configs/saves/*/emulator.state` files ARE committed (unlike `roms/`), so these
+# resolve on a fresh clone.
+
+starts:
+  - rom: firered
+    label: boy
+    name: "Red (boy)"
+    default: true
+    # The long-standing FireRed opening: standing in the bedroom before the game
+    # has asked for a name. Deliberately the SAME directory as
+    # executor.CANONICAL_SAVE rather than a copy of it — one file, so the casual
+    # boy start and the scored benchmark start can never drift apart.
+    path: "configs/saves/pokebench-v1"
+    description: "Bedroom, start of game. Same savepoint the benchmark scores from."
+
+  - rom: firered
+    label: girl
+    name: "Leaf (girl)"
+    # Captured 2026-08-03 from Andreas's own playthrough, at the same point as the
+    # boy start (bedroom, pre-naming) so the two are interchangeable openings and
+    # not different amounts of progress. Its tasks.json is copied from the boy
+    # start for exactly that reason.
+    path: "configs/saves/firered-girl"
+    description: "Bedroom, start of game, playing as Leaf. Visually distinct from the boy start — useful when filming two runs side by side."

@@ -70,9 +70,9 @@ class EventBridge:
         if etype == "turn_start":
             self._stats["turns"] = event.get("turn", self._stats["turns"])
         elif etype == "turn_usage":
-            self._stats["cost"] += event.get("cost_usd", 0)
-            self._stats["input_tokens"] += event.get("request_tokens", 0)
-            self._stats["output_tokens"] += event.get("response_tokens", 0)
+            self._stats["cost"] += event.get("cost_usd") or 0
+            self._stats["input_tokens"] += event.get("request_tokens") or 0
+            self._stats["output_tokens"] += event.get("response_tokens") or 0
         elif etype == "ocr_flush":
             self._stats["cost"] += event.get("cost_usd", 0)
 

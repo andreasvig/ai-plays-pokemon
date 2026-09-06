@@ -913,7 +913,13 @@ class TurnManager:
         self._summary_finalized: bool = False
         self._orig_stdout = None
         self._terminal_log = None
-        self.agent, self.model_settings, self.fallback_models = create_agent(config)
+        self.append_agent = None
+        self._append_action_uncertain = False
+        self.append_enabled = config.get("agent_type") == "append_compact"
+        if self.append_enabled:
+            self.agent, self.model_settings, self.fallback_models = None, None, []
+        else:
+            self.agent, self.model_settings, self.fallback_models = create_agent(config)
         self.max_steps_per_turn = config.get("max_steps_per_turn", 10)
         self.max_turns_before_trim = config.get("max_turns_before_trim")
         self.historic_images_count = config.get("historic_images_count", 0)
@@ -980,6 +986,13 @@ class TurnManager:
         self.vision = vision
         self.logger = logger
         self.ocr = ocr
+
+        if self.append_enabled:
+            from src.agent.append_agent import AppendAgent
+            self.append_agent = AppendAgent(
+                self.config, logger.run_dir, self._append_event,
+                on_usage=self._append_usage, budget_exhausted=self._budget_exhausted,
+            )
 
         # SnapshotManager needs state_file path + emulator handle. We point it
         # at the run's state.json so save_run_savepoint copies the live agent
@@ -1069,6 +1082,10 @@ class TurnManager:
         crash handlers in the caller.
         """
         save_turn = self.turn_number if turn is None else turn
+        if self.append_agent is not None:
+            if self._append_action_uncertain:
+                return None  # Keep the last known-good emulator/conversation bundle.
+            save_turn = self.append_agent.checkpoint["completed_turn"]
         if self._snapshot_mgr is None or save_turn <= 0:
             return None
         try:
@@ -1080,6 +1097,7 @@ class TurnManager:
                 kind=kind,
                 task_master_state=tm_state,
                 referee_state=ref_state,
+                **({"append_state": self.append_agent.export_checkpoint()} if self.append_agent is not None else {}),
             )
             self.logger.log_custom("savepoint_saved", {
                 "turn": save_turn, "kind": kind, "path": str(path),
@@ -1094,6 +1112,35 @@ class TurnManager:
             return None
 
     # --- TaskMaster orchestration -------------------------------------------
+
+    def _append_usage(self, usage):
+        self.total_cost_usd += usage.get("cost_usd") or 0
+        self.total_input_tokens += usage.get("request_tokens") or 0
+        self.total_output_tokens += usage.get("response_tokens") or 0
+        # Existing live stats consume turn_usage; emit each actual call once.
+        self.logger.log_custom("turn_usage", usage)
+
+    def _append_event(self, kind, data):
+        self.logger.log_custom(kind, data)
+        if kind == "compaction_complete":
+            self.state.replace(data["handover"]["memory"])
+            self.logger.log_state_change("memory_update", {
+                "previous": data["previous_memory"], "replacement": data["handover"]["memory"],
+            })
+            self.logger.log_custom("memory_update_output", {
+                "turn": data["turn"], "content": json.dumps(data["handover"]["memory"]),
+            })
+            self.save_savepoint("compaction", turn=data["after_turn"])
+
+    def restore_append_state(self, snapshot, turn):
+        if self.append_agent is None:
+            return
+        path = Path(snapshot) / "append_state.json"
+        if not path.exists():
+            raise ValueError("Append agent resume requires a conversation checkpoint")
+        self.append_agent.restore(json.loads(path.read_text()), turn)
+        self.state.replace(self.append_agent.state["handover"]["memory"])
+        self.turn_number = self._last_settled_turn = turn
 
     def _get_task_master_runner(self) -> Any:
         """Lazily build the real TaskMasterRunner, or return the injected stub.
@@ -1649,6 +1696,8 @@ class TurnManager:
 
             result = await self._run_turn_or_stop()
             if result is None:
+                if self.append_agent is not None and self._budget_stopped:
+                    break
                 # At the per-task budget boundary the handoff to TaskMaster is an
                 # invariant. If the Player produced no valid output there (e.g. a
                 # prompted model that won't emit the optional return_to_taskmaster
@@ -1692,9 +1741,10 @@ class TurnManager:
 
             # Apply memory updates from the agent's output (string → dict)
             updates = {}
-            if result.memory_updates and result.memory_updates.strip().lower() != "none":
+            memory_updates = getattr(result, "memory_updates", "")
+            if memory_updates and memory_updates.strip().lower() != "none":
                 try:
-                    parsed = json.loads(result.memory_updates)
+                    parsed = json.loads(memory_updates)
                     if isinstance(parsed, dict):
                         updates = parsed
                 except (json.JSONDecodeError, TypeError):
@@ -1717,7 +1767,7 @@ class TurnManager:
                 "reasoning": result.reasoning,
                 "last_turn_succeeded": result.last_turn_succeeded,
                 "memory_updates": updates,
-                "memory_updates_raw": result.memory_updates,
+                "memory_updates_raw": memory_updates,
             }
             self.turn_explanations.append(explanation)
             self._explanation_turns.append(self.turn_number)
@@ -1735,6 +1785,8 @@ class TurnManager:
                 print(f"  [Turn {self.turn_number}] Executing {action_display}...")
                 if self.ocr and self.ocr.enabled:
                     self.ocr.set_active(True)
+                if self.append_agent is not None:
+                    self._append_action_uncertain = True
                 self.emulator.press_button_list(result.inputs)
                 self.logger.log_button_sequence(str(result.inputs))
                 print(f"  [Turn {self.turn_number}] Waiting for screen to settle...")
@@ -1742,11 +1794,17 @@ class TurnManager:
                 settle_duration = self.emulator.wait_for_stable_screen()
                 self.logger.log_custom("screen_settled", {"turn": self.turn_number, "duration": round(settle_duration, 1)})
                 print(f"  [Turn {self.turn_number}] Screen settled ({settle_duration:.1f}s)")
+                if self.append_agent is not None:
+                    self.append_agent.commit_action(self.turn_number)
+                    self._last_settled_turn = self.turn_number
+                    self._append_action_uncertain = False
             except Exception as e:
                 print(f"  [Turn {self.turn_number}] Execution error: {e}")
                 self.logger.log_custom("action_error", {"error": str(e)})
                 # Reset facing — we don't know where the player ended up
                 self.emulator.facing = None
+                if self.append_agent is not None:
+                    raise RuntimeError("Action outcome uncertain; resume from the last complete savepoint") from e
             finally:
                 if self.ocr and self.ocr.enabled:
                     self.ocr.set_active(False)
@@ -2034,6 +2092,24 @@ class TurnManager:
                     f"  [Turn {t}] OCR cleanup: {cleanup_elapsed:.1f}s | ${ocr_cost:.5f} "
                     f"| {ocr_usage.get('input_tokens', 0)}→{ocr_usage.get('output_tokens', 0)} tokens"
                 )
+
+        if self.append_agent is not None:
+            try:
+                image_url = self.vision.image_to_data_url(screenshot)
+                text = fill_prompt(self.config["user_prompt"], turn_number=t, ocr_text=ocr_text or "(none)")
+                self.logger.log_custom("turn_user_message", {"turn": t, "message": text})
+                return await self.append_agent.play(t, ocr_text, image_url, self.state.get_truncated_view())
+            except Exception as exc:
+                from src.agent.append_agent import SpendLimitReached
+                if isinstance(exc, SpendLimitReached):
+                    self._budget_stopped = True
+                    self.logger.log_custom("budget_exhausted", {"turn": self._last_settled_turn,
+                        "spent_usd": self._all_in_spend_usd() - self._spend_baseline_usd,
+                        "max_spend_usd": self.max_spend_usd})
+                    return None
+                self._abort_error = str(exc)
+                self.logger.log_custom("agent_error", {"turn": t, "error": str(exc)})
+                return None
 
         # 4. Get current memory dictionary
         state_view = self.state.get_truncated_view()
@@ -2760,6 +2836,17 @@ class TurnManager:
                 for i, exp in enumerate(self.turn_explanations)
             ],
         }
+
+        if getattr(self, "append_agent", None) is not None:
+            from src.agent.append_agent import cache_totals
+            summary["agent_type"] = "append_compact"
+            summary["conversation"] = {"segment": self.append_agent.state["segment"],
+                "completed_game_turns": self.append_agent.checkpoint["completed_turn"],
+                "compactions": self.append_agent.state["segment"] - 1,
+                "cache": cache_totals(self.append_agent.state["attempts"])}
+            summary["session"]["total_turns"] = self.append_agent.checkpoint["completed_turn"]
+            summary["session"]["player_turns"] = self.append_agent.checkpoint["completed_turn"]
+            summary["session"]["segment"]["segment_player_turns"] = self.append_agent.checkpoint["completed_turn"] - (resumed_at_turn or 0)
 
         # Why the run ended, when it ended badly. Only written on the
         # no-valid-output abort, so a normal summary keeps its exact old shape.

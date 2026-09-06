@@ -12,7 +12,7 @@
   // ROMS is the game registry from /api/roms ([{id, name, benchmark_ok,
   // on_disk, default}]); benchmark_ok is false for a game no gate ladder is
   // authored for, which is what greys the Benchmark option out.
-  let { open = false, continueFrom = null, models = [], configs = [], benchmarks = [], checkpoints = [], roms = [], onclose, onsubmit } = $props()
+  let { open = false, continueFrom = null, models = [], configs = [], benchmarks = [], checkpoints = [], roms = [], starts = [], onclose, onsubmit } = $props()
   const MODELS = $derived(models)
   const CONFIGS = $derived(configs)
   const BENCHMARKS = $derived(benchmarks)
@@ -75,6 +75,11 @@
   // changes unless you say so. 'speed' hands the agent the same shortest-path
   // steering an official run gets, without making the run official.
   let gameplay = $state('exploration')
+  // Which opening to play from — a `label` from /api/starts, scoped to the chosen
+  // ROM (e.g. 'girl' on FireRed). '' = that game's default opening, which is what
+  // the backend does when no start is named. Casual-only: a benchmark starts from
+  // the frozen canonical savepoint, or two scores would not be comparable.
+  let start = $state('')
   // Which game. Casual-only — an official run plays the benchmark ladder's ROM,
   // which is not a choice. Defaults to the registry default on open.
   let rom = $state('')
@@ -135,6 +140,9 @@
           maxSpend = ''
           // Per-segment too: you may be continuing precisely to switch style.
           gameplay = 'exploration'
+          // Back to the game's default opening on every open, so a girl run you
+          // queued an hour ago can't silently become the default for the next one.
+          start = ''
           if (!config) config = latestConfig(CONFIGS)
           // A continue resumes on the game the source run was played on — the
           // backend reads it off the resumed config, so there is nothing to pick.
@@ -165,6 +173,17 @@
   // game with none can only be played casually — the Benchmark segment is
   // disabled rather than hidden, so the reason is visible instead of the option
   // silently not existing.
+  // Openings offered for the currently-selected game, minus any whose savepoint
+  // dir is incomplete on this machine — enqueuing one of those is a 400, so it
+  // must not be offerable. /api/starts returns every rom's rows flat, so changing
+  // the game re-filters with no extra request.
+  const romStarts = $derived(starts.filter((s) => s.rom === rom && s.exists !== false))
+  // One option is not a choice: FireRed has boy+girl, Emerald has none, and a
+  // picker that can only say one thing is noise in an already-long dialog.
+  const showStartPicker = $derived(!isOfficial && !isContinue && romStarts.length > 1)
+  // Which row the '' option stands for. Falls back to the first entry, matching
+  // how the backend resolves a rom whose registry rows set no explicit default.
+  const defaultStart = $derived(romStarts.find((s) => s.default) ?? romStarts[0] ?? null)
   const selectedRom = $derived(ROMS.find((r) => r.id === rom) ?? null)
   const romCanBenchmark = $derived(selectedRom ? selectedRom.benchmark_ok !== false : true)
   // Worth showing the picker at all only when there's a choice to make.
@@ -246,6 +265,9 @@
       // Which game. Official plays the benchmark ladder's ROM; a continue
       // resumes the source run's. Both send null.
       rom: isOfficial || isContinue ? null : (rom || null),
+      // Only sent when this game actually offered a choice and one was made —
+      // otherwise null, which the backend reads as "the game's default opening".
+      start: showStartPicker ? (start || null) : null,
       continueFrom: continueFrom?.runId ?? null,
       // Casual continue may override models. Player rides on `model` (the backend
       // treats it as reuse when it equals the source alias, else an override).
@@ -385,6 +407,30 @@
               {#each CONFIGS as c}<option value={c}>{c}</option>{/each}
             </select>
           </label>
+          <!-- Which opening. Only shown when the game offers more than one, so
+               it stays invisible for Emerald and for any game with a single
+               committed start. Not a scoring switch — official runs never see
+               this control and always use the frozen canonical savepoint. -->
+          {#if showStartPicker}
+            <label class="field">
+              <span class="flabel">Start as</span>
+              <!-- '' is a real option, not a placeholder: it means "send no
+                   start", which is exactly how the backend spells the game's
+                   default opening. Naming the character in that option's text
+                   keeps it honest about what you'd get. -->
+              <select bind:value={start}>
+                <option value="">{defaultStart?.name ?? 'Default'} — default</option>
+                {#each romStarts.filter((s) => !s.default) as s}
+                  <option value={s.label}>{s.name}</option>
+                {/each}
+              </select>
+              <span class="faint tm-hint">
+                Same point in the game either way — only the character differs.
+                Handy when filming two runs side by side: you can tell them apart
+                without a caption.
+              </span>
+            </label>
+          {/if}
           <!-- Which steering block the agent gets. Not a scoring switch: a
                'speed' casual run is still casual and still off the leaderboard;
                it just gets told to take the shortest path. -->

@@ -11,6 +11,7 @@
   import * as api from '../lib/api.js'
   import Action, { actionTokens } from './Action.svelte'
   import Icon from './Icon.svelte'
+  import ConversationDiagnostics from './ConversationDiagnostics.svelte'
   let { run = null, onback, oncontinue } = $props()
 
   let summary = $state(null)     // raw nested run_summary.json (KPIs + referee.gates)
@@ -61,6 +62,29 @@
   // implicit group (task_index:null, empty master_model, no master images).
   const tasks = $derived(trace?.tasks ?? [])
   const hasTasks = $derived(trace?.has_tasks === true)
+  const cachePct = (n) => n == null ? 'Not reported' : `${(n * 100).toFixed(1)}%`
+  const cacheCount = (n) => n == null ? '—' : Number(n).toLocaleString()
+  const cacheHits = (c) => c.request_hit_fraction == null ? 'Not reported' : `${Math.round(c.request_hit_fraction * c.measured_attempts)} / ${c.measured_attempts}`
+  function cacheGroup(key) {
+    const parts = key.split(' / ')
+    return { phase: parts[0] === 'gameplay' ? 'Gameplay' : parts[0] === 'compaction' ? 'Compaction' : parts[0],
+      provider: parts.slice(1, -1).join(' / '), segment: parts.at(-1).replace('segment ', '') }
+  }
+  const cacheRows = $derived.by(() => {
+    const segments = new Map()
+    for (const [key, c] of Object.entries(trace?.cache_breakdown ?? {})) {
+      const group = cacheGroup(key)
+      if (!segments.has(group.segment)) segments.set(group.segment, [])
+      segments.get(group.segment).push({key, c, group})
+    }
+    return [...segments.values()].flatMap(rows => rows.map((row, i) => ({...row, costSpan: i === 0 ? rows.length : 0})))
+  })
+  function segmentCost(segment) {
+    const c = trace?.segment_costs?.[segment]
+    if (c?.total_cost_usd != null) return `$${c.total_cost_usd.toFixed(6)}`
+    if (c?.measured_requests) return `≥ $${c.reported_cost_usd.toFixed(6)} (partial)`
+    return 'Not reported'
+  }
 
   // E9.1/E9.3: start with ALL groups + ALL turns COLLAPSED (no auto-open). The
   // deep trace sub-sections (system prompt / input) are also default-collapsed
@@ -199,12 +223,13 @@
     <div class="bar">
       <button class="btn ghost" onclick={() => onback()}><Icon name="back" size={13} /> Back</button>
       <span class="badge {run.kind}">{run.kind}</span>
-      <button class="btn cont full-report" disabled={run.status === 'running'} onclick={() => oncontinue(run)}><Icon name="rerun" size={13} /> Continue this run</button>
+      <button class="btn cont full-report" disabled={run.status === 'running' || summary?.protocol_probe} onclick={() => oncontinue(run)}><Icon name="rerun" size={13} /> Continue this run</button>
     </div>
 
     <!-- meta bar -->
     <header class="rhead">
       <h2 class="mono">{run.model}</h2>
+      {#if summary?.protocol_probe}<p>Protocol test using a recorded screenshot. No emulator actions were executed.</p>{/if}
       <div class="meta faint">
         <span class="mono">{run.slug}</span> · {dateShort(run.startedAt)} · config <span class="mono">{run.config}</span>
         {#if run.benchmark}· benchmark <span class="mono">{run.benchmark}</span>{/if}
@@ -250,6 +275,31 @@
     <!-- FULL two-level master→player trace (B1 + Round 9 E parity) -->
     {#if tasks.length}
       <section class="trace">
+        {#if trace?.cache}
+          <details class="trace-step cache-overview">
+            <summary><span class="step-label">Cache overview</span><span class="step-preview">{cachePct(trace.cache.input_read_fraction)} of measured input reused</span></summary>
+            <div class="cache-body">
+              <div class="cache-metrics">
+                <div><span class="kl">Input from cache</span><strong>{cachePct(trace.cache.input_read_fraction)}</strong><span>{cacheCount(trace.cache.cached_tokens)} of {cacheCount(trace.cache.measured_input_tokens)} measured tokens</span></div>
+                <div><span class="kl">Measured requests using cache</span><strong>{cacheHits(trace.cache)}</strong><span>{cachePct(trace.cache.request_hit_fraction)} had at least one cached token</span></div>
+                <div><span class="kl">Requests with cache data</span><strong>{trace.cache.measured_attempts} / {trace.cache.attempts}</strong><span>{trace.cache.measured_attempts === trace.cache.attempts ? 'All requests measured' : 'Unreported requests excluded from percentages'}</span></div>
+              </div>
+              <div class="cache-table-scroll">
+                <table class="cache-table">
+                  <caption>By conversation segment and request type</caption>
+                  <thead><tr><th>Segment</th><th>Request</th><th>Provider</th><th>Input cached</th><th>Cached / measured tokens</th><th>Requests using cache</th><th>Measured / total requests</th><th>Segment total cost</th></tr></thead>
+                  <tbody>
+                    {#each cacheRows as {key, c, group, costSpan} (key)}
+                      <tr><td>{group.segment}</td><td>{group.phase}</td><td>{group.provider}</td><td>{cachePct(c.input_read_fraction)}</td><td>{cacheCount(c.cached_tokens)} / {cacheCount(c.measured_input_tokens)}</td><td>{cacheHits(c)}</td><td>{c.measured_attempts} / {c.attempts}</td>{#if costSpan}<td class="segment-cost" rowspan={costSpan}>{segmentCost(group.segment)}</td>{/if}</tr>
+                    {/each}
+                  </tbody>
+                </table>
+              </div>
+              <p class="cache-note">Input reuse is weighted by token count. A request can use some cache and still process many uncached tokens. These percentages do not measure money saved. Segment cost includes gameplay and compaction model requests, including retries; OCR is excluded.</p>
+              <details class="trace-step cache-raw"><summary><span class="step-label">Raw totals (JSON)</span></summary><pre>{JSON.stringify({ total: trace.cache, by_phase_provider_segment: trace.cache_breakdown, segment_costs: trace.segment_costs }, null, 2)}</pre></details>
+            </div>
+          </details>
+        {/if}
         <h3>
           {#if hasTasks}TaskMaster trace{:else}Turn-by-turn{/if}
           <span class="faint">({trace.turn_count} turns{#if hasTasks} · {trace.task_count} tasks{/if})</span>
@@ -382,14 +432,65 @@
           <!-- nested player turns (collapsible) -->
           {#if !hasTasks || g.task_index == null || gOpen}
             <div class="turns" class:nested={hasTasks && g.task_index != null}>
-              {#each g.turns ?? [] as t, ti (`${gk}:${t.turn}:${ti}`)}
-                {@const tk = `${gk}:${t.turn}:${ti}`}
+              {#each g.timeline ?? g.turns ?? [] as t, ti (`${gk}:${t.kind ?? 'turn'}:${ti}`)}
+                {@const tk = `${gk}:${t.kind ?? 'turn'}:${ti}`}
                 {@const tOpen = openTurns.has(tk)}
                 {@const ptr = t.trace}
+                {#if t.kind === 'compaction'}
+                  <div class="turn compaction" class:open={tOpen}>
+                    <button class="thead" onclick={() => toggleTurn(tk)}>
+                      <span class="arr">{tOpen ? '▾' : '▸'}</span>
+                      <span class="tn mono">Compaction {t.number}</span>
+                      <span class="tsum faint">After turn {t.after_turn}{t.complete ? '' : ' · incomplete'}</span>
+                      <span class="tuse faint mono">{turnUsage(t)}</span>
+                    </button>
+                    {#if tOpen}
+                      <div class="tbody">
+                        {#if ptr}
+                          <div class="trace-section">
+                            <div class="trace-container">
+                              <ConversationDiagnostics events={t.diagnostics.filter(e => !['compaction_trace', 'compaction_complete'].includes(e.type))} />
+                              {#if ptr.user_input}
+                                <details class="trace-step trace-input">
+                                  <summary>
+                                    <span class="step-label">Input</span>
+                                    <span class="step-preview">{ptr.user_input.slice(0, 100).replace(/\n/g, ' ')}…</span>
+                                  </summary>
+                                  <pre class="step-content">{ptr.user_input}</pre>
+                                </details>
+                              {/if}
+                              {#each ptr.steps ?? [] as step}
+                                {#if step.thinking}
+                                  <details class="trace-step trace-thinking-only">
+                                    <summary><span class="step-label">Thinking</span></summary>
+                                    <div class="step-content md">{@html mdToHtml(step.thinking)}</div>
+                                  </details>
+                                {/if}
+                              {/each}
+                              {#if ptr.output}
+                                <details class="trace-step trace-output" open>
+                                  <summary><span class="step-label">Output</span></summary>
+                                  <div class="step-body">
+                                    <div class="dec-row"><span class="dec-lab">Continuation summary</span><div class="dec-desc">{ptr.output.continuation_summary}</div></div>
+                                    <div class="dec-row"><span class="dec-lab">Memory</span><pre class="dec-mem">{JSON.stringify(ptr.output.memory, null, 2)}</pre></div>
+                                    <details><summary>Memory before</summary><pre class="step-content">{JSON.stringify(ptr.previous_memory, null, 2)}</pre></details>
+                                    <details class="structured-output"><summary>Structured output (JSON)</summary><pre class="step-content">{JSON.stringify(ptr.output, null, 2)}</pre></details>
+                                  </div>
+                                </details>
+                              {:else}
+                                <p class="faint">No committed compaction output.</p>
+                              {/if}
+                            </div>
+                          </div>
+                        {/if}
+                      </div>
+                    {/if}
+                  </div>
+                {:else}
                 <div class="turn" class:open={tOpen}>
                   <button class="thead" onclick={() => toggleTurn(tk)}>
                     <span class="arr">{tOpen ? '▾' : '▸'}</span>
-                    <span class="tn mono">Turn {t.turn}</span>
+                    <span class="tn mono">Turn {t.turn}{t.fresh ? ' (fresh)' : ''}</span>
                     <span class="tact">{turnActionDisplay(t)}</span>
                     <span class="tsum faint">{t.reasoning}</span>
                     <span class="tuse faint mono">{turnUsage(t)}</span>
@@ -399,12 +500,21 @@
                       <!-- input → trace → output(decision)/screenshot at the BOTTOM (chronological) -->
                       {#if ptr}
                         <div class="trace-section">
-                          <div class="trace-header">Trace ({nToolCalls(ptr.steps)} tool call{nToolCalls(ptr.steps) === 1 ? '' : 's'})</div>
+                          {#if nToolCalls(ptr.steps) > 0}
+                            <div class="trace-header">Trace ({nToolCalls(ptr.steps)} tool call{nToolCalls(ptr.steps) === 1 ? '' : 's'})</div>
+                          {/if}
                           <div class="trace-container">
+                            <ConversationDiagnostics events={t.diagnostics ?? []} />
                             {#if ptr.system_prompt}
                               <details class="trace-step trace-system">
                                 <summary><span class="step-label">System Prompt</span></summary>
                                 <pre class="step-content">{ptr.system_prompt}</pre>
+                              </details>
+                            {/if}
+                            {#if ptr.segment_context}
+                              <details class="trace-step trace-input">
+                                <summary><span class="step-label">Conversation context</span></summary>
+                                <pre class="step-content">{ptr.segment_context}</pre>
                               </details>
                             {/if}
                             {#if ptr.user_input}
@@ -498,6 +608,7 @@
                     </div>
                   {/if}
                 </div>
+                {/if}
               {/each}
             </div>
           {/if}
@@ -565,6 +676,17 @@
 
   /* deep trace container (master + player share these) */
   .trace-section { display: flex; flex-direction: column; gap: 6px; }
+  .cache-body { padding: 14px; background: var(--surface); border-top: 1px solid var(--border); }
+  .cache-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); gap: 16px; margin-bottom: 18px; }
+  .cache-metrics > div { display: flex; flex-direction: column; gap: 5px; }
+  .cache-metrics strong { font-size: 20px; }
+  .cache-metrics span:last-child, .cache-note { color: var(--muted); font-size: 11px; line-height: 1.5; }
+  .cache-table-scroll { overflow-x: auto; }
+  .cache-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .cache-table caption { text-align: left; font-weight: 700; padding-bottom: 8px; }
+  .cache-table th { text-align: left; color: var(--muted); font-weight: 600; }
+  .cache-table th, .cache-table td { padding: 8px 7px; border-bottom: 1px solid var(--border); }
+  .cache-table td { white-space: nowrap; }
   .trace-header { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); }
   .trace-container { display: flex; flex-direction: column; gap: 5px; }
   .trace-step { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 12.5px; }
@@ -621,7 +743,8 @@
   .turns.nested { margin: 0 0 12px 16px; padding-left: 10px; border-left: 2px solid var(--border); }
   .turn-shot { width: 240px; max-width: 100%; image-rendering: pixelated; border: 1px solid var(--border); border-radius: var(--radius-sm); display: block; margin-top: 2px; }
   .turn { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 8px; overflow: hidden; }
-  .thead { width: 100%; display: grid; grid-template-columns: 18px 56px auto 1fr auto; gap: 10px; align-items: center; padding: 11px 14px; border: none; background: none; text-align: left; }
+  .thead { width: 100%; display: grid; grid-template-columns: 18px max-content auto 1fr auto; gap: 10px; align-items: center; padding: 11px 14px; border: none; background: none; text-align: left; }
+  .compaction > .thead { grid-template-columns: 18px max-content 1fr auto; }
   .thead:hover { background: var(--surface-2); }
   .arr { color: var(--faint); font-size: 10px; }
   .tn { font-size: 12px; font-weight: 700; color: var(--accent); }

@@ -42,7 +42,11 @@ local press_frames_remaining = 0
 
 -- Live stream: auto-capture screenshot for dashboard (separate from agent's CAP)
 local stream_path = "/tmp/mgba_stream_1.png"
-local stream_interval = 4  -- every 4 frames ≈ 15fps at 60fps
+-- Publish every emulator frame. The recorder samples this 60fps source at
+-- 30fps; source and sampler running at the same cadence phase-lock and
+-- occasionally skip a version, while 60→30 gives every output tick a fresh
+-- frame with timing headroom. Native 240×160 PNGs are only a few KB each.
+local stream_interval = 1  -- every emulator frame = 60fps source
 local stream_counter = 0
 
 -- Send a response to the Python server

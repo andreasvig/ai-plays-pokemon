@@ -140,6 +140,14 @@ export async function fetchRoms() {
   return getJSON('/api/roms')
 }
 
+export async function fetchStarts() {
+  // GET /api/starts → [{rom, label, name, description, default, exists}, ...].
+  // The choosable openings per game (boy/girl on FireRed). Flat with a `rom` on
+  // every row, so the dialog re-filters when you change game without refetching.
+  // `exists` false = the savepoint dir is incomplete here, so don't offer it.
+  return getJSON('/api/starts')
+}
+
 export async function fetchLeaderboard(benchmark = null) {
   // GET /api/leaderboard[?benchmark=] → best official run per model for that
   // benchmark, gates desc / turns asc. Add displayed rank + perfScore (the same
@@ -315,6 +323,10 @@ export function enqueueRun(spec) {
     // Which game. Omitted for the default ROM so the request stays what it has
     // always been; the server reads absent as "the registry default".
     if (spec.rom) body.rom = spec.rom
+    // Which opening. Omitted for the game's default, so a request that made no
+    // choice stays byte-identical to what it was before starts existed. The
+    // server validates the label against this item's ROM.
+    if (spec.start) body.start = spec.start
     if (spec.continueFrom != null) body.continue_from = spec.continueFrom
   } else if (spec.benchmark != null) {
     // Official: send WHICH benchmark (ladder + goal). config/max_turns are

@@ -21,6 +21,7 @@ To find the name of anything a command asks you for:
 ```bash
 pokemon ls models sol      # model aliases (+ substring filter)
 pokemon ls roms            # game ids
+pokemon ls starts          # choosable openings per game (boy/girl on FireRed)
 pokemon ls configs         # config stems
 pokemon ls events          # ids for --stop-at
 pokemon ls benchmarks
@@ -41,9 +42,15 @@ pokemon queue add "gpt-5.6-sol(medium)" --kind casual --rom firered \
     --max-turns 20 --stop-at starter_chosen --record simple --record-speed cut-thinking
 ```
 
-Casual defaults: latest config, default ROM, no early stop, no recording. Every
-value is validated at enqueue — an unknown model/config/rom/event is a 400 that
-names the valid ones. `--rom` switches the emulator for you.
+Casual defaults: latest config, default ROM, that ROM's default opening, no early
+stop, no recording. Every value is validated at enqueue — an unknown
+model/config/rom/start/event is a 400 that names the valid ones. `--rom` switches
+the emulator for you.
+
+`--start <label>` picks which opening a casual run plays from — FireRed has `boy`
+and `girl`, registered in `configs/starts.yaml`. Labels are scoped to the ROM.
+Official runs ignore it (a benchmark starts from the frozen canonical savepoint),
+and a continue ignores it (it resumes its source run's savepoint).
 
 Without the app, `pokemon run --model "<alias>" --turns N` does a single
 one-shot run and owns mGBA itself.
@@ -67,7 +74,7 @@ one-shot run and owns mGBA itself.
 ./venv/bin/python -m pytest tests/ -q
 ```
 
-**Baseline as of 2026-08-02: 562 pass, 8 fail.** Those 8 are pre-existing and
+**Baseline as of 2026-08-03: 566 pass, 8 fail.** Those 8 are pre-existing and
 unrelated to any current work — do not spend time diagnosing them unless that
 IS the work:
 
@@ -89,8 +96,8 @@ pre-commit hook** on this machine, so nothing runs the gates for you.
   Changing it changes what every official run sees; the control center
   hardcodes it (`src/app/executor.py`). `config-4.0` is the current
   self-directed line and what a bare `pokemon run` loads.
-- Registries are data, not code: adding a model, ROM, benchmark or gate is a
-  YAML edit in `configs/`.
+- Registries are data, not code: adding a model, ROM, start state, benchmark or
+  gate is a YAML edit in `configs/`.
 
 ## Where things live
 

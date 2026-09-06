@@ -63,3 +63,11 @@ class StateManager:
         """Write state to disk."""
         with open(self.state_file, "w") as f:
             json.dump(self._data, f, indent=2)
+
+    def replace(self, value: dict) -> None:
+        """Replace the full memory snapshot after validated compaction."""
+        from copy import deepcopy
+        from src.agent.append_agent import atomic_json
+        replacement = deepcopy(value)
+        atomic_json(self.state_file, replacement)
+        self._data = replacement

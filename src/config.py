@@ -255,6 +255,7 @@ def load_config(
     path: Optional[str] = None,
     *,
     llm_alias: Optional[str] = None,
+    provider_profile: Optional[str] = None,
 ) -> dict[str, Any]:
     """Load config from YAML file and .env, return as dict.
 
@@ -267,6 +268,7 @@ def load_config(
         path: Explicit config file path. If None, auto-picks the latest
               config-X.Y.yaml from the configs/ directory.
         llm_alias: Required. The model alias (or raw provider/model id) to use.
+        provider_profile: Optional named append-agent profile; overrides YAML selection.
     """
     load_dotenv()
 
@@ -288,6 +290,11 @@ def load_config(
     # rest of the code keeps a single flat read path and the older flat
     # config-1.x..3.12 files keep loading unchanged.
     _hoist_player_agent(config, config_path)
+    if provider_profile is not None:
+        settings = config.setdefault("provider_profiles", {})
+        if not isinstance(settings, dict):
+            raise ValueError("provider_profiles must be a mapping")
+        settings["name"] = provider_profile
 
     # Model choice is a CLI flag, not a config field. Reject configs that
     # still carry it so old habits surface as a clear error instead of
@@ -319,6 +326,9 @@ def load_config(
         registry = _load_models_registry()
         _resolve_llm_alias(config, registry)
 
+    from src.agent.provider_profiles import resolve_provider_profile
+    _validate_append_config(config)
+    resolve_provider_profile(config)
     _validate_config(config, require_llm_model=bool(llm_alias))
     return config
 
@@ -330,6 +340,7 @@ def _validate_config(config: dict[str, Any], *, require_llm_model: bool = True) 
     tools) that load configs purely for the emulator block. Agent paths
     always pass it as True via load_config(llm_alias=...).
     """
+    _validate_append_config(config)
     required = [
         "task",
         "emulator",
@@ -469,3 +480,50 @@ def _validate_config(config: dict[str, Any], *, require_llm_model: bool = True) 
     for key in ("host", "port", "rom_path"):
         if key not in emu:
             raise ValueError(f"Missing emulator config: emulator.{key}")
+
+
+def _validate_append_config(config: dict[str, Any]) -> None:
+    kind = config.get("agent_type", "current")
+    if kind not in ("current", "append_compact"):
+        raise ValueError(f"Unknown agent_type: {kind}")
+    if kind != "append_compact":
+        return
+    if config.get("task_master", {}).get("enabled"):
+        raise ValueError("append_compact is self-directed and cannot enable TaskMaster")
+    for key in ("system_prompt", "user_prompt", "segment_start_prompt"):
+        if not isinstance(config.get(key), str) or not config[key].strip():
+            raise ValueError(f"append_compact requires {key} in config")
+    for section in ("compaction", "transport", "observability", "caching"):
+        if not isinstance(config.get(section), dict):
+            raise ValueError(f"append_compact requires a {section} mapping")
+    for section, keys in (("compaction", ("every_n_turns", "context_token_limit", "summary_target_tokens", "max_output_tokens", "max_handover_chars")),
+                          ("transport", ("timeout_seconds", "max_output_tokens"))):
+        for key in keys:
+            value = config[section].get(key)
+            if type(value) is not int or value <= 0:
+                raise ValueError(f"{section}.{key} must be a positive integer")
+    for section in ("compaction", "transport"):
+        value = config[section].get("max_retries")
+        if type(value) is not int or value < 0:
+            raise ValueError(f"{section}.max_retries must be a non-negative integer")
+    fraction = config["compaction"].get("context_limit_fraction")
+    if isinstance(fraction, bool) or not isinstance(fraction, (int, float)) or not 0 < fraction < 1:
+        raise ValueError("compaction.context_limit_fraction must be between 0 and 1")
+    for section, key in (("compaction", "prompt"), ("transport", "prompted_output_prompt")):
+        if not isinstance(config[section].get(key), str) or not config[section][key].strip():
+            raise ValueError(f"{section}.{key} must be a non-empty prompt")
+    if type(config["transport"].get("stream")) is not bool:
+        raise ValueError("transport.stream must be a boolean")
+    if config["observability"].get("on_reasoning_loss") not in ("stop", "continue"):
+        raise ValueError("observability.on_reasoning_loss must be stop or continue")
+    if config["compaction"]["max_output_tokens"] >= config["compaction"]["context_token_limit"]:
+        raise ValueError("Compaction output budget must fit the configured context limit")
+    reserve = config["compaction"].get("image_token_reserve", 4096)
+    if type(reserve) is not int or reserve <= 0:
+        raise ValueError("compaction.image_token_reserve must be a positive integer")
+    cache = config["caching"]
+    prefixes = cache.get("cache_control_by_model_prefix", {})
+    if not isinstance(prefixes, dict) or any(not isinstance(k, str) or not k or not isinstance(v, dict) for k, v in prefixes.items()):
+        raise ValueError("caching.cache_control_by_model_prefix must map model prefixes to control objects")
+    if "cache_control" in cache and not isinstance(cache["cache_control"], dict):
+        raise ValueError("caching.cache_control must be an object")

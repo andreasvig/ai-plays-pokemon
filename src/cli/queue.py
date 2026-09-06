@@ -71,6 +71,8 @@ def _print_queue(payload: dict) -> None:
             flags.append(f"stop_at={it['stop_at']}")
         if it.get("max_spend_usd") is not None:
             flags.append(f"max_spend=${it['max_spend_usd']:g}")
+        if it.get("start"):
+            flags.append(f"start={it['start']}")
         if it.get("gameplay"):
             flags.append(f"gameplay={it['gameplay']}")
         if it.get("record"):
@@ -114,6 +116,12 @@ def _cmd_add(args) -> int:
                 # whose .gba isn't on disk, is a 400 here rather than an mGBA
                 # that won't boot several minutes later.
                 spec["rom"] = args.rom
+            if args.start:
+                # Validated server-side against the start registry, scoped to
+                # this item's ROM (400 on an unknown label or an incomplete
+                # savepoint dir), so a typo rejects the batch instead of
+                # enqueuing runs that quietly open as the wrong character.
+                spec["start"] = args.start
             if args.max_turns is not None:
                 spec["max_turns"] = args.max_turns
             if args.stop_at:
@@ -155,7 +163,7 @@ def _cmd_add(args) -> int:
             # see a defaulted config or a dropped official-only field, rather
             # than assuming the request was taken verbatim.
             bits = [it.get("benchmark") or it.get("config") or ""]
-            for key in ("rom", "max_turns", "stop_at", "max_spend_usd", "gameplay"):
+            for key in ("rom", "start", "max_turns", "stop_at", "max_spend_usd", "gameplay"):
                 if it.get(key) is not None:
                     bits.append(f"{key}={it[key]}")
             if it.get("record"):
@@ -172,10 +180,15 @@ def _hint_for(message: str) -> None:
     (models especially) that list is long and the useful next step is a
     filterable command, not a wall of text.
     """
+    # ORDER MATTERS: first match wins, and a start's 400 mentions its rom
+    # ("unknown start 'gril' for rom 'firered'"), so the start needles must sit
+    # ABOVE the bare "rom" needle or every bad label points at `ls roms`.
     hints = (
         ("unknown model", "pokemon ls models <substring>"),
         ("unknown config", "pokemon ls configs"),
         ("unknown benchmark", "pokemon ls benchmarks"),
+        ("unknown start", "pokemon ls starts"),
+        ("its savepoint is missing", "pokemon ls starts"),
         ("rom", "pokemon ls roms"),
         ("stop event", "pokemon ls events"),
         ("unknown stop", "pokemon ls events"),
@@ -319,6 +332,13 @@ frozen by definition, and takes its ROM from its own ladder.
         "--rom",
         help="Which game (casual only), e.g. `firered`. `pokemon ls roms`. Omit for "
              "the default ROM. The executor switches the emulator for you.",
+    )
+    p_add.add_argument(
+        "--start",
+        help="Which opening to play from (casual only), e.g. `girl`. Labels are "
+             "scoped to --rom; `pokemon ls starts` lists them. Omit for the "
+             "game's default opening. Ignored by a continue, which resumes its "
+             "source run's savepoint.",
     )
     p_add.add_argument(
         "--max-turns", type=int, dest="max_turns",

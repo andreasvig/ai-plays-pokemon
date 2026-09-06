@@ -349,7 +349,7 @@ player_agent:
 
   benchmark_guidelines: |
     # Benchmark Mode: TRUE
-    You are in benchmark mode. You are being measured on completing the top goal as fast as possible. When your top goal is complete, the benchmark will automatically stop the game — this means that if the game is still running, you have not reached the end yet and may have missed something. Don't do anything that is not necessary to complete the top goal, and set your own goals to be the shortest sensible next step toward it.
+    You are in speed mode. You are being measured on making as much progress toward the top goal as quickly as possible. The external harness may stop the run when a separate resource limit is reached, so do not infer from the game still running that a milestone is incomplete. Don't do anything that is not necessary to complete the top goal, and set your own goals to be the shortest sensible next step toward it.
 
   # Output Schema Reference (maintainer use, not sent to agent):
   # Mirrors _LegacyGameAction in src/agent/agent.py — the four-field schema used

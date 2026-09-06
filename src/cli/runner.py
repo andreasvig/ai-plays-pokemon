@@ -495,6 +495,7 @@ def prepare_config(
     path: str | None,
     model_alias: str,
     tm_model_alias: str | None = None,
+    provider_profile: str | None = None,
 ) -> dict:
     """Load a config + bind it to a model alias.
 
@@ -506,7 +507,7 @@ def prepare_config(
     `tm_model_alias` (from --task-master-model) is resolved the same way for the
     TaskMaster agent; when None it falls back to the Player's model.
     """
-    config = load_config(path, llm_alias=model_alias)
+    config = load_config(path, llm_alias=model_alias, provider_profile=provider_profile)
     config = copy.deepcopy(config)
     _resolve_task_master_model(config, tm_model_alias)
     actual_path = config.get("_config_path") or path or ""
@@ -514,6 +515,10 @@ def prepare_config(
     slug = _slug(model_alias)
     config["run_name"] = f"{stem}__{slug}"
     config["run_label"] = f"{stem} · {model_alias}"
+    profile_name = config.get("_provider_profile", {}).get("name")
+    if profile_name:
+        config["run_name"] += f"__{_slug(profile_name)}"
+        config["run_label"] += f" · {profile_name}"
     return config
 
 
@@ -771,6 +776,7 @@ def run_single_loop(
                 run_dir / "screenshots",
                 sp_turn,
             )
+            turn_mgr.restore_append_state(snapshot, sp_turn)
 
             # Cumulative cost / time / tokens: seed the run summary accounting AND
             # the live stats baseline from the source run's summary, so a resumed
@@ -1018,13 +1024,16 @@ def _copy_prior_run_artifacts(source_run_dir: Path, new_run_dir: Path) -> None:
         new_header = dst_events.read_text() if dst_events.exists() else ""
         dst_events.write_text(prior + new_header)
 
-    for sub in ("screenshots", "ocr"):
+    for sub in ("screenshots", "ocr", "conversation"):
         src_sub = source_run_dir / sub
         dst_sub = new_run_dir / sub
         if src_sub.is_dir():
             dst_sub.mkdir(exist_ok=True)
             for entry in src_sub.iterdir():
-                shutil.copy2(entry, dst_sub / entry.name)
+                if entry.is_dir():
+                    shutil.copytree(entry, dst_sub / entry.name, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(entry, dst_sub / entry.name)
 
     src_term = source_run_dir / "terminal.log"
     dst_term = new_run_dir / "terminal.log"
@@ -1096,6 +1105,8 @@ Examples:
              "through models.yaml the same way as --model. Defaults to the "
              "Player's --model when omitted. Only used when task_master.enabled.",
     )
+    parser.add_argument("--provider-profile", default=None,
+                        help="Named append-agent provider profile, e.g. gemma-guidance or gemma-replay. Saved with the run.")
     parser.add_argument(
         "--continue", dest="continue_from", default=None,
         help="Path to a prior run dir. Continues from its latest savepoint with "
@@ -1165,6 +1176,8 @@ Examples:
     args = parser.parse_args()
 
     if args.continue_from:
+        if args.provider_profile:
+            sys.exit("ERROR: --continue preserves the saved provider profile; --provider-profile requires a new run.")
         if args.model or args.config != [None]:
             sys.exit(
                 "ERROR: --continue is exclusive with --config/--model. "
@@ -1181,7 +1194,7 @@ Examples:
             sys.exit("ERROR: --model is required (unless --continue is set).")
         pairs = _resolve_pairs(args.config, args.model)
         prepared = [
-            prepare_config(c, m, tm_model_alias=args.task_master_model)
+            prepare_config(c, m, tm_model_alias=args.task_master_model, provider_profile=args.provider_profile)
             for c, m in pairs
         ]
 

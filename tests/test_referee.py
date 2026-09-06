@@ -15,10 +15,11 @@ from __future__ import annotations
 
 import json
 import struct
+from pathlib import Path
 
 import pytest
 
-from src.referee.checkpoints import Checkpoint
+from src.referee.checkpoints import Checkpoint, load_checkpoints
 from src.referee.referee import (
     GSAVEBLOCK1_PTR,
     PLAYER_PARTY_COUNT,
@@ -206,6 +207,33 @@ def test_var_threshold(tmp_path):
 
 
 # --- (d) torn pointer ---------------------------------------------------------
+
+@pytest.mark.parametrize("ladder_name", ["firstbadge", "v1", "failtest"])
+def test_real_parcel_gate_stamps_pickup_before_pokedex(tmp_path, ladder_name):
+    path = Path(__file__).resolve().parent.parent / "configs" / f"checkpoints-firered-{ladder_name}.yaml"
+    gates = {cp.id: cp for cp in load_checkpoints(path)}
+    emu = FakeEmulator(FakeImage(block=build_sb1(vars_={0x4057: 0})))
+    ref = Referee(
+        [gates["parcel_delivered"], gates["pokedex_received"]],
+        emu, FakeLogger(), tmp_path,
+    )
+    ref.poll(1)
+    assert ref.stamps == {}
+
+    # The Mart sets 1 when giving the parcel; no Pokédex yet.
+    emu.set_image(FakeImage(block=build_sb1(vars_={0x4057: 1})))
+    ref.poll(2)
+    assert ref.stamps == {"parcel_delivered": 2}
+
+    # Oak gives the Pokédex before setting the Mart scene variable to 2.
+    emu.set_image(FakeImage(block=build_sb1(vars_={0x4057: 1}, flags={0x829: True})))
+    ref.poll(3)
+    assert ref.stamps == {"parcel_delivered": 2, "pokedex_received": 3}
+
+    emu.set_image(FakeImage(block=build_sb1(vars_={0x4057: 2}, flags={0x829: True})))
+    ref.poll(4)
+    assert ref.stamps == {"parcel_delivered": 2, "pokedex_received": 3}
+
 
 def test_torn_pointer_retry(tmp_path):
     # Poll 1: pointer changes between the two reads on EVERY attempt -> give up

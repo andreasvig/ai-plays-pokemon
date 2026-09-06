@@ -127,7 +127,11 @@ def list_configs(configs_dir: Path | None = None) -> list[str]:
         major, minor = stem.split("config-")[1].split(".")
         stems.append(((int(major), int(minor)), stem))
     stems.sort(key=lambda t: t[0])
-    return [stem for _, stem in stems]
+    result = [stem for _, stem in stems]
+    if (base / "config-append.yaml").is_file():
+        # API callers use the last item as the latest numbered default.
+        result.insert(0, "config-append")
+    return result
 
 
 # The ladder the stop-at catalog is read from. Deliberately the FULL ladder:

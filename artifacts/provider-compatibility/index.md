@@ -1,0 +1,420 @@
+# OpenRouter | Documentation
+
+- [Quickstart](https://openrouter.ai/docs/quickstart.md): Get started with OpenRouter
+- [Batch API Quickstart](https://openrouter.ai/docs/batch-quickstart.md): Submit and retrieve asynchronous batches of inference requests
+- [Principles](https://openrouter.ai/docs/guides/overview/principles.md): Core principles and values of OpenRouter
+- [Models](https://openrouter.ai/docs/guides/overview/models.md): One API for hundreds of models
+- [MCP](https://openrouter.ai/docs/guides/overview/mcp-server.md): Connect your AI coding tools to OpenRouter over MCP
+- [Terraform Provider](https://openrouter.ai/docs/guides/overview/terraform.md): Manage OpenRouter resources as infrastructure-as-code with Terraform
+- [Multimodal Capabilities](https://openrouter.ai/docs/guides/overview/multimodal/overview.md): Send images, PDFs, audio, and video to OpenRouter models, generate speech from text, or transcribe audio to text
+- [Image Generation](https://openrouter.ai/docs/guides/overview/multimodal/image-generation.md): How to generate images with OpenRouter's dedicated Image API
+- [Video Generation](https://openrouter.ai/docs/guides/overview/multimodal/video-generation.md): How to generate videos with OpenRouter models
+- [Text-to-Speech](https://openrouter.ai/docs/guides/overview/multimodal/tts.md): How to generate speech audio from text with OpenRouter models
+- [Speech-to-Text](https://openrouter.ai/docs/guides/overview/multimodal/stt.md): How to transcribe audio into text with OpenRouter models
+- [Audio](https://openrouter.ai/docs/guides/overview/multimodal/audio.md): How to send and receive audio with OpenRouter models
+- [PDF Inputs](https://openrouter.ai/docs/guides/overview/multimodal/pdfs.md): How to send PDFs to OpenRouter models
+- [Image Inputs](https://openrouter.ai/docs/guides/overview/multimodal/image-understanding.md): How to send images to OpenRouter models
+- [Video Inputs](https://openrouter.ai/docs/guides/overview/multimodal/videos.md): How to send video files to OpenRouter models
+- [OAuth PKCE](https://openrouter.ai/docs/guides/overview/auth/oauth.md): Connect your users to OpenRouter
+- [Workload Identity Federation](https://openrouter.ai/docs/guides/overview/auth/workload-identity-federation.md): Call OpenRouter from workloads signed in with your own identity provider, without long-lived API keys
+- [Management API Keys](https://openrouter.ai/docs/guides/overview/auth/management-api-keys.md): Manage API keys programmatically
+- [BYOK](https://openrouter.ai/docs/guides/overview/auth/byok.md): Bring your own provider API keys
+- [Stripe Projects](https://openrouter.ai/docs/guides/overview/stripe-projects.md): Add OpenRouter to your app with the Stripe Projects CLI
+- [Frequently Asked Questions](https://openrouter.ai/docs/faq.md): Common questions about OpenRouter
+- [Report Feedback](https://openrouter.ai/docs/guides/overview/report-feedback.md)
+- [Model Fallbacks](https://openrouter.ai/docs/guides/routing/model-fallbacks.md): Automatic failover between models
+- [Provider Routing](https://openrouter.ai/docs/guides/routing/provider-selection.md): Route requests to the best provider
+- [Auto Exacto](https://openrouter.ai/docs/guides/routing/auto-exacto.md): Automatic tool-calling provider optimization
+- [Private Models](https://openrouter.ai/docs/guides/routing/private-models.md): Bring your own model to OpenRouter, scoped to approved users and organizations
+- [Free Variant](https://openrouter.ai/docs/guides/routing/model-variants/free.md): Access free models with the :free variant
+- [Extended Variant](https://openrouter.ai/docs/guides/routing/model-variants/extended.md): Extended context windows with :extended
+- [Exacto Variant](https://openrouter.ai/docs/guides/routing/model-variants/exacto.md): Route requests with quality-first provider sorting
+- [Thinking Variant](https://openrouter.ai/docs/guides/routing/model-variants/thinking.md): Enable extended reasoning with :thinking
+- [Online Variant](https://openrouter.ai/docs/guides/routing/model-variants/online.md): Real-time web search with :online
+- [Nitro Variant](https://openrouter.ai/docs/guides/routing/model-variants/nitro.md): High-speed model inference with :nitro
+- [Floor Variant](https://openrouter.ai/docs/guides/routing/model-variants/floor.md): Lowest-cost model inference with :floor
+- [Auto Router](https://openrouter.ai/docs/guides/routing/routers/auto-router.md): Automatically select the best model for your prompt
+- [Body Builder](https://openrouter.ai/docs/guides/routing/routers/body-builder.md): Generate multiple parallel API requests from natural language
+- [Free Models Router](https://openrouter.ai/docs/guides/routing/routers/free-router.md): Get free AI inference by routing to available free models
+- [Latest Model Resolution](https://openrouter.ai/docs/guides/routing/routers/latest-resolution.md): Always target the newest version of a model family with a single slug
+- [Pareto Router](https://openrouter.ai/docs/guides/routing/routers/pareto-router.md): Pick a coding model by minimum coding score without choosing a specific model
+- [Fusion Router](https://openrouter.ai/docs/guides/routing/routers/fusion-router.md): Multi-model deliberation as a model slug
+- [Client Tools](https://openrouter.ai/docs/guides/features/tool-calling.md): Use client tools in your prompts
+- [Server Tools](https://openrouter.ai/docs/guides/features/server-tools.md): Tools operated by OpenRouter that models can call during request
+- [Web Search](https://openrouter.ai/docs/guides/features/server-tools/web-search.md): Give any model access to real-time web information
+- [Web Fetch](https://openrouter.ai/docs/guides/features/server-tools/web-fetch.md): Give any model the ability to fetch content from URLs
+- [Datetime](https://openrouter.ai/docs/guides/features/server-tools/datetime.md): Give any model access to the current date and time
+- [Image Generation](https://openrouter.ai/docs/guides/features/server-tools/image-generation.md): Generate images from text prompts with any model
+- [Apply Patch](https://openrouter.ai/docs/guides/features/server-tools/apply-patch.md): Let models propose file changes via V4A diffs
+- [Shell](https://openrouter.ai/docs/guides/features/server-tools/shell.md): Give any model a sandboxed hosted shell on the Responses and Messages APIs
+- [Bash](https://openrouter.ai/docs/guides/features/server-tools/bash.md): Give any model a sandboxed shell to run commands server-side
+- [Search Models](https://openrouter.ai/docs/guides/features/server-tools/search-models.md): Let any model search the OpenRouter model catalog
+- [Tool Search](https://openrouter.ai/docs/guides/features/server-tools/tool-search.md): Let the model discover tools on demand instead of loading every definition up front
+- [Fusion](https://openrouter.ai/docs/guides/features/server-tools/fusion.md): Multi-model deliberation as a server tool
+- [Advisor](https://openrouter.ai/docs/guides/features/server-tools/advisor.md): Consult a stronger model mid-generation as a server tool
+- [Subagent](https://openrouter.ai/docs/guides/features/server-tools/subagent.md): Delegate tasks to a smaller, faster model as a server tool
+- [Plugins](https://openrouter.ai/docs/guides/features/plugins.md): Extend model capabilities with OpenRouter plugins
+- [Web Search](https://openrouter.ai/docs/guides/features/plugins/web-search.md): Model-agnostic grounding
+- [Response Healing](https://openrouter.ai/docs/guides/features/plugins/response-healing.md): Automatically fix malformed JSON responses
+- [Workspaces](https://openrouter.ai/docs/guides/features/workspaces.md): Organize your projects, teams, and agents into separate environments
+- [Workspace Budgets](https://openrouter.ai/docs/guides/features/workspaces/workspace-budgets.md): Set spending limits per workspace with automatic enforcement
+- [Switching Workspaces](https://openrouter.ai/docs/guides/features/workspaces/switching.md): Change which workspace your Chat and Fusion requests run in.
+- [Notifications](https://openrouter.ai/docs/guides/features/notifications.md): Choose which OpenRouter alerts you receive and where they are delivered
+- [Single Sign-On (SSO)](https://openrouter.ai/docs/guides/features/sso.md): Let your team sign in to OpenRouter through your identity provider
+- [SCIM Group Mappings](https://openrouter.ai/docs/guides/features/scim-mappings.md): Automatically provision workspace access from your identity provider groups
+- [Files API](https://openrouter.ai/docs/guides/features/files-api.md): Upload files to your workspace and use them in requests
+- [Containers](https://openrouter.ai/docs/guides/features/containers.md): How sandbox containers work for the shell and bash server tools
+- [Presets](https://openrouter.ai/docs/guides/features/presets.md): Manage your LLM configurations
+- [Custom Classifiers](https://openrouter.ai/docs/guides/features/classifiers.md): Automatically categorize LLM generations in your workspace
+- [Response Caching](https://openrouter.ai/docs/guides/features/response-caching.md): Cache responses for identical API requests to save time and money
+- [Structured Outputs](https://openrouter.ai/docs/guides/features/structured-outputs.md): Return structured data from your models
+- [Message Transforms](https://openrouter.ai/docs/guides/features/message-transforms.md): Transform prompt messages
+- [Zero Completion Insurance](https://openrouter.ai/docs/guides/features/zero-completion-insurance.md): OpenRouter will not charge you for zero token responses
+- [Zero Data Retention](https://openrouter.ai/docs/guides/features/zdr.md): How OpenRouter gives you control over your data
+- [App Attribution](https://openrouter.ai/docs/app-attribution.md): Get your app featured in OpenRouter rankings and analytics
+- [Guardrails](https://openrouter.ai/docs/guides/features/guardrails.md): Control spending and model access for your organization
+- [Prompt Injection Detection](https://openrouter.ai/docs/guides/features/guardrails/prompt-injection.md): Regex-based prompt injection guardrail patterns
+- [Allowlist](https://openrouter.ai/docs/guides/features/guardrails/prompt-injection/allowlist.md): Exclude known-safe phrases from prompt injection detection
+- [Sensitive Info Guardrail](https://openrouter.ai/docs/guides/features/guardrails/sensitive-info.md): Automatically detect and handle sensitive information in API requests
+- [Detected Secret Formats](https://openrouter.ai/docs/guides/features/guardrails/secret-formats.md): Full list of API key and credential formats detected by the Secrets guardrail preset
+- [Service Tiers](https://openrouter.ai/docs/guides/features/service-tiers.md): Control cost and latency tradeoffs with service tier selection
+- [In-Region Routing](https://openrouter.ai/docs/guides/features/in-region-routing.md): Keep prompts and completions inside the EU or the US
+- [Sovereign AI](https://openrouter.ai/docs/guides/features/sovereign-ai.md): Keep AI workloads within national and regional boundaries
+- [Router Metadata](https://openrouter.ai/docs/guides/features/router-metadata.md): Surface routing decisions on every response with a single opt-in header
+- [Input & Output Logging](https://openrouter.ai/docs/guides/features/input-output-logging.md): Privately store and review your prompts and completions
+- [Broadcast](https://openrouter.ai/docs/guides/features/broadcast.md): Send traces to external observability platforms
+- [Arize AX](https://openrouter.ai/docs/guides/features/broadcast/arize.md): Send traces to Arize AX
+- [Braintrust](https://openrouter.ai/docs/guides/features/broadcast/braintrust.md): Send traces to Braintrust
+- [ClickHouse](https://openrouter.ai/docs/guides/features/broadcast/clickhouse.md): Send traces to ClickHouse
+- [Comet Opik](https://openrouter.ai/docs/guides/features/broadcast/opik.md): Send traces to Comet Opik
+- [Datadog](https://openrouter.ai/docs/guides/features/broadcast/datadog.md): Send traces to Datadog
+- [Google BigQuery](https://openrouter.ai/docs/guides/features/broadcast/bigquery.md): Send traces to Google BigQuery
+- [Grafana Cloud](https://openrouter.ai/docs/guides/features/broadcast/grafana.md): Send traces to Grafana Cloud
+- [Langfuse](https://openrouter.ai/docs/guides/features/broadcast/langfuse.md): Send traces to Langfuse
+- [LangSmith](https://openrouter.ai/docs/guides/features/broadcast/langsmith.md): Send traces to LangSmith
+- [New Relic](https://openrouter.ai/docs/guides/features/broadcast/newrelic.md): Send traces to New Relic
+- [OpenTelemetry Collector](https://openrouter.ai/docs/guides/features/broadcast/otel-collector.md): Send traces to any OpenTelemetry-compatible backend
+- [PostHog](https://openrouter.ai/docs/guides/features/broadcast/posthog.md): Send traces to PostHog
+- [Raindrop](https://openrouter.ai/docs/guides/features/broadcast/raindrop.md): Send traces to Raindrop
+- [Ramp](https://openrouter.ai/docs/guides/features/broadcast/ramp.md): Send traces to Ramp
+- [S3 / S3-Compatible](https://openrouter.ai/docs/guides/features/broadcast/s3.md): Send traces to Amazon S3 or S3-compatible storage
+- [Sentry](https://openrouter.ai/docs/guides/features/broadcast/sentry.md): Send traces to Sentry
+- [Snowflake](https://openrouter.ai/docs/guides/features/broadcast/snowflake.md): Send traces to Snowflake
+- [W&B Weave](https://openrouter.ai/docs/guides/features/broadcast/weave.md): Send traces to W&B Weave
+- [Webhook](https://openrouter.ai/docs/guides/features/broadcast/webhook.md): Send traces to any HTTP endpoint
+- [Ori Eval](https://openrouter.ai/docs/guides/ori/eval.md): Find the best model for your project by testing your agent on real prompts, with one harness and one model for each run
+- [Ori Harness](https://openrouter.ai/docs/guides/ori/harness.md): Run your existing agent CLI on OpenRouter with any model, organization guardrails, and one bill
+- [Where Ori writes files](https://openrouter.ai/docs/guides/ori/files.md): Find the files and directories that Ori creates during a run
+- [Ori configuration](https://openrouter.ai/docs/guides/ori/configuration.md): How to configure Ori, from a single shell to a managed fleet, plus every setting it reads
+- [Changelog](https://openrouter.ai/docs/guides/ori/changelog.md): Curated release notes for the Ori CLI, with version history and changes across releases.
+- [Data Collection](https://openrouter.ai/docs/guides/privacy/data-collection.md): What data OpenRouter collects
+- [Provider Logging](https://openrouter.ai/docs/guides/privacy/provider-logging.md): Provider logging and data retention policies
+- [Latency and Performance](https://openrouter.ai/docs/guides/best-practices/latency-and-performance.md): Understanding OpenRouter's performance characteristics and practical DX optimization recipes
+- [Prompt Caching](https://openrouter.ai/docs/guides/best-practices/prompt-caching.md): Cache prompt messages
+- [Uptime Optimization](https://openrouter.ai/docs/guides/best-practices/uptime-optimization.md): OpenRouter tracks provider availability
+- [Reasoning Tokens](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens.md)
+- [Provider Integration](https://openrouter.ai/docs/guides/community/for-providers.md)
+- [Frameworks and Integrations Overview](https://openrouter.ai/docs/guides/community/frameworks-and-integrations-overview.md): Using OpenRouter with Popular Frameworks and Integrations
+- [Awesome OpenRouter](https://openrouter.ai/docs/guides/community/awesome-openrouter.md): Community-curated list of projects built with OpenRouter
+- [Effect AI SDK](https://openrouter.ai/docs/guides/community/effect-ai-sdk.md): Integrate OpenRouter using the Effect AI SDK
+- [Arize AX](https://openrouter.ai/docs/guides/community/arize.md): Using OpenRouter with Arize AX
+- [LangChain](https://openrouter.ai/docs/guides/community/langchain.md): Using OpenRouter with LangChain
+- [LiveKit](https://openrouter.ai/docs/guides/community/livekit.md): Using OpenRouter with LiveKit Agents
+- [Langfuse](https://openrouter.ai/docs/guides/community/langfuse.md): Using OpenRouter with Langfuse
+- [Mastra](https://openrouter.ai/docs/guides/community/mastra.md): Using OpenRouter with Mastra
+- [OpenAI SDK](https://openrouter.ai/docs/guides/community/openai-sdk.md): Using OpenRouter with OpenAI SDK
+- [Anthropic Agent SDK](https://openrouter.ai/docs/guides/community/anthropic-agent-sdk.md): Using OpenRouter with the Anthropic Agent SDK
+- [PydanticAI](https://openrouter.ai/docs/guides/community/pydantic-ai.md): Using OpenRouter with PydanticAI
+- [Render](https://openrouter.ai/docs/guides/community/render.md): Using OpenRouter with Render Workflows
+- [Replit](https://openrouter.ai/docs/guides/community/replit.md): Using OpenRouter with Replit Agent and Replit Apps
+- [TanStack AI](https://openrouter.ai/docs/guides/community/tanstack-ai.md): Using OpenRouter with TanStack AI
+- [Vercel AI SDK](https://openrouter.ai/docs/guides/community/vercel-ai-sdk.md): Using OpenRouter with Vercel AI SDK
+- [Xcode](https://openrouter.ai/docs/guides/community/xcode.md): Using OpenRouter with Apple Intelligence in Xcode
+- [Zapier](https://openrouter.ai/docs/guides/community/zapier.md): Build AI automations with OpenRouter & Zapier
+- [Infisical](https://openrouter.ai/docs/guides/community/infisical.md): Automatic API Key Rotation with Infisical
+- [API Reference](https://openrouter.ai/docs/api_reference/overview.md): An overview of OpenRouter's API
+- [Streaming](https://openrouter.ai/docs/api_reference/streaming.md)
+- [Embeddings](https://openrouter.ai/docs/api_reference/embeddings.md): Generate vector embeddings from text and images
+- [Limits](https://openrouter.ai/docs/api_reference/limits.md): Credit Limits and Rate Limits
+- [Authentication](https://openrouter.ai/docs/api_reference/authentication.md): API Authentication
+- [Parameters](https://openrouter.ai/docs/api_reference/parameters.md)
+- [Errors and Debugging](https://openrouter.ai/docs/api_reference/errors-and-debugging.md): API Errors and Debugging
+- [Responses API](https://openrouter.ai/docs/api_reference/responses/overview.md): OpenAI-compatible Responses API
+- [Basic Usage](https://openrouter.ai/docs/api_reference/responses/basic-usage.md): Getting started with the Responses API
+- [Reasoning](https://openrouter.ai/docs/api_reference/responses/reasoning.md): Advanced reasoning capabilities with the Responses API
+- [Tool Calling](https://openrouter.ai/docs/api_reference/responses/tool-calling.md): Function calling and tool integration with the Responses API
+- [Web Search](https://openrouter.ai/docs/api_reference/responses/web-search.md): Real-time web search integration with the Responses API
+- [Error Handling](https://openrouter.ai/docs/api_reference/responses/error-handling.md): Understanding and handling errors in the Responses API
+- [API Versioning](https://openrouter.ai/docs/api_reference/versioning.md): How the OpenRouter API is versioned, what we consider a breaking change, and how deprecations are communicated.
+- [API Changelog](https://openrouter.ai/docs/changelog.md): Changes to the OpenRouter API, generated from the OpenAPI specification on every release.
+- [Get user activity grouped by endpoint](https://openrouter.ai/docs/api/api-reference/analytics/get-user-activity-grouped-by-endpoint.md): Returns user activity data grouped by endpoint for the last 30 (completed) UTC days. Pass `workspace_id` to scope the response to a single workspace. Pass `group_by=workspace` to split each row per workspace and include `workspace_id` on every item; by default rows are aggregated across workspaces a…
+- [Get available analytics metrics and dimensions](https://openrouter.ai/docs/api/api-reference/analytics/get-available-analytics-metrics-and-dimensions.md): Returns the available metrics, dimensions, filter operators, and granularities for the analytics query endpoint. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [Query analytics data](https://openrouter.ai/docs/api/api-reference/analytics/query-analytics-data.md): Execute an analytics query with specified metrics, dimensions, filters, and time range. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [Create speech](https://openrouter.ai/docs/api/api-reference/tts/create-speech.md): Synthesizes audio from the input text. Returns a raw audio bytestream in the requested format (e.g. mp3, pcm, wav).
+- [Create transcription](https://openrouter.ai/docs/api/api-reference/stt/create-transcription.md): Transcribes audio into text. Accepts base64-encoded audio input as JSON or an OpenAI-style multipart/form-data file upload, and returns the transcribed text.
+- [Exchange authorization code for API key](https://openrouter.ai/docs/api/api-reference/oauth/exchange-authorization-code-for-api-key.md): Exchange an authorization code from the PKCE flow for a user-controlled API key
+- [Create authorization code](https://openrouter.ai/docs/api/api-reference/oauth/create-authorization-code.md): Create an authorization code for the PKCE flow to generate a user-controlled API key
+- [OpenRouter access token signing keys](https://openrouter.ai/docs/api/api-reference/oauth/openrouter-access-token-signing-keys.md): RFC 7517 JWK Set containing the public keys OpenRouter signs access tokens with.
+- [Exchange a workload identity token](https://openrouter.ai/docs/api/api-reference/oauth/exchange-a-workload-identity-token.md): RFC 8693 token exchange. Presents a JWT from an issuer your organization trusts (Settings → Workload identity) and receives a short-lived OpenRouter access token that acts as the API key the matching federation policy targets.
+- [List Benchmarks](https://openrouter.ai/docs/api/api-reference/benchmarks/list-benchmarks.md): Unified benchmark endpoint that aggregates scores from multiple benchmark sources (Artificial Analysis, Design Arena, and OpenRouter's own tau-bench, GPQA, and web-search evals). Filter by source to reproduce the exact shapes from the legacy per-source endpoints, or use task_type to find models suit…
+- [List BYOK provider credentials](https://openrouter.ai/docs/api/api-reference/byok/list-byok-provider-credentials.md): List the bring-your-own-key (BYOK) provider credentials for the authenticated entity's default workspace. Use the `workspace_id` query parameter to scope the result to a different workspace, or the `provider` query parameter to filter by upstream provider. [Management key](/docs/guides/overview/auth…
+- [Create a BYOK provider credential](https://openrouter.ai/docs/api/api-reference/byok/create-a-byok-provider-credential.md): Create a new bring-your-own-key (BYOK) provider credential. The raw key is encrypted at rest and never returned in API responses. When `workspace_id` is omitted, the credential is created in the default workspace; if that default has been deleted, the request returns a 400 and you must pass `workspa…
+- [Get a BYOK provider credential](https://openrouter.ai/docs/api/api-reference/byok/get-a-byok-provider-credential.md): Get a single bring-your-own-key (BYOK) provider credential by its `id`. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [Delete a BYOK provider credential](https://openrouter.ai/docs/api/api-reference/byok/delete-a-byok-provider-credential.md): Delete (soft-delete) a bring-your-own-key (BYOK) provider credential by its `id`. The encrypted key material is wiped and the record is marked as deleted. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [Update a BYOK provider credential](https://openrouter.ai/docs/api/api-reference/byok/update-a-byok-provider-credential.md): Update an existing bring-your-own-key (BYOK) provider credential by its `id`. Include the `key` field to rotate the raw provider API key in-place (the previous key material is overwritten). Use `allowed_api_key_hashes` to restrict the credential to specific OpenRouter API keys (`null` clears the res…
+- [Create a chat completion](https://openrouter.ai/docs/api/api-reference/chat/create-a-chat-completion.md): Sends a request for a model response for the given chat conversation. Supports both streaming and non-streaming modes.
+- [Task classification market share](https://openrouter.ai/docs/api/api-reference/classifications/task-classification-market-share.md): Returns the market-share breakdown of OpenRouter traffic by task classification (e.g. code generation, web search, summarization) over a trailing time window.
+- [List container files](https://openrouter.ai/docs/api/api-reference/containers/list-container-files.md): Lists the files in a container, in lexicographic path order. The container id is the canonical id returned in bash/shell tool results; a restarted session is a separate container with its own id. Paginate with `limit` and `after` (pass the previous page’s `last_id`); `has_more: true` always means th…
+- [Retrieve a container file](https://openrouter.ai/docs/api/api-reference/containers/retrieve-a-container-file.md): Returns the metadata of a single file in a container.
+- [Download container file content](https://openrouter.ai/docs/api/api-reference/containers/download-container-file-content.md): Streams the raw bytes of a file in a container.
+- [Promote a container file into workspace documents](https://openrouter.ai/docs/api/api-reference/containers/promote-a-container-file-into-workspace-documents.md): Copies a file from the container's sandbox prefix into the workspace's durable document storage, so it outlives the container. Returns the new document in the Files API shape, with a durable file id in the documents namespace. The copy counts against the workspace's storage quota. Unlike a direct up…
+- [Get remaining credits](https://openrouter.ai/docs/api/api-reference/credits/get-remaining-credits.md): Get total credits purchased and used for the authenticated user. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [Deprecated Coinbase Commerce charge endpoint](https://openrouter.ai/docs/api/api-reference/credits/deprecated-coinbase-commerce-charge-endpoint.md): Deprecated. The Coinbase APIs used by this endpoint have been deprecated, so Coinbase Commerce charges have been removed. Use the web credits purchase flow instead.
+- [Top apps by token usage](https://openrouter.ai/docs/api/api-reference/datasets/top-apps-by-token-usage.md): Returns the top public apps on OpenRouter ranked by token usage inside the requested date window, matching the public apps marketplace on openrouter.ai/apps. Token totals are `prompt_tokens + completion_tokens`; hidden and private apps are excluded and traffic from related app aliases is merged into…
+- [Daily token totals for top 50 models](https://openrouter.ai/docs/api/api-reference/datasets/daily-token-totals-for-top-50-models.md): Returns the top 50 public models per day by total token usage on OpenRouter, plus a single aggregated `other` row per day that sums every model outside that top 50. Token totals are `prompt_tokens + completion_tokens`, matching the public rankings chart on openrouter.ai/rankings.
+- [Cost per session by harness and model](https://openrouter.ai/docs/api/api-reference/datasets/cost-per-session-by-harness-and-model.md): Returns weekly refreshed, aggregated cost-per-session cells for the published harnesses. Sessions are never pooled across apps. Medians are of per-session USD spend, and privacy-preserving aggregation never exposes clerk_user_id values or per-session rows.
+- [Submit an embedding request](https://openrouter.ai/docs/api/api-reference/embeddings/submit-an-embedding-request.md): Submits an embedding request to the embeddings router
+- [List all embeddings models](https://openrouter.ai/docs/api/api-reference/embeddings/list-all-embeddings-models.md): Returns a list of all available embeddings models and their properties
+- [Preview the impact of ZDR on the available endpoints](https://openrouter.ai/docs/api/api-reference/endpoints/preview-the-impact-of-zdr-on-the-available-endpoints.md)
+- [List all endpoints for a model](https://openrouter.ai/docs/api/api-reference/endpoints/list-all-endpoints-for-a-model.md)
+- [List files](https://openrouter.ai/docs/api/api-reference/files/list-files.md): Lists files belonging to the workspace of the authenticating API key.
+- [Upload a file](https://openrouter.ai/docs/api/api-reference/files/upload-a-file.md): Uploads a file to be referenced in future API calls. The file is stored under the workspace of the authenticating API key. Maximum file size: 100 MB; empty files are rejected. The file type is determined from the file contents — not the filename or the declared content type — and must be a PDF, a PN…
+- [Get file metadata](https://openrouter.ai/docs/api/api-reference/files/get-file-metadata.md): Retrieves metadata for a single file owned by the requesting workspace.
+- [Delete a file](https://openrouter.ai/docs/api/api-reference/files/delete-a-file.md): Deletes a file owned by the requesting workspace. Deletion is irreversible.
+- [Download file content](https://openrouter.ai/docs/api/api-reference/files/download-file-content.md): Downloads the raw bytes of a file. Only files created server-side are downloadable; uploaded files return 400.
+- [Get request & usage metadata for a generation](https://openrouter.ai/docs/api/api-reference/generations/get-request-&-usage-metadata-for-a-generation.md)
+- [Get stored prompt, completion, and error content for a generation](https://openrouter.ai/docs/api/api-reference/generations/get-stored-prompt-completion-and-error-content-for-a-generation.md)
+- [Submit feedback for a generation](https://openrouter.ai/docs/api/api-reference/generations/submit-feedback-for-a-generation.md): Submit structured feedback on a generation the authenticated user made. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [List guardrails](https://openrouter.ai/docs/api/api-reference/guardrails/list-guardrails.md): List all guardrails for the authenticated user. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [Create a guardrail](https://openrouter.ai/docs/api/api-reference/guardrails/create-a-guardrail.md): Create a new guardrail for the authenticated user. A newly created guardrail enforces nothing until it is assigned to API keys or organization members; `workspace_id` places the guardrail in a workspace but does not apply it to that workspace's traffic. To restrict all traffic in a workspace, update…
+- [Get a guardrail](https://openrouter.ai/docs/api/api-reference/guardrails/get-a-guardrail.md): Get a single guardrail by ID. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [Delete a guardrail](https://openrouter.ai/docs/api/api-reference/guardrails/delete-a-guardrail.md): Delete an existing guardrail. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [Update a guardrail](https://openrouter.ai/docs/api/api-reference/guardrails/update-a-guardrail.md): Update an existing guardrail, or materialize an unconfigured workspace default guardrail. Collection fields use replace semantics: send the full desired set on every update. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [List key assignments for a guardrail](https://openrouter.ai/docs/api/api-reference/guardrails/list-key-assignments-for-a-guardrail.md): List all API key assignments for a specific guardrail. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [Bulk assign keys to a guardrail](https://openrouter.ai/docs/api/api-reference/guardrails/bulk-assign-keys-to-a-guardrail.md): Assign multiple API keys to a specific guardrail. A key may hold at most one guardrail; assigning replaces any existing assignment. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [Bulk unassign keys from a guardrail](https://openrouter.ai/docs/api/api-reference/guardrails/bulk-unassign-keys-from-a-guardrail.md): Unassign multiple API keys from a specific guardrail. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [List member assignments for a guardrail](https://openrouter.ai/docs/api/api-reference/guardrails/list-member-assignments-for-a-guardrail.md): List all organization member assignments for a specific guardrail. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [Bulk assign members to a guardrail](https://openrouter.ai/docs/api/api-reference/guardrails/bulk-assign-members-to-a-guardrail.md): Assign multiple organization members to a specific guardrail. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [Bulk unassign members from a guardrail](https://openrouter.ai/docs/api/api-reference/guardrails/bulk-unassign-members-from-a-guardrail.md): Unassign multiple organization members from a specific guardrail. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [List all key assignments](https://openrouter.ai/docs/api/api-reference/guardrails/list-all-key-assignments.md): List all API key guardrail assignments for the authenticated user. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [List all member assignments](https://openrouter.ai/docs/api/api-reference/guardrails/list-all-member-assignments.md): List all organization member guardrail assignments for the authenticated user. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [Generate an image](https://openrouter.ai/docs/api/api-reference/images/generate-an-image.md): Generates an image from a text prompt via the image generation router
+- [List image generation models](https://openrouter.ai/docs/api/api-reference/images/list-image-generation-models.md): Lists every image generation model with its top-level supported-parameter superset and a URL to its full per-endpoint records.
+- [List endpoints for an image model](https://openrouter.ai/docs/api/api-reference/images/list-endpoints-for-an-image-model.md): Returns the full per-endpoint records for an image model: each endpoint's definitive supported parameters, pricing, and passthrough allowlist.
+- [Get current API key](https://openrouter.ai/docs/api/api-reference/api-keys/get-current-api-key.md): Get information on the API key associated with the current authentication session
+- [List API keys](https://openrouter.ai/docs/api/api-reference/api-keys/list-api-keys.md): List all API keys for the authenticated user. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [Create a new API key](https://openrouter.ai/docs/api/api-reference/api-keys/create-a-new-api-key.md): Create a new API key for the authenticated user. The plaintext `key` is returned only in this response. Treat it as a write-only, sensitive value; it cannot be retrieved later. Authenticate with a [management key](/docs/guides/overview/auth/management-api-keys). The optional `external` object associ…
+- [Get a single API key](https://openrouter.ai/docs/api/api-reference/api-keys/get-a-single-api-key.md): Get a single API key by hash. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [Delete an API key](https://openrouter.ai/docs/api/api-reference/api-keys/delete-an-api-key.md): Delete an existing API key. Authenticate with a [management key](/docs/guides/overview/auth/management-api-keys).
+- [Update an API key](https://openrouter.ai/docs/api/api-reference/api-keys/update-an-api-key.md): Update an existing API key. Authenticate with a [management key](/docs/guides/overview/auth/management-api-keys).
+- [Create a message](https://openrouter.ai/docs/api/api-reference/anthropic-messages/create-a-message.md): Creates a message using the Anthropic Messages API format. Supports text, images, PDFs, tools, and extended thinking.
+- [Get a model by its slug](https://openrouter.ai/docs/api/api-reference/models/get-a-model-by-its-slug.md): Returns full details for a single model identified by its author and slug (e.g. openai/gpt-4). Supports variant suffixes (e.g. openai/gpt-4:free) and resolves known slug aliases.
+- [List all models and their properties](https://openrouter.ai/docs/api/api-reference/models/list-all-models-and-their-properties.md)
+- [Get total count of available models](https://openrouter.ai/docs/api/api-reference/models/get-total-count-of-available-models.md)
+- [List models filtered by user provider preferences, privacy settings, and guardrails](https://openrouter.ai/docs/api/api-reference/models/list-models-filtered-by-user-provider-preferences-privacy-settings-and-guardrails.md): List models filtered by user provider preferences, [privacy settings](https://openrouter.ai/docs/guides/privacy/provider-logging), and [guardrails](https://openrouter.ai/docs/guides/features/guardrails). Returns text-output models by default; pass `output_modalities` (a comma-separated list of `text…
+- [List observability destinations](https://openrouter.ai/docs/api/api-reference/observability/list-observability-destinations.md): List the observability destinations configured for the authenticated entity's default workspace. Use the `workspace_id` query parameter to scope the result to a different workspace. Only destinations with stable release status are surfaced — destinations of other types are excluded. [Management key]…
+- [Create an observability destination](https://openrouter.ai/docs/api/api-reference/observability/create-an-observability-destination.md): Create a new observability destination. A maximum of 5 destinations per type is allowed. Defaults to the authenticated entity's default workspace; use the `workspace_id` body field to scope to a different workspace. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [Get an observability destination](https://openrouter.ai/docs/api/api-reference/observability/get-an-observability-destination.md): Fetch a single observability destination by its UUID. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [Delete an observability destination](https://openrouter.ai/docs/api/api-reference/observability/delete-an-observability-destination.md): Delete an existing observability destination. This performs a soft delete. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [Update an observability destination](https://openrouter.ai/docs/api/api-reference/observability/update-an-observability-destination.md): Update an existing observability destination. Only the fields provided in the request body are updated. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [List organization members](https://openrouter.ai/docs/api/api-reference/organization/list-organization-members.md): List all members of the organization associated with the authenticated management key. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [List presets](https://openrouter.ai/docs/api/api-reference/presets/list-presets.md): Lists all presets for the authenticated user, ordered by most recently updated first.
+- [Get a preset](https://openrouter.ai/docs/api/api-reference/presets/get-a-preset.md): Retrieves a preset by its slug with its currently designated version inline.
+- [Create a preset from a chat-completions request body](https://openrouter.ai/docs/api/api-reference/presets/create-a-preset-from-a-chat-completions-request-body.md): Creates a preset (or a new version of an existing one) from an inference request body. Only fields that overlap with the preset config are persisted; other fields (e.g. `messages`, `stream`, `prompt`) are silently ignored.
+- [Create a preset from a messages request body](https://openrouter.ai/docs/api/api-reference/presets/create-a-preset-from-a-messages-request-body.md): Creates a preset (or a new version of an existing one) from an inference request body. Only fields that overlap with the preset config are persisted; other fields (e.g. `messages`, `stream`, `prompt`) are silently ignored.
+- [Create a preset from a responses request body](https://openrouter.ai/docs/api/api-reference/presets/create-a-preset-from-a-responses-request-body.md): Creates a preset (or a new version of an existing one) from an inference request body. Only fields that overlap with the preset config are persisted; other fields (e.g. `messages`, `stream`, `prompt`) are silently ignored.
+- [List versions of a preset](https://openrouter.ai/docs/api/api-reference/presets/list-versions-of-a-preset.md): Lists all versions of a preset, ordered by version number ascending (oldest first).
+- [Get a specific version of a preset](https://openrouter.ai/docs/api/api-reference/presets/get-a-specific-version-of-a-preset.md): Retrieves a specific version of a preset by its slug and version number.
+- [List all providers](https://openrouter.ai/docs/api/api-reference/providers/list-all-providers.md)
+- [Submit a rerank request](https://openrouter.ai/docs/api/api-reference/rerank/submit-a-rerank-request.md): Submits a rerank request to the rerank router
+- [Create a response](https://openrouter.ai/docs/api/api-reference/responses/create-a-response.md): Creates a streaming or non-streaming response using OpenResponses API format
+- [List SCIM group mappings](https://openrouter.ai/docs/api/api-reference/scim/list-scim-group-mappings.md): List SCIM group-to-workspace mappings for the organization. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [Create a SCIM group mapping](https://openrouter.ai/docs/api/api-reference/scim/create-a-scim-group-mapping.md): Create a SCIM group-to-workspace role mapping. Creating a mapping that already exists with the same role succeeds and re-applies the mapping to the group members. Requesting a different role for an existing mapping returns 409. [Management key](/docs/guides/overview/auth/management-api-keys) require…
+- [Get a SCIM group mapping](https://openrouter.ai/docs/api/api-reference/scim/get-a-scim-group-mapping.md): Get a SCIM group-to-workspace mapping. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [Delete a SCIM group mapping](https://openrouter.ai/docs/api/api-reference/scim/delete-a-scim-group-mapping.md): Delete a SCIM group-to-workspace mapping. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [Update a SCIM group mapping](https://openrouter.ai/docs/api/api-reference/scim/update-a-scim-group-mapping.md): Update a SCIM group mapping role. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [List SCIM groups](https://openrouter.ai/docs/api/api-reference/scim/list-scim-groups.md): List SCIM groups for the organization. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [Start a SCIM directory sync](https://openrouter.ai/docs/api/api-reference/scim/start-a-scim-directory-sync.md): Start a SCIM directory sync. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [Get SCIM directory sync status](https://openrouter.ai/docs/api/api-reference/scim/get-scim-directory-sync-status.md): Get SCIM directory sync status. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [Submit a video generation request](https://openrouter.ai/docs/api/api-reference/video-generation/submit-a-video-generation-request.md): Submits a video generation request and returns a polling URL to check status
+- [Poll video generation status](https://openrouter.ai/docs/api/api-reference/video-generation/poll-video-generation-status.md): Returns job status and content URLs when completed
+- [Download generated video content](https://openrouter.ai/docs/api/api-reference/video-generation/download-generated-video-content.md): Streams the generated video content from the upstream provider
+- [List all video generation models](https://openrouter.ai/docs/api/api-reference/video-generation/list-all-video-generation-models.md): Returns a list of all available video generation models and their properties
+- [List workspaces](https://openrouter.ai/docs/api/api-reference/workspaces/list-workspaces.md): List all workspaces for the authenticated user. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [Create a workspace](https://openrouter.ai/docs/api/api-reference/workspaces/create-a-workspace.md): Create a new workspace for the authenticated user. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [Get a workspace](https://openrouter.ai/docs/api/api-reference/workspaces/get-a-workspace.md): Get a single workspace by ID or slug. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [Delete a workspace](https://openrouter.ai/docs/api/api-reference/workspaces/delete-a-workspace.md): Delete an existing workspace. Workspaces with active API keys cannot be deleted; remove the keys first. Deleting the default workspace requires confirm_default_workspace_deletion=true. Deleting any workspace permanently deletes its budgets and guardrails and disables its classifiers and broadcast de…
+- [Update a workspace](https://openrouter.ai/docs/api/api-reference/workspaces/update-a-workspace.md): Update an existing workspace by ID or slug. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [List workspace budgets](https://openrouter.ai/docs/api/api-reference/workspaces/list-workspace-budgets.md): List all budgets configured for a workspace. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [Get a workspace budget](https://openrouter.ai/docs/api/api-reference/workspaces/get-a-workspace-budget.md): Retrieve the budget for a given interval. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [Create or update a workspace budget](https://openrouter.ai/docs/api/api-reference/workspaces/create-or-update-a-workspace-budget.md): Create or update the budget for a given interval. Budget limits must strictly decrease as the interval narrows (lifetime > monthly > weekly > daily). The optional `include_byok_in_budgets` flag is a workspace-wide setting: when provided it applies to every budget interval for the workspace, not just…
+- [Delete a workspace budget](https://openrouter.ai/docs/api/api-reference/workspaces/delete-a-workspace-budget.md): Remove the budget for a given interval. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [List workspace members](https://openrouter.ai/docs/api/api-reference/workspaces/list-workspace-members.md): List all members of a workspace. Returns paginated results. For the default workspace, returns all organization members (implicit membership). [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [Bulk add members to a workspace](https://openrouter.ai/docs/api/api-reference/workspaces/bulk-add-members-to-a-workspace.md): Add multiple organization members to a workspace. Members are assigned the same role they hold in the organization. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [Bulk remove members from a workspace](https://openrouter.ai/docs/api/api-reference/workspaces/bulk-remove-members-from-a-workspace.md): Remove multiple members from a workspace. Members with active API keys in the workspace cannot be removed. SCIM-managed members cannot be removed; changes must be made in your identity provider. [Management key](/docs/guides/overview/auth/management-api-keys) required.
+- [Client SDKs](https://openrouter.ai/docs/client-sdks/overview.md): Lightweight, type-safe clients for the OpenRouter API
+- [Usage for Agents](https://openrouter.ai/docs/client-sdks/usage-for-agents.md): Add OpenRouter Client SDKs skills to your AI coding assistant
+- [OpenRouter TypeScript SDK](https://openrouter.ai/docs/client-sdks/typescript/overview.md): Type-safe TypeScript toolkit for building AI features against 400+ models through OpenRouter.
+- [Analytics](https://openrouter.ai/docs/client-sdks/typescript/sdks/analytics/README.md): Analytics and usage endpoints
+- [APIKeys](https://openrouter.ai/docs/client-sdks/typescript/sdks/apikeys/README.md): API key management endpoints
+- [Benchmarks](https://openrouter.ai/docs/client-sdks/typescript/sdks/benchmarks/README.md): Benchmarks endpoints
+- [Beta.Responses](https://openrouter.ai/docs/client-sdks/typescript/sdks/betaresponses/README.md): Deprecated alias of responses. Use responses instead; scheduled for removal (sunset date TBD).
+- [BYOK](https://openrouter.ai/docs/client-sdks/typescript/sdks/byok/README.md): BYOK endpoints
+- [Chat](https://openrouter.ai/docs/client-sdks/typescript/sdks/chat/README.md)
+- [Classifications](https://openrouter.ai/docs/client-sdks/typescript/sdks/classifications/README.md): Task classification market-share endpoints
+- [Credits](https://openrouter.ai/docs/client-sdks/typescript/sdks/credits/README.md): Credit management endpoints
+- [Datasets](https://openrouter.ai/docs/client-sdks/typescript/sdks/datasets/README.md): Public OpenRouter usage datasets. Data returned by these endpoints is licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/): reuse and republish it, including commercially, with attribution to OpenRouter.
+- [Embeddings](https://openrouter.ai/docs/client-sdks/typescript/sdks/embeddings/README.md): Text embedding endpoints
+- [Endpoints](https://openrouter.ai/docs/client-sdks/typescript/sdks/endpoints/README.md): Endpoint information
+- [Files](https://openrouter.ai/docs/client-sdks/typescript/sdks/files/README.md): Files endpoints
+- [Generations](https://openrouter.ai/docs/client-sdks/typescript/sdks/generations/README.md): Generation history endpoints
+- [Guardrails](https://openrouter.ai/docs/client-sdks/typescript/sdks/guardrails/README.md): Guardrails endpoints
+- [Images](https://openrouter.ai/docs/client-sdks/typescript/sdks/images/README.md): Images endpoints
+- [Models](https://openrouter.ai/docs/client-sdks/typescript/sdks/models/README.md): Model information endpoints
+- [OAuth](https://openrouter.ai/docs/client-sdks/typescript/sdks/oauth/README.md): OAuth authentication endpoints
+- [Observability](https://openrouter.ai/docs/client-sdks/typescript/sdks/observability/README.md): Observability endpoints
+- [Organization](https://openrouter.ai/docs/client-sdks/typescript/sdks/organization/README.md): Organization endpoints
+- [Presets](https://openrouter.ai/docs/client-sdks/typescript/sdks/presets/README.md): Presets endpoints
+- [Providers](https://openrouter.ai/docs/client-sdks/typescript/sdks/providers/README.md): Provider information endpoints
+- [Rerank](https://openrouter.ai/docs/client-sdks/typescript/sdks/rerank/README.md): Rerank endpoints
+- [Responses](https://openrouter.ai/docs/client-sdks/typescript/sdks/responses/README.md): OpenAI-compatible Responses API endpoints
+- [STT](https://openrouter.ai/docs/client-sdks/typescript/sdks/stt/README.md): Speech-to-text endpoints
+- [TTS](https://openrouter.ai/docs/client-sdks/typescript/sdks/tts/README.md): Text-to-speech endpoints
+- [VideoGeneration](https://openrouter.ai/docs/client-sdks/typescript/sdks/videogeneration/README.md): Video Generation endpoints
+- [Workspaces](https://openrouter.ai/docs/client-sdks/typescript/sdks/workspaces/README.md): Workspaces endpoints
+- [OpenRouter Python SDK](https://openrouter.ai/docs/client-sdks/python/overview.md): Python SDK for building AI features against 400+ models through OpenRouter.
+- [Analytics](https://openrouter.ai/docs/client-sdks/python/sdks/analytics/README.md): Analytics and usage endpoints
+- [APIKeys](https://openrouter.ai/docs/client-sdks/python/sdks/apikeys/README.md): API key management endpoints
+- [Benchmarks](https://openrouter.ai/docs/client-sdks/python/sdks/benchmarks/README.md): Benchmarks endpoints
+- [Beta.Responses](https://openrouter.ai/docs/client-sdks/python/sdks/betaresponses/README.md): Deprecated alias for responses endpoints. Use responses instead. Scheduled for removal (sunset date TBD).
+- [BYOK](https://openrouter.ai/docs/client-sdks/python/sdks/byok/README.md): BYOK endpoints
+- [Chat](https://openrouter.ai/docs/client-sdks/python/sdks/chat/README.md)
+- [Classifications](https://openrouter.ai/docs/client-sdks/python/sdks/classifications/README.md): Task classification market-share endpoints
+- [Containers](https://openrouter.ai/docs/client-sdks/python/sdks/containers/README.md): Containers endpoints
+- [Credits](https://openrouter.ai/docs/client-sdks/python/sdks/credits/README.md): Credit management endpoints
+- [Datasets](https://openrouter.ai/docs/client-sdks/python/sdks/datasets/README.md): Public OpenRouter usage datasets. Data returned by these endpoints is licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/): reuse and republish it, including commercially, with attribution to OpenRouter.
+- [Embeddings](https://openrouter.ai/docs/client-sdks/python/sdks/embeddings/README.md): Text embedding endpoints
+- [Endpoints](https://openrouter.ai/docs/client-sdks/python/sdks/endpoints/README.md): Endpoint information
+- [Files](https://openrouter.ai/docs/client-sdks/python/sdks/files/README.md): Files endpoints
+- [Generations](https://openrouter.ai/docs/client-sdks/python/sdks/generations/README.md): Generation history endpoints
+- [Guardrails](https://openrouter.ai/docs/client-sdks/python/sdks/guardrails/README.md): Guardrails endpoints
+- [Images](https://openrouter.ai/docs/client-sdks/python/sdks/images/README.md): Images endpoints
+- [Models](https://openrouter.ai/docs/client-sdks/python/sdks/models/README.md): Model information endpoints
+- [OAuth](https://openrouter.ai/docs/client-sdks/python/sdks/oauth/README.md): OAuth authentication endpoints
+- [Observability](https://openrouter.ai/docs/client-sdks/python/sdks/observability/README.md): Observability endpoints
+- [Organization](https://openrouter.ai/docs/client-sdks/python/sdks/organization/README.md): Organization endpoints
+- [Presets](https://openrouter.ai/docs/client-sdks/python/sdks/presets/README.md): Presets endpoints
+- [Providers](https://openrouter.ai/docs/client-sdks/python/sdks/providers/README.md): Provider information endpoints
+- [Rerank](https://openrouter.ai/docs/client-sdks/python/sdks/rerank/README.md): Rerank endpoints
+- [Responses](https://openrouter.ai/docs/client-sdks/python/sdks/responses/README.md): OpenAI-compatible Responses API endpoints
+- [Scim](https://openrouter.ai/docs/client-sdks/python/sdks/scim/README.md): SCIM endpoints
+- [STT](https://openrouter.ai/docs/client-sdks/python/sdks/stt/README.md): Speech-to-text endpoints
+- [TTS](https://openrouter.ai/docs/client-sdks/python/sdks/tts/README.md): Text-to-speech endpoints
+- [VideoGeneration](https://openrouter.ai/docs/client-sdks/python/sdks/videogeneration/README.md): Video Generation endpoints
+- [Workspaces](https://openrouter.ai/docs/client-sdks/python/sdks/workspaces/README.md): Workspaces endpoints
+- [OpenRouter Go SDK](https://openrouter.ai/docs/client-sdks/go/overview.md): Go SDK for building AI features against 400+ models through OpenRouter.
+- [Analytics](https://openrouter.ai/docs/client-sdks/go/sdks/analytics/README.md): Analytics and usage endpoints
+- [APIKeys](https://openrouter.ai/docs/client-sdks/go/sdks/apikeys/README.md): API key management endpoints
+- [Benchmarks](https://openrouter.ai/docs/client-sdks/go/sdks/benchmarks/README.md): Benchmarks endpoints
+- [Beta.Responses](https://openrouter.ai/docs/client-sdks/go/sdks/betaresponses/README.md): Deprecated alias of responses. Use responses instead; scheduled for removal (sunset date TBD).
+- [BYOK](https://openrouter.ai/docs/client-sdks/go/sdks/byok/README.md): BYOK endpoints
+- [Chat](https://openrouter.ai/docs/client-sdks/go/sdks/chat/README.md)
+- [Classifications](https://openrouter.ai/docs/client-sdks/go/sdks/classifications/README.md): Task classification market-share endpoints
+- [Containers](https://openrouter.ai/docs/client-sdks/go/sdks/containers/README.md): Containers endpoints
+- [Credits](https://openrouter.ai/docs/client-sdks/go/sdks/credits/README.md): Credit management endpoints
+- [Datasets](https://openrouter.ai/docs/client-sdks/go/sdks/datasets/README.md): Public OpenRouter usage datasets. Data returned by these endpoints is licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/): reuse and republish it, including commercially, with attribution to OpenRouter.
+- [Embeddings](https://openrouter.ai/docs/client-sdks/go/sdks/embeddings/README.md): Text embedding endpoints
+- [Endpoints](https://openrouter.ai/docs/client-sdks/go/sdks/endpoints/README.md): Endpoint information
+- [Files](https://openrouter.ai/docs/client-sdks/go/sdks/files/README.md): Files endpoints
+- [Generations](https://openrouter.ai/docs/client-sdks/go/sdks/generations/README.md): Generation history endpoints
+- [Guardrails](https://openrouter.ai/docs/client-sdks/go/sdks/guardrails/README.md): Guardrails endpoints
+- [Images](https://openrouter.ai/docs/client-sdks/go/sdks/images/README.md): Images endpoints
+- [Models](https://openrouter.ai/docs/client-sdks/go/sdks/models/README.md): Model information endpoints
+- [OAuth](https://openrouter.ai/docs/client-sdks/go/sdks/oauth/README.md): OAuth authentication endpoints
+- [Observability](https://openrouter.ai/docs/client-sdks/go/sdks/observability/README.md): Observability endpoints
+- [Organization](https://openrouter.ai/docs/client-sdks/go/sdks/organization/README.md): Organization endpoints
+- [Presets](https://openrouter.ai/docs/client-sdks/go/sdks/presets/README.md): Presets endpoints
+- [Providers](https://openrouter.ai/docs/client-sdks/go/sdks/providers/README.md): Provider information endpoints
+- [Rerank](https://openrouter.ai/docs/client-sdks/go/sdks/rerank/README.md): Rerank endpoints
+- [Responses](https://openrouter.ai/docs/client-sdks/go/sdks/responses/README.md): OpenAI-compatible Responses API endpoints
+- [Scim](https://openrouter.ai/docs/client-sdks/go/sdks/scim/README.md): SCIM endpoints
+- [STT](https://openrouter.ai/docs/client-sdks/go/sdks/stt/README.md): Speech-to-text endpoints
+- [TTS](https://openrouter.ai/docs/client-sdks/go/sdks/tts/README.md): Text-to-speech endpoints
+- [VideoGeneration](https://openrouter.ai/docs/client-sdks/go/sdks/videogeneration/README.md): Video Generation endpoints
+- [Workspaces](https://openrouter.ai/docs/client-sdks/go/sdks/workspaces/README.md): Workspaces endpoints
+- [DevTools](https://openrouter.ai/docs/client-sdks/dev-tools/devtools.md): SDK Development Tools for telemetry capture and visualization
+- [Migrating to @openrouter/agent](https://openrouter.ai/docs/client-sdks/agent-migration.md): Move agent toolkit imports from @openrouter/sdk to the standalone @openrouter/agent package
+- [Agent SDK](https://openrouter.ai/docs/agent-sdk/overview.md): Build AI agents with multi-turn loops, tools, and conversation state
+- [Usage for Agents](https://openrouter.ai/docs/agent-sdk/usage-for-agents.md): Add OpenRouter Agent SDK skills to your AI coding assistant
+- [Call Model (Typescript)](https://openrouter.ai/docs/agent-sdk/call-model/overview.md): A unified API for calling any LLM with automatic tool execution and multiple consumption patterns
+- [Working with Items](https://openrouter.ai/docs/agent-sdk/call-model/items.md): Understanding the items-based streaming paradigm for callModel
+- [Agent SDK API Reference](https://openrouter.ai/docs/agent-sdk/call-model/api-reference.md): Type signatures and exports for the Agent SDK, covering callModel, ModelResult, tool types, conversation state helpers, stop conditions, and format utilities.
+- [Dynamic Parameters](https://openrouter.ai/docs/agent-sdk/call-model/dynamic-parameters.md): Use async functions for adaptive model behavior across turns
+- [Next Turn Params](https://openrouter.ai/docs/agent-sdk/call-model/next-turn-params.md): Build encapsulated, context-aware tools with `nextTurnParams`. Create skills systems, plugins, and adaptive multi-turn agents.
+- [Stop Conditions](https://openrouter.ai/docs/agent-sdk/call-model/stop-conditions.md): Control multi-turn execution with `stopWhen`. Use built-in helpers or custom conditions to stop by step count, tool calls, cost, or tokens.
+- [Streaming](https://openrouter.ai/docs/agent-sdk/call-model/streaming.md): Stream responses in real-time with multiple consumption patterns. All streams are built on a reusable stream architecture that supports concurrent consumers.
+- [Text Generation](https://openrouter.ai/docs/agent-sdk/call-model/text-generation.md): Generate text with callModel using various input formats and model configurations. Supports multiple consumption patterns including text, streaming, and structured output.
+- [Message Formats](https://openrouter.ai/docs/agent-sdk/call-model/message-formats.md): The OpenRouter SDK provides helper functions to convert between popular message formats. This makes it easy to migrate existing code or integrate with different APIs.
+- [Tools](https://openrouter.ai/docs/agent-sdk/call-model/tools.md): Define type-safe tools for callModel with Zod schemas, including regular, generator, manual, HITL, and MCP-branded tools, with automatic multi-turn execution.
+- [Async Tools](https://openrouter.ai/docs/agent-sdk/call-model/async-tools.md): Run long-running tools in the background or defer them to external systems, while the model keeps working, checks progress, steers, and receives results automatically.
+- [MCP Tools](https://openrouter.ai/docs/agent-sdk/call-model/mcp-tools.md): Connect remote Model Context Protocol servers to the Agent SDK with @openrouter/mcp (auth, caching, streaming, resources, and elicitation).
+- [Lifecycle Hooks](https://openrouter.ai/docs/agent-sdk/call-model/lifecycle-hooks.md): Observe and control the agent loop with typed lifecycle hooks.
+- [Doom-Loop Detection](https://openrouter.ai/docs/agent-sdk/call-model/doom-loop-detection.md): Detect and act on agent runs that repeat the same tool calls, server-tool requests, or text without making progress.
+- [Tool Approval & State Persistence](https://openrouter.ai/docs/agent-sdk/call-model/tool-approval-state.md): Add human-in-the-loop approval gates for sensitive tools and persist conversation state across callModel invocations.
+- [Weather Tool](https://openrouter.ai/docs/agent-sdk/call-model/examples/weather-tool.md): A complete weather tool demonstrating external API integration, proper validation, and error handling.
+- [Skills Loader](https://openrouter.ai/docs/agent-sdk/call-model/examples/skills-loader.md): A complete implementation of a skills system similar to Claude Code, demonstrating the power of `nextTurnParams` for context injection.
+- [DevTools](https://openrouter.ai/docs/agent-sdk/dev-tools/devtools.md): SDK Development Tools for telemetry capture and visualization
+- [Migrating to @openrouter/agent](https://openrouter.ai/docs/agent-sdk/agent-migration.md): Move agent toolkit imports from @openrouter/sdk to the standalone @openrouter/agent package
+- [Quickstart: Build a Chat App](https://openrouter.ai/docs/cookbook/get-started/quickstart.md): Send your first message and stream a response with the OpenRouter SDK
+- [Migrate to OpenRouter in One Prompt](https://openrouter.ai/docs/cookbook/get-started/migrate-to-openrouter.md): Move an existing app's LLM calls to OpenRouter with a single coding-agent prompt
+- [Enterprise Onboarding Journey](https://openrouter.ai/docs/cookbook/get-started/enterprise-onboarding-journey.md): What to expect from signature to production, and what we need from you at each step
+- [Enterprise Quickstart](https://openrouter.ai/docs/cookbook/get-started/enterprise-quickstart.md): Get your organization up and running with OpenRouter
+- [Free Models Router](https://openrouter.ai/docs/cookbook/get-started/free-models-router-playground.md): Get started with free AI inference using the OpenRouter Chat Playground
+- [Automatic Code Review](https://openrouter.ai/docs/cookbook/coding-agents/automatic-code-review.md): Automatic code review for Claude Code using hooks and OpenRouter — async, non-blocking reviews from a second model while you keep working
+- [Claude Code](https://openrouter.ai/docs/cookbook/coding-agents/claude-code-integration.md): Use Claude Code with OpenRouter
+- [Claude Desktop](https://openrouter.ai/docs/cookbook/coding-agents/claude-desktop-integration.md): Use Claude Desktop with OpenRouter
+- [Codex CLI](https://openrouter.ai/docs/cookbook/coding-agents/codex-cli.md): Use Codex CLI with OpenRouter
+- [Cursor](https://openrouter.ai/docs/cookbook/coding-agents/cursor-integration.md): Use Cursor with OpenRouter
+- [Hermes Agent](https://openrouter.ai/docs/cookbook/coding-agents/hermes-integration.md): Use Hermes Agent by Nous Research with OpenRouter
+- [Junie CLI](https://openrouter.ai/docs/cookbook/coding-agents/junie.md): Using OpenRouter with JetBrains Junie CLI
+- [Using MCP Servers with OpenRouter](https://openrouter.ai/docs/cookbook/coding-agents/mcp-servers.md): Use MCP Servers with OpenRouter
+- [OpenClaw 🦞](https://openrouter.ai/docs/cookbook/coding-agents/openclaw-integration.md): Use OpenClaw (formerly Moltbot, formerly Clawdbot) with OpenRouter
+- [OpenCode](https://openrouter.ai/docs/cookbook/coding-agents/opencode-integration.md): Use OpenCode with OpenRouter
+- [Add Human-in-the-Loop Controls to an Agent SDK Agent](https://openrouter.ai/docs/cookbook/building-agents/hitl-tools.md): Add HITL to an existing Agent SDK agent so it can pause high-stakes tool calls for human input
+- [Build a Long-Horizon Agent](https://openrouter.ai/docs/cookbook/building-agents/long-horizon-agents.md): Run multi-hour agent loops with cost ceilings, resumable state, and voice input
+- [Build a Token-Efficient Review Agent](https://openrouter.ai/docs/cookbook/building-agents/advisor-server-tool.md): Use a cheap executor model for routine work and call Advisor only for compact uncertainty checks
+- [Delegate Routine Work to Cheaper Models](https://openrouter.ai/docs/cookbook/building-agents/subagent-server-tool.md): Use an orchestrator for planning and a cheap subagent worker for each subtask
+- [Build Your Own Agent TUI](https://openrouter.ai/docs/cookbook/building-agents/create-agent-harness-tui.md): Scaffold a custom AI agent with a fully customizable terminal interface using an AI coding agent
+- [Build Your Own Headless Agent](https://openrouter.ai/docs/cookbook/building-agents/create-headless-agent.md): Scaffold a headless AI agent for CLI tools, API servers, and automation pipelines
+- [Choose a Video Generation Model](https://openrouter.ai/docs/cookbook/video-generation/choose-video-model.md): Select an OpenRouter video model by matching clip requirements and scoring priorities
+- [Generate and Download a Video from Text](https://openrouter.ai/docs/cookbook/video-generation/text-to-video.md): Submit a text-to-video job, poll for completion, and save the generated MP4
+- [Get Video Results with Webhooks](https://openrouter.ai/docs/cookbook/video-generation/video-generation-webhooks.md): Submit a video job with a callback URL and verify OpenRouter webhook signatures
+- [Guide a Video with Reference Images](https://openrouter.ai/docs/cookbook/video-generation/reference-to-video.md): Use reference images to influence video subject, style, or identity without exact frame control
+- [Turn an Image into a Video](https://openrouter.ai/docs/cookbook/video-generation/image-to-video.md): Use frame images to control the first or last frame of an OpenRouter video
+- [Use Provider-Specific Video Options](https://openrouter.ai/docs/cookbook/video-generation/provider-specific-video-options.md): Inspect allowed passthrough parameters and send provider-specific video controls safely
+- [Enhance Image Generation with Presets](https://openrouter.ai/docs/cookbook/image-generation/preset-enhanced-images.md): Pair a text model with the image generation server tool so every request gets a refined prompt automatically
+- [Distillation](https://openrouter.ai/docs/cookbook/evaluate-and-optimize/distillation.md): Ensure compliance with provider and model creator policies for distillation
+- [Claude Fable 5.1 Migration Guide](https://openrouter.ai/docs/cookbook/evaluate-and-optimize/model-migrations/fable-5-1.md): Migrate to Claude Fable 5.1 — ephemeral system messages, per-turn effort, forced tool use rejected, mid-thinking display updates, and prefix-locked thinking
+- [Claude Opus 5 Migration Guide](https://openrouter.ai/docs/cookbook/evaluate-and-optimize/model-migrations/opus-5.md): Migrate to Claude Opus 5 — reasoning on by default, effort restrictions when disabling reasoning, and mid-conversation tool changes
+- [Claude 5 Sonnet Migration Guide](https://openrouter.ai/docs/cookbook/evaluate-and-optimize/model-migrations/sonnet-5.md): Migrate to Claude 5 Sonnet — sampling parameters removed, adaptive-only thinking, and the new xhigh effort level
+- [Claude 4.7 Migration Guide](https://openrouter.ai/docs/cookbook/evaluate-and-optimize/model-migrations/claude-4-7.md): Migrate to Claude 4.7 Opus — sampling parameters removed, adaptive-only thinking, and new xhigh effort level
+- [Claude 4.6 Migration Guide](https://openrouter.ai/docs/cookbook/evaluate-and-optimize/model-migrations/claude-4-6.md): Migrate to Claude 4.6 with adaptive thinking and max effort level
+- [GPT-6 Astra Migration Guide](https://openrouter.ai/docs/cookbook/evaluate-and-optimize/model-migrations/gpt-6-astra.md): Adopt mid-conversation reasoning effort changes with configuration_update for GPT-6 Astra
+- [GPT-5.6 Migration Guide](https://openrouter.ai/docs/cookbook/evaluate-and-optimize/model-migrations/gpt-5-6.md): Adopt reasoning.mode, reasoning.context, and explicit prompt caching for the GPT-5.6 model family
+- [GPT-5.4 Migration Guide](https://openrouter.ai/docs/cookbook/evaluate-and-optimize/model-migrations/gpt-5-4.md): Support the phase field for GPT-5.3 Codex, GPT-5.4, GPT-5.4 Pro, GPT-5.5, and GPT-5.5 Pro
+- [RAG with Embeddings & Rerank](https://openrouter.ai/docs/cookbook/evaluate-and-optimize/rag.md): Build retrieval-augmented generation pipelines using OpenRouter's embeddings and rerank APIs
+- [Red Teaming](https://openrouter.ai/docs/cookbook/evaluate-and-optimize/red-teaming.md): Policy for red teaming and adversarial testing on OpenRouter
+- [Activity Export](https://openrouter.ai/docs/cookbook/administration/activity-export.md)
+- [API Key Rotation](https://openrouter.ai/docs/cookbook/administration/api-key-rotation.md): Securely rotate your OpenRouter API keys
+- [Control Costs with the Analytics API](https://openrouter.ai/docs/cookbook/administration/analytics-cost-control.md): Hand your coding agent a management key and the analytics skill, then ask it where your money is going
+- [Crypto API](https://openrouter.ai/docs/cookbook/administration/crypto-api.md): Coinbase Commerce API deprecation
+- [Data API](https://openrouter.ai/docs/cookbook/administration/data-api.md)
+- [Organization Management](https://openrouter.ai/docs/cookbook/administration/organization-management.md): Manage teams and shared resources with OpenRouter organizations
+- [Adding a Tax ID to Your Invoices](https://openrouter.ai/docs/cookbook/administration/tax-id.md): How to add your VAT, GST, or other tax ID so it appears on OpenRouter invoices
+- [Usage Accounting](https://openrouter.ai/docs/cookbook/administration/usage-accounting.md)
+- [User Tracking](https://openrouter.ai/docs/cookbook/administration/user-tracking.md)
+
+## OpenAPI Specs
+
+- [provider-monitor-schema-v2.openapi](/docs/assets/provider-monitor-schema-v2.openapi.json)
+- [openapi](/docs/openapi/openapi.yaml)

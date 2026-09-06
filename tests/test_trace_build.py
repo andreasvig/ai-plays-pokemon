@@ -147,3 +147,24 @@ def test_endpoint_rebuilds_when_cache_stale(client, run_dir: Path):
     r = client.get(f"/api/runs/{run_dir.name}/trace")
     assert r.status_code == 200
     assert r.json()["turn_count"] == 2  # rebuilt, NOT the 999 sentinel
+
+
+def test_segment_costs_include_compaction_retries_and_preserve_unknowns(run_dir):
+    events = [
+        {"type": "llm_request_usage", "request_id": "play", "segment": 1, "phase": "gameplay", "cost_usd": .02},
+        {"type": "llm_request_usage", "request_id": "compact", "segment": 1, "phase": "compaction", "cost_usd": .03},
+        {"type": "llm_request_error", "request_id": "compact", "segment": 1, "phase": "compaction", "error": "invalid output"},
+        {"type": "llm_request_usage", "request_id": "retry", "segment": 1, "phase": "compaction", "cost_usd": .04},
+        {"type": "llm_request_usage", "request_id": "next", "segment": 2, "phase": "gameplay", "cost_usd": .01},
+        {"type": "llm_request_error", "request_id": "unknown", "segment": 2, "phase": "gameplay"},
+    ]
+    with (run_dir / 'events.jsonl').open('a') as f:
+        for event in events:
+            f.write(json.dumps(event) + '\n')
+    costs = build_run_trace(run_dir)['segment_costs']
+    assert costs['1']['total_cost_usd'] == pytest.approx(.09)
+    assert costs['1']['requests'] == 3
+    assert costs['2']['total_cost_usd'] is None
+    assert costs['2']['reported_cost_usd'] == .01
+    assert costs['2']['measured_requests'] == 1
+    assert costs['2']['requests'] == 2

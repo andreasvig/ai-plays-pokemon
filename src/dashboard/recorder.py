@@ -12,13 +12,19 @@ against the same dashboard, on a URL that pins the run and the presentation, and
 streams frames out of it over the DevTools protocol into ffmpeg. The user can be
 on Home, on History, or have the whole app closed — the recording is unaffected.
 
-Pipeline:
+Simple-view pipeline:
 
-    headless Chrome ──Page.startScreencast──> latest JPEG (kept, not queued)
-                                                   │
-                          sampler thread @ fps ────┤ (skipped while gated shut)
-                                                   ▼
-                                    ffmpeg -f image2pipe → H.264 MP4
+    headless Chrome ──CDP JPEG──> presentation (card + typography)
+    emulator ──60fps raw PNG──> game rectangle
+                                  │
+                   sampler @ 30fps composites both as raw RGB
+                                  ▼
+                              ffmpeg → H.264 MP4
+
+Chrome's screencast is not trusted for game cadence: even a nominal 30fps CDP
+stream drops motion frames. The raw emulator image overwrites exactly the DOM
+rectangle occupied by the game on every sampler tick. Detailed view still uses
+the browser frame directly because its whole instrument panel is the subject.
 
 The sampler is what makes both speed modes one mechanism. It ticks at a fixed
 rate and writes whatever the newest frame is, so the output is constant-frame-
@@ -27,11 +33,11 @@ rate by construction and wall-clock-faithful:
   - ``realtime``      — the gate is open for the whole run, so every pause the
                         model takes is in the file at its true length.
   - ``cut-thinking``  — the gate opens at ``llm_output`` (the model has answered;
-                        the turn starts executing) and shuts a beat after
-                        ``screen_settled`` (the emulator has stopped moving).
-                        The model's response time is simply never sampled, so it
-                        doesn't appear in the video — no post-hoc editing, no
-                        timestamp arithmetic.
+                        the turn starts executing). After button execution,
+                        frames are buffered: delayed visual activity commits the
+                        buffer, while ``screen_settled`` drops only the final
+                        frozen confirmation. The model's response time is never
+                        sampled — no post-hoc edit or timestamp arithmetic.
 
 Those three event names are the same ones ``SimpleView.svelte`` keys its phase
 machine on. ``button_sequence`` is deliberately NOT used: it is logged AFTER
@@ -44,7 +50,11 @@ ffmpeg, a missing Chrome, or a CDP hiccup logs a line and leaves the run alone.
 from __future__ import annotations
 
 import base64
+from collections import deque
+import io
 import json
+import math
+import queue
 import shutil
 import subprocess
 import tempfile
@@ -54,6 +64,9 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any, Optional
+
+import numpy as np
+from PIL import Image
 
 # ── geometry ────────────────────────────────────────────────────────────────
 # The simple view's stage is `min(100vw, 100vh)` square, so a square viewport
@@ -69,17 +82,68 @@ VIEWPORTS = {
     "detailed": (1920, 1080),
 }
 
-# Seconds of recording kept after `screen_settled` in cut-thinking mode. The
-# settled screen is the payoff frame of the turn; cutting on the event itself
-# lands the video on the last frame of motion instead.
-SETTLE_TAIL_S = 0.9
+# Seconds of recording kept after `screen_settled` in cut-thinking mode.
+#
+# 0.0 as of 2026-08-03. The tail used to be 0.9s, to hold the settled screen as
+# a readable payoff frame — worth it when the premise was a clip you could post
+# unedited. It is not worth it for footage headed into an editor, which can hold
+# any frame for as long as it likes, and at 0.9s x every turn this was the
+# largest single block of removable dead air in a recording (12% of a measured
+# 8-turn run). Raise it again for post-unedited recordings.
+#
+# Recorder-side only: the agent still waits for a fully settled screen before it
+# screenshots, so this changes the video and nothing about how the run plays.
+SETTLE_TAIL_S = 0.0
+
+# Do not trim the front of an execution window. A previously tuned 0.5s trim
+# relied on an observed ~0.65s delay between `llm_output` and the first button,
+# but the recorder and emulator clocks are not one atomic timeline: in a real
+# clip it visibly removed the first frames of movement. A short pre-action hold
+# is harmless in an editor; an amputated movement cannot be recovered.
+LEAD_TRIM_S = 0.0
+
+# The backend logs llm_output and immediately dispatches the button sequence;
+# the recorder learns about that event through a polled WebSocket. Sampling
+# only after the gate hears it can therefore miss the first browser frames even
+# with LEAD_TRIM_S=0. Keep the last half-second continuously and prepend it when
+# a closed gate opens. Usually it is a short static anticipation beat; when the
+# event handoff races execution it contains the otherwise-lost first movement.
+PRE_ROLL_S = 0.5
+
+# Once button execution ends (`screen_settling`), rendered frames are buffered
+# rather than immediately committed. The emulator stream independently marks
+# material visual activity; activity flushes the buffer (so delayed animations
+# survive), while the final quiet buffer is discarded at `screen_settled`.
+# Keep only a tiny payoff hold so cuts do not land on the exact motion frame.
+TAIL_HOLD_S = 0.12
+TAIL_ACTIVITY_GRACE_S = 0.20
+TAIL_MAX_BUFFER_S = 20.0
+
+# 120x80 grayscale signatures mirror the emulator's own stability checker. A
+# frame matching any already-seen frame at this similarity is an idle/cyclic
+# repeat, not new visual activity. The looser threshold intentionally ignores
+# tiny palette animation while still treating movement/dialogue as novel.
+VISUAL_SIGNATURE_SIZE = (120, 80)
+# 0.995 missed small sprite translations after downsampling: a 16px player
+# moving one native pixel changes only a thin edge across the 120×80 signature.
+# 0.999 catches that motion; the seen-signature set still suppresses repeating
+# two/three-frame idle palette cycles.
+VISUAL_DEDUP_SIMILARITY = 0.999
+VISUAL_MAX_SEEN = 80
 
 # How long a cut-thinking gate may stay open with no `screen_settled` before it
 # shuts itself. Guards against a turn that errors out between the two events and
 # would otherwise record the whole of the NEXT think.
 GATE_MAX_OPEN_S = 90.0
 
-JPEG_QUALITY = 82
+# Lossless 1080×1080 PNG screencast frames measured only ~6fps through Chrome's
+# DevTools stream: visually sharp stills, but severe motion judder. JPEG is the
+# transport Chrome optimises for. Quality 100 removes the visible quality-82
+# damage from the old recorder while keeping the browser capture fast enough for
+# a genuine 30fps feed; H.264 CRF 14 remains the final delivery encode.
+SCREENCAST_FORMAT = "jpeg"
+SCREENCAST_QUALITY = 100
+FFMPEG_INPUT_CODEC = "mjpeg"
 
 CHROME_CANDIDATES = (
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
@@ -89,6 +153,8 @@ CHROME_CANDIDATES = (
     "chromium",
     "chromium-browser",
 )
+
+_PIPE_STOP = object()
 
 
 def find_chrome() -> Optional[str]:
@@ -174,14 +240,18 @@ class RecordGate:
     """
 
     def __init__(self, speed: str, *, tail_s: float = SETTLE_TAIL_S,
+                 lead_s: float = LEAD_TRIM_S,
                  max_open_s: float = GATE_MAX_OPEN_S) -> None:
         self.speed = speed
         self.tail_s = tail_s
+        self.lead_s = lead_s
         self.max_open_s = max_open_s
         # realtime records everything from start(); cut-thinking waits for the
         # first llm_output.
         self._open = speed == "realtime"
+        self._tail = False
         self._opened_at: Optional[float] = None
+        self._starts_at: Optional[float] = None
         self._closes_at: Optional[float] = None
 
     def on_event(self, etype: str, now: float) -> None:
@@ -189,10 +259,23 @@ class RecordGate:
         if self.speed != "cut-thinking":
             return
         if etype == "llm_output":
-            # The model has answered — the turn starts executing here.
+            # The model has answered — the turn starts executing here. Sampling
+            # begins `lead_s` later. Production uses zero after a real clip
+            # showed that a fixed trim can amputate the first movement frames;
+            # the injection remains for focused state-machine tests.
+            # `_opened_at` stays at the event, so max_open_s is measured from the
+            # model's answer exactly as before.
             self._open = True
+            self._tail = False
             self._opened_at = now
+            self._starts_at = now + self.lead_s
             self._closes_at = None
+        elif etype == "screen_settling" and self._open:
+            # Button execution has ended. Do not close yet: transitions and
+            # scripted dialogue may continue for seconds. The sampler buffers
+            # this phase and commits it only when the emulator stream proves
+            # that more material visual activity occurred.
+            self._tail = True
         elif etype == "screen_settled" and self._open:
             # Screen has stopped moving. Hold a beat, then stop sampling; the
             # gap until the next llm_output is the think we're cutting.
@@ -203,23 +286,169 @@ class RecordGate:
             if self._open and self._closes_at is None and self._opened_at is not None:
                 self._closes_at = now
 
-    def is_open(self, now: float) -> bool:
-        """Whether frames should be written right now."""
+    def state(self, now: float) -> str:
+        """``closed`` / ``open`` / ``tail`` for the sampler."""
         if self.speed == "realtime":
-            return True
+            return "open"
         if not self._open:
-            return False
+            return "closed"
         if self._closes_at is not None and now >= self._closes_at:
             self._open = False
+            self._tail = False
             self._opened_at = None
+            self._starts_at = None
             self._closes_at = None
-            return False
+            return "closed"
         if self._opened_at is not None and now - self._opened_at > self.max_open_s:
             self._open = False
+            self._tail = False
             self._opened_at = None
+            self._starts_at = None
             self._closes_at = None
-            return False
-        return True
+            return "closed"
+        if self._starts_at is not None and now < self._starts_at:
+            return "closed"
+        return "tail" if self._tail else "open"
+
+    def is_open(self, now: float) -> bool:
+        """Whether frames should be written right now."""
+        return self.state(now) != "closed"
+
+
+class _VisualActivity:
+    """Material emulator-screen changes during the post-input settle phase.
+
+    The dashboard screen socket carries the raw game PNG, so this signal is
+    independent of the chosen recording view and ignores SimpleView's text/card
+    animation. A small set of perceptual signatures recognises cyclic idle
+    animation: returning to any already-seen frame is quiet, while a genuinely
+    novel frame advances ``generation``.
+    """
+
+    def __init__(
+        self,
+        *,
+        similarity: float = VISUAL_DEDUP_SIMILARITY,
+        max_seen: int = VISUAL_MAX_SEEN,
+    ) -> None:
+        self.similarity = similarity
+        self.max_seen = max_seen
+        self._lock = threading.Lock()
+        self._enabled = False
+        self._latest: Optional[np.ndarray] = None
+        self._seen: list[np.ndarray] = []
+        self._generation = 0
+
+    def reset(self) -> None:
+        with self._lock:
+            self._enabled = True
+            # The screen socket only publishes when the PNG object changes. If
+            # the game is static at screen_settling, no new baseline frame may
+            # arrive before the delayed movement itself. Seed from the latest
+            # frame observed while disabled so that very first movement frame
+            # counts as activity instead of being mistaken for the baseline.
+            self._seen = [self._latest] if self._latest is not None else []
+
+    def disable(self) -> None:
+        with self._lock:
+            self._enabled = False
+
+    @property
+    def generation(self) -> int:
+        with self._lock:
+            return self._generation
+
+    @staticmethod
+    def _signature(frame: bytes) -> Optional[np.ndarray]:
+        try:
+            with Image.open(io.BytesIO(frame)) as im:
+                small = im.convert("L").resize(
+                    VISUAL_SIGNATURE_SIZE, Image.Resampling.BILINEAR
+                )
+                return np.asarray(small, dtype=np.float32)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _similarity(a: np.ndarray, b: np.ndarray) -> float:
+        return 1.0 - float(np.abs(a - b).mean()) / 255.0
+
+    def ingest(self, frame: bytes) -> None:
+        sig = self._signature(frame)
+        if sig is None:
+            return
+        with self._lock:
+            self._latest = sig
+            if not self._enabled:
+                return
+            if not self._seen:
+                self._seen.append(sig)
+                return
+            if any(self._similarity(sig, old) >= self.similarity for old in self._seen):
+                return
+            self._seen.append(sig)
+            if len(self._seen) > self.max_seen:
+                self._seen.pop(0)
+            self._generation += 1
+
+
+class _TailFrameBuffer:
+    """Hold the uncertain end of a turn until activity or settle decides it.
+
+    A generation change means the emulator produced a materially novel screen,
+    so every buffered frame is real interstitial footage and is returned for
+    writing. ``finish`` is called at ``screen_settled`` and returns only a tiny
+    payoff hold, dropping the rest of the final frozen confirmation window.
+    """
+
+    def __init__(self, fps: int, generation: int, now: float) -> None:
+        self.fps = fps
+        self.generation = generation
+        self.active_until = now + TAIL_ACTIVITY_GRACE_S
+        self.frames: list[bytes] = []
+        self.max_frames = max(1, math.ceil(fps * TAIL_MAX_BUFFER_S))
+
+    def push(self, frame: bytes, generation: int, now: float) -> list[bytes]:
+        self.frames.append(frame)
+        if generation != self.generation:
+            self.generation = generation
+            self.active_until = now + TAIL_ACTIVITY_GRACE_S
+            out, self.frames = self.frames, []
+            return out
+        if now <= self.active_until:
+            out, self.frames = self.frames, []
+            return out
+        # Safety bound only. The normal stability wait caps at 15s, below this
+        # 20s buffer. If that contract changes, preserve old footage rather than
+        # letting a pathological quiet wait consume unbounded memory.
+        if len(self.frames) > self.max_frames:
+            excess = len(self.frames) - self.max_frames
+            out = self.frames[:excess]
+            self.frames = self.frames[excess:]
+            return out
+        return []
+
+    def finish(self) -> list[bytes]:
+        keep = max(1, math.ceil(self.fps * TAIL_HOLD_S))
+        out = self.frames[-keep:]
+        self.frames = []
+        return out
+
+
+class _PreRollBuffer:
+    """Fixed-size frame ring prepended whenever a cut-thinking gate opens."""
+
+    def __init__(self, fps: int, seconds: float = PRE_ROLL_S) -> None:
+        self.max_frames = max(1, math.ceil(fps * seconds))
+        self.frames: deque[bytes] = deque(maxlen=self.max_frames)
+
+    def push(self, frame: bytes) -> None:
+        self.frames.append(frame)
+
+    def flush(self) -> list[bytes]:
+        out = list(self.frames)
+        self.frames.clear()
+        return out
 
 
 # ───────────────────────────── CDP plumbing ─────────────────────────────
@@ -243,6 +472,8 @@ class _CDPSession:
         self._ws = None
         self._send_lock = threading.Lock()
         self._next_id = 0
+        self._response_cond = threading.Condition()
+        self._responses: dict[int, dict] = {}
         self._reader: Optional[threading.Thread] = None
         self._running = False
         self._frame_lock = threading.Lock()
@@ -303,16 +534,15 @@ class _CDPSession:
                 "mobile": False,
             },
         )
-        self._send(
-            "Page.startScreencast",
-            {
-                "format": "jpeg",
-                "quality": JPEG_QUALITY,
-                "maxWidth": self.width,
-                "maxHeight": self.height,
-                "everyNthFrame": 1,
-            },
-        )
+        screencast = {
+            "format": SCREENCAST_FORMAT,
+            "maxWidth": self.width,
+            "maxHeight": self.height,
+            "everyNthFrame": 1,
+        }
+        if SCREENCAST_FORMAT == "jpeg":
+            screencast["quality"] = SCREENCAST_QUALITY
+        self._send("Page.startScreencast", screencast)
 
     def _await_target(self, timeout: float) -> str:
         """Poll DevToolsActivePort + /json/list until the page target exists."""
@@ -362,15 +592,31 @@ class _CDPSession:
 
     # --- protocol ---
 
-    def _send(self, method: str, params: Optional[dict] = None) -> None:
-        """Fire a CDP command. We never need a reply, so nothing is awaited."""
+    def _send(self, method: str, params: Optional[dict] = None) -> int:
+        """Fire a CDP command and return its request id."""
         with self._send_lock:
             self._next_id += 1
-            payload = {"id": self._next_id, "method": method}
+            request_id = self._next_id
+            payload = {"id": request_id, "method": method}
             if params:
                 payload["params"] = params
             if self._ws is not None:
                 self._ws.send(json.dumps(payload))
+            return request_id
+
+    def _call(
+        self, method: str, params: Optional[dict] = None, timeout: float = 2.0
+    ) -> Optional[dict]:
+        """Send a CDP command and wait for its matching response."""
+        request_id = self._send(method, params)
+        deadline = time.monotonic() + timeout
+        with self._response_cond:
+            while request_id not in self._responses:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return None
+                self._response_cond.wait(remaining)
+            return self._responses.pop(request_id)
 
     def _read_loop(self) -> None:
         while self._running:
@@ -383,6 +629,11 @@ class _CDPSession:
             try:
                 msg = json.loads(raw)
             except Exception:
+                continue
+            if isinstance(msg.get("id"), int):
+                with self._response_cond:
+                    self._responses[msg["id"]] = msg
+                    self._response_cond.notify_all()
                 continue
             if msg.get("method") != "Page.screencastFrame":
                 continue
@@ -417,6 +668,47 @@ class _CDPSession:
             time.sleep(0.1)
         return False
 
+    def screen_content_rect(self, timeout: float = 8.0) -> Optional[tuple[int, int, int, int]]:
+        """Pixel rect occupied by SimpleView's object-fit game image.
+
+        The raw emulator stream is overlaid there after browser capture so game
+        motion keeps its native cadence even when CDP throttles page frames.
+        Querying the DOM avoids baking fragile CSS percentages into Python.
+        """
+        expression = """
+          (() => {
+            const el = document.querySelector('.screen');
+            if (!el || !el.naturalWidth || !el.naturalHeight) return null;
+            const r = el.getBoundingClientRect();
+            const scale = Math.min(r.width / el.naturalWidth, r.height / el.naturalHeight);
+            const w = el.naturalWidth * scale;
+            const h = el.naturalHeight * scale;
+            return {
+              x: Math.round(r.x + (r.width - w) / 2),
+              y: Math.round(r.y + (r.height - h) / 2),
+              width: Math.round(w),
+              height: Math.round(h)
+            };
+          })()
+        """
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            reply = self._call(
+                "Runtime.evaluate",
+                {"expression": expression, "returnByValue": True},
+                timeout=min(2.0, max(0.1, deadline - time.monotonic())),
+            )
+            value = (((reply or {}).get("result") or {}).get("result") or {}).get("value")
+            if isinstance(value, dict) and all(
+                isinstance(value.get(k), (int, float))
+                for k in ("x", "y", "width", "height")
+            ):
+                rect = tuple(int(value[k]) for k in ("x", "y", "width", "height"))
+                if rect[2] > 0 and rect[3] > 0:
+                    return rect
+            time.sleep(0.1)
+        return None
+
 
 # ───────────────────────────── the recorder ─────────────────────────────
 
@@ -438,6 +730,7 @@ class RunRecorder:
         spec: dict,
         out_path: Optional[Path] = None,
         chrome: Optional[str] = None,
+        screen_source: Any = None,
     ) -> None:
         self.run_id = run_id
         self.run_dir = Path(run_dir)
@@ -449,17 +742,32 @@ class RunRecorder:
         self.width, self.height = VIEWPORTS[self.view]
         self.out_path = Path(out_path) if out_path else self.run_dir / "recording.mp4"
         self.chrome = chrome or find_chrome()
+        self._screen_source = screen_source
 
         self.gate = RecordGate(self.speed)
+        self._activity = _VisualActivity()
+        self._raw_frame_lock = threading.Lock()
+        self._raw_frame: Optional[bytes] = None
+        self._screen_rect: Optional[tuple[int, int, int, int]] = None
+        self._browser_image_source: Optional[bytes] = None
+        self._browser_image: Optional[Image.Image] = None
+        self._raw_image_source: Optional[bytes] = None
+        self._raw_image: Optional[Image.Image] = None
         self.error: Optional[str] = None
         self.frames_written = 0
 
         self._cdp: Optional[_CDPSession] = None
         self._ff: Optional[subprocess.Popen] = None
+        # One second fits the 0.5s pre-roll burst plus live headroom. The queue
+        # holds compact (browser JPEG, raw PNG) pairs; composition happens in
+        # the encoder writer so image decode/resize can never stall sampling.
+        self._browser_queue: queue.Queue[Any] = queue.Queue(maxsize=max(1, self.fps))
+        self._browser_writer: Optional[threading.Thread] = None
         self._ff_err: Any = None
         self._stop = threading.Event()
         self._sampler: Optional[threading.Thread] = None
         self._events: Optional[threading.Thread] = None
+        self._screen: Optional[threading.Thread] = None
         self._started = False
 
     # --- lifecycle ---
@@ -481,6 +789,10 @@ class RunRecorder:
             self._cdp.start()
             if not self._cdp.wait_for_first_frame():
                 raise RuntimeError("no screencast frame arrived within 20s")
+            if self.view == "simple":
+                self._screen_rect = self._cdp.screen_content_rect()
+                if self._screen_rect is None:
+                    raise RuntimeError("simple view never exposed its game-screen rectangle")
             # ffmpeg's stderr goes to a temp file, not /dev/null: when a
             # recording comes out empty the encoder's own last words are the
             # only thing that says why, and a silent zero-byte mp4 at the end of
@@ -501,6 +813,21 @@ class RunRecorder:
             return False
 
         self._started = True
+        self._browser_writer = threading.Thread(
+            target=self._pipe_writer,
+            args=(self._ff.stdin, self._browser_queue),
+            daemon=True,
+            name="rec-browser-writer",
+        )
+        self._browser_writer.start()
+        if (
+            self._screen_source is None
+            and (self.view == "simple" or self.speed == "cut-thinking")
+        ):
+            self._screen = threading.Thread(
+                target=self._screen_loop, daemon=True, name="rec-screen"
+            )
+            self._screen.start()
         self._sampler = threading.Thread(
             target=self._sample_loop, daemon=True, name="rec-sampler"
         )
@@ -525,7 +852,15 @@ class RunRecorder:
             self._sampler.join(timeout=5)
         if self._events is not None:
             self._events.join(timeout=2)
+        if self._screen is not None:
+            self._screen.join(timeout=2)
         if self._ff is not None:
+            try:
+                self._browser_queue.put(_PIPE_STOP, timeout=2)
+            except queue.Full:
+                pass
+            if self._browser_writer is not None:
+                self._browser_writer.join(timeout=timeout)
             try:
                 if self._ff.stdin:
                     self._ff.stdin.close()
@@ -593,28 +928,94 @@ class RunRecorder:
 
     # --- workers ---
 
+    def _pipe_writer(self, pipe: Any, frames: queue.Queue[Any]) -> None:
+        """Drain the encoder input without blocking the sampling clock."""
+        while True:
+            item = frames.get()
+            if item is _PIPE_STOP:
+                return
+            try:
+                if isinstance(item, tuple):
+                    item = self._compose_frame(*item)
+                    if item is None:
+                        continue
+                pipe.write(item)
+            except (BrokenPipeError, ValueError, AttributeError):
+                return
+
+    def _compose_frame(
+        self, browser_frame: Optional[bytes], raw_frame: Optional[bytes]
+    ) -> Optional[bytes]:
+        """Replace CDP's throttled game region with the latest raw game PNG.
+
+        Chrome still supplies the complete SimpleView presentation, including
+        card animation and typography. Only the motion-sensitive game rectangle
+        is refreshed independently at the sampler's cadence. The composed frame
+        is passed to ffmpeg as raw RGB so this step cannot add compression loss.
+        """
+        if browser_frame is None or raw_frame is None or self._screen_rect is None:
+            return None
+        try:
+            if browser_frame is not self._browser_image_source:
+                with Image.open(io.BytesIO(browser_frame)) as im:
+                    self._browser_image = im.convert("RGB")
+                self._browser_image_source = browser_frame
+            if raw_frame is not self._raw_image_source:
+                with Image.open(io.BytesIO(raw_frame)) as im:
+                    self._raw_image = im.convert("RGB")
+                self._raw_image_source = raw_frame
+            if self._browser_image is None or self._raw_image is None:
+                return None
+            x, y, width, height = self._screen_rect
+            canvas = self._browser_image.copy()
+            game = self._raw_image.resize((width, height), Image.Resampling.NEAREST)
+            canvas.paste(game, (x, y))
+            return canvas.tobytes()
+        except Exception:
+            # A single raw PNG decode failure should not take down the run. The
+            # next 30fps sampler tick will retry with the latest valid frame.
+            return None
+
     def _ffmpeg_args(self) -> list[str]:
-        return [
+        args = [
             "ffmpeg",
             "-y",
             "-loglevel", "error",
-            "-f", "image2pipe",
-            "-vcodec", "mjpeg",
-            "-framerate", str(self.fps),
-            "-i", "-",
+            "-thread_queue_size", str(self.fps * 10),
+        ]
+        if self._screen_rect is not None:
+            args += [
+                "-f", "rawvideo",
+                "-pix_fmt", "rgb24",
+                "-video_size", f"{self.width}x{self.height}",
+                "-framerate", str(self.fps),
+                "-i", "-",
+            ]
+        else:
+            args += [
+                "-f", "image2pipe",
+                "-vcodec", FFMPEG_INPUT_CODEC,
+                "-framerate", str(self.fps),
+                "-i", "-",
+            ]
+        args += [
             "-an",
             # Safety net for the odd-dimension trap above: libx264 with yuv420p
             # cannot encode an odd width or height, and it fails by producing an
             # empty file rather than a warning. Rounding down here means a
             # surprise viewport costs one pixel, not the whole recording.
-            "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+        ]
+        args += ["-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2"]
+        args += [
             "-c:v", "libx264",
-            "-preset", "veryfast",
-            "-crf", "20",
+            "-preset", "medium",
+            "-tune", "animation",
+            "-crf", "14",
             "-pix_fmt", "yuv420p",
             "-movflags", "+faststart",
             str(self.out_path),
         ]
+        return args
 
     def _sample_loop(self) -> None:
         """Write the newest frame every 1/fps, whenever the gate is open.
@@ -626,6 +1027,19 @@ class RunRecorder:
         """
         period = 1.0 / self.fps
         next_tick = time.monotonic()
+        last_state = "closed"
+        tail: Optional[_TailFrameBuffer] = None
+        pre_roll = _PreRollBuffer(self.fps)
+
+        def write_frames(frames: list[Any]) -> bool:
+            try:
+                for item in frames:
+                    self._browser_queue.put(item, timeout=2)
+                    self.frames_written += 1
+                return True
+            except (BrokenPipeError, ValueError, AttributeError, queue.Full):
+                return False
+
         while not self._stop.is_set():
             next_tick += period
             sleep = next_tick - time.monotonic()
@@ -636,16 +1050,62 @@ class RunRecorder:
                 # than spin trying to catch up — a dropped sample costs 33ms of
                 # video, a catch-up burst distorts the whole timeline.
                 next_tick = time.monotonic()
-            if not self.gate.is_open(time.monotonic()):
+            now = time.monotonic()
+            state = self.gate.state(now)
+            browser_frame = self._cdp.latest_frame() if self._cdp else None
+            raw_frame = self._latest_raw_frame()
+            if raw_frame is not None and self._screen_source is not None:
+                self._activity.ingest(raw_frame)
+            frame: Any = browser_frame
+            if self._screen_rect is not None:
+                frame = (
+                    (browser_frame, raw_frame)
+                    if browser_frame is not None and raw_frame is not None
+                    else None
+                )
+            if state == "closed":
+                if last_state == "tail" and tail is not None:
+                    if not write_frames(tail.finish()):
+                        break
+                    tail = None
+                if frame is not None:
+                    pre_roll.push(frame)
+                last_state = state
                 continue
-            frame = self._cdp.latest_frame() if self._cdp else None
             if frame is None:
                 continue
-            try:
-                self._ff.stdin.write(frame)  # type: ignore[union-attr]
-                self.frames_written += 1
-            except (BrokenPipeError, ValueError, AttributeError):
-                break
+
+            # Preserve the closed→active boundary, including frames rendered
+            # after execution dispatch but before the event socket opened the
+            # gate. This applies even if events raced so quickly that the first
+            # state observed is already `tail`.
+            if last_state == "closed":
+                if not write_frames(pre_roll.flush()):
+                    break
+            if state == "open":
+                # A malformed/missing settle event can jump tail→open on the
+                # next llm_output. Treat the old tail as final quiet, exactly as
+                # a normal close would, rather than leaking it into the new turn.
+                if last_state == "tail" and tail is not None:
+                    if not write_frames(tail.finish()):
+                        break
+                    tail = None
+                if not write_frames([frame]):
+                    break
+            else:  # tail — buffer until activity proves it belongs
+                if last_state != "tail" or tail is None:
+                    tail = _TailFrameBuffer(
+                        self.fps, self._activity.generation, now
+                    )
+                ready = tail.push(frame, self._activity.generation, now)
+                if ready and not write_frames(ready):
+                    break
+            last_state = state
+
+        # stop() may set the flag between the event close and the next sampler
+        # tick. Finalise the buffered tail here so the tiny payoff hold survives.
+        if tail is not None:
+            write_frames(tail.finish())
 
     def _event_loop(self) -> None:
         """Drive the cut-thinking gate off the run's own event stream.
@@ -672,12 +1132,48 @@ class RunRecorder:
                         if msg.get("type") != "event":
                             continue
                         etype = (msg.get("data") or {}).get("type", "")
+                        if etype == "screen_settling":
+                            self._activity.reset()
+                        elif etype == "screen_settled":
+                            self._activity.disable()
                         self.gate.on_event(etype, time.monotonic())
             except Exception:
                 # The socket 1008s until the run registers, and drops when it
                 # unregisters. Neither is an error worth surfacing.
                 if self._stop.wait(1.0):
                     return
+
+    def _screen_loop(self) -> None:
+        """Feed raw emulator PNGs to the settle-phase activity detector."""
+        url = f"ws://127.0.0.1:{self.port}/runs/{self.run_id}/ws/screen"
+        from websockets.sync.client import connect
+
+        while not self._stop.is_set():
+            try:
+                with connect(url, open_timeout=5, max_size=16 * 1024 * 1024) as ws:
+                    while not self._stop.is_set():
+                        try:
+                            raw = ws.recv(timeout=1.0)
+                        except TimeoutError:
+                            continue
+                        if isinstance(raw, bytes):
+                            with self._raw_frame_lock:
+                                self._raw_frame = raw
+                            self._activity.ingest(raw)
+            except Exception:
+                # Same lifecycle as the event socket: absent before register,
+                # code 1008 after unregister, and neither should affect the run.
+                if self._stop.wait(1.0):
+                    return
+
+    def _latest_raw_frame(self) -> Optional[bytes]:
+        if self._screen_source is not None:
+            try:
+                return self._screen_source.get_frame()
+            except Exception:
+                return None
+        with self._raw_frame_lock:
+            return self._raw_frame
 
 
 # ───────────────────── integration helper (one call site) ─────────────────
@@ -700,14 +1196,21 @@ def maybe_start(config: dict, run_dir: Path, run_id: str) -> Optional[RunRecorde
     if spec is None:
         return None
 
-    from src.dashboard.server import get_server_port
+    from src.dashboard.server import get_registry, get_server_port
 
     port = get_server_port()
     if port is None:
         print("  ⚠ recording disabled: the dashboard server is not bound")
         return None
 
-    rec = RunRecorder(run_id=run_id, run_dir=Path(run_dir), port=port, spec=spec)
+    session = get_registry().get(run_id)
+    rec = RunRecorder(
+        run_id=run_id,
+        run_dir=Path(run_dir),
+        port=port,
+        spec=spec,
+        screen_source=session.streamer if session is not None else None,
+    )
     if rec.start():
         print(
             f"  ⏺ recording {spec['view']} view ({spec['speed']}, {spec['fps']}fps) "

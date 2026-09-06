@@ -1,0 +1,172 @@
+# Experimental append-and-compact agent. Select explicitly; numbered-config default remains unchanged.
+# Model and reasoning settings come from --model and configs/models.yaml.
+# stream: false retains complete provider blocks without endpoint-specific delta assumptions.
+task:
+  goal: beat the game
+  description: Play toward the top goal. Choose and revise your own smaller goals
+    using observed evidence.
+task_override_snapshot: true
+emulator:
+  type: mgba
+  host: 127.0.0.1
+  port: 8888
+  rom_path: roms/Pokemon - FireRed Version (USA, Europe) (Rev 1).gba
+  pause_during_thinking: true
+  button_hold_frames: 12
+  frames_between_inputs: 24
+  ab_hold_frames: 12
+  ab_gap_frames: 100
+  wait_input_seconds: 5.0
+screenshot:
+  upscale_factor: 6
+  grid_overlay: true
+screen_stability:
+  min_wait: 0.0
+  max_wait: 15.0
+  poll_interval: 0.3
+  num_frames: 6
+  threshold_start: 1.0
+  threshold_end: 0.98
+ocr:
+  enabled: true
+  capture_interval: 0.2
+  confidence_threshold: 40
+  dedup_window: 8
+  dedup_hamming_threshold: 0
+  max_buffer_size: 50
+  cleanup_enabled: true
+  cleanup_model: openai/gpt-oss-120b
+  cleanup_temperature: 0.1
+  cleanup_top_p: 0.95
+  cleanup_provider:
+    sort: latency
+  cleanup_system_prompt: |
+    You clean up noisy OCR output from game screenshots. This is the accumulated OCR buffer from multiple screen captures during a single game turn — so it may contain repeated fragments, overlapping dialogue as it scrolls, and garbled pixel-art noise mixed in with real text.
+    Your job: return the coherent in-game text (dialogue, menu labels, character names, stats, numbers) with the gibberish removed.
+    Fix obvious OCR misreads when confident (e.g. 'unsate' → 'unsafe', 'qrass' → 'grass', 'ltem' → 'Item', 'wrold' → 'world').
+    Drop tokens that are clearly pixel-art noise: isolated symbols like '|', '—', random letter salads like 'eS ES oe', short non-word fragments.
+    Preserve meaningful line breaks. Merge duplicate/overlapping captures into single coherent text.
+    The output text has to make sense and be coherent with the game. It should not contain any gibberish or noise, meaning you should actively go out of your way to remove any gibberish or noise.
+    Do NOT invent text that isn't supported by the OCR input.
+  cleanup_user_prompt: |
+    Clean up this OCR buffer. Each key is a separate capture from the same game turn; merge them into coherent text, drop gibberish, fix obvious OCR misreads.
+
+    {raw_json}
+runs_directory: local/runs/
+run_name: null
+snapshots_directory: local/snapshots/
+load_snapshot: null
+auto_snapshot_depth: 0
+savepoints:
+  every_n_turns: 10
+  at_end: true
+  on_crash: true
+state_file: local/state/state.json
+valid_inputs:
+- U
+- D
+- L
+- R
+- A
+- B
+- START
+- SELECT
+- WAIT
+player_agent:
+  agent_type: append_compact
+  provider_profiles:
+    enabled: true
+    path: provider-profiles.yaml
+    # name: gemma-guidance # Or gemma-replay; CLI --provider-profile overrides this.
+    overrides: {} # Per-experiment override, frozen in saved config; use raw model IDs for new models.
+  historic_images_count: 0
+  max_turns_before_trim: null
+  system_prompt: |-
+    You are an AI agent playing {{game_name}}. Work toward the top goal supplied at the start. Choose your own smaller goals and revise them as the game changes.
+
+    {{mode_guidelines}}
+
+    You see the current screenshot and text captured since your previous action. Screenshots show overworld, menus, or battles. Trust the image for spatial layout; OCR may be noisy. On overworld screens the red grid marks tiles; use landmarks and count tiles carefully. On menus and battles inspect cursor position, visible choices, dialogue, and HP.
+
+    The conversation contains earlier observations and your actions. A handover may summarize older history and supply a flexible memory dictionary. Treat those notes as an older snapshot: newer observations take precedence. You may change your goal at any time.
+
+    On normal gameplay turns:
+    1. Observe what changed and compare it with your previous prediction.
+    2. Set last_turn_succeeded to true only when the current screen matches that prediction; false otherwise, including vague predictions. Use null only on the first game turn.
+    3. Plan ahead and choose a sequence of buttons. If recent actions failed, change approach and shorten the sequence; otherwise chain actions when reasonably confident.
+    4. Return inputs, reasoning, and last_turn_succeeded. Explain your observation and plan in reasoning, ending with a concrete screen-state prediction rather than coordinates or vague progress.
+
+    Use observed evidence to confirm locations, items, and completed goals. General game knowledge may guide exploration but is not proof. After repeated failures, reconsider your assumptions and try a different approach.
+
+    An explicit handover request has its own output contract; follow that request instead of producing a gameplay action.
+
+    # Movement and navigation
+    - Each directional input moves exactly one tile. Turning is automatic.
+    - You CANNOT walk through walls, fences, trees, water, or NPCs — extra presses into an obstacle do nothing. Use this to your advantage: tile counting is imprecise, so always overestimate. Wall ~3 tiles left? Press left 5-6 times — you'll stop at the wall, guaranteed.
+    - To enter a door or stairs, walk directly onto the tile (no A press). If it didn't work, try adjacent tiles or from different angles.
+    - To talk to an NPC or interact with an object, stand adjacent (not diagonal) and press A while facing them.
+    - **Action chaining**: You can chain multiple inputs into a single sequence. Don't hesitate to combine directions, A, and B presses when you are reasonably sure of the expected outcome.
+      - *Overworld*: Sweep toward a target by combining directions. Door at roughly (2, -2)? Chain: [down, down, down, right, down, right, down, right, down] — covers both axes even if your estimate is off.
+      - *Wall hugging*: To find an exit/target along a wall, walk to the wall first (overestimate), then slide along it.
+      - *Menus and battles*: Chain menu navigation when you know the layout. Example: you know from the memory dictionary that your Pikachu's 4th move is Thunderbolt (bottom-right in the move grid). Chain: [A, down, right, A] — enters the Fight submenu, navigates to the 4th move, and selects it.
+    - **Dialogue**: Use A to start a conversation, then B to advance through the rest. B advances dialogue but won't restart the conversation or trigger new interactions if you overshoot. Use A when you need to confirm a choice (e.g. "Yes/No" prompts). Example: talking to an NPC? Chain: [A, B, B, B, B] — A starts the conversation, B safely advances through the text.
+    - Press B to back out of menus. Press START to open the pause menu.
+    - **Waiting**: `wait` is a special input that presses nothing and pauses for ~5 seconds, letting the game run on its own. Use it when you want time to pass without acting — most useful in battle: chain `wait` after selecting a move so attack animations and result text play out (and the opponent's turn resolves) before you decide your next move. It combines with real presses like any other input, e.g. [a,a,wait,a,a,wait,a,a] to quickly chain attacks in battle by contnuesly using adn attack each turn. But be carfull to only do this in trivial battles and not in complex battles with multiple opponents or difficult terrain.
+  user_prompt: |-
+    Turn {{turn_number}}
+
+    Text observed since your last action:
+    {{ocr_text}}
+
+    The attached image is the current screen. Choose your next sequence of game inputs.
+  segment_start_prompt: |-
+    Top goal:
+    {{task_block}}
+
+    Continuation summary:
+    {{continuation_summary}}
+
+    Memory from the last handover:
+    {{memory_json}}
+
+    Last completed action and its prediction:
+    {{last_action}}
+    Recent success grades:
+    {{recent_grades}}
+  freeplay_guidelines: |
+    # Freeplay Mode: TRUE
+    You are in freeplay mode. You are not being measured. You are free to explore the game and play as you want — you are not limited to only completing the top goal as fast as possible, but can take your time to explore, play, and enjoy the game at your own pace. Inspiration for what to do in freeplay mode: catch and train rare and obscure Pokemon and be sure to utilize different Pokemon throughout the game, explore hidden areas, do roleplay, and more. Be sure to nickname your Pokemon and keep a diverse and fun team. And have fun with the game. Set your own goals accordingly — a freeplay goal can be a detour, not just the next step toward the top goal.
+  benchmark_guidelines: |
+    # Benchmark Mode: TRUE
+    You are in speed mode. You are being measured on making as much progress toward the top goal as quickly as possible. The external harness may stop the run when a separate resource limit is reached, so do not infer from the game still running that a milestone is incomplete. Don't do anything that is not necessary to complete the top goal, and set your own goals to be the shortest sensible next step toward it.
+  compaction:
+    every_n_turns: 20
+    context_token_limit: 131072
+    context_limit_fraction: 0.65
+    image_token_reserve: 4096
+    summary_target_tokens: 1500
+    max_output_tokens: 12288
+    max_handover_chars: 24000
+    max_retries: 2
+    prompt: |-
+      Pause gameplay after turn {{after_turn}} and prepare a handover for yourself. The latest screenshot and OCR show the observed result of that action. Your earlier conversation will be replaced by this handover before you continue.
+
+      Return continuation_summary (free-form text) and memory (a JSON object). Return the complete replacement memory, not a patch. Preserve useful knowledge, correct mistakes, and omit outdated entries. Suggested keys: current_goal, current_location, party, map, notes, bag, badges, uncertainties. These are suggestions only: create other keys and nested structures freely. There are no required inner fields. Map descriptions should use landmarks and compass directions, not brittle coordinates. Keep confirmed observations separate from guesses; do not record predictions as completed events. Preserve useful old knowledge even if it was not mentioned in the latest turns.
+
+      Use the summary for recent context, unfinished work, failed attempts, and intended next steps without duplicating the entire memory dictionary. Briefly review whether the approach worked and revise the plan if recent evidence calls for that. Use only evidence available in this conversation; do not add outside advice or claim unseen outcomes. Newer evidence may supersede old memory. Keep the summary around {{summary_target_tokens}} tokens, and keep memory concise and useful for a long run.
+
+      Return only the handover output for this request. Do not output game inputs.
+  transport:
+    stream: false
+    timeout_seconds: 360
+    max_retries: 2
+    max_output_tokens: 8192
+    prompted_output_prompt: 'Respond only with a JSON object matching this schema:
+      {{schema}}. Put the current phase output in result. Do not use Markdown fences
+      or prose outside the object.'
+  caching:
+    cache_control_by_model_prefix:
+      anthropic/:
+        type: ephemeral
+  observability:
+    on_reasoning_loss: stop

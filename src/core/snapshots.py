@@ -87,6 +87,7 @@ class SnapshotManager:
         kind: str = "periodic",
         task_master_state: Optional[dict] = None,
         referee_state: Optional[dict] = None,
+        append_state: Optional[dict] = None,
     ) -> Path:
         """Save a run-scoped savepoint to <run_dir>/savepoints/turn_<N>/.
 
@@ -117,6 +118,10 @@ class SnapshotManager:
         target.mkdir(parents=True)
 
         self.emulator.save_state(str(target / "emulator.state"))
+
+        if append_state is not None:
+            with open(target / "append_state.json", "w") as f:
+                json.dump(append_state, f)
 
         if self.state_file.exists():
             shutil.copy2(self.state_file, target / "state.json")
@@ -161,7 +166,7 @@ class SnapshotManager:
     # Files the seal covers, in a FIXED order. emulator.state is the game; the
     # referee latch + task tree are the score/strategy state. metadata/tasks.json
     # are excluded (descriptive, not score-bearing).
-    _SEALED_PARTS = ("emulator.state", "referee_state.json", "task_master_state.json")
+    _SEALED_PARTS = ("emulator.state", "referee_state.json", "task_master_state.json", "append_state.json")
 
     @classmethod
     def _checkpoint_digest(cls, savepoint_dir) -> str:

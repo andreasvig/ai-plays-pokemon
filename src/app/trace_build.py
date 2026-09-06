@@ -16,6 +16,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+TRACE_VERSION = 5
+
 
 def _screenshot_ref(file_path: str | None) -> str | None:
     """Reduce a stored screenshot path to its basename (the SPA composes the URL).
@@ -48,6 +50,29 @@ def _project_turn(turn: dict) -> dict:
     """Project one per-turn dict (from ``group_events_by_turn``) for the SPA."""
     exp = turn.get("explanation") or {}
     usage = turn.get("usage") or {}
+    diagnostics = [e for e in turn.get("events", []) if e.get("type") in (
+        "llm_request_usage", "llm_request_error", "compaction_start", "compaction_trace", "compaction_complete")]
+    messages = turn.get("trace", [])
+    conversation = None
+    segment_context = ""
+    if diagnostics:
+        # Render the additions to the conversation. Full request history stays
+        # in the raw trace/archive, not in each turn's observation or output.
+        user_indices = [i for i, m in enumerate(messages) if m.get("role") == "user"]
+        if user_indices:
+            last_user = user_indices[-1]
+            prior = messages[:last_user]
+            start = not any(m.get("role") not in ("system", "user") for m in prior)
+            conversation = "start" if start else "continued"
+            systems = []
+            if start:
+                systems = [{"role": "system", "content": "\n\n".join(
+                    m.get("content", "") for m in prior if m.get("role") == "system")}]
+                segment_context = "\n\n".join(m.get("content", "") for m in prior if m.get("role") == "user")
+            messages = systems + messages[last_user:]
+    trace = _trace_steps(messages)
+    if conversation:
+        trace.update(conversation=conversation, segment_context=segment_context)
     return {
         "turn": turn.get("turn"),
         "task_index": turn.get("task_index"),
@@ -58,7 +83,8 @@ def _project_turn(turn: dict) -> dict:
         "cost_usd": usage.get("cost_usd"),
         "request_tokens": usage.get("request_tokens"),
         "response_tokens": usage.get("response_tokens"),
-        "trace": _trace_steps(turn.get("trace", [])),
+        "trace": trace,
+        "diagnostics": diagnostics,
     }
 
 
@@ -67,6 +93,61 @@ def report_format_action(action) -> str:
     from src.core import event_parsing
 
     return event_parsing._format_action(action if action is not None else "?")
+
+
+def _compaction_trace(events: list[dict]) -> dict:
+    """Project only new compaction inputs and its response, with parsed output."""
+    event = next((e for e in reversed(events) if e["type"] == "compaction_trace"), {})
+    messages = event.get("messages", [])
+    users = [i for i, m in enumerate(messages) if m.get("role") == "user"]
+    trace = _trace_steps([])
+    if users:
+        # The latest observation and compaction instruction are consecutive
+        # user messages appended to the existing segment.
+        first = last = users[-1]
+        while first > 0 and messages[first - 1].get("role") == "user":
+            first -= 1
+        inputs = messages[first:last + 1]
+        trace = _trace_steps(messages[last + 1:])
+        trace["user_input"] = "\n\n".join(m.get("content", "") for m in inputs)
+        trace["user_messages"] = inputs
+        for step in trace["steps"]:
+            if step["type"] == "final_result" and isinstance(step["args"], str):
+                try:
+                    step["args"] = json.loads(step["args"])
+                except (ValueError, TypeError):
+                    pass
+    complete = next((e for e in reversed(events) if e["type"] == "compaction_complete"), {})
+    trace["output"] = complete.get("handover")
+    trace["previous_memory"] = complete.get("previous_memory")
+    return trace
+
+
+def _add_conversation_timeline(groups: list[dict]) -> int:
+    """Separate compaction from gameplay numbering while retaining chronology."""
+    number = 0
+    for group in groups:
+        timeline = []
+        for turn in group["turns"]:
+            compaction = [e for e in turn["diagnostics"]
+                          if e["type"].startswith("compaction_") or e.get("phase") == "compaction"]
+            if compaction:
+                number += 1
+                attempts = {e["request_id"]: e for e in compaction
+                            if e["type"] == "llm_request_usage"}
+                usage = {key: sum(e[key] for e in attempts.values())
+                         if attempts and all(e.get(key) is not None for e in attempts.values()) else None
+                         for key in ("cost_usd", "request_tokens", "response_tokens")}
+                timeline.append({"kind": "compaction", "number": number,
+                                 "after_turn": next((e["after_turn"] for e in compaction if "after_turn" in e), turn["turn"] - 1),
+                                 "complete": any(e["type"] == "compaction_complete" for e in compaction),
+                                 "trace": _compaction_trace(compaction),
+                                 "diagnostics": compaction, **usage})
+                turn["diagnostics"] = [e for e in turn["diagnostics"] if e not in compaction]
+            turn["fresh"] = turn["trace"].get("conversation") == "start"
+            timeline.append({"kind": "turn", **turn})
+        group["timeline"] = timeline
+    return number
 
 
 def build_run_trace(run_dir: Path) -> dict:
@@ -125,12 +206,40 @@ def build_run_trace(run_dir: Path) -> dict:
             }
         )
 
+    compaction_count = _add_conversation_timeline(tasks_out)
+    from src.agent.append_agent import cache_totals
+    attempts = {}
+    for event in events:
+        if event.get("type") in ("llm_request_usage", "llm_request_error"):
+            key = event.get("request_id")
+            attempts[key] = {**attempts.get(key, {}), **event}
+    measurements = list(attempts.values())
+    segment_attempts = {}
+    for event in measurements:
+        segment_attempts.setdefault(str(event.get("segment", "?")), []).append(event)
+    segment_costs = {}
+    for segment, requests in segment_attempts.items():
+        known = [r["cost_usd"] for r in requests if r.get("cost_usd") is not None]
+        segment_costs[segment] = {
+            "total_cost_usd": sum(known) if len(known) == len(requests) else None,
+            "reported_cost_usd": sum(known),
+            "measured_requests": len(known), "requests": len(requests),
+        }
+    breakdown = {}
+    for event in measurements:
+        key = f"{event.get('phase', 'unknown')} / {event.get('provider') or 'unknown'} / segment {event.get('segment', '?')}"
+        breakdown.setdefault(key, []).append(event)
     return {
+        "trace_version": TRACE_VERSION,
         "run_id": run_dir.name,
         "has_tasks": has_tasks,
         "task_count": len(tasks_out),
         "turn_count": len(turns),
+        "compaction_count": compaction_count,
         "tasks": tasks_out,
+        "cache": cache_totals(measurements) if measurements else None,
+        "cache_breakdown": {key: cache_totals(value) for key, value in breakdown.items()},
+        "segment_costs": segment_costs,
     }
 
 

@@ -149,6 +149,28 @@ Casual runs on the default ROM start from the canonical FireRed save; a run on
 any other game starts from **that game's own `start_save`**, or from the title
 screen when it hasn't got one yet.
 
+### Choosing an opening
+
+A game can offer more than one committed start. When it does, the dialog grows a
+**Start as** picker between Game and Gameplay — on FireRed that is `Red (boy) —
+default` or `Leaf (girl)`, the same point in the game either way, differing only
+in the character. Useful when filming two runs side by side: they are
+distinguishable without a caption, and the recording's filename carries
+`as-girl` so the footage labels itself.
+
+The control appears only when the selected game actually offers a choice, so
+Emerald never shows it; a picker with one option is noise. It is also hidden for
+**official** runs — a benchmark begins at the frozen canonical savepoint, because
+a choosable opening would make two scores incomparable — and for a **continue**,
+which resumes its source run's savepoint and so had its opening decided a run
+earlier.
+
+Openings live in [`configs/starts.yaml`](../configs/starts.yaml) and are served by
+`GET /api/starts`. An entry whose savepoint directory is incomplete is hidden from
+the picker and refused at enqueue rather than failing mid-dispatch. See
+[the CLI's `pokemon snapshot` section](cli.md#pokemon-snapshot--manage-snapshots)
+for adding one.
+
 ### Switching the loaded game
 
 The emulator holds one cartridge at a time. The **game selector in the top bar**

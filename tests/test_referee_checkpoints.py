@@ -106,7 +106,7 @@ def test_real_ladder_flag_id_hex_parses_to_int():
     assert cps["starter_chosen"].signature["flag_id"] == 2088
     # var_id parsed too: 0x4057 -> 16471
     assert cps["parcel_delivered"].signature["var_id"] == 0x4057
-    assert cps["parcel_delivered"].signature["min_value"] == 2
+    assert cps["parcel_delivered"].signature["min_value"] == 1
 
 
 def test_real_ladder_cross_check_parsed():

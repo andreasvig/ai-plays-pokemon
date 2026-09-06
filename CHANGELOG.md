@@ -1,5 +1,105 @@
 # Changelog
 
+## 2026-09-06 — Gemma reasoning replay comparison
+
+- Added named `gemma-guidance` and `gemma-replay` profiles sharing the same Gemma
+  settings and differing only in prior-thinking replay policy and diagnostic labels.
+- Select via `--provider-profile` or YAML `provider_profiles.name`. The choice is
+  recorded in run names and traces and cannot change while resuming a saved run.
+
+## 2026-09-06 — OpenRouter provider profiles for append/compaction
+
+- Added ten configured model/endpoint contracts with pinned routing, retained
+  session affinity, reasoning policies, compatible output formats, and host limits.
+  Profiles are frozen into saves; numbered configs keep their existing behavior.
+- Added router metadata capture and visible route/cache/reasoning-policy details.
+  Reported provider changes and destructive context transformations stop the run.
+- Live recorded-screen protocol probes passed for nine accessible models, with
+  cache reads observed for seven. Muse Spark requires account age confirmation.
+  Gemma/Qwen output quirks and Grok's flexible-memory encoding are handled by
+  explicit profiles. See `artifacts/provider-compatibility/probe-results.md`.
+- Validation: 63 focused tests and browser verification of the real probe traces;
+  frontend production build passed. These probes do not measure Pokémon progress.
+
+## 2026-09-05 — Append-and-compact agent (experimental)
+
+- Added explicitly selectable `config-append`: minimal observation messages,
+  retained conversation/reasoning blocks, and configurable compaction (20 turns
+  by default). Memory is a flexible JSON object written only during compaction,
+  together with a continuation summary and brief plan review.
+- Preserved the numbered default and frozen official benchmark. Existing agent
+  output contracts and per-turn memory behavior are unchanged.
+- Added lossless replay artifacts, deduplicated screenshot assets, conversation
+  savepoints, and resume across compaction boundaries.
+- Added per-request cache reads/writes, coverage-aware cache totals, reasoning
+  replay integrity checks, provider feedback, and handover memory diffs to the
+  existing live/report surfaces. Historical responses are displayed as input,
+  not mistaken for the current turn's action.
+- Verified five live FireRed turns with GPT-5.6 Sol through OpenRouter, including
+  a process restart and two compactions using a two-turn smoke-test interval.
+  See `docs/append-agent.md` for selection, limits, and validation evidence.
+
+## 2026-09-05 — Parcel pickup checkpoint and first-badge pacing
+
+- Corrected the parcel gate across the FireRed ladders to “Received Oak's Parcel”:
+  Mart scene variable 0x4057 ≥1, instead of ≥2 after the Pokédex scene.
+- Retained the legacy `parcel_delivered` ID; historical run stamps are unchanged.
+- First Badge now requires the Boulder Badge by player turn 400 (previously 500).
+  Parcel pickup stays at T120 and Pokédex receipt at T150.
+
+
+## 2026-08-03 — Pick which character a casual run plays as, and tighter clips
+
+### What
+- **`configs/starts.yaml`** (new registry) + **`src/app/starts.py`**: the
+  choosable openings a casual run may begin from, keyed on `(rom, label)`. A
+  label is unique only *within* a game, so the selector reads
+  `--rom firered --start girl`.
+- **FireRed now offers `boy` and `girl`.** `configs/saves/firered-girl/` is a new
+  committed savepoint captured at the same point as the boy start (bedroom,
+  pre-naming), so the two are interchangeable openings rather than different
+  amounts of progress. The `boy` entry points at `configs/saves/pokebench-v1` —
+  the same directory the benchmark scores from, **not a copy**, so the casual and
+  scored starts cannot drift apart.
+- **CLI**: `--start LABEL` on a casual `pokemon queue add`, and
+  `pokemon ls starts`. Validated at enqueue against that item's ROM, so a typo or
+  a cross-game label is a 400 naming the valid ones.
+- **UI**: a **Start as** picker in the new-run dialog, shown only when the
+  selected game offers more than one opening. Backed by new `GET /api/starts`.
+- **`config.json` records `_start_label` / `_start_path`**, and the recording
+  filename gains an `as-girl` segment.
+- **Recorder trims** (`src/dashboard/recorder.py`): `SETTLE_TAIL_S` 0.9 → **0.0**
+  and a new `LEAD_TRIM_S = 0.5`. Together they took 18% off a real 8-turn
+  `opus-5(high)` run and 12% off a 13-turn `gpt-5.6-sol(high)` one.
+
+### Why
+Two runs filmed for a comparison video look identical on screen, so the footage
+needs an at-a-glance tell that is not a caption. Encoding a second character as a
+second ROM entry would have been wrong — same cartridge, same sha1, same game
+code, same ladder eligibility — hence a registry of its own.
+
+The trims are for footage headed into an **editor** rather than posted unedited: a
+tail that holds the payoff frame is worth 0.9s per turn only when nobody
+downstream can hold a frame themselves.
+
+### Notes
+- **Nothing changes unless `--start` is passed.** `default: true` decides only
+  which option the pickers preselect; the executor's no-label path is byte-for-
+  byte the old behaviour. A first draft resolved the default through the registry
+  and would have shadowed the constructor-injected `canonical_save` that tests
+  substitute a fixture through.
+- **A continue ignores `--start`** — it resumes its source run's savepoint.
+- **Official runs never see any of this.** A benchmark begins at
+  `executor.CANONICAL_SAVE` or two scores are not comparable.
+- `LEAD_TRIM_S` is deliberately 0.5 against a measured minimum lead of 0.61s
+  (21 turns, two models). The ~2.1s of stillness *confirmation* before
+  `screen_settled` is **not** trimmed: closing at `screen_settling` would cut a
+  headline 38% but amputated 4.1s of real movement from the busiest turn measured,
+  whose screen was still changing 4.6s after settling began.
+- Suite 566 → **598 pass / 8 pre-existing fail**. `tests/test_starts.py` (32) plus
+  4 recorder tests; 8 mutation controls across the two features, each biting its
+  intended test.
+
 ## 2026-08-02 — A downloaded recording is named after the run's settings
 
 ### What

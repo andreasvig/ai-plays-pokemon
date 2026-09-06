@@ -23,9 +23,15 @@ from pathlib import Path
 import pytest
 
 from src.dashboard.recorder import (
+    SCREENCAST_FORMAT,
+    SCREENCAST_QUALITY,
     SETTLE_TAIL_S,
     VIEWPORTS,
     RecordGate,
+    RunRecorder,
+    _PreRollBuffer,
+    _TailFrameBuffer,
+    _VisualActivity,
     normalize_spec,
     record_url,
 )
@@ -119,19 +125,65 @@ def test_cut_thinking_starts_shut():
 
 
 def test_cut_thinking_records_the_execution_window():
-    g = RecordGate("cut-thinking")
+    # lead_s=0 — this test is about the window's BOUNDS, not the lead trim.
+    g = RecordGate("cut-thinking", lead_s=0.0)
     g.on_event("turn_start", 0.0)
     assert not g.is_open(3.0)          # 3s of model latency: not in the video
     g.on_event("llm_output", 4.0)      # answered — the turn starts executing
     assert g.is_open(4.0)
     assert g.is_open(5.5)              # buttons pressing, screen moving
     g.on_event("screen_settled", 6.0)
-    assert g.is_open(6.0 + SETTLE_TAIL_S / 2), "the settled screen is the payoff frame"
     assert not g.is_open(6.0 + SETTLE_TAIL_S + 0.01)
 
 
+def test_lead_trim_drops_the_static_head_of_the_window():
+    """`llm_output` precedes the first button press by ~0.65s of unchanged
+    screen, so sampling starts late. Explicit value: retuning LEAD_TRIM_S must
+    not be a test failure."""
+    g = RecordGate("cut-thinking", lead_s=0.5, tail_s=0.0)
+    g.on_event("llm_output", 4.0)
+    assert not g.is_open(4.0), "the model has answered but nothing has moved yet"
+    assert not g.is_open(4.49)
+    assert g.is_open(4.51), "sampling starts once the lead has elapsed"
+    g.on_event("screen_settled", 6.0)
+    assert not g.is_open(6.01)
+
+
+def test_lead_trim_does_not_extend_the_runaway_guard():
+    """max_open_s is measured from `llm_output`, not from where sampling starts —
+    otherwise a lead trim would silently buy a stuck turn extra open time."""
+    g = RecordGate("cut-thinking", lead_s=0.5, max_open_s=10.0)
+    g.on_event("llm_output", 0.0)
+    assert g.is_open(9.0)
+    assert not g.is_open(10.5)
+
+
+def test_a_turn_shorter_than_the_lead_records_nothing_and_shuts():
+    """Degenerate case: settle lands inside the lead window. The turn contributes
+    no frames and the gate ends up closed. (Does NOT discriminate the order of
+    the lead check against the close branches — verified by mutation; that
+    ordering has no observable effect.)"""
+    g = RecordGate("cut-thinking", lead_s=0.5, tail_s=0.0)
+    g.on_event("llm_output", 1.0)
+    g.on_event("screen_settled", 1.2)
+    assert not g.is_open(1.3)
+    assert not g.is_open(2.0)
+    assert not g.is_open(100.0)
+
+
+def test_settle_tail_holds_the_gate_open_when_configured():
+    """The tail is a tunable (0.0 in production since 2026-08-03, because clips
+    are cut in an editor). Pin the MECHANISM with an explicit value, so retuning
+    the default is never a test failure."""
+    g = RecordGate("cut-thinking", tail_s=0.9)
+    g.on_event("llm_output", 4.0)
+    g.on_event("screen_settled", 6.0)
+    assert g.is_open(6.45), "a configured tail holds the settled screen"
+    assert not g.is_open(6.91)
+
+
 def test_cut_thinking_reopens_every_turn():
-    g = RecordGate("cut-thinking")
+    g = RecordGate("cut-thinking", lead_s=0.0)   # about reopening, not the lead
     for turn in range(3):
         base = turn * 20.0
         g.on_event("turn_start", base)
@@ -146,7 +198,7 @@ def test_a_turn_that_never_settles_does_not_leak_into_the_next_think():
     """If screen_settled is lost (an error mid-turn), the next turn_start shuts
     the gate — otherwise the whole of the next model call lands in the video,
     which is precisely what cut-thinking exists to remove."""
-    g = RecordGate("cut-thinking")
+    g = RecordGate("cut-thinking", lead_s=0.0)   # about the leak guard, not the lead
     g.on_event("llm_output", 1.0)
     assert g.is_open(1.0)
     g.on_event("turn_start", 9.0)      # next turn began; no settle ever came
@@ -169,6 +221,134 @@ def test_button_sequence_does_not_open_the_gate():
     g.on_event("turn_start", 0.0)
     g.on_event("button_sequence", 1.0)
     assert not g.is_open(1.0)
+
+
+def test_screen_settling_enters_tail_before_screen_settled_closes():
+    """The post-input window is uncertain, not immediately dead: delayed game
+    animation must have a chance to prove itself before final quiet is cut."""
+    g = RecordGate("cut-thinking", lead_s=0.0, tail_s=0.0)
+    g.on_event("llm_output", 1.0)
+    assert g.state(1.0) == "open"
+    g.on_event("screen_settling", 3.0)
+    assert g.state(3.0) == "tail"
+    g.on_event("screen_settled", 6.0)
+    assert g.state(6.01) == "closed"
+
+
+def test_visual_activity_recognises_novel_frames_but_not_idle_cycles():
+    """Returning to a frame already seen is a cyclic idle animation, not a new
+    movement. A genuinely different screen advances the generation exactly once."""
+    import io
+
+    from PIL import Image
+
+    def png(value):
+        out = io.BytesIO()
+        Image.new("L", (120, 80), value).save(out, format="PNG")
+        return out.getvalue()
+
+    activity = _VisualActivity(similarity=0.999, max_seen=8)
+    activity.reset()
+    activity.ingest(png(255))
+    assert activity.generation == 0       # baseline
+    activity.ingest(png(255))
+    assert activity.generation == 0       # exact repeat
+    activity.ingest(png(0))
+    assert activity.generation == 1       # novel screen
+    activity.ingest(png(255))
+    assert activity.generation == 1       # known cycle frame
+
+
+def test_visual_activity_seeds_from_latest_pre_settle_frame():
+    """A static screen may publish nothing between screen_settling and its
+    first delayed movement. That first changed frame must not become baseline."""
+    import io
+
+    from PIL import Image
+
+    def png(value):
+        out = io.BytesIO()
+        Image.new("L", (120, 80), value).save(out, format="PNG")
+        return out.getvalue()
+
+    activity = _VisualActivity(similarity=0.999, max_seen=8)
+    activity.ingest(png(255))              # observed while detector is disabled
+    activity.reset()                       # screen_settling
+    activity.ingest(png(0))                # first and only delayed movement frame
+    assert activity.generation == 1
+
+
+def test_tail_buffer_preserves_delayed_activity_but_drops_final_quiet():
+    """A pause followed by activity belongs to the story and is flushed; only
+    the last quiet confirmation window is reduced to the configured tiny hold."""
+    b = _TailFrameBuffer(fps=10, generation=0, now=0.0)
+    # Initial grace is committed immediately.
+    assert b.push(b"a", 0, 0.05) == [b"a"]
+    # A quiet pause is held back.
+    assert b.push(b"b", 0, 0.30) == []
+    assert b.push(b"c", 0, 0.40) == []
+    # Delayed movement proves the pause was interstitial: preserve all of it.
+    assert b.push(b"d", 1, 0.50) == [b"b", b"c", b"d"]
+    # Final quiet is cut down to a tiny payoff hold (ceil(10 * 0.12) = 2).
+    assert b.push(b"e", 1, 1.00) == []
+    assert b.push(b"f", 1, 1.10) == []
+    assert b.push(b"g", 1, 1.20) == []
+    assert b.finish() == [b"f", b"g"]
+
+
+def test_pre_roll_keeps_exactly_half_a_second_before_each_open():
+    b = _PreRollBuffer(fps=10, seconds=0.5)
+    for n in range(8):
+        b.push(bytes([n]))
+    assert b.flush() == [bytes([n]) for n in range(3, 8)]
+    assert b.flush() == []
+
+
+def test_encoder_uses_full_quality_fast_capture_and_high_quality_delivery(tmp_path: Path):
+    """Chrome's PNG screencast is too slow for motion. Full-quality JPEG keeps
+    its fast path without returning to the visibly damaged old quality-82 feed."""
+    rec = RunRecorder(
+        run_id="r", run_dir=tmp_path, port=1,
+        spec={"view": "simple", "speed": "realtime", "fps": 30},
+    )
+    args = rec._ffmpeg_args()
+    assert SCREENCAST_FORMAT == "jpeg"
+    assert SCREENCAST_QUALITY == 100
+    assert args[args.index("-vcodec") + 1] == "mjpeg"
+    assert args[args.index("-crf") + 1] == "14"
+    assert args[args.index("-tune") + 1] == "animation"
+
+    # Once the simple-view game rectangle is known, composition is handed to
+    # ffmpeg losslessly as RGB instead of JPEG-compressing the result again.
+    rec._screen_rect = (42, 37, 997, 664)
+    composed = rec._ffmpeg_args()
+    assert composed[composed.index("-f") + 1] == "rawvideo"
+    assert composed[composed.index("-pix_fmt") + 1] == "rgb24"
+
+
+def test_simple_compositor_replaces_browser_game_region_losslessly(tmp_path: Path):
+    import io
+
+    import numpy as np
+    from PIL import Image
+
+    def encoded(im, fmt):
+        out = io.BytesIO()
+        im.save(out, format=fmt, quality=100)
+        return out.getvalue()
+
+    rec = RunRecorder(
+        run_id="r", run_dir=tmp_path, port=1,
+        spec={"view": "simple", "speed": "realtime", "fps": 30},
+    )
+    rec._screen_rect = (42, 37, 20, 16)
+    browser = encoded(Image.new("RGB", (1080, 1080), "black"), "JPEG")
+    game = encoded(Image.new("RGB", (240, 160), "white"), "PNG")
+    frame = rec._compose_frame(browser, game)
+    assert frame is not None
+    rgb = np.frombuffer(frame, dtype=np.uint8).reshape(1080, 1080, 3)
+    assert np.all(rgb[37:53, 42:62] == 255)
+    assert np.all(rgb[0:20, 0:20] == 0)
 
 
 # ───────────────────────── 3. wiring ─────────────────────────

@@ -103,6 +103,24 @@ def _game(config: dict) -> Optional[str]:
     return None
 
 
+def _start_segment(config: dict) -> Optional[str]:
+    """Which opening the run played from — ``as-girl`` / ``as-boy``.
+
+    Read off ``_start_label``, the informational key the executor stamps (see
+    ``RunExecutor._stamp_start``). Absent on every run recorded before
+    2026-08-03, and on any run whose snapshot is not a registered start, so the
+    segment simply drops — the same "absent parts vanish" rule the rest of the
+    stem follows.
+
+    Prefixed ``as-`` rather than emitted bare so ``girl`` can never be misread as
+    a model name or a config stem when scanning a filename.
+    """
+    label = config.get("_start_label")
+    if not isinstance(label, str) or not label:
+        return None
+    return f"as-{_slug(label)}"
+
+
 def _kind_segment(summary: dict, config: dict) -> Optional[str]:
     """``casual-exploration`` / ``casual-speed`` / ``official-pokebench-easy``.
 
@@ -191,6 +209,7 @@ def recording_stem(run_dir: Path | str, *, run_id: Optional[str] = None) -> str:
     parts: list[Optional[str]] = [
         _timestamp(run_dir.name, session.get("started_at")),
         _game(config),
+        _start_segment(config),
         _kind_segment(summary, config),
         _slug(Path(config["_config_path"]).stem) if config.get("_config_path") else None,
         _model_slug(summary, config),

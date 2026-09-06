@@ -44,6 +44,7 @@
   let benchmarks = $state([])      // benchmark registry [{id,name,goal,...}]
   let checkpoints = $state([])     // full ladder [{id,name,type}] — casual "Stop at"
   let roms = $state([])            // game registry [{id,name,benchmark_ok,on_disk}]
+  let starts = $state([])          // choosable openings [{rom,label,name,default,exists}]
   let benchmark = $state('')       // selected benchmark id (scopes the leaderboard)
 
   // spectate pill is green when the emulator is up AND a run is active
@@ -118,14 +119,15 @@
   }
   async function loadEmulator() { emulator = await api.fetchEmulatorStatus() }
   async function loadCatalog() {
-    const [m, c, b, k, r] = await Promise.all([
+    const [m, c, b, k, r, s] = await Promise.all([
       api.fetchModels().catch(() => []),
       api.fetchConfigs().catch(() => []),
       api.fetchBenchmarks().catch(() => []),
       api.fetchCheckpoints().catch(() => []),
       api.fetchRoms().catch(() => []),
+      api.fetchStarts().catch(() => []),
     ])
-    models = m; configs = c; benchmarks = b; checkpoints = k; roms = r
+    models = m; configs = c; benchmarks = b; checkpoints = k; roms = r; starts = s
     // Default the leaderboard filter to the registry-default benchmark (or the
     // first) once, without clobbering a selection the user already made.
     if (!benchmark && b.length) benchmark = (b.find((x) => x.default) ?? b[0]).id
@@ -286,7 +288,7 @@
   {/if}
 </main>
 
-<AddRunDialog open={dialogOpen} continueFrom={dialogContinueFrom} {models} {configs} {benchmarks} {checkpoints} {roms}
+<AddRunDialog open={dialogOpen} continueFrom={dialogContinueFrom} {models} {configs} {benchmarks} {checkpoints} {roms} {starts}
   onclose={() => { dialogOpen = false; dialogContinueFrom = null }} onsubmit={submitRun} />
 
 <style>

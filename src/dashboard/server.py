@@ -33,7 +33,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from src.app.recording_name import recording_filename
-from src.app.trace_build import build_run_trace
+from src.app.trace_build import TRACE_VERSION, build_run_trace
 from src.dashboard.event_bridge import EventBridge
 from src.dashboard.screen_stream import ScreenStreamer
 
@@ -422,7 +422,10 @@ async def ws_screen(websocket: WebSocket, run_id: str):
             if frame is not None and frame is not last_frame:
                 await websocket.send_bytes(frame)
                 last_frame = frame
-            await asyncio.sleep(0.033)
+            # The source changes at 30fps. Sampling it at exactly the same
+            # cadence can repeatedly land either side of a write and skip
+            # frames, so inspect often enough to forward every new PNG.
+            await asyncio.sleep(0.008)
     except WebSocketDisconnect:
         pass
     except Exception:
@@ -786,6 +789,49 @@ def _validate_gameplay(raw: Any) -> str | None:
     return raw.lower()
 
 
+def _validate_start(raw: Any, rom: str | None) -> str | None:
+    """Return a known start label for ``rom``, or None (= that ROM's default).
+
+    Scoped to the ROM, because a label is only unique within one: ``girl`` means
+    nothing on Emerald. Validated here rather than at dispatch for the usual
+    reason — a typo that fell back to the default would produce a run that looks
+    right in the queue and opens as the wrong character, which you would only
+    notice by watching the footage.
+
+    Also refuses a registry entry whose savepoint dir is incomplete. A start is
+    three files (emulator.state + state.json + tasks.json); a half-synced one
+    fails deep inside dispatch, long after the enqueue that could have caught it.
+    """
+    from src.app.roms import default_rom
+    from src.app.starts import get_start, starts_for_rom
+
+    if raw is None or raw == "":
+        return None
+    if not isinstance(raw, str):
+        raise HTTPException(
+            status_code=400, detail=f"start must be a string, got {raw!r}"
+        )
+    rom_id = rom or default_rom().id
+    try:
+        start = get_start(rom_id, raw)
+    except KeyError:
+        known = ", ".join(s.label for s in starts_for_rom(rom_id)) or "(none)"
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown start {raw!r} for rom {rom_id!r}; known: {known}",
+        )
+    if not start.exists():
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"start {raw!r} is registered but its savepoint is missing or "
+                f"incomplete at {start.path!r} (needs emulator.state, state.json, "
+                f"tasks.json)"
+            ),
+        )
+    return start.label
+
+
 def _validate_rom(rom: Any) -> str | None:
     """Return a known ROM id, or None (→ the registry default). 400 otherwise.
 
@@ -941,6 +987,9 @@ def _enqueue_kwargs(spec: dict) -> dict:
         "max_spend_usd": _validate_max_spend(spec.get("max_spend_usd")),
         "gameplay": _validate_gameplay(spec.get("gameplay")),
         "rom": rom_id,
+        # Validated against `rom_id`, which is resolved just above — a label is
+        # only meaningful inside one ROM.
+        "start": _validate_start(spec.get("start"), rom_id),
         "continue_from": spec.get("continue_from"),
         "record": record,
     }
@@ -1276,6 +1325,30 @@ async def api_roms():
     return JSONResponse(roms)
 
 
+@app.get("/api/starts")
+async def api_starts():
+    """The start-state registry — ``[{rom, label, name, description, default,
+    exists}, ...]``.
+
+    Backs the new-run dialog's opening picker (boy / girl on FireRed). Returned
+    flat with a ``rom`` on every row rather than grouped, so the dialog filters
+    client-side off whatever game is currently selected and needs no second
+    request when you change the ROM.
+
+    A ROM with no rows offers no choice, and the dialog hides the control rather
+    than showing a picker with one option. ``exists`` is false when the savepoint
+    dir is missing or incomplete — the picker should disable that option, since
+    enqueuing it would 400.
+    """
+    from src.app.starts import load_starts
+
+    try:
+        starts = load_starts()
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=500, detail=f"start registry: {exc}")
+    return JSONResponse([s.to_dict() for s in starts])
+
+
 @app.get("/api/checkpoints")
 async def api_checkpoints():
     """Story events a casual run can stop at — ``[{id, name, type}, ...]``.
@@ -1383,7 +1456,9 @@ async def api_run_trace(run_id: str):
     ):
         try:
             with open(cache) as f:
-                return JSONResponse(json.load(f))
+                cached_trace = json.load(f)
+            if cached_trace.get("trace_version") == TRACE_VERSION:
+                return JSONResponse(cached_trace)
         except Exception:
             pass  # corrupt/partial cache → fall through and rebuild
 

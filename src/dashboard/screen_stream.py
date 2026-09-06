@@ -9,7 +9,7 @@ from typing import Optional
 class ScreenStreamer:
     """Polls a PNG file written by Lua and serves it via WebSocket.
 
-    The Lua script in mGBA auto-captures to /tmp/mgba_stream.png every few frames.
+    The Lua script in mGBA auto-captures to /tmp/mgba_stream.png at 30fps.
     This thread watches the file for changes and reads the raw bytes directly —
     no decode/re-encode needed since Lua already writes PNG.
     """
@@ -58,4 +58,7 @@ class ScreenStreamer:
                 pass  # File not yet created or being written
             except Exception:
                 pass  # Skip corrupt reads
-            time.sleep(0.033)  # ~30Hz poll rate (captures at 15fps from Lua)
+            # Poll substantially faster than the 30fps writer. Polling at the
+            # exact same 33ms cadence can phase-lock badly and miss every other
+            # short-lived file version, recreating a 15fps feed by accident.
+            time.sleep(0.008)

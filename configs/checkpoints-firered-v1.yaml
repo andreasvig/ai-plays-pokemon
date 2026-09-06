@@ -69,10 +69,10 @@ checkpoints:
     signature: {map_group: 3, map_num: 1}
     deadline_turn: 200                            # Route 1 traversal + encounters
 
-  - id: parcel_delivered
-    name: "Delivered Oak's Parcel"
+  - id: parcel_delivered                       # legacy ID retained for saved-run compatibility
+    name: "Received Oak's Parcel"
     type: var
-    signature: {var_id: 0x4057, min_value: 2}     # VAR_MAP_SCENE_VIRIDIAN_CITY_MART
+    signature: {var_id: 0x4057, min_value: 1}     # Mart pickup scene; 2 is after the Pokédex scene
     deadline_turn: 250
 
   - id: pokedex_received
