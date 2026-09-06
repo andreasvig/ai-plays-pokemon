@@ -270,3 +270,16 @@ discounted*, *priced but no hits*, or *$ saved*. Across today's endpoints (`arti
 - Everyone else saves money: Anthropic ($0.43 Opus, $0.74 Fable on one run), Kimi $0.18, Grok $0.11, DeepSeek/GLM/DeepInfra small.
 
 Verification run for the two fixes: `local/ten-turn-samples-cache-fix/` (Gemini + Qwen, 10 turns each). Numbers below.
+
+### Cache-fix verification (10 turns each, same save and protocol; `cache-fix/results.md`)
+
+| Model | Cache before → after | Prompt spend before → after | Total run cost before → after | Compactions before → after | Progress |
+|---|---|---|---|---|---|
+| gemini-3.8-flash (system marker) | 0% → 14.6% | $0.068 → $0.062 | $0.127 → $0.126 | 1 (schedule) → 1 (schedule) | Chose a starter both times |
+| qwen3.8-flash (implicit, no markers) | 10.6% → 70.5% | $0.020 → $0.008 | $0.047 → $0.026 | 4 (context_threshold) → 1 (schedule) | Oak's Lab → outside in Pallet Town |
+
+- Qwen: prompt spend down 59%, total down 44%, and the compaction schedule now behaves (the token-estimate fix, finding 4,
+  confirmed live). One new retry: reasoning hit the 8,192 output-token cap on turn 3 (`finish_reason: length`); second attempt
+  succeeded. Worth watching in longer runs; Qwen's thinking can exceed the gameplay output budget.
+- Gemini: only the ~1.3k-token system block is cacheable through OpenRouter, so the saving is ~9% of prompt spend and <1% of
+  total (Gemini's cost is mostly output). Moving more stable content into the system block is the only lever left there.
