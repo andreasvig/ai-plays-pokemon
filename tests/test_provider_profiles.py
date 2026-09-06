@@ -56,7 +56,8 @@ def test_profile_roundtrip_and_fresh_segment(model, variant, tmp_path):
     # Tool definitions AND tool choice remain stable during the handover request.
     for key in ("tools", "tool_choice", "response_format"):
         assert all(r.get(key) == provider.requests[0].get(key) for r in provider.requests)
-    previous = [m for m in provider.requests[1]["messages"] if m["role"] == "assistant"][0]
+    # The model's own reply (a split-turn profile also carries a synthetic "Observed." assistant message).
+    previous = [m for m in provider.requests[1]["messages"] if m["role"] == "assistant" and m.get("content") != "Observed."][0]
     if profile["reasoning_replay"] == "omit_prior":
         assert "reasoning_details" not in previous
         assert any(m.get("reasoning_details") for m in agent.state["messages"])

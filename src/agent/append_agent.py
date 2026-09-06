@@ -463,9 +463,30 @@ class AppendAgent:
         self.state["messages"] = [{"role": "system", "content": self.system}, {"role": "user", "content": text}]
 
     def _observation(self, turn, ocr, image):
-        return {"role": "user", "content": [
+        """Messages that deliver one observation (a list; one message unless the profile splits the turn).
+
+        With `final_turn_text_only` the screenshot turn is closed by a one-word assistant
+        acknowledgement, and `_action_prompt` supplies a text-only user message to end the
+        request. OpenAI via OpenRouter cannot extend the prompt cache past the first image
+        when the request's final turn contains an image (probe 2026-09-06: 25 live turns
+        cached 1,192 tokens each; this shape cached the whole previous request).
+        """
+        observation = {"role": "user", "content": [
             {"type": "text", "text": fill_prompt(self.config["user_prompt"], turn_number=turn, ocr_text=ocr or "(none)")},
             {"type": "image_url", "image_url": {"url": image}}]}
+        if not self._splits_turn():
+            return [observation]
+        return [observation, {"role": "assistant", "content": "Observed."}]
+
+    def _splits_turn(self):
+        return bool(self.profile and self.profile.get("final_turn_text_only"))
+
+    def _action_prompt(self, turn):
+        """Text-only final user message for gameplay requests on split-turn profiles."""
+        if not self._splits_turn():
+            return []
+        text = self.config.get("action_prompt") or "Turn {{turn_number}}: respond with your next action now."
+        return [{"role": "user", "content": fill_prompt(text, turn_number=turn)}]
 
     async def play(self, turn, ocr, image, initial_memory=None):
         if turn != self.state["completed_turn"] + 1:
@@ -492,14 +513,14 @@ class AppendAgent:
         if self.budget_exhausted():
             raise SpendLimitReached("Spend budget reached before next gameplay request")
         if self.state["observation_turn"] != turn:
-            self.state["messages"].append(observation)
+            self.state["messages"].extend(observation + self._action_prompt(turn))
             self.state["observation_turn"] = turn
         output, messages = await self._request("gameplay", turn, deepcopy(self.state["messages"]))
         self.pending = (output, messages)
         return PlayAction.model_validate(output)
 
     async def compact(self, turn, observation, reason):
-        messages = deepcopy(self.state["messages"]) + [observation,
+        messages = deepcopy(self.state["messages"]) + observation + [
             {"role": "user", "content": fill_prompt(self.options["prompt"],
                 summary_target_tokens=self.options["summary_target_tokens"], after_turn=turn - 1)}]
         self.emit("compaction_start", {"turn": turn, "after_turn": turn - 1, "segment": self.state["segment"], "reason": reason})
@@ -512,7 +533,7 @@ class AppendAgent:
         if not self.profile:
             self.state["last_provider"] = None
         self._start()
-        self.state["messages"].append(observation)
+        self.state["messages"].extend(observation + self._action_prompt(turn))
         self.state["observation_turn"] = turn
         self._commit()
         self.emit("compaction_complete", {"turn": turn, "after_turn": turn - 1,

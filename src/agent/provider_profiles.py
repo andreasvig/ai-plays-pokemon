@@ -99,6 +99,8 @@ def resolve_provider_profile(config):
         raise ValueError("Invalid provider profile cache_mode")
     if profile["memory_encoding"] not in ("object", "json_string"):
         raise ValueError("Invalid provider profile memory_encoding")
+    if not isinstance(profile.get("final_turn_text_only", False), bool):
+        raise ValueError("Provider profile final_turn_text_only must be true or false")
     if not isinstance(profile["endpoint"], str) or not profile["endpoint"]:
         raise ValueError("Provider profile requires one endpoint")
     for key in ("context_length", "max_completion_tokens"):

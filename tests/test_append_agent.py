@@ -500,3 +500,45 @@ def test_cache_economics_verdicts():
     saving = cache_economics([attempt(1000, 500, 5e-6, 5e-7)])
     assert saving["verdict"] == "saving" and abs(saving["saved_usd"] - 500 * 4.5e-6 / 1e6 * 1e6 / 1e6) < 1e-9 or saving["saved_usd"] > 0
     assert cache_economics([])["verdict"] == "unknown"
+
+
+def test_final_turn_text_only_closes_the_screenshot_turn(tmp_path):
+    """OpenAI via OpenRouter cannot extend the prompt cache past the first image when the request's
+    final turn contains one (2026-09-06). The Astra profile splits the turn: screenshot, assistant
+    acknowledgement, text-only action prompt. Compaction requests keep the acknowledgement and end
+    with the compaction prompt. The default profile keeps the screenshot as the final message."""
+    cfg = load_config(str(ROOT / "configs/config-append.yaml"), llm_alias="openai/gpt-6-astra")
+    cfg["compaction"]["every_n_turns"] = 2
+    cfg["transport"]["max_retries"] = 0
+    cfg["compaction"]["max_retries"] = 0
+    assert cfg["_provider_profile"]["final_turn_text_only"] is True
+    agent, provider, events = engine(cfg, tmp_path)
+    async def run():
+        await agent.play(1, "first screen", IMAGE)
+        agent.commit_action(1)
+        await agent.play(2, "second screen", IMAGE)
+        agent.commit_action(2)
+        await agent.play(3, "third screen", IMAGE)  # compaction is due after two turns
+    asyncio.run(run())
+    first = provider.requests[0]["messages"]
+    assert first[-1] == {"role": "user", "content": "Turn 1: respond with your next action now."}
+    assert first[-2] == {"role": "assistant", "content": "Observed."}
+    assert first[-3]["role"] == "user" and first[-3]["content"][1]["type"] == "image_url"
+    second = provider.requests[1]["messages"]
+    assert second[-1]["content"] == "Turn 2: respond with your next action now."
+    # ... action prompt 1, the model's call, its tool result, screenshot 2, acknowledgement, action prompt 2
+    assert [m["role"] for m in second[-6:]] == ["user", "assistant", "tool", "user", "assistant", "user"]
+    assert second[:len(first)] == first  # the retained conversation is a strict prefix: the split messages are kept
+    compaction = provider.requests[2]["messages"]
+    assert compaction[-1]["content"].startswith("Pause gameplay")
+    assert compaction[-2] == {"role": "assistant", "content": "Observed."}
+    assert compaction[-3]["content"][1]["type"] == "image_url"
+    after = provider.requests[3]["messages"]  # first gameplay request of the new segment
+    assert after[-1]["content"] == "Turn 3: respond with your next action now."
+    assert any(e["type"] == "compaction_complete" for e in events)
+    # Control: the default profile ends the request with the screenshot itself.
+    control_cfg = load_config(str(ROOT / "configs/config-append.yaml"), llm_alias="openai/test-model")
+    control_cfg["transport"]["max_retries"] = 0
+    control, control_provider, _ = engine(control_cfg, tmp_path / "control")
+    asyncio.run(control.play(1, "first screen", IMAGE))
+    assert control_provider.requests[0]["messages"][-1]["content"][1]["type"] == "image_url"
