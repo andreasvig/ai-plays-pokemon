@@ -211,3 +211,36 @@ without the prior turn's reasoning (seven field variants, two padded), billed pr
 ### Gemma endpoint mini-campaign (launched ~13:30)
 `local/ten-turn-samples-gemma-endpoints/`: guidance and replay on CoreWeave fp4, guidance on Novita bf16, guidance on
 DeepInfra turbo again, each ×2 (`--repeat 2`). Same save, same 10-turn protocol. Results appended below when done.
+
+### Gemma endpoint mini-campaign — results (ended ~14:15, 8 runs, $0.043 total, zero request errors)
+
+| Arm | Endpoint (quant) | Rep | Furthest checkpoint | Replay billed in-game (corr) | Cache | Latency med/max s | Reasoning tok/turn | Buttons/turn |
+|---|---|---:|---|---:|---:|---|---:|---:|
+| guidance | deepinfra/turbo | 1 | **Outside in Pallet Town (t8)** | n/a (0.35) | 55% | 6 / 18 | 182 | 4.5 |
+| guidance | deepinfra/turbo | 2 | none | n/a (0.82) | 5% | 32 / 114 | 361 | 3.0 |
+| guidance | coreweave/fp4 | 1 | none | n/a (0.69) | 50% | 12 / 46 | 254 | 2.5 |
+| guidance | coreweave/fp4 | 2 | **Left the bedroom (t5)** | n/a (0.55) | 44% | 4 / 24 | 212 | 3.9 |
+| replay | coreweave/fp4 | 1 | none | **yes (0.99)** | 55% | 5 / 63 | 199 | 2.3 |
+| replay | coreweave/fp4 | 2 | none | **yes (0.98)** | 70% | 6 / 15 | 264 | 2.5 |
+| guidance | novita/bf16 | 1 | none | n/a (0.51) | 0% | 9 / 16 | 353 | 3.0 |
+| guidance | novita/bf16 | 2 | none | n/a (0.33) | 0% | 11 / 184 | 331 | 3.2 |
+
+Per-run detail and trace links: `gemma-endpoints/results.md` (repeats kept apart as `#r1`/`#r2`).
+
+What this says, with the honest caveat that every arm is n=2:
+- **Gemma's staircase failure is stochastic, not deterministic.** Across all 10 Gemma runs today (2 original + 8 here), 2 left
+  the bedroom and 1 left the house. Temperature 0.3 gives different first moves each run; the ones that happened to approach
+  the stairs from the mat side got out, the rest nudged into the banister or the stair feet for the remaining turns.
+- **Replay reached the model this time and did not help.** On CoreWeave, prompt growth tracked prior reasoning 1:1 (corr 0.98–0.99),
+  so the replay arm was real. It went 0/2; guidance on the same endpoint went 1/2. No evidence that seeing its own earlier
+  thoughts improves Gemma's navigation; the anchoring pattern from the first campaign (repeat the same failed move) appeared again.
+- **Quantization did not rescue it.** bf16 on Novita went 0/2 with the same behaviour as fp4 and "turbo". Whatever the
+  endpoint accuracy differences are, they are not what is blocking Gemma here. Novita also reports 0% cache on every request.
+- **Gemma sends 2–4 buttons per turn** against Gemini's 10–15. Its plans are one or two tiles at a time, and it revises the
+  hypothesis about where the warp tile is almost every turn. That, not format or continuity, is the model-level limitation.
+- **Endpoint quality differences are about speed and cache, not gameplay.** CoreWeave fp4 was the fastest (median 4–12 s)
+  and cached 44–70%; DeepInfra turbo swung from 6 s to 32 s medians between two runs with a 114 s spike; Novita bf16 had a 184 s
+  spike and no caching. All at $0.004–0.006 per 10 turns.
+- The in-game "replay billed" correlation is only decisive when it is near 1.0. Guidance arms show 0.3–0.8 because the
+  visible `reasoning` field in the action JSON grows with thinking length; the summarizer should flag only corr ≥ 0.95 as
+  consumed and treat the rest as not consumed.

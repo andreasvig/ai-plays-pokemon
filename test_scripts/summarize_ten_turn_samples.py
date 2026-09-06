@@ -34,7 +34,7 @@ def summarize(manifests, output):
             turn8 = [e for e in usage if e.get("turn") == 8 and e.get("phase") == "gameplay"]
             gates = summary.get("referee", {}).get("gates", [])
             reached = [{k:g.get(k) for k in ("id", "name", "turn")} for g in gates if g.get("status") in ("done", "auto")]
-            row = {"model": item["model"], "profile": item.get("profile"), "status": item["status"],
+            row = {"model": item["model"], "profile": item.get("profile"), "repeat": item.get("repeat"), "status": item["status"],
                    "run_dir": str(directory), "manifest": str(manifest_path),
                    "settled_turns": settled, "compactions_after": compactions,
                    "process_restart": len(pids) == 2 and len(set(pids)) == 2,
@@ -54,7 +54,10 @@ def summarize(manifests, output):
             rows.append(row)
     latest = {}
     for row in rows:
-        latest[row["profile"] or row["model"]] = row
+        label = row["profile"] or row["model"]
+        if row.get("repeat") and any(r is not row and (r["profile"] or r["model"]) == label for r in rows):
+            label = f"{label} #r{row['repeat']}"
+        latest[label] = row
     result = {"all_attempts": rows, "latest": latest,
               "total_reported_cost_usd": sum(r["cost_usd"] or 0 for r in rows)}
     output = Path(output)
