@@ -1,6 +1,6 @@
 # Ten-turn real-gameplay samples — live campaign notes
 
-Started 2026-09-06 10:50 by Codex; main queue ended 12:02; continued by Claude Code from ~11:15 after Codex ran out of usage.
+Started 2026-09-06 10:50 by Codex; main queue ended 12:02; Gemma reruns ended 12:14; continued by Claude Code from ~11:15 after Codex ran out of usage.
 Campaign runner: `test_scripts/run_ten_turn_samples.py` (parent PID 92456, one real mGBA emulator, models run sequentially).
 Design: same canonical FireRed bedroom save (`configs/saves/pokebench-v1`, sha256 7512323c…), compaction after turn 5,
 agent-process + emulator restart after turn 7 (resume from savepoint), 10 turns per profile, referee observing (not enforcing),
@@ -13,7 +13,9 @@ Rollup script (run after the campaign): `test_scripts/summarize_ten_turn_samples
 
 | Profile | Turns | Furthest checkpoint (turn) | Cost | Notes |
 |---|---:|---|---:|---|
+| gemma-guidance (rerun, fixed parser) | 10/10 | none | $0.0058 | Fix verified: turn-6 post-handover request, the exact spot that crashed before, parsed cleanly. Zero request errors. Gameplay: 10 turns of 1–4 button nudges around the staircase without ever triggering the warp. Very cheap and fast (3–15 s, one 52 s turn). |
 | gemma-guidance (attempt 1) | 5/10 | none | $0.0042 | Crashed at turn 6: post-handover output was valid action JSON without the `result` wrapper; harness rejected it 3×. Pre-fix. **Rerun pending.** |
+| gemma-replay (rerun, fixed parser) | 10/10 | none | $0.0044 | Zero request errors; handover at t5 took 28 s this time (vs 4+ min in attempt 1). Reasoning replay verified intact every turn (2→10 blocks growing to compaction, reset after). Gameplay: pressed `up` into a wall for turns 2–5 while claiming to be below the stairs, then tried `down`. Never left the bedroom in 10 turns. After the t7 restart, replay stayed intact (4/6/8 blocks at t8–t10). |
 | gemma-replay (attempt 1) | 5/10 | none | $0.0029 | Handover request took ~4+ min, then same missing-wrapper error. Process had loaded the old parser; Codex sent SIGINT to let the queue move on. **Rerun pending.** |
 | google/gemini-3.8-flash | 10/10 | Chose a starter (t9) | $0.1266 | Left bedroom t1, outside t3, Oak's Lab t6, starter t9. Zero request errors. Compaction t5 and restart t7 both clean. |
 | anthropic/claude-opus-5 | 10/10 | Stepped outside in Pallet Town | $0.4992 | 5 turns in the bedroom; left bedroom only at t6. Compaction needed 3 attempts: attempt 1 returned truncated JSON (`Expecting ',' delimiter` at char 4086, cost $0.08 wasted), attempt 2 hit an SSL `bad record mac` transport error, attempt 3 succeeded. Restart at t7 clean. |
@@ -24,6 +26,26 @@ Rollup script (run after the campaign): `test_scripts/summarize_ten_turn_samples
 | x-ai/grok-4.6 | 10/10 | Entered Oak's Lab (t10) | $0.3996 | Systematic wall-sweeps: left bedroom t4, outside t7. Zero request errors; compaction t5 by schedule. Slow and expensive: 14–138 s per turn, 2k–7k reasoning tokens; strong cache hits (up to 22k cached tokens at t5). Second-priciest after the Claudes. |
 | moonshotai/kimi-k3 | 10/10 | Stepped outside in Pallet Town (t6) | $0.1644 | Left bedroom t3, outside t6, then walked north toward Route 1 to trigger Oak's cutscene (the real speedrun route). At t8 it accidentally re-entered the house, then spent t9–t10 blocked by a tree at the town's north edge. Zero request errors; compaction t5 by schedule. Fast (10–30 s) with very little reasoning (0–330 tokens). Mid-priced. |
 | meta/muse-spark-1.3 | excluded | | | OpenRouter account requires age attestation. |
+
+## Final rollup
+
+All 10 accessible profiles completed 10 real turns with a clean t5 compaction and a clean t7 process + emulator restart
+(Qwen's compactions fired on the context-threshold path instead, see finding 4). Combined table with trace links:
+`results.md` in this folder; per-attempt detail incl. the two failed Gemma attempts: `results.json`. Total reported spend
+across every retained attempt: $1.90.
+
+Progress tiers after 10 turns (referee checkpoints, not self-report):
+- Chose a starter: gemini-3.8-flash
+- Entered Oak's Lab: claude-fable-5.1, qwen3.8-flash, grok-4.6
+- Outside in Pallet Town: claude-opus-5, kimi-k3
+- Left the bedroom only: glm-5.3-flash, deepseek-v4-flash-vision-exp
+- Never left the bedroom: gemma-4-31b-it (both profiles)
+
+Guidance vs replay for Gemma: identical outcome (stuck in the bedroom), near-identical cost; replay's only visible
+difference is the 69% vs 17% cache-read fraction and a longer handover. Ten turns cannot separate them on quality.
+
+Gemini reported 0% cached input on Google AI Studio across all requests (implicit caching not surfaced in usage), so its
+cache column is not comparable to the others.
 
 ## Harness findings (kept separate from model quality)
 

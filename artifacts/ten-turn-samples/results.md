@@ -4,8 +4,8 @@ Same canonical FireRed bedroom save, compaction after turn 5, real agent-process
 
 | Model/profile | Settled turns | Restart + continuity | Furthest checkpoint | Cached input | Total cost | Trace |
 |---|---:|---|---|---:|---:|---|
-| gemma-guidance | 5 | Incomplete / inspect | None | 29.1% | $0.0042 | [Open](http://localhost:3420/history/2026-09-06_10-50-06_config-append-sample__google-gemma-4-31b-it__gemma-guidance) |
-| gemma-replay | 5 | Incomplete / inspect | None | 0.0% | $0.0029 | [Open](http://localhost:3420/history/2026-09-06_10-54-05_config-append-sample__google-gemma-4-31b-it__gemma-replay) |
+| gemma-guidance | 10 | Pass | None | 16.7% | $0.0058 | [Open](http://localhost:3420/history/2026-09-06_12-05-32_config-append-sample__google-gemma-4-31b-it__gemma-guidance_continued_from_turn_7) |
+| gemma-replay | 10 | Pass | None | 69.0% | $0.0044 | [Open](http://localhost:3420/history/2026-09-06_12-10-59_config-append-sample__google-gemma-4-31b-it__gemma-replay_continued_from_turn_7) |
 | google/gemini-3.8-flash | 10 | Pass | Chose a starter | 0.0% | $0.1266 | [Open](http://localhost:3420/history/2026-09-06_11-06-45_config-append-sample__google-gemini-3-8-flash_continued_from_turn_7) |
 | anthropic/claude-opus-5 | 10 | Pass | Stepped outside in Pallet Town | 75.1% | $0.4992 | [Open](http://localhost:3420/history/2026-09-06_11-11-35_config-append-sample__anthropic-claude-opus-5_continued_from_turn_7) |
 | anthropic/claude-fable-5.1 | 10 | Pass | Entered Oak's Lab | 71.8% | $0.6219 | [Open](http://localhost:3420/history/2026-09-06_11-15-32_config-append-sample__anthropic-claude-fable-5-1_continued_from_turn_7) |
@@ -19,4 +19,4 @@ Costs include OCR and retries; continuation totals already include the first sev
 
 Local reasoning replay checks show what was sent. They do not establish internal use by the serving provider. Gemma guidance intentionally omits prior raw thoughts; replay preserves them until compaction.
 
-Total reported spend across retained attempts: $1.887513.
+Total reported spend across retained attempts: $1.897737.
