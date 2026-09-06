@@ -44,8 +44,12 @@ Progress tiers after 10 turns (referee checkpoints, not self-report):
 Guidance vs replay for Gemma: identical outcome (stuck in the bedroom), near-identical cost; replay's only visible
 difference is the 69% vs 17% cache-read fraction and a longer handover. Ten turns cannot separate them on quality.
 
-Gemini reported 0% cached input on Google AI Studio across all requests (implicit caching not surfaced in usage), so its
-cache column is not comparable to the others.
+Gemini reported 0% cached input on Google AI Studio across all requests. Pricing confirms it: every request was billed at
+exactly $0.75/M prompt tokens (the endpoint's second pricing tier; the base tier is $0.375/M, cache reads $0.075/M at the
+tier that applied). Zero discount on any request means zero billed cache hits, not merely unreported ones. Method, usable
+for any provider whose usage omits cache counts: `implied_cached = (n × P_full − billed_prompt_cost) / (P_full − P_cache)`,
+after identifying the tier from `billed / n` on the first request. Why implicit caching never hit (stable prefix, 2.4k–14.6k
+tokens, requests seconds apart) is unexplained; worth a direct probe with and without the encrypted thought blocks.
 
 ## Harness findings (kept separate from model quality)
 
@@ -101,6 +105,31 @@ Cache figures are the provider-reported cached-input share summed over all reque
 | gemma-4-31b guidance | implicit (DeepInfra) | 17% | 0% on 9 of 11 requests; 74–88% on t4–t5 only | text | **0 replayed by design**, 2→8 archived locally | Prior raw thoughts removed between turns (Google's guidance). |
 | gemma-4-31b replay | implicit (DeepInfra) | 69% | 82–88% from turn 3 onward, both segments | text | intact, 2→10 blocks | Same provider, same sizes, far better cache hits than the guidance arm. n=1 each; do not attribute yet. |
 
+**Was the replayed reasoning actually consumed?** The usage data can answer what `provider_feedback` cannot. Within a
+segment, prompt growth from one gameplay request to the next should equal a stable per-turn cost (observation + image +
+assistant content) *plus the previous turn's reasoning tokens* if the replayed reasoning is tokenized by the model.
+
+| Profile | corr(prompt growth, prior reasoning) | residual after subtracting reasoning | Verdict |
+|---|---:|---|---|
+| gemini-3.8-flash | 1.00 | 1,242–1,330 (flat) | replayed reasoning billed → reached the model |
+| claude-opus-5 | 0.99 | 1,973–2,079 | billed |
+| claude-fable-5.1 | 0.98 | 1,977–2,110 | billed |
+| qwen3.8-flash | 1.00 | 1,523–1,570 | billed (5.7k reasoning tokens at t1 show up 1:1 at t2) |
+| glm-5.3-flash | 1.00 | 1,961–2,062 | billed |
+| deepseek-v4-flash-vision | 1.00 | 508–591 | billed |
+| grok-4.6 | 1.00 | 1,513–1,581 | billed (encrypted blocks) |
+| kimi-k3 | 0.17 | growth flat at 2,025–2,169 while reasoning varied 85–326 | **not billed → dropped upstream** (moderate confidence; small reasoning) |
+| gemma replay | 0.52 | growth flat at 348–390, identical to the guidance arm, while 81–334 reasoning tokens were sent | **not billed → dropped upstream** (high confidence) |
+| gemma guidance | n/a | growth flat at 352–390 | nothing replayed by design |
+
+Gemma's per-turn growth is ~365 tokens in both arms: a 256-token image plus ~110 tokens of text. At turn 10 the replay arm
+sent 3,330 characters of prior reasoning (~800 tokens) and was billed 3,453 prompt tokens against guidance's 3,383. Either
+OpenRouter strips `reasoning`/`reasoning_details` from assistant history before forwarding to DeepInfra, or DeepInfra's chat
+template does not render them. Which of the two cannot be told from this data. Consequence: for Gemma on DeepInfra the
+guidance/replay comparison is a comparison of identical prompts, and any difference between the arms (cache 69% vs 17%,
+speed) is provider variance, not policy. The profile's `reasoning_use: unverified` for gemma-replay should read
+`not_consumed_by_endpoint`. Same caveat, weaker, for Kimi on Moonshot.
+
 What held everywhere: local replay was `intact` and the history prefix `unchanged` on all 118 successful requests, including
 after every turn-7 restart (turn 8 replayed exactly the blocks archived before the restart). Session ids were stable per run.
 The turn-5 handover reset replay to 0 and the archive kept growing, as designed.
@@ -143,6 +172,14 @@ entry side.
 - Neither run populated `map_notes` in the handover memory, and both handovers were 1–3 sentences. Gemma's handover quality is thin regardless of profile.
 - Cache: replay 69% vs guidance 17% on DeepInfra. Same provider, near-identical request sizes. If it replicates, replay is *cheaper* in practice for Gemma despite sending more tokens, because guidance's history mutation may be defeating prefix caching. Needs 3+ runs per arm to say.
 - Harness: the first attempt of each arm crashed on the same missing `result` envelope after the handover (fixed, now default-on for all providers). The first replay attempt also had a 4-minute handover request; the rerun's took 28 s, so that was provider latency, not the profile.
+
+**Price and speed (answering "how can they cost the same if replay sends more tokens?").** They cost the same because the
+extra tokens were never billed (table above): both arms were charged for ~29.2k prompt tokens over 11 requests. DeepInfra
+does discount cache hits ($0.09/M uncached vs ~$0.055/M effective on requests with 70–88% cached), so the replay arm's
+higher hit rate made its prompt side slightly cheaper; the rest of the $0.0058 vs $0.0044 gap is output tokens (6,469 vs
+5,379). Speed: guidance took 256 s of model time for 11 requests (median ~11 s, spikes of 52, 38 and 86 s at 10–18 tok/s),
+replay 145 s (median ~7 s, one 30 s spike). Latency tracked output length and DeepInfra throughput variance (10–63 tok/s
+across requests), not prompt size; with identical prompts reaching the model, the speed gap is provider noise at n=1.
 
 **Bottom line for Gemma 31B.** The model is not failing on format or continuity; it is failing on spatial reasoning in a way
 neither replay policy changes. A longer benchmark can still separate the two profiles on cost and cache, but on progress
