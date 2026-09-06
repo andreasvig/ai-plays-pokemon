@@ -91,7 +91,7 @@ def summarize_run(row):
     referee = summary.get("referee") or {}
     reached = {k: v for k, v in (referee.get("checkpoints") or {}).items() if v is not None}
     furthest = max(reached.items(), key=lambda kv: kv[1], default=(None, None))
-    grades = [e.get("last_turn_succeeded") for e in events if e["type"] == "turn_explanation"]
+    grades = [(e.get("explanation") or {}).get("last_turn_succeeded") for e in events if e["type"] == "turn_explanation"]
     graded = [g for g in grades if g is not None]
     return {**row,
             "turns_completed": len(turns),
