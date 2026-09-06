@@ -354,6 +354,18 @@ def test_context_estimate_counts_tokens_not_bytes(config, tmp_path):
     asyncio.run(run())
 
 
+def test_context_estimate_reserves_realistic_output_not_the_ceiling(config, tmp_path):
+    agent, provider, events = engine(config, tmp_path)
+    config["compaction"]["every_n_turns"] = 20
+    config["compaction"]["max_output_tokens"] = config["compaction"]["context_token_limit"] - 1  # an endpoint-sized ceiling
+    async def run():
+        await agent.play(1, "", IMAGE)
+        agent.commit_action(1)
+        await agent.play(2, "", IMAGE)
+        assert len(provider.requests) == 2  # a huge ceiling alone must not trigger compaction
+    asyncio.run(run())
+
+
 def test_provider_side_failure_is_a_transport_error_and_retried(config, tmp_path):
     config["transport"]["max_retries"] = 1
     class Flaky(FakeProvider):

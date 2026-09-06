@@ -50,7 +50,9 @@ def test_profile_roundtrip_and_fresh_segment(model, variant, tmp_path):
         assert request["provider"] == route
         assert request["transforms"] == []
         assert request["reasoning"]["exclude"] is False
-        assert request["max_tokens"] <= profile["max_completion_tokens"]
+        # No harness budget: output may run to the endpoint's own ceiling.
+        assert request["max_tokens"] == profile["max_completion_tokens"]
+    assert config["compaction"]["context_token_limit"] == profile["context_length"]
     # Tool definitions AND tool choice remain stable during the handover request.
     for key in ("tools", "tool_choice", "response_format"):
         assert all(r.get(key) == provider.requests[0].get(key) for r in provider.requests)
@@ -71,9 +73,15 @@ def test_profile_rejects_incompatible_effort_limits_and_resume(tmp_path):
     for change in ({"thinking": {"effort": "medium"}}, {"thinking": {"enabled": False}}):
         with pytest.raises(ValueError):
             resolve_provider_profile({**deepcopy(config), **change})
-    bad = deepcopy(config)
-    bad["provider_profiles"]["overrides"] = {"max_completion_tokens": 2048}
-    with pytest.raises(ValueError, match="Output budget"):
+    # No harness budgets: a lower endpoint ceiling simply becomes the output limit...
+    lowered = deepcopy(config)
+    lowered["provider_profiles"]["overrides"] = {"max_completion_tokens": 2048}
+    resolve_provider_profile(lowered)
+    assert lowered["transport"]["max_output_tokens"] == lowered["compaction"]["max_output_tokens"] == 2048
+    # ...but an explicit per-alias max_tokens may not exceed it.
+    bad = deepcopy(lowered)
+    bad["_llm_resolved"] = {**(bad.get("_llm_resolved") or {}), "max_tokens": 5000}
+    with pytest.raises(ValueError, match="exceeds"):
         resolve_provider_profile(bad)
     original = AppendAgent(config, tmp_path, lambda *args: None)
     packed = original.export_checkpoint()
@@ -175,3 +183,27 @@ def test_unwrapped_prompted_output_still_validates_action(tmp_path, invalid, mod
         assert agent.pending is None
     else:
         assert asyncio.run(agent.play(1, "", IMAGE)).inputs == ["a"]
+
+
+def test_endpoint_cache_warning_for_undiscounted_endpoints(tmp_path):
+    events = []
+    config = load_config(str(ROOT / "configs/config-append.yaml"), llm_alias="google/gemma-4-31b-it")
+    tag = config["_provider_profile"]["endpoint"]
+    async def no_read_price(model, key):
+        return {"model": model, "endpoints": [{"tag": tag, "pricing": {"prompt": "0.00000014"}}]}
+    agent = AppendAgent(config, tmp_path / "a", lambda k, d: events.append((k, deepcopy(d))), FakeProvider(), pricing_fetcher=no_read_price)
+    asyncio.run(agent.play(1, "", IMAGE))
+    warnings = [d for k, d in events if k == "endpoint_warning"]
+    assert len(warnings) == 1 and "no cache-read price" in warnings[0]["message"]
+    async def same_price(model, key):
+        return {"model": model, "endpoints": [{"tag": tag, "pricing": {"prompt": "0.0000001", "input_cache_read": "0.0000001"}}]}
+    events.clear()
+    agent = AppendAgent(config, tmp_path / "b", lambda k, d: events.append((k, deepcopy(d))), FakeProvider(), pricing_fetcher=same_price)
+    asyncio.run(agent.play(1, "", IMAGE))
+    assert any("hits save nothing" in d["message"] for k, d in events if k == "endpoint_warning")
+    async def discounted(model, key):
+        return {"model": model, "endpoints": [{"tag": tag, "pricing": {"prompt": "0.0000001", "input_cache_read": "0.00000005"}}]}
+    events.clear()
+    agent = AppendAgent(config, tmp_path / "c", lambda k, d: events.append((k, deepcopy(d))), FakeProvider(), pricing_fetcher=discounted)
+    asyncio.run(agent.play(1, "", IMAGE))
+    assert not [d for k, d in events if k == "endpoint_warning"]

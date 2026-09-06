@@ -481,8 +481,11 @@ class AppendAgent:
         image_tokens = self.options.get("image_token_reserve", 4096)
         recent = self.state["messages"][-2:]
         growth = approx_tokens(recent, image_tokens) + approx_tokens(ocr, image_tokens) + image_tokens
+        # The output ceiling is the endpoint's maximum, not what a turn uses; reserve
+        # a realistic amount so a 128k ceiling does not force compaction every turn.
+        output_reserve = min(self.options["max_output_tokens"], self.options.get("estimate_output_reserve", 12288))
         estimate = (self.state["last_input_tokens"] + growth + approx_tokens(self.options["prompt"], image_tokens)
-                    + self.options["max_output_tokens"])
+                    + output_reserve)
         early = estimate >= self.options["context_token_limit"] * self.options["context_limit_fraction"]
         if (due or early) and self.state["segment_turns"] and self.state["observation_turn"] != turn:
             await self.compact(turn, observation, "turn_interval" if due else "context_threshold")
@@ -602,6 +605,31 @@ class AppendAgent:
         except Exception as exc:
             snapshot = {"model": self.model, "error": str(exc), "endpoints": []}
         atomic_json(self.store.root / "endpoint-pricing.json", snapshot)
+        self._warn_on_cache_economics(snapshot)
+
+    def _warn_on_cache_economics(self, snapshot):
+        """Say up front when the pinned endpoint cannot return money on cache hits."""
+        tag = self.profile.get("endpoint") if self.profile else None
+        if not tag:
+            return
+        match = next((e for e in snapshot.get("endpoints") or [] if (e.get("tag") or "") == tag), None)
+        if match is None:
+            return
+        pricing = match.get("pricing") or {}
+        try:
+            full = float(pricing.get("prompt"))
+        except (TypeError, ValueError):
+            return
+        read = pricing.get("input_cache_read")
+        if read in (None, ""):
+            reason = "lists no cache-read price: caching cannot save money here"
+        elif full and float(read) >= full * 0.99:
+            reason = f"charges cache reads at the prompt price (${float(read)*1e6:.3f}/M): hits save nothing"
+        else:
+            return
+        message = f"Endpoint {tag} {reason}"
+        self.emit("endpoint_warning", {"endpoint": tag, "kind": "cache_economics", "message": message})
+        print(f"  Warning: {message}", flush=True)
 
     async def _request(self, phase, turn, messages):
         await self._snapshot_pricing()

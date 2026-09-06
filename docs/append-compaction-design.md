@@ -110,7 +110,7 @@ Names below are illustrative, not an implemented schema:
 - `player_agent.compaction.context_limit_fraction`: early compaction safety margin. The trigger estimate is in approximate tokens: the provider's last reported input count, plus ~4 bytes per token for new text, `image_token_reserve` per image, and raw reasoning counted once even when the gateway returns it twice. (An earlier byte count made verbose reasoners such as Qwen compact every turn.)
 - `player_agent.compaction.prompt`: appended compaction instruction template, including flexible-memory guidance, suggested keys, brief plan review, and handover output instructions.
 - `player_agent.compaction.summary_target_tokens`: bounded prose target.
-- `player_agent.compaction.max_output_tokens`: response budget covering prose, memory, and model-specific reasoning needs.
+- `player_agent.compaction.max_output_tokens`: response budget covering prose, memory, and model-specific reasoning needs. For models with a provider profile this and `transport.max_output_tokens` are replaced by the endpoint's own completion ceiling, and `context_token_limit` by its context length (no harness-side budgets, decision 2026-09-06); the early-compaction estimate reserves `estimate_output_reserve` (default 12288) rather than the ceiling.
 - `player_agent.compaction.max_retries`: bounded compaction recovery attempts.
 - `player_agent.observability.reasoning_replay_checks`: enable capture-to-request integrity checks.
 - `player_agent.observability.on_reasoning_loss`: configured handling of unexpected loss, mutation, or provider-reported drops; proposed default is save and stop for a continuity experiment.

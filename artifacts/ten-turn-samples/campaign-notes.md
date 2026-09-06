@@ -283,3 +283,24 @@ Verification run for the two fixes: `local/ten-turn-samples-cache-fix/` (Gemini 
   succeeded. Worth watching in longer runs; Qwen's thinking can exceed the gameplay output budget.
 - Gemini: only the ~1.3k-token system block is cacheable through OpenRouter, so the saving is ~9% of prompt spend and <1% of
   total (Gemini's cost is mostly output). Moving more stable content into the system block is the only lever left there.
+
+## Profile improvements applied (Andreas, 2026-09-06 late afternoon)
+
+- **All harness-side output budgets removed for profiled models.** `transport.max_output_tokens` and
+  `compaction.max_output_tokens` now equal the endpoint's advertised completion ceiling, and the early-compaction
+  `context_token_limit` equals the endpoint's context length. Verified live: all 9 reachable endpoints accept `max_tokens`
+  at their ceiling (65k Gemini … 943k Kimi). The early-compaction estimate reserves a realistic 12,288 output tokens instead
+  of the ceiling so a 128k ceiling cannot force compaction every turn (test added). An explicit per-alias `max_tokens` is
+  still honoured but may not exceed the ceiling. **Consequence to watch:** on Anthropic, OpenRouter derives the thinking
+  budget from `max_tokens` (effort high ≈ 80%), so Opus/Fable may now think far longer than before if they choose to; today's
+  runs used 36–1,300 reasoning tokens per turn, so the risk is cost variance, not correctness. `max_spend_usd` stays as the
+  safety net.
+- **Kimi K3:** `reasoning_replay: omit_prior`, `reasoning_use: not_consumed_by_endpoint` (no endpoint tokenizes replay).
+- **Gemini system block:** measured a real request: system 1,160 tokens (cached), segment-start user message ~510 tokens
+  (changes per segment), observations ~50 tokens + image. Nothing static is left outside the system block, so no prompt
+  restructuring; the 15% cache share is the ceiling of this lever.
+- **Summarizer:** new column "Replayed reasoning billed" per run (corr ≥ 0.95 → consumed; `omit_prior` → not replayed).
+- **Run-start warning** (`endpoint_warning` event + terminal line) when the pinned endpoint lists no cache-read price or
+  charges reads at the prompt price. Would have flagged Novita and CoreWeave before turn 1.
+- Not done: dropping the duplicate `reasoning` string from replay (billing-neutral per the CoreWeave probe; archive size
+  only) and the effort sweep on Opus/Fable/Grok (an experiment, ~$1.50, proposed for before the first-gym benchmark).

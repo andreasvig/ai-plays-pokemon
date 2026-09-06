@@ -152,6 +152,9 @@ profiles:
     endpoint: moonshotai/mxfp4
     context_length: 1048576
     max_completion_tokens: 943718
+    # No Kimi endpoint tokenizes replayed reasoning (probe 2026-09-06), so do not send it.
+    reasoning_replay: omit_prior
+    reasoning_use: not_consumed_by_endpoint
     reasoning_mandatory: true
     reasoning_efforts: [max, high, low]
     reasoning_default: {effort: high}

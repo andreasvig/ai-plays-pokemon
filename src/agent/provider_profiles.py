@@ -104,10 +104,15 @@ def resolve_provider_profile(config):
     for key in ("context_length", "max_completion_tokens"):
         if type(profile[key]) is not int or profile[key] <= 0:
             raise ValueError(f"Provider profile requires positive {key}")
-    for budget in (config["transport"]["max_output_tokens"], config["compaction"]["max_output_tokens"], resolved.get("max_tokens", 0)):
-        if budget > profile["max_completion_tokens"]:
-            raise ValueError(f"Output budget {budget} exceeds {profile['endpoint']} limit {profile['max_completion_tokens']}")
-    config["compaction"]["context_token_limit"] = min(config["compaction"]["context_token_limit"], profile["context_length"])
+    # No harness-side budgets on profiled models (decision 2026-09-06): output may
+    # run to the endpoint's own ceiling and the early-compaction context limit is
+    # the endpoint's context length. An explicit per-alias max_tokens still applies
+    # if set, but may not exceed the ceiling.
+    if resolved.get("max_tokens", 0) > profile["max_completion_tokens"]:
+        raise ValueError(f"max_tokens {resolved['max_tokens']} exceeds {profile['endpoint']} limit {profile['max_completion_tokens']}")
+    config["transport"]["max_output_tokens"] = profile["max_completion_tokens"]
+    config["compaction"]["max_output_tokens"] = profile["max_completion_tokens"]
+    config["compaction"]["context_token_limit"] = profile["context_length"]
     config["_provider_profile"] = profile
 
 
