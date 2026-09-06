@@ -8,7 +8,7 @@
 |---|---|---|---|
 | GLM 5.3 Flash | old 35.1 → **new 22.0** | old $0.026 → **new $0.0215** | Oak's Lab: old turn 9, new turn 16 |
 | Gemini 3.8 Flash | old 10.8 → **new 7.9** | **old $0.39** → new $0.48 | old rival battle (25) → **new Route 1 (25)** |
-| GPT-6 Astra | old 5.3 → **new 4.6** | **old $1.72** → new $4.61 | Route 1: old turn 25 → **new turn 18** |
+| GPT-6 Astra | old 5.3 → **new 4.8** | old $1.72 → **new $1.11** (was $4.61 before the split-turn fix) | Route 1: old turn 25 → **new turn 18** |
 
 Wall clock per turn was equal or slightly better on the new arm everywhere (GLM 46 → 36 s, Gemini 26.5 → 26.8 s, Astra 22.0 → 23.3 s); for the two fast models emulator settling dominates the turn, so LLM-time gains do not show up in wall clock.
 
@@ -20,9 +20,9 @@ LLM time per turn fell 13–37% on the new arm. Two reasons show in the traces: 
 
 - **GLM / Z.AI**: 85% of gameplay prompt tokens cached. New arm 17% cheaper despite the prompt growing 3.3k → 26.5k tokens.
 - **Gemini / AI Studio**: only the system block is cacheable through OpenRouter (7%). Per-turn cost doubled over the run ($0.010 → $0.0215) as the prompt grew to 26.7k; new arm 23% dearer. Compaction cost $0.031.
-- **Astra / OpenAI**: caching stopped at the first screenshot on every turn (1,192 tokens) and the rest was billed at the 1.25× cache-write price; per-turn cost tripled ($0.07 → $0.20), compaction cost $0.42, total 2.7× the old arm. Cause found (`artifacts/provider-compatibility/openai-image-prefix-caching-probe.md`): when the request's final turn contains an image, OpenAI's cache cannot be extended past the first image in the prompt, and the agent ends every request with the screenshot. A text-only final turn (screenshot, one-word assistant ack, text prompt) extends fully in probes at ≈$0.03/turn.
+- **Astra / OpenAI**: the first run cached only the pre-screenshot prefix (1,192 tokens) on every turn and paid the 1.25× cache-write price on the rest — $4.61, 2.7× the old arm. Cause (`artifacts/provider-compatibility/openai-image-prefix-caching-probe.md`): when the request's final turn contains an image, OpenAI's cache cannot be extended past the first image in the prompt, and the agent ended every request with the screenshot. Fixed with the profile flag `final_turn_text_only` (screenshot turn, one-word assistant acknowledgement, text-only action prompt) and rerun the same evening: **87% cached, $1.11 total (−35% vs old), per-turn $0.033 → $0.041, compaction $0.10**, identical checkpoint turns to the first run.
 
-The old arm's cost is flat per turn (sliding window). The new arm's cost is a curve that rises until compaction; at 25 turns with one compaction it is already 2–3× the first-turn cost on the two endpoints without whole-prefix caching, and it would keep rising on longer segments.
+The old arm's cost is flat per turn (sliding window). The new arm's cost is a curve that rises until compaction; on an endpoint without whole-prefix caching (Gemini) it is already 2× the first-turn cost at turn 25 and keeps rising on longer segments; with whole-prefix caching (Z.AI, OpenAI after the fix) the rise is shallow ($0.033 → $0.041 on Astra).
 
 ## Progress — new arm ahead on 2 of 3, n = 1
 
@@ -32,7 +32,7 @@ Gemini and Astra reached every checkpoint earlier on the new arm (Astra: Route 1
 
 1. **On endpoints with whole-prefix caching (Z.AI, and per the ten-turn campaign Anthropic and DeepSeek), the new system is faster, cheaper and at least as good.** Run it.
 2. **On Gemini through OpenRouter the new system is faster and progressed further but ~25% dearer at 25 turns**, and the gap widens with segment length. Shorter compaction intervals or Vertex/AI-Studio-direct caching would change this; not tested.
-3. **On OpenAI through OpenRouter the new system is not viable in its current request shape** — 2.7× the price for faster, better play — because a final turn with an image disables cache extension. The fix shape (text-only final turn) is probe-verified and needs a live rerun of the Astra arm to confirm the price.
+3. **On OpenAI through OpenRouter the new system needs the split-turn request shape** (`final_turn_text_only`, now on for Astra). With it the new system is faster, 35% cheaper and further along than the sliding window; without it a final turn carrying an image disables cache extension and the price is 2.7× the old arm.
 
 ## Side findings
 

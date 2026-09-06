@@ -29,6 +29,6 @@ Ruled out one at a time on the real bodies (no effect): `stream`, `session_id`, 
 
 ## What to do about it
 
-The agent needs the current screenshot in the request. The fix shape keeps it in a user turn, follows it with a synthetic one-word assistant acknowledgement, and asks for the action in a text-only user message — the final turn is then text-only. Proposed as an opt-in profile flag for OpenAI endpoints; untested in a live run. Expected effect on Astra: per-turn cost ≈ $0.03 flat-ish instead of $0.07 → $0.20, i.e. the new arm would land near or below the old arm's $1.72.
+The agent needs the current screenshot in the request. The fix shape keeps it in a user turn, follows it with a synthetic one-word assistant acknowledgement, and asks for the action in a text-only user message — the final turn is then text-only. Built as the profile flag `final_turn_text_only` (commit 743012e; on for `openai/gpt-6-astra`) and rerun live the same evening: 87% of prompt tokens cached, $1.11 for 25 turns instead of $4.61 (old sliding-window arm: $1.72), per-turn $0.033 → $0.041, compaction $0.10 instead of $0.42, same checkpoints.
 
 Unknown: whether this is OpenAI's own behaviour or OpenRouter's Responses-API conversion (no direct OpenAI key to test). Z.AI and Anthropic cache the same growing image conversation without this restriction.
