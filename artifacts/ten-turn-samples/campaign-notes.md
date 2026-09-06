@@ -253,3 +253,20 @@ What this says, with the honest caveat that every arm is n=2:
   CoreWeave fp4: 44–70% reported hits, but its cache-read price equals its prompt price ($0.10/M), so those hits saved
   nothing; DeepInfra turbo does discount ($0.05/M vs $0.09/M). Cache percentages are only worth money where the read price
   is lower, which the "Billed at" row now shows per request.
+
+## Cache economics sort-out (2026-09-06, after the Gemma mini-campaign)
+
+Every run now carries a cache-economics verdict (trace overview, summarizer column): *no cache offered*, *hits not
+discounted*, *priced but no hits*, or *$ saved*. Across today's endpoints (`artifacts/provider-compatibility/cache-hit-probe.md`):
+
+- **No cache offered:** novita/bf16. Nothing to fix; avoid for long runs.
+- **Hits not discounted:** coreweave/fp4 (cache-read price = prompt price). Its 44–70% "hits" saved $0. Avoid unless replay
+  consumption is the point.
+- **Priced, no hits:** google-ai-studio (Gemini). 90% discount available, 0 hits in 11 requests. Probe: implicit caching never
+  hits through OpenRouter, but an explicit `cache_control` marker on the system prompt caches that block; markers elsewhere
+  cache nothing extra on AI Studio and double-bill on Vertex. **Fixed:** Gemini profile → `cache_mode: system_breakpoint`.
+- **Under-hitting:** alibaba (Qwen). 89% discount, 11% hits because our explicit system marker *limited* caching to the
+  system block; with no markers Alibaba caches the whole prefix implicitly (98%). **Fixed:** Qwen profile → `cache_mode: implicit`.
+- Everyone else saves money: Anthropic ($0.43 Opus, $0.74 Fable on one run), Kimi $0.18, Grok $0.11, DeepSeek/GLM/DeepInfra small.
+
+Verification run for the two fixes: `local/ten-turn-samples-cache-fix/` (Gemini + Qwen, 10 turns each). Numbers below.

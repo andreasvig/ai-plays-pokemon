@@ -23,6 +23,7 @@ variants:
       reasoning_use: not_consumed_by_endpoint
   # CoreWeave fp4 is the only Gemma endpoint (1 of 15) that tokenizes replayed
   # reasoning, so a real guidance-vs-replay comparison must pair both arms there.
+  # CoreWeave lists a cache-read price equal to its prompt price: hits save nothing.
   gemma-guidance-coreweave:
     model: google/gemma-4-31b-it
     settings:
@@ -36,6 +37,7 @@ variants:
       reasoning_replay: all
       reasoning_use: unverified
   # Unquantized control for gameplay quality (no replay; novita/bf16 drops it too).
+  # Novita offers no prompt cache at all on this endpoint (no cache-read price, 0 hits).
   gemma-guidance-bf16:
     model: google/gemma-4-31b-it
     settings:
@@ -81,7 +83,8 @@ profiles:
     reasoning_mandatory: true
     reasoning_efforts: [high, medium, low]
     reasoning_default: {effort: medium}
-    notes: 'Return complete signed assistant parts. Signature validation is not proof that all prior private thoughts were used.'
+    cache_mode: system_breakpoint
+    notes: 'Return complete signed assistant parts. Signature validation is not proof that all prior private thoughts were used. Cache probe 2026-09-06: implicit caching never hit through OpenRouter (0 of 11 campaign requests, 0 in a 13k-token identical-prefix probe); an explicit cache_control marker on the system prompt caches that block at 90% off. A marker on the last message caches nothing extra on AI Studio and double-bills on Vertex, so only the system block is marked.'
   google/gemma-4-31b-it:
     endpoint: deepinfra/turbo
     context_length: 262144
@@ -118,8 +121,8 @@ profiles:
     allow_json_fence: true
     context_length: 1000000
     max_completion_tokens: 131072
-    cache_mode: system_breakpoint
-    notes: 'Live routing rejects required tool choice; auto can skip tools, and native JSON failed the envelope during compaction. Use validated prompted JSON. Explicit cache marker covers the stable system prefix; native preserve_thinking defaults on, gateway use remains unverified.'
+    cache_mode: implicit
+    notes: 'Live routing rejects required tool choice; auto can skip tools, and native JSON failed the envelope during compaction. Use validated prompted JSON. Cache probe 2026-09-06: Alibaba caches the whole identical prefix implicitly (98% on the second call); an explicit system marker LIMITED caching to the system block (11% in the campaign), so no markers are sent. Native preserve_thinking defaults on, gateway use remains unverified.'
   z-ai/glm-5.3-flash:
     endpoint: z-ai/fp8
     context_length: 1048576
