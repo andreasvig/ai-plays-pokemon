@@ -168,3 +168,23 @@ def test_segment_costs_include_compaction_retries_and_preserve_unknowns(run_dir)
     assert costs['2']['reported_cost_usd'] == .01
     assert costs['2']['measured_requests'] == 1
     assert costs['2']['requests'] == 2
+
+
+def test_trace_attaches_billing_implied_cache_when_pricing_snapshot_exists(tmp_path):
+    run_dir = tmp_path / "run"
+    _write_events(run_dir, 1)
+    usage = {"type": "llm_request_usage", "turn": 1, "phase": "gameplay", "segment": 1, "request_id": "r1",
+             "provider": "Google AI Studio", "request_tokens": 10000, "cached_tokens": 0, "cache_write_tokens": 0,
+             "raw_usage": {"cost_details": {"upstream_inference_prompt_cost": 10000 * 0.00000075}}}
+    with open(run_dir / "events.jsonl", "a") as f:
+        f.write(json.dumps(usage) + "\n")
+    trace = build_run_trace(run_dir)
+    assert trace["cache"]["measured_attempts"] == 1 and "implied_cached_tokens" not in trace["cache"]
+    (run_dir / "conversation").mkdir()
+    (run_dir / "conversation/endpoint-pricing.json").write_text(json.dumps({"endpoints": [
+        {"name": "Google AI Studio", "provider_name": "Google AI Studio",
+         "pricing": {"prompt": "0.00000075", "input_cache_read": "0.000000075"}}]}))
+    trace = build_run_trace(run_dir)
+    assert trace["cache"]["implied_cached_tokens"] == 0 and trace["cache"]["implied_agreement"] == {"matches": 1}
+    event = trace["tasks"][0]["turns"][0]["diagnostics"][0]
+    assert event["implied_cache"]["status"] == "no_discount_billed"

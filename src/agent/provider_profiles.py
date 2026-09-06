@@ -7,6 +7,27 @@ import yaml
 
 
 PROFILE_PATH = Path(__file__).resolve().parents[2] / "configs/provider-profiles.yaml"
+ENDPOINTS_URL = "https://openrouter.ai/api/v1/models/{model}/endpoints"
+
+
+async def fetch_endpoint_pricing(model, api_key, timeout=20):
+    """Snapshot every serving endpoint's list prices for ``model``.
+
+    Persisted once per run dir so the trace can back out a cache discount from
+    the billed prompt cost even when the provider's usage block omits cache
+    counts (Google AI Studio reports 0 cached tokens unconditionally).
+    """
+    import httpx
+    from datetime import datetime
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        response = await client.get(ENDPOINTS_URL.format(model=model),
+                                    headers={"Authorization": f"Bearer {api_key}"} if api_key else {})
+        response.raise_for_status()
+        data = response.json().get("data") or {}
+    return {"model": model, "fetched_at": datetime.now().isoformat(), "endpoints": [
+        {"name": e.get("name"), "tag": e.get("tag"), "provider_name": e.get("provider_name"),
+         "context_length": e.get("context_length"), "pricing": e.get("pricing") or {}}
+        for e in data.get("endpoints") or []]}
 
 
 def output_json_text(content, profile):

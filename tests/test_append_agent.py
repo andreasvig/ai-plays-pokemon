@@ -7,7 +7,7 @@ import shutil
 
 import pytest
 
-from src.agent.append_agent import AppendAgent, ContinuityError, StreamAssembly, cache_totals, normalize_usage, replay_check
+from src.agent.append_agent import AppendAgent, ContinuityError, StreamAssembly, cache_totals, implied_cache, normalize_usage, replay_check
 from src.config import load_config, find_latest_config, _validate_config
 from src.app.catalog import list_configs
 
@@ -401,3 +401,76 @@ def test_signature_rejection_is_archived_and_not_silently_retried(config, tmp_pa
     assert errors[0]["continuity"]["provider_feedback"] == "signature_rejected"
     assert errors[0]["cached_tokens"] is None
     assert len(list((tmp_path / 'conversation').glob('*-response.json'))) == 1
+
+
+GEMINI_TIERS = [{"name": f"Google AI Studio | tier {i}", "provider_name": "Google AI Studio",
+                 "pricing": {"prompt": str(p), "input_cache_read": str(p / 10), "input_cache_write": "0.00000002"}}
+                for i, p in enumerate((0.000000375, 0.00000075, 0.00000135))]
+
+
+def _attempt(n, billed, cached=None, writes=0, provider="Google AI Studio"):
+    return {"request_tokens": n, "cached_tokens": cached, "cache_write_tokens": writes, "provider": provider,
+            "raw_usage": {"cost_details": {"upstream_inference_prompt_cost": billed}}}
+
+
+def test_implied_cache_picks_tier_and_reports_no_discount():
+    # Gemini turn 5 from the 2026-09-06 samples: billed exactly at the $0.75/M tier, provider says 0 cached.
+    result = implied_cache(_attempt(11817, 0.00886275, cached=0), GEMINI_TIERS)
+    assert result["status"] == "no_discount_billed"
+    assert result["tier"].endswith("tier 1") and result["implied_cached_tokens"] == 0
+    assert result["agreement"] == "matches"
+    assert abs(result["billed_prompt_rate_per_m"] - 0.75) < 1e-6
+
+
+def test_implied_cache_backs_out_discount_and_flags_disagreement():
+    n, full, read = 10000, 0.00000075, 0.000000075
+    billed = 6000 * full + 4000 * read  # 4,000 tokens billed at the cache-read rate
+    result = implied_cache(_attempt(n, billed, cached=None), GEMINI_TIERS)
+    assert result["status"] == "discount_billed"
+    assert abs(result["implied_cached_tokens"] - 4000) <= 1
+    assert result["agreement"] == "provider_not_reporting"
+    assert implied_cache(_attempt(n, billed, cached=4000), GEMINI_TIERS)["agreement"] == "matches"
+    assert implied_cache(_attempt(n, billed, cached=0), GEMINI_TIERS)["agreement"] == "billing_implies_more"
+
+
+def test_implied_cache_removes_cache_write_premium():
+    tier = [{"name": "Anthropic", "provider_name": "Anthropic",
+             "pricing": {"prompt": "0.000005", "input_cache_read": "0.0000005", "input_cache_write": "0.00000625"}}]
+    n, cached, writes = 6322, 3956, 2366
+    billed = cached * 0.0000005 + writes * 0.00000625
+    result = implied_cache(_attempt(n, billed, cached=cached, writes=writes, provider="Anthropic"), tier)
+    assert abs(result["implied_cached_tokens"] - cached) <= 1 and result["agreement"] == "matches"
+    # First request of a segment: almost everything is a write billed at 1.25x list,
+    # so the raw rate exceeds the list price. The tier must still be found.
+    first = implied_cache(_attempt(3958, 3956 * 0.00000625 + 2 * 0.000005, cached=0, writes=3956, provider="Anthropic"), tier)
+    assert first["status"] == "no_discount_billed" and first["agreement"] == "matches"
+
+
+def test_implied_cache_degrades_without_prices_or_billing():
+    assert implied_cache(_attempt(100, 0.01), [])["status"] == "unpriced"
+    assert implied_cache({"request_tokens": 100, "raw_usage": {}}, GEMINI_TIERS)["status"] == "unbilled"
+    assert implied_cache(_attempt(100, 1.0), GEMINI_TIERS)["status"] == "rate_above_list"
+    totals = cache_totals([{**_attempt(100, 0.000075, cached=0), "implied_cache": implied_cache(_attempt(100, 0.000075, cached=0), GEMINI_TIERS)}])
+    assert totals["implied_cached_tokens"] == 0 and totals["implied_agreement"] == {"matches": 1}
+
+
+def test_pricing_snapshot_written_once_and_failure_is_recorded(config, tmp_path):
+    calls = []
+    async def fetcher(model, key):
+        calls.append(model)
+        return {"model": model, "endpoints": [{"name": "t", "pricing": {"prompt": "0.000001"}}]}
+    agent, provider, events = engine(config, tmp_path)
+    agent.pricing_fetcher = fetcher
+    async def run():
+        await agent.play(1, "", IMAGE)
+        agent.commit_action(1)
+        await agent.play(2, "", IMAGE)
+    asyncio.run(run())
+    assert calls == [config["llm_model"]]
+    assert json.loads((tmp_path / "conversation/endpoint-pricing.json").read_text())["endpoints"][0]["name"] == "t"
+    async def broken(model, key):
+        raise RuntimeError("offline")
+    agent2, _, _ = engine(config, tmp_path / "second")
+    agent2.pricing_fetcher = broken
+    assert asyncio.run(agent2.play(1, "", IMAGE)).inputs == ["a"]
+    assert json.loads((tmp_path / "second/conversation/endpoint-pricing.json").read_text())["error"] == "offline"

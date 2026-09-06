@@ -5,6 +5,28 @@
   const money = (n) => n == null ? 'Not reported' : `$${Number(n).toFixed(6)}`
   const seconds = (n) => n == null ? 'Not reported' : `${Number(n).toFixed(2)} s`
   const words = (s) => s ? s.replaceAll('_', ' ') : 'not reported'
+  const perM = (n) => n == null ? 'Not reported' : `$${Number(n).toFixed(3)}/M`
+  function billedAt(c) {
+    if (!c) return 'No pricing snapshot for this run'
+    if (c.status === 'no_pricing_snapshot') return 'No pricing snapshot for this run'
+    if (c.status === 'unbilled') return 'Upstream prompt cost not reported'
+    if (c.status === 'unpriced') return `${perM(c.billed_prompt_rate_per_m)} · no list price to compare`
+    if (c.status === 'rate_above_list') return `${perM(c.billed_prompt_rate_per_m)} · above every list tier`
+    return `${perM(c.billed_prompt_rate_per_m)} · list ${perM(c.tier_prompt_per_m)}, cache read ${perM(c.tier_cache_read_per_m)}`
+  }
+  function impliedDiscount(c) {
+    if (!c || c.implied_cached_tokens == null) return 'Cannot be inferred'
+    const base = c.implied_cached_tokens === 0
+      ? 'None — billed at full list price'
+      : `${count(c.implied_cached_tokens)} tokens · ${pct(c.implied_read_fraction)}`
+    const agree = {
+      matches: 'agrees with the provider report',
+      provider_not_reporting: 'provider reports no cache figures',
+      billing_implies_more: 'more than the provider reported',
+      billing_implies_less: 'less than the provider reported',
+    }[c.agreement]
+    return agree ? `${base} · ${agree}` : base
+  }
   function replay(c) {
     if (c?.reasoning_policy === 'omit_prior') return `Omitted by model policy · ${count(c.archived_blocks)} blocks archived`
     if (c?.local_replay && c.local_replay !== 'intact') return `Check failed: ${words(c.local_replay)}`
@@ -45,8 +67,10 @@
                   <div><dt>Tokens read</dt><dd>{count(event.cached_tokens)}</dd></div>
                   <div><dt>Tokens written</dt><dd>{count(event.cache_write_tokens)}</dd></div>
                   {#if event.continuity?.cache_mode}<div><dt>Cache strategy</dt><dd>{words(event.continuity.cache_mode)}</dd></div>{/if}
+                  <div><dt>Billed at</dt><dd>{billedAt(event.implied_cache)}</dd></div>
+                  <div><dt>Discount implied by billing</dt><dd>{impliedDiscount(event.implied_cache)}</dd></div>
                 </dl>
-                <p class="hint">Writes prepare for later reuse; reads measure reuse on this request.</p>
+                <p class="hint">Writes prepare for later reuse; reads measure reuse on this request. "Implied by billing" backs the discount out of what the provider charged, so it also works when the provider reports no cache figures.</p>
               </section>
               <section>
                 <h5>Conversation continuity</h5>

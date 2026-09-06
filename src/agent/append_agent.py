@@ -186,14 +186,86 @@ def normalize_usage(raw: dict) -> dict:
             "cost_usd": raw.get("cost"), "raw_usage": raw}
 
 
+def implied_cache(attempt: dict, endpoints: list[dict] | None, tolerance: float = 0.03) -> dict:
+    """Back out the cache discount from what the provider billed for the prompt.
+
+    ``implied = (n × P_full − billed) / (P_full − P_cache_read)`` after picking
+    the cheapest list tier whose full price covers the billed per-token rate
+    (the conservative choice: fewest implied cached tokens). Cache-write
+    premiums are removed first when the provider reports write tokens. This is
+    what the provider charged, so it is a check on the usage block, not a
+    replacement for it: when both exist, ``agreement`` says whether they match.
+    """
+    n = attempt.get("request_tokens")
+    usage = attempt.get("raw_usage") or {}
+    billed = (usage.get("cost_details") or {}).get("upstream_inference_prompt_cost")
+    if not n or billed is None:
+        return {"status": "unbilled"}
+    rate = billed / n
+    tiers = []
+    for endpoint in endpoints or []:
+        pricing = endpoint.get("pricing") or {}
+        try:
+            full = float(pricing["prompt"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        read = float(pricing.get("input_cache_read") or 0)
+        write = float(pricing.get("input_cache_write") or 0)
+        tiers.append((full, read, write, endpoint))
+    if not tiers:
+        return {"status": "unpriced", "billed_prompt_rate_per_m": rate * 1e6}
+    tag = (attempt.get("continuity") or {}).get("configured_endpoint")
+    provider = attempt.get("provider")
+    named = [t for t in tiers if (tag and (t[3].get("tag") or "").startswith(tag))
+             or (provider and t[3].get("provider_name") == provider)]
+    # Remove each tier's cache-write premium before comparing rates: on the first
+    # request of a segment nearly every token is a write billed above list, which
+    # would otherwise push the rate past the true tier (Anthropic 1.25x writes).
+    writes = attempt.get("cache_write_tokens") or 0
+    def adjusted_cost(tier):
+        full, _, write, _ = tier
+        return billed - (writes * (write - full) if write > full else 0)
+    candidates = sorted((t for t in (named or tiers) if t[0] * n >= adjusted_cost(t) * (1 - tolerance)),
+                        key=lambda t: t[0])
+    if not candidates:
+        return {"status": "rate_above_list", "billed_prompt_rate_per_m": rate * 1e6}
+    full, read, write, endpoint = candidates[0]
+    adjusted = adjusted_cost(candidates[0])
+    implied = 0 if full <= read else max(0, min(n, round((full * n - adjusted) / (full - read))))
+    reported = attempt.get("cached_tokens")
+    if reported is None:
+        agreement = "provider_not_reporting"
+    else:
+        gap = implied - reported
+        agreement = ("matches" if abs(gap) <= max(64, 0.05 * n)
+                     else "billing_implies_more" if gap > 0 else "billing_implies_less")
+    return {"status": "discount_billed" if implied else "no_discount_billed",
+            "billed_prompt_rate_per_m": rate * 1e6, "tier": endpoint.get("name"),
+            "tier_prompt_per_m": full * 1e6, "tier_cache_read_per_m": read * 1e6,
+            "implied_cached_tokens": implied, "implied_read_fraction": implied / n, "agreement": agreement}
+
+
 def cache_totals(attempts: list[dict]) -> dict:
     measured = [a for a in attempts if a.get("cached_tokens") is not None and a.get("request_tokens") is not None]
     reads = sum(a["cached_tokens"] for a in measured)
     inputs = sum(a["request_tokens"] for a in measured)
-    return {"attempts": len(attempts), "measured_attempts": len(measured),
-            "cached_tokens": reads, "measured_input_tokens": inputs,
-            "input_read_fraction": reads / inputs if inputs else None,
-            "request_hit_fraction": sum(a["cached_tokens"] > 0 for a in measured) / len(measured) if measured else None}
+    result = {"attempts": len(attempts), "measured_attempts": len(measured),
+              "cached_tokens": reads, "measured_input_tokens": inputs,
+              "input_read_fraction": reads / inputs if inputs else None,
+              "request_hit_fraction": sum(a["cached_tokens"] > 0 for a in measured) / len(measured) if measured else None}
+    implied = [a for a in attempts if (a.get("implied_cache") or {}).get("implied_cached_tokens") is not None]
+    if implied:
+        implied_reads = sum(a["implied_cache"]["implied_cached_tokens"] for a in implied)
+        implied_inputs = sum(a["request_tokens"] for a in implied)
+        agreements = {}
+        for a in implied:
+            key = a["implied_cache"]["agreement"]
+            agreements[key] = agreements.get(key, 0) + 1
+        result.update(implied_attempts=len(implied), implied_cached_tokens=implied_reads,
+                      implied_input_tokens=implied_inputs,
+                      implied_read_fraction=implied_reads / implied_inputs if implied_inputs else None,
+                      implied_agreement=agreements)
+    return result
 
 
 def display_messages(messages):
@@ -302,8 +374,13 @@ class OpenRouterTransport:
 
 
 class AppendAgent:
-    def __init__(self, config, run_dir, emit, transport=None, on_usage=None, budget_exhausted=None):
+    def __init__(self, config, run_dir, emit, transport=None, on_usage=None, budget_exhausted=None, pricing_fetcher=None):
         self.config = config
+        # Optional async (model, api_key) -> endpoint pricing snapshot; written once
+        # per run dir as conversation/endpoint-pricing.json for the trace's
+        # billing-implied cache estimate. None (tests, offline) skips it.
+        self.pricing_fetcher = pricing_fetcher
+        self._pricing_written = False
         self.options = config["compaction"]
         self.run_dir = Path(run_dir)
         self.store = ReplayStore(self.run_dir / "conversation")
@@ -480,7 +557,18 @@ class AppendAgent:
             body["stream_options"] = {"include_usage": True}
         return body, mode
 
+    async def _snapshot_pricing(self):
+        if self._pricing_written or self.pricing_fetcher is None:
+            return
+        self._pricing_written = True  # One attempt per run dir; a failure is recorded, not retried.
+        try:
+            snapshot = await self.pricing_fetcher(self.model, self.config.get("openrouter_api_key", ""))
+        except Exception as exc:
+            snapshot = {"model": self.model, "error": str(exc), "endpoints": []}
+        atomic_json(self.store.root / "endpoint-pricing.json", snapshot)
+
     async def _request(self, phase, turn, messages):
+        await self._snapshot_pricing()
         schema = PlayAction if phase == "gameplay" else Handover
         count = self.options["max_retries"] + 1 if phase == "compaction" else self.config["transport"]["max_retries"] + 1
         for attempt in range(1, count + 1):

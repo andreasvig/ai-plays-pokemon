@@ -989,9 +989,11 @@ class TurnManager:
 
         if self.append_enabled:
             from src.agent.append_agent import AppendAgent
+            from src.agent.provider_profiles import fetch_endpoint_pricing
             self.append_agent = AppendAgent(
                 self.config, logger.run_dir, self._append_event,
                 on_usage=self._append_usage, budget_exhausted=self._budget_exhausted,
+                pricing_fetcher=fetch_endpoint_pricing,
             )
 
         # SnapshotManager needs state_file path + emulator handle. We point it

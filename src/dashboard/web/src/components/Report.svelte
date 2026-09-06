@@ -62,6 +62,15 @@
   // implicit group (task_index:null, empty master_model, no master images).
   const tasks = $derived(trace?.tasks ?? [])
   const hasTasks = $derived(trace?.has_tasks === true)
+  function impliedNote(c) {
+    if (c.implied_read_fraction == null) return 'Record endpoint prices to infer cache use from cost'
+    const a = c.implied_agreement || {}
+    const total = Object.values(a).reduce((x, y) => x + y, 0)
+    if (a.provider_not_reporting === total) return `${cacheCount(c.implied_cached_tokens)} tokens inferred from cost · provider reports no cache figures`
+    if (a.matches === total) return `${cacheCount(c.implied_cached_tokens)} tokens inferred from cost · agrees with the provider on every request`
+    const off = total - (a.matches || 0)
+    return `${cacheCount(c.implied_cached_tokens)} tokens inferred from cost · differs from the provider on ${off} of ${total} requests`
+  }
   const cachePct = (n) => n == null ? 'Not reported' : `${(n * 100).toFixed(1)}%`
   const cacheCount = (n) => n == null ? '—' : Number(n).toLocaleString()
   const cacheHits = (c) => c.request_hit_fraction == null ? 'Not reported' : `${Math.round(c.request_hit_fraction * c.measured_attempts)} / ${c.measured_attempts}`
@@ -283,19 +292,20 @@
                 <div><span class="kl">Input from cache</span><strong>{cachePct(trace.cache.input_read_fraction)}</strong><span>{cacheCount(trace.cache.cached_tokens)} of {cacheCount(trace.cache.measured_input_tokens)} measured tokens</span></div>
                 <div><span class="kl">Measured requests using cache</span><strong>{cacheHits(trace.cache)}</strong><span>{cachePct(trace.cache.request_hit_fraction)} had at least one cached token</span></div>
                 <div><span class="kl">Requests with cache data</span><strong>{trace.cache.measured_attempts} / {trace.cache.attempts}</strong><span>{trace.cache.measured_attempts === trace.cache.attempts ? 'All requests measured' : 'Unreported requests excluded from percentages'}</span></div>
+                <div><span class="kl">Implied by billing</span><strong>{trace.cache.implied_read_fraction == null ? 'No pricing snapshot' : cachePct(trace.cache.implied_read_fraction)}</strong><span>{impliedNote(trace.cache)}</span></div>
               </div>
               <div class="cache-table-scroll">
                 <table class="cache-table">
                   <caption>By conversation segment and request type</caption>
-                  <thead><tr><th>Segment</th><th>Request</th><th>Provider</th><th>Input cached</th><th>Cached / measured tokens</th><th>Requests using cache</th><th>Measured / total requests</th><th>Segment total cost</th></tr></thead>
+                  <thead><tr><th>Segment</th><th>Request</th><th>Provider</th><th>Input cached</th><th>Implied by billing</th><th>Cached / measured tokens</th><th>Requests using cache</th><th>Measured / total requests</th><th>Segment total cost</th></tr></thead>
                   <tbody>
                     {#each cacheRows as {key, c, group, costSpan} (key)}
-                      <tr><td>{group.segment}</td><td>{group.phase}</td><td>{group.provider}</td><td>{cachePct(c.input_read_fraction)}</td><td>{cacheCount(c.cached_tokens)} / {cacheCount(c.measured_input_tokens)}</td><td>{cacheHits(c)}</td><td>{c.measured_attempts} / {c.attempts}</td>{#if costSpan}<td class="segment-cost" rowspan={costSpan}>{segmentCost(group.segment)}</td>{/if}</tr>
+                      <tr><td>{group.segment}</td><td>{group.phase}</td><td>{group.provider}</td><td>{cachePct(c.input_read_fraction)}</td><td>{c.implied_read_fraction == null ? '—' : cachePct(c.implied_read_fraction)}</td><td>{cacheCount(c.cached_tokens)} / {cacheCount(c.measured_input_tokens)}</td><td>{cacheHits(c)}</td><td>{c.measured_attempts} / {c.attempts}</td>{#if costSpan}<td class="segment-cost" rowspan={costSpan}>{segmentCost(group.segment)}</td>{/if}</tr>
                     {/each}
                   </tbody>
                 </table>
               </div>
-              <p class="cache-note">Input reuse is weighted by token count. A request can use some cache and still process many uncached tokens. These percentages do not measure money saved. Segment cost includes gameplay and compaction model requests, including retries; OCR is excluded.</p>
+              <p class="cache-note">Input reuse is weighted by token count. A request can use some cache and still process many uncached tokens. These percentages do not measure money saved. "Implied by billing" backs the cache discount out of the billed prompt cost against the endpoint's list prices; it is the only cache signal for providers that report no cache figures. Segment cost includes gameplay and compaction model requests, including retries; OCR is excluded.</p>
               <details class="trace-step cache-raw"><summary><span class="step-label">Raw totals (JSON)</span></summary><pre>{JSON.stringify({ total: trace.cache, by_phase_provider_segment: trace.cache_breakdown, segment_costs: trace.segment_costs }, null, 2)}</pre></details>
             </div>
           </details>

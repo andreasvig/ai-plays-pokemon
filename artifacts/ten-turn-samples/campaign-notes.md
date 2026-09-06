@@ -48,7 +48,12 @@ Gemini reported 0% cached input on Google AI Studio across all requests. Pricing
 exactly $0.75/M prompt tokens (the endpoint's second pricing tier; the base tier is $0.375/M, cache reads $0.075/M at the
 tier that applied). Zero discount on any request means zero billed cache hits, not merely unreported ones. Method, usable
 for any provider whose usage omits cache counts: `implied_cached = (n × P_full − billed_prompt_cost) / (P_full − P_cache)`,
-after identifying the tier from `billed / n` on the first request. Why implicit caching never hit (stable prefix, 2.4k–14.6k
+after identifying the tier from `billed / n` on the first request. **Now built in**: the append agent snapshots the
+endpoint list prices once per run (`conversation/endpoint-pricing.json`), the trace builder attaches
+`implied_cache` to every usage event, Technical details show "Billed at" and "Discount implied by billing", and
+`results.md` has an implied column. Validated on all 116 requests of this campaign: the implied figure matches the
+provider-reported one on every request for all ten profiles (Anthropic needed the 1.25× cache-write premium removed per
+tier before choosing the tier). The campaign run dirs were backfilled from the same-day catalog snapshot. Why implicit caching never hit (stable prefix, 2.4k–14.6k
 tokens, requests seconds apart) is unexplained; worth a direct probe with and without the encrypted thought blocks.
 
 ## Harness findings (kept separate from model quality)

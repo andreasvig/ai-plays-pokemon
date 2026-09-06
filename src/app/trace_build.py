@@ -150,6 +150,34 @@ def _add_conversation_timeline(groups: list[dict]) -> int:
     return number
 
 
+def _load_endpoint_pricing(run_dir: Path):
+    """Endpoint list prices recorded for this run, or None when never snapshotted.
+
+    ``conversation/endpoint-pricing.json`` is written by the append agent on its
+    first request; protocol probes wrote a single ``endpoint-snapshot.json``.
+    """
+    multi = run_dir / "conversation" / "endpoint-pricing.json"
+    single = run_dir / "endpoint-snapshot.json"
+    try:
+        if multi.exists():
+            return json.loads(multi.read_text()).get("endpoints") or []
+        if single.exists():
+            return [json.loads(single.read_text())]
+    except (OSError, ValueError):
+        return None
+    return None
+
+
+def _attach_implied_cache(run_dir: Path, events: list[dict]) -> None:
+    """Add the billing-implied cache estimate to each usage event, in place."""
+    from src.agent.append_agent import implied_cache
+    pricing = _load_endpoint_pricing(run_dir)
+    for event in events:
+        if event.get("type") != "llm_request_usage":
+            continue
+        event["implied_cache"] = {"status": "no_pricing_snapshot"} if pricing is None else implied_cache(event, pricing)
+
+
 def build_run_trace(run_dir: Path) -> dict:
     """Build the task-grouped trace JSON for a finished run (Round 8 B1+B2).
 
@@ -162,6 +190,7 @@ def build_run_trace(run_dir: Path) -> dict:
     from src.core import event_parsing
 
     events = event_parsing.load_events(run_dir)
+    _attach_implied_cache(run_dir, events)
     turns = event_parsing.group_events_by_turn(events)
     has_tasks = any(e.get("type") == "task_started" for e in events)
 
