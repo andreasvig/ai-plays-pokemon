@@ -244,3 +244,12 @@ What this says, with the honest caveat that every arm is n=2:
 - The in-game "replay billed" correlation is only decisive when it is near 1.0. Guidance arms show 0.3–0.8 because the
   visible `reasoning` field in the action JSON grows with thinking length; the summarizer should flag only corr ≥ 0.95 as
   consumed and treat the rest as not consumed.
+
+### Decisions after the mini-campaign (Andreas, 2026-09-06)
+- **Gemma: guidance only from now on.** The base profile (omit_prior) is the default; `gemma-replay*` variants are opt-in
+  for re-probing and skipped by the campaign runner.
+- **Novita bf16 never hit a cache because there is none to hit.** Every request reported `cached_tokens: 0` explicitly (not
+  absent), was billed at the full $0.14/M list rate, and the endpoint advertises no cache-read price at all. Contrast
+  CoreWeave fp4: 44–70% reported hits, but its cache-read price equals its prompt price ($0.10/M), so those hits saved
+  nothing; DeepInfra turbo does discount ($0.05/M vs $0.09/M). Cache percentages are only worth money where the read price
+  is lower, which the "Billed at" row now shows per request.

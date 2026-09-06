@@ -38,6 +38,10 @@ MATRIX = [
     ("google/gemma-4-31b-it", "gemma-guidance-bf16"),
 ]
 DEFAULT_SKIP = {"meta--muse-spark-1.3": "OpenRouter account requires age attestation",
+                # Decision 2026-09-06 (Andreas): Gemma runs use the guidance profile from now on. Replay is
+                # dropped by 14/15 endpoints and did not help on the one that consumes it (0/2 vs 1/2).
+                "gemma-replay": "superseded; guidance only for Gemma, run via --only",
+                "gemma-replay-coreweave": "superseded; guidance only for Gemma, run via --only",
                 "gemma-guidance-coreweave": "endpoint experiment, run via --only",
                 "gemma-replay-coreweave": "endpoint experiment, run via --only",
                 "gemma-guidance-bf16": "endpoint experiment, run via --only"}

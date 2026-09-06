@@ -3,8 +3,11 @@
 # Endpoint tags are OpenRouter tags (including quantization/tier where available).
 version: 1
 reviewed: '2026-09-06'
-# Named variants inherit the model's base profile. Only replay policy differs
-# in the Gemma experiment; names and reasoning_use are diagnostic metadata.
+# Named variants inherit the model's base profile; names and reasoning_use are
+# diagnostic metadata. Decision 2026-09-06: Gemma runs use guidance (omit_prior,
+# the base profile) from now on. The replay variants stay selectable for
+# re-probing only: 14 of 15 Gemma endpoints drop replayed reasoning, and on the
+# one that consumes it (coreweave/fp4) replay went 0/2 against guidance 1/2.
 variants:
   gemma-guidance:
     model: google/gemma-4-31b-it
