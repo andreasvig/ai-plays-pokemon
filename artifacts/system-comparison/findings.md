@@ -20,7 +20,7 @@ LLM time per turn fell 13–37% on the new arm. Two reasons show in the traces: 
 
 - **GLM / Z.AI**: 85% of gameplay prompt tokens cached. New arm 17% cheaper despite the prompt growing 3.3k → 26.5k tokens.
 - **Gemini / AI Studio**: only the system block is cacheable through OpenRouter (7%). Per-turn cost doubled over the run ($0.010 → $0.0215) as the prompt grew to 26.7k; new arm 23% dearer. Compaction cost $0.031.
-- **Astra / OpenAI**: caching stopped at the first screenshot on every turn (1,192 tokens) and the rest was billed at the 1.25× cache-write price; per-turn cost tripled ($0.07 → $0.20), compaction cost $0.42, total 2.7× the old arm. Investigation in `artifacts/provider-compatibility/openai-image-prefix-caching-probe.md`: identical repeats hit, the harness's real bodies do not extend, simplified bodies with the same ingredients do; the blocking field is unresolved.
+- **Astra / OpenAI**: caching stopped at the first screenshot on every turn (1,192 tokens) and the rest was billed at the 1.25× cache-write price; per-turn cost tripled ($0.07 → $0.20), compaction cost $0.42, total 2.7× the old arm. Cause found (`artifacts/provider-compatibility/openai-image-prefix-caching-probe.md`): when the request's final turn contains an image, OpenAI's cache cannot be extended past the first image in the prompt, and the agent ends every request with the screenshot. A text-only final turn (screenshot, one-word assistant ack, text prompt) extends fully in probes at ≈$0.03/turn.
 
 The old arm's cost is flat per turn (sliding window). The new arm's cost is a curve that rises until compaction; at 25 turns with one compaction it is already 2–3× the first-turn cost on the two endpoints without whole-prefix caching, and it would keep rising on longer segments.
 
@@ -32,7 +32,7 @@ Gemini and Astra reached every checkpoint earlier on the new arm (Astra: Route 1
 
 1. **On endpoints with whole-prefix caching (Z.AI, and per the ten-turn campaign Anthropic and DeepSeek), the new system is faster, cheaper and at least as good.** Run it.
 2. **On Gemini through OpenRouter the new system is faster and progressed further but ~25% dearer at 25 turns**, and the gap widens with segment length. Shorter compaction intervals or Vertex/AI-Studio-direct caching would change this; not tested.
-3. **On OpenAI through OpenRouter the new system is not viable at current caching behaviour** — 2.7× the price for faster, better play. Either find the body difference that blocks extension, keep only the latest screenshot as an image, or use `openai/flex` (half price) — each needs its own run.
+3. **On OpenAI through OpenRouter the new system is not viable in its current request shape** — 2.7× the price for faster, better play — because a final turn with an image disables cache extension. The fix shape (text-only final turn) is probe-verified and needs a live rerun of the Astra arm to confirm the price.
 
 ## Side findings
 

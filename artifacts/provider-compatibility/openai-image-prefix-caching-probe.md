@@ -1,35 +1,34 @@
-# OpenAI via OpenRouter: the append agent's real request bodies do not extend the prompt cache past the first screenshot (2026-09-06)
+# OpenAI via OpenRouter: a final turn that contains an image disables prompt caching beyond the first image (2026-09-06)
 
-> Source: old-vs-new system comparison, Astra new arm (`local/runs/2026-09-06_16-05-44_config-new__openai-gpt-6-astra`), then replays of its saved request bodies (`conversation/*-request.json`, screenshots rehydrated from `conversation/assets/`). Endpoint tag `openai`, effort medium. Probe spend for the investigation ≈ $2.
+> Source: old-vs-new system comparison, Astra new arm (`local/runs/2026-09-06_16-05-44_config-new__openai-gpt-6-astra`), then ~30 replay requests built from its saved request bodies (`conversation/*-request.json`, screenshots rehydrated from `conversation/assets/`). Endpoint tag `openai`, effort medium. Investigation spend ≈ $4.
 
-## What the live run showed
+## The rule
 
-All 25 gameplay requests reported `cached_tokens = 1192` — the system prompt plus the first user text, i.e. everything before the first screenshot — with the rest of the prompt billed as `cache_write_tokens` at $12.50/M (1.25× input). Consecutive request bodies are byte-identical prefixes of each other (each is the previous one plus three messages), so this is not a prefix mutation.
+**If the last (merged) turn of the request contains an image, OpenAI's prompt cache cannot be extended past the first image anywhere in the prompt.** Identical repeats still hit in full. If the final turn is text-only — even with screenshots in earlier turns — the next request hits the whole previous prompt.
 
-## Replays of the real bodies (each pair uses a fresh nonce in the system prompt)
+The append agent ends every request with `user: [OCR text, screenshot]`, so all 25 live turns cached exactly 1,192 tokens (system + first user text) and paid the 1.25× cache-write price ($12.50/M on `openai`) on the rest: $4.61 for 25 turns vs $1.72 on the sliding-window agent.
 
-| Pair | A | A + 3 messages (next turn) | Extends? |
+## Evidence (fresh nonce in the system prompt per chain; "cached" is `prompt_tokens_details.cached_tokens` on the request)
+
+| Chain | Shape of each request | Next request cached | Verdict |
 |---|---|---|---|
-| control (real bodies) | 4,665 tok, cached 0, write 4,662 | 6,390 tok, cached **1,203**, write 5,184 | no |
-| A+turn sent again, identical, +30 s / +130 s | | cached 6,387 of 6,390 | identical repeat hits |
-| turn 4 body after that, extends the fully-cached turn-3 body | | cached 1,203 | no |
-| stream false · no session_id · reasoning without exclude · no require_parameters | | cached ≈1,205 | no |
-| assistant `reasoning`/`refusal` null keys removed (separately and together) | | cached ≈1,207 | no |
-| first text-only user message dropped · first two user messages merged | | cached ≈1,206 | no |
-| user texts / tool arguments / call ids replaced with probe text | | cached ≈1,207 | no |
-| system prompt padded to ≈8k tokens | 11,473 | cached **8,011** (again: up to the image) | no |
-| tools removed, assistant tool calls turned into plain text | | cached 0 | no |
-| all images replaced by one screenshot file everywhere | | cached 1,203 | no |
-| **images removed entirely** (text-only real bodies) | 1,412 | cached 1,409 of 1,516 | **yes** |
+| live bodies turn1→2→3 | ends `user[text, img]` | 1,203 / 1,203 | poisoned |
+| hand-built, same shape (X) | ends `user[text, img]` | 1,226 / 1,226 | poisoned — so not JSON key order, not harness plumbing |
+| parts swapped (Y) | ends `user[img, text]` | 1,223 | poisoned — not "last part is an image" |
+| trailing text user message (Z1) | `user[text, img]`, `user "choose"` | 1,204 | poisoned — adjacent user messages are merged into one turn |
+| screenshot inside the tool result (Q4) | ends `tool[text, img]` | 1,204 | poisoned — role does not matter, the image in the final turn does |
+| ends with tool text (Z3, P11) | `user[img]`, `assistant call`, `tool "Accepted."` | 2,946 = all of A; 4,670 = all of B | extends through the images |
+| final user turn text-only, image earlier (Q2) | `user[img]`, call, tool, `user "text"` | 2,980 = all | extends |
+| **fix shape (Q5)**: `user[text, img]` → `assistant "Observed."` → `user "choose…"` | final turn text-only, chained 3 turns | 2,883 → 4,650 (all of the previous request each time) | **extends; model still calls the tool; $0.028/turn vs $0.070** |
 
-## The same pieces in a simplified body extend fine
+Ruled out one at a time on the real bodies (no effect): `stream`, `session_id`, `reasoning.exclude`, `require_parameters`, `max_tokens`, assistant `refusal`/`reasoning` null keys, first text-only user message, merged user messages, user texts, tool arguments, call ids, system-prompt length (padded to 8k), image bytes, tool plumbing.
 
-`probe_cache_hits.py --grow` (request A, then A + one turn, 1.5 s apart) — system prompt (short real one or padded), the real screenshots (distinct per turn), the real `tools` list with assistant tool calls and tool results — **extends** in every variant tried (6 of 6: cached = all of A). Example: A 9,620 tok → A+turn cached 9,617.
+## Why the probes missed it
 
-So: image bytes, tool plumbing, system length, streaming, session id, reasoning fields and the user/tool texts are each innocent in isolation, yet the harness's exact bodies fail and a hand-built body with the same ingredients passes. The differing piece was not isolated in this session (open task in the Marvin brain). Identical repeats always hit, which is why every earlier probe reported 99.9%.
+`probe_cache_hits.py` sent identical pairs (99.9% hits, with or without an image), and my first `--grow` mode ended request A with an assistant message, which is the shape that works. `--grow` now uses the live shape (A ends with `user[text, img]`), and `--grow-split` the fix shape, so both regimes are visible.
 
-## Consequence
+## What to do about it
 
-For the append-and-compact agent adding a screenshot per turn, OpenAI through OpenRouter cached only the system prompt and billed the growing conversation at 1.25× every turn. Astra's new arm cost $4.61 vs $1.72 on the sliding-window arm (2.7×); per-turn cost rose from $0.07 to $0.20 by turn 25. Z.AI cached 85% of the same growing image conversation; Anthropic ~75% in the ten-turn campaign; Gemini is limited to the system block for a different reason (marker placement).
+The agent needs the current screenshot in the request. The fix shape keeps it in a user turn, follows it with a synthetic one-word assistant acknowledgement, and asks for the action in a text-only user message — the final turn is then text-only. Proposed as an opt-in profile flag for OpenAI endpoints; untested in a live run. Expected effect on Astra: per-turn cost ≈ $0.03 flat-ish instead of $0.07 → $0.20, i.e. the new arm would land near or below the old arm's $1.72.
 
-Until the body difference is found, treat OpenAI endpoints as **no effective prefix caching** for this agent. Candidate mitigations, untested: keep only the latest screenshot as an image (earlier ones as text placeholders); `openai/flex` at half price.
+Unknown: whether this is OpenAI's own behaviour or OpenRouter's Responses-API conversion (no direct OpenAI key to test). Z.AI and Anthropic cache the same growing image conversation without this restriction.

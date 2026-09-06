@@ -87,7 +87,7 @@ profiles:
     # `reasoning` string is not. Caching is automatic on the whole prefix (8489/8492 tokens cached on
     # an 8.5k identical prefix, no marker) at a 90% read discount, so no cache_control is sent.
     cache_mode: implicit
-    notes: 'Only effort medium verified live; other efforts follow the gpt-5.6 family ladder. $10/$50 per M on the openai tag (openai/flex half price, openai/fast double). CACHING CAVEAT (25-turn run 2026-09-06): the harness''s real request bodies cached only the system prompt + first user text (1,192 tokens) on every turn and paid the 1.25x cache-write price on the rest, 2.7x the cost of the sliding-window agent; identical repeats hit fully, and simplified bodies with the same screenshots/tools extend fine, so the blocking field is unresolved (artifacts/provider-compatibility/openai-image-prefix-caching-probe.md). Astra at medium reports 0 reasoning tokens on ~90% of gameplay turns.'
+    notes: 'Only effort medium verified live; other efforts follow the gpt-5.6 family ladder. $10/$50 per M on the openai tag (openai/flex half price, openai/fast double). CACHING RULE (2026-09-06): when the request''s final turn contains an image, the cache cannot be extended past the first image anywhere in the prompt; the agent ends every request with the screenshot, so the 25-turn run cached 1,192 tokens per turn and paid the 1.25x cache-write price on the rest (2.7x the sliding-window agent). A text-only final turn (screenshot, assistant ack, text prompt) extends fully in probes; not yet a profile option (artifacts/provider-compatibility/openai-image-prefix-caching-probe.md). Astra at medium reports 0 reasoning tokens on ~90% of gameplay turns.'
   google/gemini-3.8-flash:
     endpoint: google-ai-studio
     context_length: 1048576

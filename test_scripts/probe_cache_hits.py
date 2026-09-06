@@ -71,12 +71,14 @@ async def probe(model, tag, key, image, placements, transport, timeout, reasonin
     return out
 
 
-async def grow(model, tag, key, image, transport, timeout, reasoning):
-    """Extension shape: request A, then A + one more turn (text + the same screenshot), immediately.
+async def grow(model, tag, key, image, transport, timeout, reasoning, shape="live"):
+    """Extension shape: request A, then A + one more turn, immediately.
 
-    An identical-repeat pair cannot witness this. OpenAI via OpenRouter (2026-09-06) cached 99.9% of an
-    identical repeat yet only the pre-image prefix (system + first user text) when the conversation
-    grew by a turn — every append-and-compact turn re-paid the 1.25x cache-write price on the rest.
+    Default (`live`): A ends with `user: [text, screenshot]`, exactly like the agent. `split`: each
+    screenshot turn is followed by a one-word assistant acknowledgement and a text-only user prompt,
+    so the final turn carries no image. An identical-repeat pair cannot witness either. OpenAI via
+    OpenRouter (2026-09-06): identical repeat 99.9% cached; live shape cached only the pre-image
+    prefix on every turn (2.7x cost in a 25-turn run); split shape extends through the images.
     """
     system = load_config(str(ROOT / "configs/config-append.yaml"), llm_alias=model)["system_prompt"] + "\n\n" + FILLER
     def user_turn(n):
@@ -85,10 +87,15 @@ async def grow(model, tag, key, image, transport, timeout, reasoning):
             data = base64.b64encode(Path(image).read_bytes()).decode()
             parts.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{data}"}})
         return {"role": "user", "content": parts}
-    history = [{"role": "system", "content": system}, user_turn(1),
-               {"role": "assistant", "content": "Turn 1 plan: " + " ".join(["walk right, then up, then left onto the stairs;"] * 60)}]
+    plan = {"role": "assistant", "content": "Turn plan: " + " ".join(["walk right, then up, then left onto the stairs;"] * 60)}
+    def screenshot_turn(n):
+        if shape == "split":
+            return [user_turn(n), {"role": "assistant", "content": "Observed."}, {"role": "user", "content": f"Turn {n}: choose your next inputs."}]
+        return [user_turn(n)]
+    history = [{"role": "system", "content": system}] + screenshot_turn(1)          # ends like the agent's request
+    extended = history + [plan] + screenshot_turn(2)
     calls = []
-    for label, msgs in (("A", history), ("A+turn", history + [user_turn(2), {"role": "assistant", "content": "Turn 2 plan: same."}, user_turn(3)])):
+    for label, msgs in (("A", history), ("A+turn", extended)):
         body = {"model": model, "messages": msgs, "max_tokens": 60, "stream": False,
                 "provider": {"only": [tag], "allow_fallbacks": False}, "transforms": []}
         if reasoning:
@@ -106,10 +113,10 @@ async def grow(model, tag, key, image, transport, timeout, reasoning):
     first = calls[0].get("prompt_tokens") or 0
     second = calls[-1]
     verdict = ("prefix_extends" if (second.get("cached") or 0) >= 0.9 * first else "prefix_does_not_extend") if "error" not in second else "error"
-    print(f"  {model} {tag} [grow{' +image' if image else ''}] -> " + " | ".join(
+    print(f"  {model} {tag} [grow:{shape}{' +image' if image else ''}] -> " + " | ".join(
         f"{c['request']}: {c.get('prompt_tokens')} tok, cached {c.get('cached')}, write {c.get('cache_write')}" if 'error' not in c else f"{c['request']}: {c['error']}"
         for c in calls) + f" => {verdict}", flush=True)
-    return {"placement": "grow", "image": bool(image), "calls": calls, "verdict": verdict}
+    return {"placement": f"grow:{shape}", "image": bool(image), "calls": calls, "verdict": verdict}
 
 
 async def main(args):
@@ -118,8 +125,9 @@ async def main(args):
     reasoning = json.loads(args.reasoning) if args.reasoning else None
     result = {"model": args.model, "image": args.image, "endpoints": {}}
     for tag in args.tag:
-        if args.grow:
-            result["endpoints"][tag] = [await grow(args.model, tag, key, args.image, transport, args.timeout, reasoning)]
+        if args.grow or args.grow_split:
+            shapes = (["live"] if args.grow else []) + (["split"] if args.grow_split else [])
+            result["endpoints"][tag] = [await grow(args.model, tag, key, args.image, transport, args.timeout, reasoning, shape) for shape in shapes]
         else:
             result["endpoints"][tag] = await probe(args.model, tag, key, args.image, args.placement, transport, args.timeout, reasoning, args.tail_turns)
     out = ROOT / "artifacts/provider-compatibility" / f"cache-hit-probe__{args.model.replace('/', '--')}.json"
@@ -135,7 +143,8 @@ if __name__ == "__main__":
     parser.add_argument("--image", help="PNG to attach on turn 1 (mirrors real requests)")
     parser.add_argument("--reasoning", help="JSON reasoning param")
     parser.add_argument("--timeout", type=int, default=120)
-    parser.add_argument("--grow", action="store_true", help="Extension shape (A, then A + one turn) instead of an identical repeat; pass --image for the real case")
+    parser.add_argument("--grow", action="store_true", help="Extension shape in the agent's live form (A ends with user[text, screenshot]); pass --image for the real case")
+    parser.add_argument("--grow-split", action="store_true", help="Extension shape with a text-only final turn (screenshot, assistant ack, text prompt)")
     parser.add_argument("--tail-turns", type=int, default=1, help="Conversation turns after the system prompt (longer tail tests conversation caching)")
     args = parser.parse_args()
     args.placement = args.placement or ["none", "system", "system+last"]
