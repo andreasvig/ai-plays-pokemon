@@ -76,6 +76,18 @@ profiles:
     reasoning_default: {effort: medium}
     cache_mode: unknown
     notes: 'Encrypted replay supported by OpenRouter normalization; endpoint access and cache activation require a live probe.'
+  openai/gpt-6-astra:
+    endpoint: openai
+    context_length: 1050000
+    max_completion_tokens: 128000
+    reasoning_efforts: [max, xhigh, high, medium, low]
+    reasoning_default: {effort: medium}
+    # Probe 2026-09-06 (openai tag, effort medium): replayed reasoning_details (reasoning.encrypted +
+    # reasoning.summary items) are tokenized by the endpoint (+57 prompt tokens/turn); the bare
+    # `reasoning` string is not. Caching is automatic on the whole prefix (8489/8492 tokens cached on
+    # an 8.5k identical prefix, no marker) at a 90% read discount, so no cache_control is sent.
+    cache_mode: implicit
+    notes: 'Only effort medium verified live; other efforts follow the gpt-5.6 family ladder. $10/$50 per M on the openai tag (openai/flex half price, openai/fast double). Added for the 2026-09-06 old-vs-new system comparison.'
   google/gemini-3.8-flash:
     endpoint: google-ai-studio
     context_length: 1048576

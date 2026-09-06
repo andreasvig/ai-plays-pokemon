@@ -1041,3 +1041,81 @@ step-3.7-flash:
 # Nothing newer from OpenAI: the gpt-5.6 six-slug family (2026-07-09) is already
 # in this file and is still the latest OpenAI line on OpenRouter.
 # ----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
+# Added 2026-09-06 for the old-vs-new system comparison (artifacts/system-comparison/plan.md).
+# Each entry PINS one OpenRouter endpoint (`provider.only` + `allow_fallbacks: false`) so the
+# legacy transport serves the same endpoint tag as the append agent's provider profile —
+# provider drift (quant, cache regime, tokenizer) must not become the finding.
+# ----------------------------------------------------------------------------
+
+# OpenAI GPT-6 Astra (released 2026-09-03) — $10.00/$50.00 per M on the `openai` tag (cache read $1.00, cache write $12.50; `openai/flex` is half price, `openai/fast` double). 1.05M ctx, multimodal, tool_choice + structured_outputs advertised. Probed 2026-09-06 at effort medium: replayed `reasoning_details` (encrypted + summary items) IS tokenized by the endpoint (+57 prompt tokens per replayed turn); a bare `reasoning` string is not. Prompt caching is automatic — an 8.5k-token identical prefix came back 8489/8492 cached on both calls without any cache_control marker. Only `medium` is verified live; the rest of the ladder follows the gpt-5.6 family convention and is UNVERIFIED.
+gpt-6-astra:
+  openrouter_id: openai/gpt-6-astra
+  reasoning_type: effort
+  thinking_levels:
+  - max
+  - xhigh
+  - high
+  - medium
+  - low
+  reasoning_summary: auto
+  provider:
+    only:
+    - openai
+    allow_fallbacks: false
+  observed:
+    max:
+      sample_turns: 0
+    xhigh:
+      sample_turns: 0
+    high:
+      sample_turns: 0
+    medium:
+      sample_turns: 0
+    low:
+      sample_turns: 0
+
+# Google Gemini 3.8 Flash — effort-tiered (high/medium/low, mirrors configs/provider-profiles.yaml), multimodal, 1M ctx. Pinned to `google-ai-studio`, the tag the append-agent profile uses. Ten-turn sample 2026-09-06 on the append agent: reached "Chose a starter" in 10 turns, $0.127; implicit caching never hit through OpenRouter (the profile marks the system block explicitly — the legacy transport sends no marker, so expect 0% cache here).
+gemini-3.8-flash:
+  openrouter_id: google/gemini-3.8-flash
+  reasoning_type: effort
+  thinking_levels:
+  - high
+  - medium
+  - low
+  provider:
+    only:
+    - google-ai-studio
+    allow_fallbacks: false
+  observed:
+    high:
+      sample_turns: 0
+    medium:
+      sample_turns: 0
+    low:
+      sample_turns: 0
+
+# Z.AI GLM 5.3 Flash — effort-tiered (max/high/low), multimodal, 1M ctx. Pinned to `z-ai/fp8`, the tag the append-agent profile uses (tools supported on the direct endpoint). Ten-turn sample 2026-09-06 on the append agent: left the bedroom in 10 turns, $0.007, 67% cached input.
+glm-5.3-flash:
+  openrouter_id: z-ai/glm-5.3-flash
+  reasoning_type: effort
+  # Smoke 2026-09-06: Z.AI answers 400 "Tool choice must be auto" to the legacy transport's forced
+  # tool_choice, and pydantic-ai refuses native_json for this model ("Native structured output is not
+  # supported by the model"), so the legacy path uses locally validated prompted JSON, like Gemma/Qwen.
+  output_mode: prompted
+  thinking_levels:
+  - max
+  - high
+  - low
+  provider:
+    only:
+    - z-ai/fp8
+    allow_fallbacks: false
+  observed:
+    max:
+      sample_turns: 0
+    high:
+      sample_turns: 0
+    low:
+      sample_turns: 0
