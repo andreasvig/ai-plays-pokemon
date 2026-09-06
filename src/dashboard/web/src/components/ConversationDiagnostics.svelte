@@ -68,7 +68,7 @@
                   <div><dt>Tokens written</dt><dd>{count(event.cache_write_tokens)}</dd></div>
                   {#if event.continuity?.cache_mode}<div><dt>Cache strategy</dt><dd>{words(event.continuity.cache_mode)}</dd></div>{/if}
                   <div><dt>Billed at</dt><dd>{billedAt(event.implied_cache)}</dd></div>
-                  <div><dt>Discount implied by billing</dt><dd>{impliedDiscount(event.implied_cache)}</dd></div>
+                  <div><dt>Implied discount</dt><dd>{impliedDiscount(event.implied_cache)}</dd></div>
                 </dl>
                 <p class="hint">Writes prepare for later reuse; reads measure reuse on this request. "Implied by billing" backs the discount out of what the provider charged, so it also works when the provider reports no cache figures.</p>
               </section>
