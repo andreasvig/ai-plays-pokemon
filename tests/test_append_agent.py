@@ -330,6 +330,47 @@ def test_context_pressure_compacts_before_interval(config, tmp_path):
     asyncio.run(run())
 
 
+def test_context_estimate_counts_tokens_not_bytes(config, tmp_path):
+    """A verbose reasoner must not trigger compaction on byte count alone."""
+    class Verbose(FakeProvider):
+        async def __call__(self, *args):
+            response = await super().__call__(*args)
+            message = response["choices"][0]["message"]
+            message["reasoning"] = "x" * 60000
+            message["reasoning_details"][0]["data"] = "x" * 60000
+            return response
+    agent, provider, events = engine(config, tmp_path, Verbose())
+    config["compaction"]["every_n_turns"] = 20
+    threshold = config["compaction"]["context_token_limit"] * config["compaction"]["context_limit_fraction"]
+    async def run():
+        await agent.play(1, "", IMAGE)
+        agent.commit_action(1)
+        agent.state["last_input_tokens"] = 10000
+        # Mutation control: the previous byte-denominated formula crossed the threshold here.
+        assert 10000 + len(json.dumps(agent.state["messages"][-2:]).encode()) > threshold
+        await agent.play(2, "latest result", IMAGE)
+        assert len(provider.requests) == 2
+        assert not any(e.get("reason") == "context_threshold" for e in events)
+    asyncio.run(run())
+
+
+def test_provider_side_failure_is_a_transport_error_and_retried(config, tmp_path):
+    config["transport"]["max_retries"] = 1
+    class Flaky(FakeProvider):
+        async def __call__(self, *args):
+            response = await super().__call__(*args)
+            if len(self.requests) == 1:
+                response["choices"] = [{"message": {"role": "assistant", "content": ""},
+                                        "finish_reason": "stop", "native_finish_reason": "network_error"}]
+                response["usage"] = None
+            return response
+    agent, provider, events = engine(config, tmp_path, Flaky())
+    assert asyncio.run(agent.play(1, "", IMAGE)).inputs == ["a"]
+    errors = [e for e in events if e["type"] == "llm_request_error"]
+    assert [e["error"] for e in errors] == ["Provider returned no completion (network_error)"]
+    assert len(provider.requests) == 2
+
+
 def test_budget_reached_by_compaction_prevents_gameplay(config, tmp_path):
     costs = []
     agent, provider, events = engine(config, tmp_path)

@@ -57,22 +57,93 @@ cache column is not comparable to the others.
    (cap 12288), but the JSON body was one closing brace short (`…]}}` vs the valid attempt's `…]}}}`). A model formatting slip,
    retried successfully by the existing retry loop. Cost of the wasted attempt: $0.081.
 3. **Transient SSL error** on Opus attempt 2 — transport-level, retried successfully.
-4. **Context-threshold estimate conflates bytes with tokens** (`src/agent/append_agent.py` ~line 338). `growth` is the JSON
+4. **FIXED** — **Context-threshold estimate conflates bytes with tokens** (`src/agent/append_agent.py` ~line 338). `growth` is the JSON
    byte length of the last two messages plus the OCR text. Those bytes include the base64 screenshot (~22 KB) and the
    assistant's replayed reasoning stored twice (`reasoning` + `reasoning_details`, ~18.5 KB each for Qwen). For Qwen the
    turn-3 estimate was ≈ 10.2k (last input) + 38k (reasoning bytes) + 22k (image bytes) + 4.1k (reserve) + 12.3k (max
    output) ≈ 88k, over the 85.2k threshold (131072 × 0.65), so compaction fired every turn. Gemini's same estimate was ≈ 52k.
    Consequence: any verbose-reasoning model compacts nearly every turn, reasoning replay across turns is never exercised for
-   it, and cost/latency inflate. The real prompt was 10k tokens, far from any limit. Fix candidates (after the campaign, not
-   mid-measurement): estimate `growth` in tokens (bytes ÷ ~4 for text, a fixed image token cost), and count reasoning once.
-5. **Qwen also drops the `result` wrapper** on compaction (2 of 4 first attempts). The Gemma fix is profile-gated
-   (`allow_unwrapped_json` only on the Gemma profiles), so Qwen paid a retry each time. Same class of defect; suggests the
-   unwrapped fallback should be default-on for all providers, with action validation still enforced.
-6. **Provider network error surfaced as a format error.** GLM turn 1 attempt 1: OpenRouter returned an empty choice with
+   it, and cost/latency inflate. The real prompt was 10k tokens, far from any limit. Fixed after the campaign: `approx_tokens()` estimates in tokens (bytes ÷ 4 for text, `image_token_reserve` per image,
+   reasoning counted once). Replayed against Qwen's real turn 3: old ≈ 88k (trip), new ≈ 36k (no trip); ~60k tokens of headroom.
+5. **FIXED** — **Qwen also drops the `result` wrapper** on compaction (2 of 4 first attempts). The Gemma fix is profile-gated
+   (`allow_unwrapped_json` only on the Gemma profiles), so Qwen paid a retry each time. Fixed: `allow_unwrapped_json` now defaults to true for
+   every profile; schema validation of the action/handover remains the guard (test covers Gemma and Qwen, valid and invalid).
+6. **FIXED** — **Provider network error surfaced as a format error.** GLM turn 1 attempt 1: OpenRouter returned an empty choice with
    `native_finish_reason: network_error` and no usage after 181 s. The harness logged it as `Expected exactly one gameplay
-   call`, which reads as a model-output defect. Worth classifying `native_finish_reason in {network_error, error}` as a
-   transport failure so error tallies separate provider outages from model formatting.
+   call`, which reads as a model-output defect. Fixed: `native_finish_reason` in {network_error, error} (or finish_reason error) now raises
+   `ProviderTransportError("Provider returned no completion (…)")` before any output parsing; it is retried like other transient errors.
 
 ## Caveats
+Full suite after the fixes: 649 passed, 8 failed; the 8 are in model-registry, taskmaster and OCR tests that predate this
+branch's work and do not import the append agent or provider profiles. The two touched suites pass 40/40, and each new
+test was mutation-checked (reverting its fix makes it fail).
+
 Ten turns cannot rank model quality. Checkpoint progress is from the independent referee (map reads), not model self-report.
 Costs include OCR cleanup and failed attempts.
+
+## Caching and reasoning-continuity overview (per profile)
+
+Source: every `llm_request_usage` event's `continuity` block and OpenRouter usage. "Replay intact" means the harness
+verified, before sending, that every archived reasoning block from the current segment was present and unchanged in the
+outbound history; no provider reported back whether it *used* them (`provider_feedback: not_reported` for all ten).
+Cache figures are the provider-reported cached-input share summed over all requests of the run.
+
+| Profile | Cache mode | Cached input | Cache pattern | Reasoning format returned | Replay | Notes |
+|---|---|---:|---|---|---|---|
+| gemini-3.8-flash | implicit (AI Studio) | 0% | Never reported | text + **encrypted (signed)** | intact, 1 opaque block/turn | Google implicit caching is not surfaced in usage, so 0% is "unknown", not "none". |
+| claude-opus-5 | automatic | 75% | 63% → 83% within a segment; 0% on the first request of a new segment; compaction retry hit 100% | text | intact | Textbook prefix cache: grows every turn, resets at segment start. |
+| claude-fable-5.1 | automatic | 72% | 63% → 85%, same shape as Opus | text; **empty on 2 of 11 requests** (0 reasoning tokens) | intact | Mandatory-thinking model returned no thinking on t6 compaction and t8; replay count dropped accordingly (4/4 not 6/6) and stayed consistent. |
+| qwen3.8-flash | system_breakpoint | 11% | Flat 1,060 tokens cached on every request (the explicit system prefix only) | text | intact | Alibaba honoured the explicit breakpoint but never cached the growing conversation. 3–7k reasoning tokens/turn, 55–80 s latency. |
+| glm-5.3-flash | implicit | 67% | 61% → 83%; dipped to 22% on the 2nd request of segment 2, then recovered | text | intact | One provider-side `network_error` (t1, 181 s, empty completion). |
+| deepseek-v4-flash-vision | implicit | **89%** | 90% → 96% from turn 2, in 64-token blocks | text | intact | Best cache behaviour of the set. |
+| grok-4.6 | implicit | 46% | 35% → 79% in segment 1, then **0.4% on the 32k-token compaction request** and ~1% on t7–t8, recovering to 78% by t10 | **encrypted + summary** | intact, 1 opaque block/turn | xAI cache misses are unpredictable at larger prompts; the most expensive misses of the campaign. |
+| kimi-k3 | implicit | 73% | 61% → 83%; 31% on the first request of segment 2 (system prefix still hot) | text; empty on t5 | intact | Very little reasoning (0–330 tokens) yet the best progress per dollar among mid-priced models. |
+| gemma-4-31b guidance | implicit (DeepInfra) | 17% | 0% on 9 of 11 requests; 74–88% on t4–t5 only | text | **0 replayed by design**, 2→8 archived locally | Prior raw thoughts removed between turns (Google's guidance). |
+| gemma-4-31b replay | implicit (DeepInfra) | 69% | 82–88% from turn 3 onward, both segments | text | intact, 2→10 blocks | Same provider, same sizes, far better cache hits than the guidance arm. n=1 each; do not attribute yet. |
+
+What held everywhere: local replay was `intact` and the history prefix `unchanged` on all 118 successful requests, including
+after every turn-7 restart (turn 8 replayed exactly the blocks archived before the restart). Session ids were stable per run.
+The turn-5 handover reset replay to 0 and the archive kept growing, as designed.
+
+What did not: no provider confirmed use of replayed reasoning (`reasoning_use: unverified` for all but Gemma guidance, which
+is `not_preserved_between_user_turns` by declaration). Signed/encrypted formats (Gemini, Grok) are the only ones where
+replay is at least *verifiable* by the provider; text replay (everyone else) is a plain prompt.
+
+One replay-cost observation: for text-reasoning providers the gateway returns the same thoughts under both `reasoning` and
+`reasoning_details`, and the harness archives and replays both. That doubled the byte count that tripped finding 4, and
+doubles archive size. Whether the provider ignores one of the two is unknown. Not changed here; worth a probe.
+
+## The two Gemma runs, explained
+
+Both used google/gemma-4-31b-it on DeepInfra, temperature 0.3, prompted JSON output, same save, 10 turns each. The only
+configured difference: guidance strips earlier raw thoughts from the history before each request; replay sends them back
+unchanged until the handover.
+
+**What the game asked of them.** The bedroom staircase in FireRed is entered from the *right*, by walking onto the stair
+tile from the orange mat beside it. Every model that got out did that: Gemini's first action was right ×4, up ×4, left ×2
+and it warped on turn 1; Kimi did the same in three turns. Approaching from below (the row with the stair feet) or from the
+left (the white banister) is blocked.
+
+**Guidance run.** Turns 1–3 walked up and right in 2–4 button nudges and ended just *left* of the banister. Turns 4–7
+alternated up/left/right one tile at a time, repeatedly reporting `last_turn_succeeded: true` while not having moved. At
+turn 8 it correctly named the railing as the blocker, then planned a route through invented coordinates ("(6,3), (6,4),
+(6,5)… stairs at (7,3)") that the prompt explicitly tells it not to use, and never crossed to the mat side. Its turn-5
+handover said "positioned directly below the stairs; next step move up", a confident wrong belief carried into segment 2.
+
+**Replay run.** Turn 1 went up and right to the tile directly *below* the stair feet. Turns 2–5 pressed `up` into that
+wall four times in a row, each turn seeing the same screen. With its own earlier reasoning in context it did not change
+hypothesis; it escalated to "the screen has not updated" and "the game may be frozen", pressed Start on turn 8 to test
+responsiveness, and finished with a 5× `up` into the same wall. Its handover was more honest than guidance's ("remained
+stationary despite inputs; try right then up") but framed the cause as an invisible obstacle or failing inputs, not a wrong
+entry side.
+
+**What separates them, and what does not.**
+- Outcome: identical (bedroom, no checkpoint). Cost: $0.006 vs $0.004. Speed: both 3–30 s per turn with occasional 50–86 s spikes.
+- Behavioural texture (n=1 each, so a hypothesis, not a finding): guidance *varied* its approach every turn (up, left, right, down) without ever reasoning about why moves fail; replay *anchored* on one approach for four turns, then jumped to a system-level explanation. That is the pattern one would predict from "sees its own previous reasoning" vs "does not", but two ten-turn runs cannot confirm it.
+- Neither run populated `map_notes` in the handover memory, and both handovers were 1–3 sentences. Gemma's handover quality is thin regardless of profile.
+- Cache: replay 69% vs guidance 17% on DeepInfra. Same provider, near-identical request sizes. If it replicates, replay is *cheaper* in practice for Gemma despite sending more tokens, because guidance's history mutation may be defeating prefix caching. Needs 3+ runs per arm to say.
+- Harness: the first attempt of each arm crashed on the same missing `result` envelope after the handover (fixed, now default-on for all providers). The first replay attempt also had a 4-minute handover request; the rerun's took 28 s, so that was provider latency, not the profile.
+
+**Bottom line for Gemma 31B.** The model is not failing on format or continuity; it is failing on spatial reasoning in a way
+neither replay policy changes. A longer benchmark can still separate the two profiles on cost and cache, but on progress
+they will need a map-reading aid (or a smaller step budget per turn) before the comparison says anything.

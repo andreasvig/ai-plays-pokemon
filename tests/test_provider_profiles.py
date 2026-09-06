@@ -150,9 +150,12 @@ def test_gemma_variants_only_change_replay_and_cannot_switch_on_resume(tmp_path)
             load_config(str(ROOT / "configs/config-append.yaml"), llm_alias=model, provider_profile=variant)
 
 
+@pytest.mark.parametrize("model", ["google/gemma-4-31b-it", "qwen/qwen3.8-flash"])
 @pytest.mark.parametrize("invalid", [False, True])
-def test_gemma_unwrapped_output_still_validates_action(tmp_path, invalid):
-    config = load_config(str(ROOT / "configs/config-append.yaml"), llm_alias="google/gemma-4-31b-it")
+def test_unwrapped_prompted_output_still_validates_action(tmp_path, invalid, model):
+    # Gemma dropped the envelope after a handover, Qwen on compaction; both are
+    # accepted by default now, and invalid button names are still rejected.
+    config = load_config(str(ROOT / "configs/config-append.yaml"), llm_alias=model)
     config["transport"]["max_retries"] = 0
     class Unwrapped(FakeProvider):
         async def __call__(self, *args):

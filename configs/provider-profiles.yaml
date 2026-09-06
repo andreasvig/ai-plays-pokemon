@@ -29,7 +29,10 @@ defaults:
   sampling: {}
   excluded_endpoints: []
   allow_json_fence: false
-  allow_unwrapped_json: false
+  # Prompted-JSON models sometimes return the action/handover object without the
+  # {"result": ...} envelope (Gemma after a handover, Qwen on compaction). The
+  # schema validation is the real guard, so accept either shape everywhere.
+  allow_unwrapped_json: true
   memory_encoding: object
   memory_wire_description: 'The complete flexible memory dictionary serialized as a JSON object string. Choose keys freely; the harness parses it back into a dictionary.'
   tool_descriptions:
@@ -59,7 +62,6 @@ profiles:
     max_completion_tokens: 16384
     output_mode: prompted
     allow_json_fence: true
-    allow_unwrapped_json: true
     reasoning_default: {enabled: true}
     reasoning_replay: omit_prior
     reasoning_use: not_preserved_between_user_turns

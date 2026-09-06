@@ -43,6 +43,15 @@ class SpendLimitReached(RuntimeError):
     pass
 
 
+class ProviderTransportError(RuntimeError):
+    """The gateway or upstream failed mid-request and returned no completion.
+
+    Kept apart from output-format errors so error tallies separate provider
+    outages from model formatting defects (GLM turn 1 in the 2026-09-06 samples
+    surfaced as "Expected exactly one gameplay call" after a 181 s network_error).
+    """
+
+
 class ProviderRequestError(RuntimeError):
     def __init__(self, status, response_body):
         self.status = status
@@ -100,6 +109,27 @@ class ReplayStore:
 
     def write(self, name, value):
         atomic_json(self.root / name, self.pack(value))
+
+
+def approx_tokens(value, image_tokens: int) -> int:
+    """Rough token count for the compaction trigger, not for billing.
+
+    Roughly four bytes per text token, a fixed reserve per image, and a model's
+    raw reasoning counted once even when the gateway returns it under both
+    ``reasoning`` and ``reasoning_details``. The earlier byte count treated a
+    22 KB screenshot and 37 KB of duplicated Qwen reasoning as ~60k tokens and
+    compacted every turn while the real prompt was 10k tokens.
+    """
+    if isinstance(value, dict):
+        if value.get("type") == "image_url":
+            return image_tokens
+        skip = "reasoning" if value.get("reasoning_details") else None
+        return sum(approx_tokens(v, image_tokens) for k, v in value.items() if k != skip)
+    if isinstance(value, list):
+        return sum(approx_tokens(v, image_tokens) for v in value)
+    if isinstance(value, str):
+        return len(value.encode()) // 4 + 1
+    return 1
 
 
 def reasoning_manifest(messages: list[dict]) -> list[dict]:
@@ -332,11 +362,14 @@ class AppendAgent:
             self._start()
         observation = self._observation(turn, ocr, image)
         due = self.state["segment_turns"] >= self.options["every_n_turns"]
-        # Conservative reserve for the latest response, next image, compaction
-        # instruction and output. Exact provider tokenization remains upstream.
+        # Conservative reserve, in approximate tokens, for the latest response,
+        # next image, compaction instruction and output. Exact tokenization
+        # remains upstream; last_input_tokens is the provider's own count.
+        image_tokens = self.options.get("image_token_reserve", 4096)
         recent = self.state["messages"][-2:]
-        growth = len(json.dumps(recent).encode()) + len(ocr.encode()) + self.options.get("image_token_reserve", 4096)
-        estimate = self.state["last_input_tokens"] + growth + len(self.options["prompt"].encode()) + self.options["max_output_tokens"]
+        growth = approx_tokens(recent, image_tokens) + approx_tokens(ocr, image_tokens) + image_tokens
+        estimate = (self.state["last_input_tokens"] + growth + approx_tokens(self.options["prompt"], image_tokens)
+                    + self.options["max_output_tokens"])
         early = estimate >= self.options["context_token_limit"] * self.options["context_limit_fraction"]
         if (due or early) and self.state["segment_turns"] and self.state["observation_turn"] != turn:
             await self.compact(turn, observation, "turn_interval" if due else "context_threshold")
@@ -525,6 +558,9 @@ class AppendAgent:
                 if raw.get("error"):
                     raise RuntimeError(str(raw["error"]))
                 choice = raw["choices"][0]
+                native = choice.get("native_finish_reason")
+                if native in ("network_error", "error") or choice.get("finish_reason") == "error":
+                    raise ProviderTransportError(f"Provider returned no completion ({native or choice.get('finish_reason')})")
                 if choice.get("finish_reason") not in ("stop", "tool_calls"):
                     raise ValueError(f"Incomplete model output: {choice.get('finish_reason')}")
                 message = deepcopy(choice["message"])
@@ -537,7 +573,7 @@ class AppendAgent:
                     parsed = json.loads(output_json_text(message["content"], self.profile))
                     if isinstance(parsed, dict) and "result" in parsed:
                         value = parsed["result"]
-                    elif self.profile.get("allow_unwrapped_json"):
+                    elif self.profile.get("allow_unwrapped_json", True):
                         value = parsed
                     else:
                         raise ValueError("Expected a JSON object containing result")

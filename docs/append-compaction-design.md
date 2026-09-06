@@ -107,7 +107,7 @@ Names below are illustrative, not an implemented schema:
 - `player_agent.user_prompt`: only the new turn's observation and relevant appended metadata.
 - `player_agent.segment_start_prompt`: renders the handover at a segment boundary.
 - `player_agent.compaction.every_n_turns`: completed game turns between compactions.
-- `player_agent.compaction.context_limit_fraction`: early compaction safety margin.
+- `player_agent.compaction.context_limit_fraction`: early compaction safety margin. The trigger estimate is in approximate tokens: the provider's last reported input count, plus ~4 bytes per token for new text, `image_token_reserve` per image, and raw reasoning counted once even when the gateway returns it twice. (An earlier byte count made verbose reasoners such as Qwen compact every turn.)
 - `player_agent.compaction.prompt`: appended compaction instruction template, including flexible-memory guidance, suggested keys, brief plan review, and handover output instructions.
 - `player_agent.compaction.summary_target_tokens`: bounded prose target.
 - `player_agent.compaction.max_output_tokens`: response budget covering prose, memory, and model-specific reasoning needs.
