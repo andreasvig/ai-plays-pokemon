@@ -189,3 +189,25 @@ across requests), not prompt size; with identical prompts reaching the model, th
 **Bottom line for Gemma 31B.** The model is not failing on format or continuity; it is failing on spatial reasoning in a way
 neither replay policy changes. A longer benchmark can still separate the two profiles on cost and cache, but on progress
 they will need a map-reading aid (or a smaller step budget per turn) before the comparison says anything.
+
+## Provider probe: which endpoints consume replayed reasoning (2026-09-06, after the campaign)
+
+Full table: `artifacts/provider-compatibility/reasoning-replay-probe.md`. Method: identical two-turn history sent with and
+without the prior turn's reasoning (seven field variants, two padded), billed prompt tokens compared. $0.36 total.
+
+- **Gemma 4 31B, 15 endpoints:** only `coreweave/fp4` tokenizes replayed reasoning (Δ = its own reasoning length, padded
+  Δ ≈ +1,250). The other 14, DeepInfra's three tiers included, bill zero extra tokens whichever field carries it, so their chat
+  templates discard assistant reasoning. `cerebras/fp16` returns no thinking at all.
+- **Kimi K3, 17 reachable endpoints (makora rate-limited):** all drop replayed reasoning, Moonshot's own endpoint included.
+  Effort sweep on Moonshot: 0 / 39 / 121 / 118 reasoning tokens at off / low / high / max. Thinking is on but brief, and
+  `max` is not more than `high`. There is no OpenRouter endpoint on which Kimi's reasoning persists across turns.
+- **Consequences:** the campaign's gemma-replay row and kimi-k3 row were no-replay runs in effect. Profile metadata updated
+  (`gemma-replay` → `reasoning_use: not_consumed_by_endpoint`; Kimi note). New opt-in Gemma variants pair both arms on
+  CoreWeave (`gemma-guidance-coreweave`, `gemma-replay-coreweave`) and add a bf16 control (`gemma-guidance-bf16`, Novita).
+- **Quantization caveat (Andreas):** endpoints can serve degraded quants or sampling defaults; Artificial Analysis' Endpoint
+  Accuracy Index tracks this (currently for gpt-oss-120b only). The only replay-consuming Gemma endpoint is fp4, which is why
+  the mini-campaign below includes a bf16 control and repeats.
+
+### Gemma endpoint mini-campaign (launched ~13:30)
+`local/ten-turn-samples-gemma-endpoints/`: guidance and replay on CoreWeave fp4, guidance on Novita bf16, guidance on
+DeepInfra turbo again, each ×2 (`--repeat 2`). Same save, same 10-turn protocol. Results appended below when done.

@@ -32,8 +32,15 @@ MATRIX = [
     ("moonshotai/kimi-k3", None),
     # Gated behind the OpenRouter account's 18+ attestation; runs only via --only meta--muse-spark-1.3.
     ("meta/muse-spark-1.3", None),
+    # Gemma endpoint experiments (opt-in): the only replay-consuming endpoint, paired, plus a bf16 control.
+    ("google/gemma-4-31b-it", "gemma-guidance-coreweave"),
+    ("google/gemma-4-31b-it", "gemma-replay-coreweave"),
+    ("google/gemma-4-31b-it", "gemma-guidance-bf16"),
 ]
-DEFAULT_SKIP = {"meta--muse-spark-1.3": "OpenRouter account requires age attestation"}
+DEFAULT_SKIP = {"meta--muse-spark-1.3": "OpenRouter account requires age attestation",
+                "gemma-guidance-coreweave": "endpoint experiment, run via --only",
+                "gemma-replay-coreweave": "endpoint experiment, run via --only",
+                "gemma-guidance-bf16": "endpoint experiment, run via --only"}
 
 
 def child(args):
@@ -66,7 +73,7 @@ def child(args):
             cleanup_handle(handle)
 
 
-def campaign(only=None):
+def campaign(only=None, repeat=1):
     CAMPAIGN.mkdir(parents=True, exist_ok=True)
     config = yaml.safe_load((ROOT / "configs/config-append.yaml").read_text())
     config["player_agent"]["compaction"]["every_n_turns"] = 5
@@ -85,44 +92,47 @@ def campaign(only=None):
                 "excluded": {k: v for k, v in DEFAULT_SKIP.items() if not (only and k in only)}, "runs": []}
     atomic_json(manifest_path, manifest)
     for model, profile in MATRIX:
-        name = profile or model.replace("/", "--")
-        if (only and name not in only) or (not only and name in DEFAULT_SKIP):
+        base_name = profile or model.replace("/", "--")
+        if (only and base_name not in only) or (not only and base_name in DEFAULT_SKIP):
             continue
-        row = {"model": model, "profile": profile, "status": "running", "phases": []}
-        manifest["runs"].append(row)
-        atomic_json(manifest_path, manifest)
-        print(f"START {name}", flush=True)
-        source = None
-        for stage, turns in (("first7", 7), ("resume3", 3)):
-            pointer = CAMPAIGN / f"{name}-{stage}.json"
-            log = CAMPAIGN / f"{name}-{stage}.log"
-            command = [sys.executable, "-u", "-m", "test_scripts.run_ten_turn_samples", "--child",
-                       "--campaign-dir", str(CAMPAIGN),
-                       "--model", model, "--turns", str(turns), "--pointer", str(pointer)]
-            if profile:
-                command += ["--profile", profile]
-            if source:
-                command += ["--source", source]
-            with log.open("w") as stream:
-                process = subprocess.Popen(command, cwd=ROOT, stdout=stream, stderr=subprocess.STDOUT)
-                code = process.wait()
-            result = json.loads(pointer.read_text()) if pointer.exists() else {}
-            row["phases"].append({"stage": stage, "returncode": code, "log": str(log), **result})
-            source = result.get("run_dir")
-            summary = result.get("summary", {})
-            completed = summary.get("conversation", {}).get("completed_game_turns", 0)
-            row.update(completed_turns=completed, final_run_dir=source,
-                       cost_usd=summary.get("cost", {}).get("total_usd"),
-                       progress=summary.get("referee", {}))
+        for run_index in range(1, repeat + 1):
+            # Repeats share the profile; files and rows get a #rN suffix so nothing overwrites.
+            name = base_name if repeat == 1 else f"{base_name}#r{run_index}"
+            row = {"model": model, "profile": profile, "repeat": run_index, "status": "running", "phases": []}
+            manifest["runs"].append(row)
             atomic_json(manifest_path, manifest)
-            print(f"{name} {stage}: {completed} completed turns; {summary.get('status', result.get('status'))}", flush=True)
-            if code or completed != (7 if stage == "first7" else 10) or summary.get("status") == "crashed":
-                row["status"] = "incomplete"
-                break
-            time.sleep(1)  # Let the terminated emulator and TCP listener release.
-        else:
-            row["status"] = "completed"
-        atomic_json(manifest_path, manifest)
+            print(f"START {name}", flush=True)
+            source = None
+            for stage, turns in (("first7", 7), ("resume3", 3)):
+                pointer = CAMPAIGN / f"{name}-{stage}.json"
+                log = CAMPAIGN / f"{name}-{stage}.log"
+                command = [sys.executable, "-u", "-m", "test_scripts.run_ten_turn_samples", "--child",
+                           "--campaign-dir", str(CAMPAIGN),
+                           "--model", model, "--turns", str(turns), "--pointer", str(pointer)]
+                if profile:
+                    command += ["--profile", profile]
+                if source:
+                    command += ["--source", source]
+                with log.open("w") as stream:
+                    process = subprocess.Popen(command, cwd=ROOT, stdout=stream, stderr=subprocess.STDOUT)
+                    code = process.wait()
+                result = json.loads(pointer.read_text()) if pointer.exists() else {}
+                row["phases"].append({"stage": stage, "returncode": code, "log": str(log), **result})
+                source = result.get("run_dir")
+                summary = result.get("summary", {})
+                completed = summary.get("conversation", {}).get("completed_game_turns", 0)
+                row.update(completed_turns=completed, final_run_dir=source,
+                           cost_usd=summary.get("cost", {}).get("total_usd"),
+                           progress=summary.get("referee", {}))
+                atomic_json(manifest_path, manifest)
+                print(f"{name} {stage}: {completed} completed turns; {summary.get('status', result.get('status'))}", flush=True)
+                if code or completed != (7 if stage == "first7" else 10) or summary.get("status") == "crashed":
+                    row["status"] = "incomplete"
+                    break
+                time.sleep(1)  # Let the terminated emulator and TCP listener release.
+            else:
+                row["status"] = "completed"
+            atomic_json(manifest_path, manifest)
     manifest["ended_at"] = datetime.now().isoformat()
     atomic_json(manifest_path, manifest)
     print("CAMPAIGN FINISHED", flush=True)
@@ -133,6 +143,7 @@ if __name__ == "__main__":
     parser.add_argument("--child", action="store_true")
     parser.add_argument("--campaign-dir", default=str(CAMPAIGN))
     parser.add_argument("--only", action="append", help="Profile/model label for a separate rerun campaign")
+    parser.add_argument("--repeat", type=int, default=1, help="Run each selected profile this many times (#rN suffix)")
     parser.add_argument("--model")
     parser.add_argument("--profile")
     parser.add_argument("--source")
@@ -140,4 +151,4 @@ if __name__ == "__main__":
     parser.add_argument("--turns", type=int)
     args = parser.parse_args()
     CAMPAIGN = Path(args.campaign_dir).resolve()
-    child(args) if args.child else campaign(args.only)
+    child(args) if args.child else campaign(args.only, args.repeat)

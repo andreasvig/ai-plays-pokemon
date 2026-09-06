@@ -103,3 +103,10 @@ The HTTP transport requests [router metadata](https://openrouter.ai/docs/guides/
 Live probes exposed catalogue/runtime mismatches: DeepInfra's Gemma turbo endpoint rejected `json_schema`; Qwen rejected required tool choice and failed the native-JSON envelope during compaction. Their profiles use prompted JSON with strict local validation, optionally accepting a single complete JSON code fence. Raw responses are unchanged in the archive. Grok uses an explicit JSON-string representation for arbitrary memory on the wire, decoded into the same flexible dictionary before validation and handover commit. These are configured contracts, not hidden per-request fallback behavior.
 
 For an intentional provider migration, finish a handover with the old provider, then start a new run/profile from that handover and game state. Do not alter the pinned host midway through a retained signed conversation. Automatic cross-provider migration is not implemented.
+
+## Replay consumption and endpoint quality
+
+Whether an endpoint tokenizes replayed reasoning is a per-endpoint fact, not a per-model one: `test_scripts/probe_reasoning_replay.py`
+measures it from billed prompt tokens (results in `artifacts/provider-compatibility/reasoning-replay-probe.md`). Endpoint tags
+carry the quantization (fp4, fp8, bf16, mxfp4); providers can serve degraded quants or sampling defaults, which Artificial
+Analysis tracks as an Endpoint Accuracy Index. Pin endpoints deliberately and record the tag in results.

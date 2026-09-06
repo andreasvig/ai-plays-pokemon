@@ -15,7 +15,30 @@ variants:
     model: google/gemma-4-31b-it
     settings:
       reasoning_replay: all
+      # Probe 2026-09-06: deepinfra/turbo bills zero tokens for replayed reasoning in
+      # any field, so the replay never reaches the model on this endpoint.
+      reasoning_use: not_consumed_by_endpoint
+  # CoreWeave fp4 is the only Gemma endpoint (1 of 15) that tokenizes replayed
+  # reasoning, so a real guidance-vs-replay comparison must pair both arms there.
+  gemma-guidance-coreweave:
+    model: google/gemma-4-31b-it
+    settings:
+      endpoint: coreweave/fp4
+      reasoning_replay: omit_prior
+      reasoning_use: not_preserved_between_user_turns
+  gemma-replay-coreweave:
+    model: google/gemma-4-31b-it
+    settings:
+      endpoint: coreweave/fp4
+      reasoning_replay: all
       reasoning_use: unverified
+  # Unquantized control for gameplay quality (no replay; novita/bf16 drops it too).
+  gemma-guidance-bf16:
+    model: google/gemma-4-31b-it
+    settings:
+      endpoint: novita/bf16
+      reasoning_replay: omit_prior
+      reasoning_use: not_preserved_between_user_turns
 defaults:
   output_mode: tool
   tool_choice: auto
@@ -126,4 +149,4 @@ profiles:
     reasoning_mandatory: true
     reasoning_efforts: [max, high, low]
     reasoning_default: {effort: high}
-    notes: 'Native documentation says always-on thinking (catalog disagrees). Auto tool choice avoids incompatible named forced calls.'
+    notes: 'Native documentation says always-on thinking (catalog disagrees). Auto tool choice avoids incompatible named forced calls. Probe 2026-09-06: all 17 reachable endpoints, Moonshot included, drop replayed reasoning in every field; thinking is brief (~120 reasoning tokens at high, max is no higher).'

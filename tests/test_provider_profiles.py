@@ -16,7 +16,9 @@ MODELS = list(yaml.safe_load(PROFILE_PATH.read_text())["profiles"])
 
 
 @pytest.mark.parametrize("model,variant", [(model, None) for model in MODELS] + [
-    ("google/gemma-4-31b-it", "gemma-guidance"), ("google/gemma-4-31b-it", "gemma-replay")])
+    ("google/gemma-4-31b-it", "gemma-guidance"), ("google/gemma-4-31b-it", "gemma-replay"),
+    ("google/gemma-4-31b-it", "gemma-guidance-coreweave"), ("google/gemma-4-31b-it", "gemma-replay-coreweave"),
+    ("google/gemma-4-31b-it", "gemma-guidance-bf16")])
 def test_profile_roundtrip_and_fresh_segment(model, variant, tmp_path):
     config = load_config(str(ROOT / "configs/config-append.yaml"), llm_alias=model, provider_profile=variant)
     config["compaction"]["every_n_turns"] = 2
