@@ -64,17 +64,21 @@ def summarize(manifests, output):
     output.mkdir(parents=True, exist_ok=True)
     atomic_json(output / "results.json", result)
     lines = ["# Ten-turn real Pokémon samples", "", "Same canonical FireRed bedroom save, compaction after turn 5, real agent-process and emulator restart after turn 7. Provider defaults and production action execution; no mock screenshots or emulator actions.", "",
-             "| Model/profile | Settled turns | Restart + continuity | Furthest checkpoint | Cached input (reported) | Cached input (implied by billing) | Total cost | Trace |",
-             "|---|---:|---|---|---:|---:|---:|---|"]
+             "| Model/profile | Settled turns | Restart + continuity | Furthest checkpoint | Cached input (reported) | Cached input (implied by billing) | Cache economics | Total cost | Trace |",
+             "|---|---:|---|---|---:|---:|---|---:|---|"]
     for name, row in latest.items():
         fraction = (row["cache"] or {}).get("input_read_fraction")
         cache = "Unknown" if fraction is None else f"{fraction*100:.1f}%"
         implied = (row["cache"] or {}).get("implied_read_fraction")
         implied_text = "No pricing snapshot" if implied is None else f"{implied*100:.1f}%"
+        econ = (row["cache"] or {}).get("economics") or {}
+        econ_text = {"no_cache_offered": "No cache offered", "no_discount_on_hits": "Hits not discounted",
+                     "priced_no_hits": f"{round((econ.get('discount_fraction') or 0)*100)}% discount unused",
+                     "saving": f"${econ.get('saved_usd') or 0:.4f} saved"}.get(econ.get("verdict"), "Unknown")
         furthest = next((g["name"] for g in row["reached"] if g["id"] == row["furthest"]), row["furthest"] or "None")
         status = "Pass" if row["checks_passed"] else "Incomplete / inspect"
         cost = "Unknown" if row["cost_usd"] is None else f"${row['cost_usd']:.4f}"
-        lines.append(f"| {name} | {len(row['settled_turns'])} | {status} | {furthest} | {cache} | {implied_text} | {cost} | [Open]({row['url']}) |")
+        lines.append(f"| {name} | {len(row['settled_turns'])} | {status} | {furthest} | {cache} | {implied_text} | {econ_text} | {cost} | [Open]({row['url']}) |")
     lines += ["", "Costs include OCR and retries; continuation totals already include the first seven turns and are counted once. Superseded failed attempts are preserved in results.json and included in total reported campaign cost. Cache fractions describe observed requests, including compaction, not a controlled cache-performance benchmark. The implied column backs the cache discount out of the billed prompt cost against the endpoint's list prices, so it stays meaningful when a provider (Google AI Studio) reports no cache figures. These short runs do not establish a reliable ranking.", "", "Local reasoning replay checks show what was sent. They do not establish internal use by the serving provider. Gemma guidance intentionally omits prior raw thoughts; replay preserves them until compaction.", "", f"Total reported spend across retained attempts: ${result['total_reported_cost_usd']:.6f}."]
     (output / "results.md").write_text("\n".join(lines) + "\n")
     print(json.dumps({k:{"turns":len(v["settled_turns"]),"checks_passed":v["checks_passed"],"errors":v["errors"]} for k,v in latest.items()}))

@@ -62,6 +62,21 @@
   // implicit group (task_index:null, empty master_model, no master images).
   const tasks = $derived(trace?.tasks ?? [])
   const hasTasks = $derived(trace?.has_tasks === true)
+  function economicsHeadline(e) {
+    if (!e || e.verdict === 'unknown') return 'Unknown'
+    if (e.verdict === 'no_cache_offered') return 'No cache offered'
+    if (e.verdict === 'no_discount_on_hits') return 'Hits not discounted'
+    if (e.verdict === 'priced_no_hits') return 'Discount unused'
+    return `$${Number(e.saved_usd).toFixed(4)} saved`
+  }
+  function economicsNote(e) {
+    if (!e || e.verdict === 'unknown') return 'Record endpoint prices to value the cache'
+    const disc = e.discount_fraction == null ? null : `${Math.round(e.discount_fraction * 100)}% off cached input`
+    if (e.verdict === 'no_cache_offered') return 'Endpoint lists no cache-read price and reported no hits'
+    if (e.verdict === 'no_discount_on_hits') return `${cacheCount(e.cached_tokens)} cached tokens billed at the full prompt price`
+    if (e.verdict === 'priced_no_hits') return `${disc} available, but no request hit the cache`
+    return `${cacheCount(e.cached_tokens)} cached tokens at ${disc}`
+  }
   function impliedNote(c) {
     if (c.implied_read_fraction == null) return 'Record endpoint prices to infer cache use from cost'
     const a = c.implied_agreement || {}
@@ -292,6 +307,7 @@
                 <div><span class="kl">Input from cache</span><strong>{cachePct(trace.cache.input_read_fraction)}</strong><span>{cacheCount(trace.cache.cached_tokens)} of {cacheCount(trace.cache.measured_input_tokens)} measured tokens</span></div>
                 <div><span class="kl">Measured requests using cache</span><strong>{cacheHits(trace.cache)}</strong><span>{cachePct(trace.cache.request_hit_fraction)} had at least one cached token</span></div>
                 <div><span class="kl">Requests with cache data</span><strong>{trace.cache.measured_attempts} / {trace.cache.attempts}</strong><span>{trace.cache.measured_attempts === trace.cache.attempts ? 'All requests measured' : 'Unreported requests excluded from percentages'}</span></div>
+                <div><span class="kl">Cache economics</span><strong>{economicsHeadline(trace.cache.economics)}</strong><span>{economicsNote(trace.cache.economics)}</span></div>
                 <div><span class="kl">Implied by billing</span><strong>{trace.cache.implied_read_fraction == null ? 'No pricing snapshot' : cachePct(trace.cache.implied_read_fraction)}</strong><span>{impliedNote(trace.cache)}</span></div>
               </div>
               <div class="cache-table-scroll">

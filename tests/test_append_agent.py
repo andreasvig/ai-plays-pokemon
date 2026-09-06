@@ -7,7 +7,7 @@ import shutil
 
 import pytest
 
-from src.agent.append_agent import AppendAgent, ContinuityError, StreamAssembly, cache_totals, implied_cache, normalize_usage, replay_check
+from src.agent.append_agent import AppendAgent, ContinuityError, StreamAssembly, cache_economics, cache_totals, implied_cache, normalize_usage, replay_check
 from src.config import load_config, find_latest_config, _validate_config
 from src.app.catalog import list_configs
 
@@ -474,3 +474,17 @@ def test_pricing_snapshot_written_once_and_failure_is_recorded(config, tmp_path)
     agent2.pricing_fetcher = broken
     assert asyncio.run(agent2.play(1, "", IMAGE)).inputs == ["a"]
     assert json.loads((tmp_path / "second/conversation/endpoint-pricing.json").read_text())["error"] == "offline"
+
+
+def test_cache_economics_verdicts():
+    def attempt(n, cached, prompt, read):
+        pricing = {"prompt": str(prompt)} | ({"input_cache_read": str(read)} if read is not None else {})
+        a = _attempt(n, n * prompt if not cached else cached * (read or 0) + (n - cached) * prompt, cached=cached, provider="P")
+        a["implied_cache"] = implied_cache(a, [{"name": "P", "provider_name": "P", "pricing": pricing}])
+        return a
+    assert cache_economics([attempt(1000, 0, 1.4e-7, None)])["verdict"] == "no_cache_offered"
+    assert cache_economics([attempt(1000, 500, 1e-7, 1e-7)])["verdict"] == "no_discount_on_hits"
+    assert cache_economics([attempt(1000, 0, 7.5e-7, 7.5e-8)])["verdict"] == "priced_no_hits"
+    saving = cache_economics([attempt(1000, 500, 5e-6, 5e-7)])
+    assert saving["verdict"] == "saving" and abs(saving["saved_usd"] - 500 * 4.5e-6 / 1e6 * 1e6 / 1e6) < 1e-9 or saving["saved_usd"] > 0
+    assert cache_economics([])["verdict"] == "unknown"

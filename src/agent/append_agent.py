@@ -209,9 +209,10 @@ def implied_cache(attempt: dict, endpoints: list[dict] | None, tolerance: float 
             full = float(pricing["prompt"])
         except (KeyError, TypeError, ValueError):
             continue
+        listed = pricing.get("input_cache_read") not in (None, "")
         read = float(pricing.get("input_cache_read") or 0)
         write = float(pricing.get("input_cache_write") or 0)
-        tiers.append((full, read, write, endpoint))
+        tiers.append((full, read, write, endpoint, listed))
     if not tiers:
         return {"status": "unpriced", "billed_prompt_rate_per_m": rate * 1e6}
     tag = (attempt.get("continuity") or {}).get("configured_endpoint")
@@ -223,13 +224,13 @@ def implied_cache(attempt: dict, endpoints: list[dict] | None, tolerance: float 
     # would otherwise push the rate past the true tier (Anthropic 1.25x writes).
     writes = attempt.get("cache_write_tokens") or 0
     def adjusted_cost(tier):
-        full, _, write, _ = tier
+        full, _, write, _, _ = tier
         return billed - (writes * (write - full) if write > full else 0)
     candidates = sorted((t for t in (named or tiers) if t[0] * n >= adjusted_cost(t) * (1 - tolerance)),
                         key=lambda t: t[0])
     if not candidates:
         return {"status": "rate_above_list", "billed_prompt_rate_per_m": rate * 1e6}
-    full, read, write, endpoint = candidates[0]
+    full, read, write, endpoint, listed = candidates[0]
     adjusted = adjusted_cost(candidates[0])
     implied = 0 if full <= read else max(0, min(n, round((full * n - adjusted) / (full - read))))
     reported = attempt.get("cached_tokens")
@@ -241,8 +242,42 @@ def implied_cache(attempt: dict, endpoints: list[dict] | None, tolerance: float 
                      else "billing_implies_more" if gap > 0 else "billing_implies_less")
     return {"status": "discount_billed" if implied else "no_discount_billed",
             "billed_prompt_rate_per_m": rate * 1e6, "tier": endpoint.get("name"),
-            "tier_prompt_per_m": full * 1e6, "tier_cache_read_per_m": read * 1e6,
+            "tier_prompt_per_m": full * 1e6, "tier_cache_read_per_m": read * 1e6 if listed else None,
             "implied_cached_tokens": implied, "implied_read_fraction": implied / n, "agreement": agreement}
+
+
+def cache_economics(attempts: list[dict]) -> dict:
+    """What the cache was worth in money on this run, from list prices + reported hits.
+
+    Verdicts: ``no_cache_offered`` (endpoint lists no cache-read price and no hits),
+    ``no_discount_on_hits`` (cache-read price equals prompt price), ``priced_no_hits``
+    (a discount exists but nothing was cached), ``saving`` otherwise.
+    """
+    priced = [a for a in attempts if (a.get("implied_cache") or {}).get("tier_prompt_per_m")]
+    if not priced:
+        return {"verdict": "unknown", "saved_usd": None, "discount_fraction": None}
+    saved = 0.0
+    cached = 0
+    listed = False
+    discounts = []
+    for a in priced:
+        c = a["implied_cache"]
+        hits = a.get("cached_tokens") or 0
+        cached += hits
+        if c.get("tier_cache_read_per_m") is not None:
+            listed = True
+            discounts.append((c["tier_prompt_per_m"] - c["tier_cache_read_per_m"]) / c["tier_prompt_per_m"])
+            saved += hits * (c["tier_prompt_per_m"] - c["tier_cache_read_per_m"]) / 1e6
+    discount = max(discounts) if discounts else None
+    if not listed and cached == 0:
+        verdict = "no_cache_offered"
+    elif discount is not None and discount < 0.01:
+        verdict = "no_discount_on_hits"
+    elif cached == 0:
+        verdict = "priced_no_hits"
+    else:
+        verdict = "saving"
+    return {"verdict": verdict, "saved_usd": saved, "discount_fraction": discount, "cached_tokens": cached}
 
 
 def cache_totals(attempts: list[dict]) -> dict:
@@ -265,6 +300,7 @@ def cache_totals(attempts: list[dict]) -> dict:
                       implied_input_tokens=implied_inputs,
                       implied_read_fraction=implied_reads / implied_inputs if implied_inputs else None,
                       implied_agreement=agreements)
+    result["economics"] = cache_economics(attempts)
     return result
 
 

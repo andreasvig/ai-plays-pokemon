@@ -12,7 +12,8 @@
     if (c.status === 'unbilled') return 'Upstream prompt cost not reported'
     if (c.status === 'unpriced') return `${perM(c.billed_prompt_rate_per_m)} · no list price to compare`
     if (c.status === 'rate_above_list') return `${perM(c.billed_prompt_rate_per_m)} · above every list tier`
-    return `${perM(c.billed_prompt_rate_per_m)} · list ${perM(c.tier_prompt_per_m)}, cache read ${perM(c.tier_cache_read_per_m)}`
+    const read = c.tier_cache_read_per_m == null ? 'no cache-read price on this endpoint' : `cache read ${perM(c.tier_cache_read_per_m)}`
+    return `${perM(c.billed_prompt_rate_per_m)} · list ${perM(c.tier_prompt_per_m)}, ${read}`
   }
   function impliedDiscount(c) {
     if (!c || c.implied_cached_tokens == null) return 'Cannot be inferred'
