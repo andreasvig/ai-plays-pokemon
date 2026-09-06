@@ -1,6 +1,6 @@
 # Ten-turn real-gameplay samples — live campaign notes
 
-Started 2026-09-06 10:50 by Codex; continued by Claude Code from ~11:15 after Codex ran out of usage.
+Started 2026-09-06 10:50 by Codex; main queue ended 12:02; continued by Claude Code from ~11:15 after Codex ran out of usage.
 Campaign runner: `test_scripts/run_ten_turn_samples.py` (parent PID 92456, one real mGBA emulator, models run sequentially).
 Design: same canonical FireRed bedroom save (`configs/saves/pokebench-v1`, sha256 7512323c…), compaction after turn 5,
 agent-process + emulator restart after turn 7 (resume from savepoint), 10 turns per profile, referee observing (not enforcing),
@@ -17,24 +17,39 @@ Rollup script (run after the campaign): `test_scripts/summarize_ten_turn_samples
 | gemma-replay (attempt 1) | 5/10 | none | $0.0029 | Handover request took ~4+ min, then same missing-wrapper error. Process had loaded the old parser; Codex sent SIGINT to let the queue move on. **Rerun pending.** |
 | google/gemini-3.8-flash | 10/10 | Chose a starter (t9) | $0.1266 | Left bedroom t1, outside t3, Oak's Lab t6, starter t9. Zero request errors. Compaction t5 and restart t7 both clean. |
 | anthropic/claude-opus-5 | 10/10 | Stepped outside in Pallet Town | $0.4992 | 5 turns in the bedroom; left bedroom only at t6. Compaction needed 3 attempts: attempt 1 returned truncated JSON (`Expecting ',' delimiter` at char 4086, cost $0.08 wasted), attempt 2 hit an SSL `bad record mac` transport error, attempt 3 succeeded. Restart at t7 clean. |
-| anthropic/claude-fable-5.1 | 7/10 so far (resume running) | Stepped outside in Pallet Town (t5) | $0.48 (first 7) | Left bedroom t3, outside t5. Zero request errors in first 7; compaction t5 clean. |
-| qwen/qwen3.8-flash | queued | | | |
-| z-ai/glm-5.3-flash | queued | | | |
-| deepseek/deepseek-v4-flash-vision-exp | queued | | | |
-| x-ai/grok-4.6 | queued | | | |
-| moonshotai/kimi-k3 | queued | | | |
+| anthropic/claude-fable-5.1 | 10/10 | Entered Oak's Lab | $0.6219 | Left bedroom t3, outside t5, Oak's Lab after restart. Zero request errors; compaction t5 and restart t7 clean. Most expensive run so far. |
+| qwen/qwen3.8-flash | 10/10 | Entered Oak's Lab (t9) | $0.0466 | Left bedroom t2, outside t5. Compaction fired after turns 2, 3, 4 and 6 via `context_threshold` (see finding 4), so the every-5 schedule never applied. Two compaction attempts returned unwrapped JSON (finding 5); retries recovered. Gameplay latency 55–80 s per turn, 3.4k–6.7k reasoning tokens per turn. |
+| z-ai/glm-5.3-flash | 10/10 | Left the bedroom (t10) | $0.0070 | Left the bedroom only at t10, after the restart. Still in the bedroom after 7 turns, circling the staircase (up/left/right nudges each turn). Turn-1 attempt 1 came back empty after 181 s with OpenRouter `native_finish_reason=network_error`; retry succeeded. Otherwise fast (11–45 s) and very cheap; 80–1100 reasoning tokens per turn. Compaction at t5 by schedule, clean. |
+| deepseek/deepseek-v4-flash-vision-exp | 10/10 | Left the bedroom (t5) | $0.0151 | Went south first (wrong), found the stairs by t5. Then spent t6–t7 trying to talk to Mom instead of leaving. Zero request errors; compaction t5 by schedule. Fast: 6–36 s per turn. |
+| x-ai/grok-4.6 | 10/10 | Entered Oak's Lab (t10) | $0.3996 | Systematic wall-sweeps: left bedroom t4, outside t7. Zero request errors; compaction t5 by schedule. Slow and expensive: 14–138 s per turn, 2k–7k reasoning tokens; strong cache hits (up to 22k cached tokens at t5). Second-priciest after the Claudes. |
+| moonshotai/kimi-k3 | 10/10 | Stepped outside in Pallet Town (t6) | $0.1644 | Left bedroom t3, outside t6, then walked north toward Route 1 to trigger Oak's cutscene (the real speedrun route). At t8 it accidentally re-entered the house, then spent t9–t10 blocked by a tree at the town's north edge. Zero request errors; compaction t5 by schedule. Fast (10–30 s) with very little reasoning (0–330 tokens). Mid-priced. |
 | meta/muse-spark-1.3 | excluded | | | OpenRouter account requires age attestation. |
 
 ## Harness findings (kept separate from model quality)
 
 1. **Gemma unwrapped JSON after handover.** Fixed mid-campaign by Codex: `allow_unwrapped_json` profile flag
    (`configs/provider-profiles.yaml`, Gemma variants only) and parser fallback in `src/agent/append_agent.py`. Test added in
-   `tests/test_provider_profiles.py` (invalid button names still rejected). 36 tests pass. Both Gemma rows must be rerun in a
-   separate campaign dir with `--only gemma-guidance --only gemma-replay` once the main campaign releases the emulator.
+   `tests/test_provider_profiles.py` (invalid button names still rejected). 36 tests pass. Both Gemma rows are being rerun in
+   `local/ten-turn-samples-gemma-rerun/` (launched 12:03) with `--only gemma-guidance --only gemma-replay` once the main campaign releases the emulator.
 2. **Opus compaction malformed JSON (not truncation).** Attempt 1 finished with `finish_reason=stop` at 2021 completion tokens
    (cap 12288), but the JSON body was one closing brace short (`…]}}` vs the valid attempt's `…]}}}`). A model formatting slip,
    retried successfully by the existing retry loop. Cost of the wasted attempt: $0.081.
 3. **Transient SSL error** on Opus attempt 2 — transport-level, retried successfully.
+4. **Context-threshold estimate conflates bytes with tokens** (`src/agent/append_agent.py` ~line 338). `growth` is the JSON
+   byte length of the last two messages plus the OCR text. Those bytes include the base64 screenshot (~22 KB) and the
+   assistant's replayed reasoning stored twice (`reasoning` + `reasoning_details`, ~18.5 KB each for Qwen). For Qwen the
+   turn-3 estimate was ≈ 10.2k (last input) + 38k (reasoning bytes) + 22k (image bytes) + 4.1k (reserve) + 12.3k (max
+   output) ≈ 88k, over the 85.2k threshold (131072 × 0.65), so compaction fired every turn. Gemini's same estimate was ≈ 52k.
+   Consequence: any verbose-reasoning model compacts nearly every turn, reasoning replay across turns is never exercised for
+   it, and cost/latency inflate. The real prompt was 10k tokens, far from any limit. Fix candidates (after the campaign, not
+   mid-measurement): estimate `growth` in tokens (bytes ÷ ~4 for text, a fixed image token cost), and count reasoning once.
+5. **Qwen also drops the `result` wrapper** on compaction (2 of 4 first attempts). The Gemma fix is profile-gated
+   (`allow_unwrapped_json` only on the Gemma profiles), so Qwen paid a retry each time. Same class of defect; suggests the
+   unwrapped fallback should be default-on for all providers, with action validation still enforced.
+6. **Provider network error surfaced as a format error.** GLM turn 1 attempt 1: OpenRouter returned an empty choice with
+   `native_finish_reason: network_error` and no usage after 181 s. The harness logged it as `Expected exactly one gameplay
+   call`, which reads as a model-output defect. Worth classifying `native_finish_reason in {network_error, error}` as a
+   transport failure so error tallies separate provider outages from model formatting.
 
 ## Caveats
 Ten turns cannot rank model quality. Checkpoint progress is from the independent referee (map reads), not model self-report.

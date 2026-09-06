@@ -30,7 +30,10 @@ MATRIX = [
     ("deepseek/deepseek-v4-flash-vision-exp", None),
     ("x-ai/grok-4.6", None),
     ("moonshotai/kimi-k3", None),
+    # Gated behind the OpenRouter account's 18+ attestation; runs only via --only meta--muse-spark-1.3.
+    ("meta/muse-spark-1.3", None),
 ]
+DEFAULT_SKIP = {"meta--muse-spark-1.3": "OpenRouter account requires age attestation"}
 
 
 def child(args):
@@ -79,11 +82,11 @@ def campaign(only=None):
     manifest = {"started_at": datetime.now().isoformat(), "snapshot": str(save.parent),
                 "snapshot_sha256": hashlib.sha256(save.read_bytes()).hexdigest(),
                 "compaction_interval": 5, "restart_after": 7, "target_turns": 10,
-                "excluded": {"meta/muse-spark-1.3": "OpenRouter account requires age attestation"}, "runs": []}
+                "excluded": {k: v for k, v in DEFAULT_SKIP.items() if not (only and k in only)}, "runs": []}
     atomic_json(manifest_path, manifest)
     for model, profile in MATRIX:
         name = profile or model.replace("/", "--")
-        if only and name not in only:
+        if (only and name not in only) or (not only and name in DEFAULT_SKIP):
             continue
         row = {"model": model, "profile": profile, "status": "running", "phases": []}
         manifest["runs"].append(row)
