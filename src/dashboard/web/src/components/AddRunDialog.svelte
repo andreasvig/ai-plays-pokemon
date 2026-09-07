@@ -12,7 +12,17 @@
   // ROMS is the game registry from /api/roms ([{id, name, benchmark_ok,
   // on_disk, default}]); benchmark_ok is false for a game no gate ladder is
   // authored for, which is what greys the Benchmark option out.
-  let { open = false, continueFrom = null, models = [], configs = [], benchmarks = [], checkpoints = [], roms = [], starts = [], onclose, onsubmit } = $props()
+  // PROFILES is /api/profiles: {version, reviewed, profiles:[…], configs:[…]}
+  // — the append harness's per-model transport contract plus, per config stem,
+  // whether that config resolves a profile at all (`profile_aware`, keyed on the
+  // config's own agent_type) and its compaction interval. See api.js
+  // fetchProfiles. Absent/failed → the empty shape, and every profile-aware
+  // branch below is then false, so the dialog behaves exactly as it did before
+  // profiles existed.
+  // SUBMITERROR is the server's 400 detail from the last failed enqueue. The
+  // dialog used to close before the request was sent, so a rejected run left no
+  // trace anywhere in the UI (finding #5).
+  let { open = false, continueFrom = null, models = [], configs = [], benchmarks = [], checkpoints = [], roms = [], starts = [], profiles = null, submitError = null, onclose, onsubmit } = $props()
   const MODELS = $derived(models)
   const CONFIGS = $derived(configs)
   const BENCHMARKS = $derived(benchmarks)
@@ -91,6 +101,12 @@
   // Which game. Casual-only — an official run plays the benchmark ladder's ROM,
   // which is not a choice. Defaults to the registry default on open.
   let rom = $state('')
+  // Named provider-profile variant (a `variants:` key like 'gemma-replay').
+  // '' = the model's BASE profile, which is what every run has always had and
+  // the only thing an official run may have (decision Q3). Casual + append
+  // configs only; reset whenever the model, config or kind changes, because a
+  // variant belongs to exactly one model and one harness.
+  let providerProfile = $state('')
 
   // ── recording (opt-in; off by default — it costs a headless browser + an
   // encoder for the whole run, so it is never something you get by accident) ──
@@ -151,6 +167,10 @@
           // Back to the game's default opening on every open, so a girl run you
           // queued an hour ago can't silently become the default for the next one.
           start = ''
+          // A continue reuses the SOURCE run's saved profile (continue_from_run
+          // reads its config, which already carries the resolved
+          // `_provider_profile`), so there is nothing to pick and nothing to send.
+          providerProfile = ''
           if (!config) config = latestConfig(CONFIGS)
           // A continue resumes on the game the source run was played on — the
           // backend reads it off the resumed config, so there is nothing to pick.
@@ -160,9 +180,13 @@
           rom = defaultRom
           const first = sortedModels[0]
           modelBase = first?.model ?? ''
-          level = first?.default_level ?? ''   // default = highest level
           if (!config) config = latestConfig(CONFIGS)
           benchmark = defaultBenchmark
+          // Profile-aware preselection, AFTER kind/model/config are set — the
+          // level depends on all three. On a legacy config this is still the
+          // registry's highest, which is what it always was.
+          providerProfile = ''
+          snapProfileFields()
         }
       })
     }
@@ -216,6 +240,103 @@
   const selectedModel = $derived(MODELS.find((m) => m.model === modelBase) ?? null)
   const availableLevels = $derived(selectedModel?.levels ?? [])
 
+  // ── provider profiles (config-5.x) ─────────────────────────────────────────
+  // Two facts drive everything here, and both come from the server:
+  //   1. does the CHOSEN CONFIG resolve a provider profile at all
+  //      (`profile_aware`, off the config's own agent_type — never off its
+  //      stem, and never assumed from "it's the newest one");
+  //   2. what does the chosen MODEL's profile say — legal reasoning ladder,
+  //      its default, the endpoint it was probed on, its cache mode, and which
+  //      named variants apply to it.
+  // A legacy config (config-4.0 / 3.13) resolves NO profile, so its dialog must
+  // keep offering the registry's full ladder and show none of this UI.
+  const PROFILE_ROWS = $derived(profiles?.profiles ?? [])
+  const CONFIG_FACTS = $derived(profiles?.configs ?? [])
+  const casualFacts = $derived(CONFIG_FACTS.find((c) => c.stem === config) ?? null)
+  // An official run's config is not the picker's — it is the frozen official
+  // stem, read from /api/benchmarks. Look ITS facts up too rather than assuming
+  // the official config is (or isn't) profile-aware: it is config-5.0 today and
+  // the flip to a 6.x is one constant away.
+  const officialFacts = $derived(CONFIG_FACTS.find((c) => c.stem === officialConfig) ?? null)
+  const activeFacts = $derived(isOfficial ? officialFacts : casualFacts)
+  const profileAware = $derived(!!activeFacts?.profileAware)
+  // `player_agent.compaction.every_n_turns` for the active config, or null when
+  // it has none (every legacy config). Shown next to Max turns because a cap
+  // below it means the run never compacts — the harness with its defining
+  // behaviour switched off (finding #29).
+  const compactionInterval = $derived(activeFacts?.compactionInterval ?? null)
+  const selectedProfile = $derived(PROFILE_ROWS.find((p) => p.model === modelBase) ?? null)
+
+  // The legal thinking ladder for the current (model, config) pair.
+  //   legacy config → the registry's full ladder, unfiltered;
+  //   append config → registry ∩ profile.reasoningEfforts.
+  // An EMPTY reasoningEfforts means "this endpoint was never probed", which is
+  // the `defaults:` value every unprofiled model inherits. It constrains
+  // nothing — the same reading resolve_provider_profile takes when it waves an
+  // empty list through — so it keeps the registry ladder rather than offering
+  // an empty dropdown.
+  //
+  // An empty INTERSECTION is different: that is a real registry/profile
+  // disagreement, and every level in it would 400 at enqueue. It is NOT
+  // silently widened back to the registry ladder (that would re-create exactly
+  // the finding-#5 dialog, offering levels dispatch refuses); the template says
+  // so instead and the submit button goes away.
+  const allowedLevels = $derived.by(() => {
+    if (!profileAware || !selectedProfile) return availableLevels
+    const legal = selectedProfile.reasoningEfforts
+    if (!legal.length) return availableLevels
+    return availableLevels.filter((lv) => legal.includes(lv.level))
+  })
+  const noLegalLevel = $derived(
+    profileAware && availableLevels.length > 0 && allowedLevels.length === 0
+  )
+
+  // The profile's own default level, in the REGISTRY's level vocabulary.
+  // Effort-tiered models carry {effort: "high"}; BINARY models carry
+  // {enabled: true|false}, whose level names are "thinking"/"non-thinking" (the
+  // registry's reasoning_type: binary turns the level into that flag and no
+  // effort is ever sent). Null when the profile names neither.
+  function profileDefaultLevel(prof) {
+    const d = prof?.reasoningDefault ?? {}
+    if (typeof d.effort === 'string') return d.effort
+    if (typeof d.enabled === 'boolean') return d.enabled ? 'thinking' : 'non-thinking'
+    return null
+  }
+
+  // Which level to PRESELECT for a (model, config) pair. On a profile-aware
+  // config the profile's reasoning_default wins — that is the level the
+  // endpoint was actually probed at, and it is frequently NOT the registry's
+  // highest (kimi-k3: registry max, profile high). Falls back to the registry
+  // default when the profile names a level this model does not offer, and to
+  // the first legal level when even that is filtered out.
+  function preselectLevel(row, aware, prof, legal) {
+    const registryDefault = row?.default_level ?? ''
+    const ids = legal.map((lv) => lv.level)
+    if (aware && prof) {
+      const want = profileDefaultLevel(prof)
+      if (want && ids.includes(want)) return want
+    }
+    if (ids.includes(registryDefault)) return registryDefault
+    return ids[0] ?? (row?.levels?.length ? row.default_level ?? '' : '')
+  }
+
+  // Re-apply the preselected level (and drop a now-invalid variant) after any
+  // change to model / config / kind. A function called from the handlers, not
+  // an $effect: the file's whole open-time-defaults dance exists because an
+  // effect that reads these fields re-runs on every edit and fights the user.
+  function snapProfileFields() {
+    level = preselectLevel(selectedModel, profileAware, selectedProfile, allowedLevels)
+    if (!variantOptions.includes(providerProfile)) providerProfile = ''
+  }
+
+  // Named variants for the picked model, offered only where they can actually
+  // run: casual (an official run is base-profile-only) AND a profile-aware
+  // config (a legacy config raises "Named provider profiles require
+  // append_compact" — inside build_run_config, i.e. after dispatch).
+  const variantOptions = $derived(
+    !isOfficial && profileAware && selectedProfile ? selectedProfile.variants : []
+  )
+
   // Final Player identity: official continue reuses the source alias verbatim;
   // otherwise (fresh OR casual continue) it's the picker's "model(level)", or the
   // bare model when it has no thinking levels (type none).
@@ -230,7 +351,25 @@
   // a reactive loop re-applying the default over a manual level edit.
   function pickModel(m) {
     modelBase = m.model
-    level = m.default_level ?? ''
+    // Not `m.default_level` directly any more: on a profile-aware config the
+    // PROFILE's reasoning_default is the right preselection, and the registry's
+    // highest level may not even be legal on the profile's endpoint.
+    snapProfileFields()
+  }
+
+  // Changing the config can flip the harness under the same model — a legacy
+  // stem hands the ladder back to the registry and invalidates any variant — so
+  // it re-snaps for the same reason picking a model does.
+  function pickConfig(stem) {
+    config = stem
+    snapProfileFields()
+  }
+
+  // Same for the Benchmark/Casual segment: official runs the frozen official
+  // config, which is a different (config, profile-aware) pair, and no variant.
+  function pickKind(next) {
+    kind = next
+    snapProfileFields()
   }
 
   // Newest model first. Release dates come from OpenRouter via
@@ -281,6 +420,11 @@
       // Only sent when this game actually offered a choice and one was made —
       // otherwise null, which the backend reads as "the game's default opening".
       start: showStartPicker ? (start || null) : null,
+      // Named variant. Sent only when it is actually offerable AND still one of
+      // this model's — so a variant left selected while the model or config
+      // changed under it can never be submitted (the server would 400, but the
+      // request should not be made).
+      providerProfile: variantOptions.includes(providerProfile) ? providerProfile : null,
       continueFrom: continueFrom?.runId ?? null,
       // Casual continue may override models. Player rides on `model` (the backend
       // treats it as reuse when it equals the source alias, else an override).
@@ -314,11 +458,11 @@
       {:else}
         <div class="seg">
           <button class:on={isOfficial} disabled={!romCanBenchmark}
-                  onclick={() => kind = 'official'}
+                  onclick={() => pickKind('official')}
                   title={romCanBenchmark ? null : `No gate ladder is authored for ${selectedRom?.name} yet`}>
             <b>Benchmark</b><small>{romCanBenchmark ? 'gated · leaderboard' : 'no ladder for this game'}</small>
           </button>
-          <button class:on={!isOfficial} onclick={() => kind = 'casual'}>
+          <button class:on={!isOfficial} onclick={() => pickKind('casual')}>
             <b>Casual</b><small>free config · max-turns · no gates</small>
           </button>
         </div>
@@ -377,14 +521,37 @@
           {/if}
         </div>
 
+        <!-- Thinking level. On a profile-aware config (config-5.x) the options
+             are the registry ladder INTERSECTED with the profile's probed
+             `reasoning_efforts`, preselected at the profile's own
+             `reasoning_default` — the level its endpoint was measured at, which
+             is often not the registry's highest. On a legacy config the profile
+             is never resolved, so the full registry ladder stays. This is
+             finding #5's front half: the dropdown used to offer every registry
+             level on every config, and an illegal pair died inside
+             build_run_config after the card had gone active. -->
         {#if !lockModel && availableLevels.length}
           <label class="field">
-            <span class="flabel">Thinking level <span class="faint">· benchmarked separately</span></span>
-            <select bind:value={level}>
-              {#each availableLevels as lv}
+            <span class="flabel">
+              Thinking level <span class="faint">· benchmarked separately</span>
+              {#if profileAware && selectedProfile && selectedProfile.reasoningEfforts.length && allowedLevels.length < availableLevels.length}
+                <span class="locked" data-testid="level-filtered">profile-filtered</span>
+              {/if}
+            </span>
+            <select bind:value={level} data-testid="level-select" disabled={noLegalLevel}>
+              {#each allowedLevels as lv}
                 <option value={lv.level}>{lv.level}{#if lv.run_count} · {lv.run_count} {lv.run_count === 1 ? 'run' : 'runs'}{/if}</option>
               {/each}
             </select>
+            {#if noLegalLevel}
+              <span class="warn" data-testid="no-legal-level">
+                None of {selectedModel?.model}'s thinking levels
+                ({availableLevels.map((lv) => lv.level).join(', ')}) is legal on its
+                provider profile ({selectedProfile?.reasoningEfforts.join(', ') || 'none'}).
+                Every one of them would be refused at enqueue — pick another model,
+                or a legacy config.
+              </span>
+            {/if}
           </label>
         {/if}
 
@@ -423,7 +590,8 @@
         {:else}
           <label class="field">
             <span class="flabel">Config</span>
-            <select bind:value={config} disabled={isContinue}>
+            <select value={config} disabled={isContinue} data-testid="config-select"
+                    onchange={(e) => pickConfig(e.currentTarget.value)}>
               {#each CONFIGS as c}<option value={c}>{c}</option>{/each}
             </select>
           </label>
@@ -461,9 +629,74 @@
               <option value="speed">Speed — shortest path to the goal</option>
             </select>
           </label>
+          <!-- The provider profile. NOT a choice in the ordinary case: the base
+               profile is selected by the model, and it owns the endpoint tag,
+               the cache contract and the legal thinking ladder. It is shown
+               read-only so two config-5.0 runs with radically different
+               transport contracts stop looking identical (finding #9), and
+               folded away because nobody picking a run needs it.
+
+               The variant dropdown is the one control here, and it appears only
+               when this model HAS named variants (today: the five Gemma arms).
+               Casual only — an official run is base-profile-only (decision Q3),
+               so this whole block is inside the casual branch and cannot be
+               reached from the Benchmark tab. -->
+          {#if profileAware && selectedProfile}
+            <details class="adv" data-testid="advanced-profile">
+              <summary>Advanced · provider profile</summary>
+              <div class="advbody">
+                <div class="field">
+                  <span class="flabel">Base profile <span class="locked">auto</span></span>
+                  <div class="frozen mono" data-testid="profile-endpoint">
+                    {#if selectedProfile.unprofiled}
+                      unprofiled <span class="faint">· no pinned endpoint · defaults only</span>
+                    {:else}
+                      {selectedProfile.endpoint}
+                      <span class="faint">· cache {selectedProfile.cacheMode}{#if selectedProfile.finalTurnTextOnly} · split final turn{/if}</span>
+                    {/if}
+                  </div>
+                </div>
+                {#if variantOptions.length}
+                  <label class="field">
+                    <span class="flabel">Variant</span>
+                    <select bind:value={providerProfile} data-testid="variant-select">
+                      <option value="">— base profile (default)</option>
+                      {#each variantOptions as v}<option value={v}>{v}</option>{/each}
+                    </select>
+                    <span class="faint tm-hint">
+                      Overrides part of the base profile — usually the endpoint tag or
+                      whether prior reasoning is replayed. Casual only, and the run's
+                      name carries the variant so the arms stay distinguishable.
+                    </span>
+                  </label>
+                {/if}
+              </div>
+            </details>
+          {/if}
+          <!-- Max turns, with the active config's compaction interval beside it.
+               The append harness compacts every `every_n_turns` completed game
+               turns (20 in config-5.0) — a cap below that never reaches a
+               handover, so the run exercises the harness with its defining
+               behaviour switched off while looking like an ordinary 5.0 run in
+               the card, the run name and History (finding #29). A warning, not
+               an error: the dialog's default cap is 100, so a sub-interval cap
+               is always hand-set and sometimes exactly what you want. The
+               interval comes from /api/profiles, off the config file itself —
+               it was previously authored in the YAML and exposed nowhere. -->
           <label class="field">
-            <span class="flabel">Max turns</span>
-            <input type="number" bind:value={maxTurns} min="1" step="50" />
+            <span class="flabel">
+              Max turns
+              {#if compactionInterval}
+                <span class="faint" data-testid="compaction-interval">· compacts every {compactionInterval} turns</span>
+              {/if}
+            </span>
+            <input type="number" bind:value={maxTurns} min="1" step="50" data-testid="max-turns" />
+            {#if compactionInterval && Number(maxTurns) > 0 && Number(maxTurns) < compactionInterval}
+              <span class="warn" data-testid="compaction-warning">
+                {maxTurns} turns is below the {compactionInterval}-turn compaction
+                interval — this run never compacts, so it never exercises a handover.
+              </span>
+            {/if}
           </label>
           <!-- Optional spend ceiling. Counts the whole bill — Player LLM, OCR
                and TaskMaster — not just the Player, because a 3.x run pays for
@@ -531,13 +764,24 @@
         {/if}
       </div>
 
+      <!-- The server's own 400 detail. The dialog used to close the instant you
+           clicked "Add to queue", before the request was even sent, so a
+           rejected enqueue printed to the console and vanished (finding #5).
+           It now stays open on failure with the reason the server gave —
+           verbatim, because those messages name the legal set. -->
+      {#if submitError}
+        <div class="err" role="alert" data-testid="submit-error">
+          <b>Could not queue this run.</b> {submitError}
+        </div>
+      {/if}
+
       <footer class="df">
         <span class="hint faint">
           {#if isOfficial}Ends on the final gate (win) or a missed deadline.{:else if stopAt}Ends at the chosen event, max turns{#if Number(maxSpend) > 0}, or ${Number(maxSpend)}{/if} — whichever first. Never on the leaderboard.{:else if Number(maxSpend) > 0}Ends at max turns or ${Number(maxSpend)}, whichever first. Never on the leaderboard.{:else}Runs until max turns. Never on the leaderboard.{/if}
         </span>
         <div class="actions">
           <button class="btn ghost" onclick={() => onclose()}>Cancel</button>
-          <button class="btn primary" onclick={submit}>Add to queue</button>
+          <button class="btn primary" onclick={submit} disabled={noLegalLevel}>Add to queue</button>
         </div>
       </footer>
     </div>
@@ -604,6 +848,23 @@
   select:focus, input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
   select:disabled, input:disabled { background: var(--surface-2); color: var(--muted); }
   .frozen { font-size: 13px; padding: 9px 11px; border: 1px dashed var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+  /* Inline warning: says a run is legal but degenerate (a cap under the
+     compaction interval) or refused outright (no legal thinking level). */
+  .warn { font-size: 11px; line-height: 1.45; color: var(--amber); }
+  .err {
+    margin: 4px 20px 0; padding: 9px 11px; font-size: 12px; line-height: 1.45;
+    color: var(--red); background: var(--red-soft); border: 1px solid var(--red-rule);
+    border-radius: var(--radius-sm);
+  }
+  .adv > summary {
+    font-size: 11.5px; font-weight: 650; color: var(--muted); cursor: pointer;
+    list-style: none; padding: 2px 0;
+  }
+  .adv > summary::-webkit-details-marker { display: none; }
+  .adv > summary::before { content: '▸ '; color: var(--faint); }
+  .adv[open] > summary::before { content: '▾ '; }
+  .advbody { display: flex; flex-direction: column; gap: 12px;
+    border-left: 2px solid var(--border-2); padding-left: 12px; margin: 8px 0 0 3px; }
   .goal { margin: -4px 0 0; font-size: 12px; line-height: 1.45; color: var(--muted); font-style: italic; }
   .tm-hint { font-size: 10.5px; line-height: 1.4; }
 

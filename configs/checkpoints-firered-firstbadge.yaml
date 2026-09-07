@@ -4,7 +4,7 @@
 benchmark:
   id: pokebench-first-badge
   name: "PokeBench First Badge"
-  goal: "Your goal is to earn the Boulder Badge by defeating Brock, the Pewter City Gym Leader, in as few turns as possible — you're measured on fewest player turns, excluding TaskMaster turns."
+  goal: "Your goal is to earn the Boulder Badge by defeating Brock, the Pewter City Gym Leader, in as few turns as possible — you're measured on fewest player turns."
   # THE default benchmark (2026-09-07, with the config-5.0 flip): pre-selected in
   # the new-run dialog and shown first on the main page. Easy is too short to
   # separate models and full too long to fill a board; first badge is the one

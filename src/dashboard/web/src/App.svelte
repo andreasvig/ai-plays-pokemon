@@ -45,6 +45,18 @@
   let checkpoints = $state([])     // full ladder [{id,name,type}] — casual "Stop at"
   let roms = $state([])            // game registry [{id,name,benchmark_ok,on_disk}]
   let starts = $state([])          // choosable openings [{rom,label,name,default,exists}]
+  // /api/profiles — {profiles:[…], configs:[…]}: the append harness's per-model
+  // transport contract + per-config `profile_aware`/`compaction_interval`. Feeds
+  // the dialog's thinking-level filter, its Advanced panel and its compaction
+  // hint. Empty on failure, which makes every profile branch in the dialog false.
+  let profiles = $state({ profiles: [], configs: [] })
+  // The last DISPATCH failure from /api/queue. Rendered as a dismissible strip
+  // by QueueBar/QueuePanel: an item that dies between dequeue and run start
+  // otherwise just disappears (finding #5b).
+  let queueError = $state(null)
+  // The server's 400 detail from the last failed enqueue, handed back to the
+  // dialog (which stays open so the reason is visible).
+  let submitError = $state(null)
   let benchmark = $state('')       // selected benchmark id (scopes the leaderboard)
 
   // spectate pill is green when the emulator is up AND a run is active
@@ -89,8 +101,9 @@
     await Promise.all([loadRuns().catch(() => {}), loadLeaderboard().catch(() => {})])
   }
   async function loadQueue() {
-    const { active: a, items } = await api.fetchQueue()
+    const { active: a, items, lastError } = await api.fetchQueue()
     activeId = a
+    queueError = lastError
     // The real /api/queue returns {active: <queue_id>, items: [ALL items incl.
     // the active one]} (Plan §Round 7). Split it: the active queue item is the
     // running run; the rest are the draggable upcoming cards. Without this the
@@ -119,15 +132,16 @@
   }
   async function loadEmulator() { emulator = await api.fetchEmulatorStatus() }
   async function loadCatalog() {
-    const [m, c, b, k, r, s] = await Promise.all([
+    const [m, c, b, k, r, s, pf] = await Promise.all([
       api.fetchModels().catch(() => []),
       api.fetchConfigs().catch(() => []),
       api.fetchBenchmarks().catch(() => []),
       api.fetchCheckpoints().catch(() => []),
       api.fetchRoms().catch(() => []),
       api.fetchStarts().catch(() => []),
+      api.fetchProfiles().catch(() => ({ profiles: [], configs: [] })),
     ])
-    models = m; configs = c; benchmarks = b; checkpoints = k; roms = r; starts = s
+    models = m; configs = c; benchmarks = b; checkpoints = k; roms = r; starts = s; profiles = pf
     // Default the leaderboard filter to the registry-default benchmark (or the
     // first) once, without clobbering a selection the user already made.
     if (!benchmark && b.length) benchmark = (b.find((x) => x.default) ?? b[0]).id
@@ -189,11 +203,16 @@
 
   const go = (p) => router.navigate(p)
   function inspect(r) { go(`/history/${r.slug}`) }
-  function openNew() { dialogContinueFrom = null; dialogOpen = true }
-  function openContinue(r) { dialogContinueFrom = r; dialogOpen = true }
+  function openNew() { dialogContinueFrom = null; submitError = null; dialogOpen = true }
+  function openContinue(r) { dialogContinueFrom = r; submitError = null; dialogOpen = true }
 
+  // The dialog now closes only on SUCCESS. It used to close first and log the
+  // failure to the console, so a 400 — an illegal thinking level for the model's
+  // provider profile, a variant on a legacy config — looked exactly like a
+  // successful queue that then showed nothing (finding #5). On failure the
+  // dialog stays open with the server's own message, which names the legal set.
   async function submitRun(spec) {
-    dialogOpen = false; dialogContinueFrom = null
+    submitError = null
     try {
       if (spec.continueFrom) {
         await api.continueRun(spec.continueFrom, {
@@ -208,7 +227,14 @@
       } else {
         await api.enqueueRun(spec)
       }
-    } catch (e) { console.error('enqueue failed', e) }
+      dialogOpen = false; dialogContinueFrom = null
+    } catch (e) {
+      // `send()` throws `Error("POST /api/queue → 400: <detail>")`; show the
+      // detail, falling back to the whole message when there is no colon.
+      const msg = String(e?.message ?? e)
+      submitError = msg.includes(': ') ? msg.slice(msg.indexOf(': ') + 2) : msg
+      console.error('enqueue failed', e)
+    }
     await loadQueue()
   }
   async function killRun() {
@@ -260,7 +286,7 @@
 
 <main class:kiosk={view === 'spectate'}>
   {#if view === 'home'}
-    <QueueBar {active} {queue} onkill={killRun} onremove={removeFromQueue} onreorder={reorder}
+    <QueueBar {active} {queue} lastError={queueError} onkill={killRun} onremove={removeFromQueue} onreorder={reorder}
       onnew={openNew} onspectate={() => go('/spectate')} />
     <Leaderboard rows={filteredRows} {stats} oninspect={inspect}
       {benchmarks} {benchmark} onbench={selectBenchmark}
@@ -288,8 +314,8 @@
   {/if}
 </main>
 
-<AddRunDialog open={dialogOpen} continueFrom={dialogContinueFrom} {models} {configs} {benchmarks} {checkpoints} {roms} {starts}
-  onclose={() => { dialogOpen = false; dialogContinueFrom = null }} onsubmit={submitRun} />
+<AddRunDialog open={dialogOpen} continueFrom={dialogContinueFrom} {models} {configs} {benchmarks} {checkpoints} {roms} {starts} {profiles} {submitError}
+  onclose={() => { dialogOpen = false; dialogContinueFrom = null; submitError = null }} onsubmit={submitRun} />
 
 <style>
   main { min-height: calc(100vh - 57px); }

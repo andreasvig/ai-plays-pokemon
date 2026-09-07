@@ -235,6 +235,31 @@ class QueuedRun(BaseModel):
     # would make two scores incomparable. A continue ignores it too: it resumes
     # the source run's own savepoint, so the opening was decided one run ago.
     start: str | None = None
+    # Which NAMED provider-profile variant this run's append agent runs under —
+    # a key from ``configs/provider-profiles.yaml``'s ``variants:`` block
+    # (``gemma-guidance``, ``gemma-replay``, …), or None for the model's BASE
+    # profile, which is what every run has had until now.
+    #
+    # Casual-only and append-only, both enforced at the API door
+    # (``server._validate_provider_profile``): a variant changes the transport
+    # contract — the endpoint tag it was probed on, whether prior reasoning is
+    # replayed — so an official run is restricted to the base profile
+    # (decision Q3) or two scores would not be comparable, and a legacy config
+    # resolves no profile at all (``resolve_provider_profile`` returns before
+    # reading the catalog, and raises outright on a named one).
+    #
+    # WHO READS IT after enqueue: ``executor.build_run_config`` passes it to
+    # ``cli.runner.prepare_config(provider_profile=…)`` → ``config.load_config``,
+    # which writes it to ``config["provider_profiles"]["name"]`` →
+    # ``provider_profiles.resolve_provider_profile`` merges that variant's
+    # ``settings`` over the base profile and stamps ``_provider_profile["name"]``
+    # → back in ``prepare_config``, that name suffixes ``run_name`` and
+    # ``run_label``, so the run dir and every card say which arm ran (finding
+    # #31); ``AppendAgent._body`` then builds the request from the merged
+    # profile. Until this field existed the whole chain was reachable only from
+    # ``pokemon run --provider-profile``, which fights the control center for
+    # mGBA — so the documented Gemma A/B was control-center-unreachable.
+    provider_profile: str | None = None
     continue_from: str | None = None
     # Optional TaskMaster model override (casual only). None → inherit the
     # source/config/freeplay-default resolution. The Player model rides on

@@ -159,10 +159,77 @@ Two kinds (see [the benchmark doc](benchmark.md) for the full distinction):
   `/api/benchmarks` rather than as UI text) and the start save are locked.
   Counts on that benchmark's leaderboard.
 - **Casual** — you pick **game + model + config + max-turns**, and optionally a
-  **Stop at** story event (`Entered Viridian Forest`, `Reached Pewter City`, …).
+  **Stop at** story event (`Entered Viridian Forest`, `Reached Pewter City`, …)
+  and a named **provider-profile variant** (see below).
   The run then ends at whichever comes first, the event or the turn cap. Never
   on the leaderboard. For experiments. See
   [Stopping at a story event](benchmark.md#stopping-at-a-story-event).
+
+### Choosing a thinking level (and what the provider profile decides for you)
+
+Every model in the registry has an ordered **thinking level** ladder, and the run
+identity is `model(level)` — so each level is benchmarked separately. What the
+dialog offers depends on the config you picked:
+
+- **A profile-aware config** (`config-5.x` — anything whose `agent_type` is
+  `append_compact`) resolves a **provider profile** from
+  [`configs/provider-profiles.yaml`](../configs/provider-profiles.yaml). The
+  profile is the probed contract for **one serving endpoint**, and it owns the
+  legal ladder: the dropdown shows the registry's levels **intersected** with
+  the profile's `reasoning_efforts`, preselected at the profile's own
+  `reasoning_default` — the level that endpoint was actually measured at, which
+  is frequently *not* the registry's highest (`kimi-k3`: registry `max`, profile
+  `high`). A `profile-filtered` tag appears when the intersection is narrower
+  than the registry ladder.
+- **A legacy config** (`config-4.0`, `config-3.13`) resolves no profile at all,
+  so the full registry ladder stays and none of the profile UI is shown.
+
+This is what stops the dialog queueing a run that dies at dispatch: the append
+agent refuses an effort its endpoint does not define, and it used to refuse it
+*inside* `build_run_config`, after the queue card had already gone active.
+`POST /api/queue` now loads the run's config exactly as dispatch will and
+answers **400 with the legal list** instead. The dialog stays open and shows
+that message verbatim.
+
+The **Advanced · provider profile** disclosure (casual + profile-aware configs
+only) shows what the profile decided: the **endpoint tag** it was probed on, its
+**cache mode**, and whether it splits the final turn to keep the prompt cache.
+Read-only — the base profile is selected by the model, not by you. An unprofiled
+model says so: it runs on the `defaults:` block with **no pinned endpoint**.
+
+**Named variants.** A few models have named profile variants — the five Gemma
+arms (`gemma-guidance`, `gemma-replay`, `gemma-guidance-coreweave`,
+`gemma-replay-coreweave`, `gemma-guidance-bf16`) — each overriding part of the
+base profile, usually the endpoint tag or whether prior reasoning is replayed.
+When the picked model has any, Advanced grows a **Variant** dropdown. It is
+**casual-only**: a benchmark run always uses the base profile, or two scores
+would not be comparable and the leaderboard has no column to tell them apart.
+A variant run carries its name in the **run name, the run label and the queue
+card**, so the arms of an A/B stay distinguishable. The CLI equivalents are
+`pokemon queue add --profile <name>` and `pokemon run --provider-profile <name>`.
+
+### Max turns and the compaction interval
+
+The append harness compacts every `compaction.every_n_turns` completed game turns
+(20 in `config-5.0`), replacing the conversation with a handover it writes
+itself. The dialog shows that interval next to **Max turns** and warns inline
+when the cap is **below** it: such a run never compacts, so it exercises the
+harness with its defining behaviour switched off while looking like an ordinary
+5.0 run in the card, the run name and History. A warning, not an error — the
+default cap is 100, so a sub-interval cap is always deliberate. `pokemon run`
+prints the same warning and emits a `config_warning` event for the trace.
+
+### When a queued run dies before it starts
+
+An item that is dequeued and then fails before its run can start — a ROM that
+will not load, a recorder that will not boot, a config that no longer resolves —
+is removed from the queue either way: the drain loop swallows every such failure
+so one poisoned item cannot freeze the serial queue. The queue strip now renders
+that failure as a **dismissible red "Last dispatch failed:" strip** above the
+cards, naming the model, config, variant and time. It clears itself the moment a
+run actually starts. Previously the card flashed active, vanished, and the only
+trace was a traceback on the app's stdout. `pokemon queue get` prints the same
+information.
 
 ### Choosing a game
 

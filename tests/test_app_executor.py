@@ -10,6 +10,7 @@ savepoint, official forces frozen config — NEVER a tuned gate/deadline number.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -97,7 +98,7 @@ def make_run_fn(runs_root: Path, *, recorder: list[str] | None = None):
     return run_fn, counter
 
 
-def fake_prepare_config(path, model, tm_model_alias=None):
+def fake_prepare_config(path, model, tm_model_alias=None, provider_profile=None):
     """Stand-in for runner.prepare_config — no models.yaml / disk reads.
 
     Mirrors ONE real property of the loaded YAML that the executor branches on:
@@ -106,14 +107,30 @@ def fake_prepare_config(path, model, tm_model_alias=None):
     and has none, which is what tells the executor to skip TaskMaster wiring
     entirely. A stub that always omitted the block would hide that branch and
     make the TaskMaster-on assertions below vacuous.
+
+    ``provider_profile`` mirrors the real signature and the real function's two
+    observable effects for a NAMED variant: the resolved profile is stamped on
+    the config as ``_provider_profile`` and its name suffixes ``run_name`` /
+    ``run_label`` (runner.py's ``_slug`` rule, reproduced here rather than
+    approximated — an approximate slug would make the marker assertion a
+    lookalike rather than the contract). The real chain that computes it
+    (load_config → resolve_provider_profile) is exercised against the REAL
+    prepare_config in ``test_queue_named_profile_reaches_the_wire_and_the_run_name``.
     """
     stem = Path(path).stem if path else "latest"
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", model).strip("-").lower()
     cfg = {
         "_config_path": path,
         "_llm_alias": model,
         "llm_model": f"resolved/{model}",
-        "run_name": f"{stem}__{model}",
+        "run_name": f"{stem}__{slug}",
+        "run_label": f"{stem} · {model}",
     }
+    if provider_profile:
+        cfg["_provider_profile"] = {"name": provider_profile}
+        pslug = re.sub(r"[^a-zA-Z0-9]+", "-", provider_profile).strip("-").lower()
+        cfg["run_name"] += f"__{pslug}"
+        cfg["run_label"] += f" · {provider_profile}"
     if not stem.startswith("config-4"):
         cfg["task_master"] = {"enabled": True, "history_window_n": 20}
     return cfg

@@ -160,30 +160,30 @@ Launches mGBA, opens its Scripting window (so you can `File > Load recent script
 
 ```bash
 # Single run — latest config (config-5.0), one model, default 10 turns
-pokemon run --model "gemini-3.5-flash(medium)"
+pokemon run --model "gemini-3.8-flash(medium)"
 
 # Specific config + 50 turns (config-4.0 and config-3.13 are legacy but runnable)
-pokemon run --config configs/config-4.0.yaml --model "claude-opus-4.7(medium)" --turns 50
+pokemon run --config configs/config-4.0.yaml --model "claude-opus-5(medium)" --turns 50
 
 # Fan-out: one config across N models
 pokemon run --config configs/config-5.0.yaml \
-            --model "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" --turns 50
+            --model "gemini-3.8-flash(medium)" "claude-opus-5(medium)" --turns 50
 
 # Paired 1:1: N configs × N models — e.g. the two harnesses side by side
 pokemon run --config configs/config-5.0.yaml configs/config-4.0.yaml \
-            --model "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" --turns 50
+            --model "gemini-3.8-flash(medium)" "claude-opus-5(medium)" --turns 50
 
 # Custom snapshot
-pokemon run --model "gemini-3.5-flash(medium)" --snapshot local/snapshots/has_starter
+pokemon run --model "gemini-3.8-flash(medium)" --snapshot local/snapshots/has_starter
 
 # Kill any leftover mGBA before starting
-pokemon run --model "gemini-3.5-flash(medium)" --kill-existing
+pokemon run --model "gemini-3.8-flash(medium)" --kill-existing
 
 # Continue a prior run from its latest savepoint (resumes where it left off)
-pokemon run --continue local/runs/2026-05-26_..._config-5.0__claude-opus-4-7 --turns 30
+pokemon run --continue local/runs/2026-05-26_..._config-5.0__claude-opus-5-medium --turns 30
 
 # Record the run to MP4 while it plays (headless — unaffected by your browser)
-pokemon run --model "claude-opus-4.7(medium)" --turns 50 \
+pokemon run --model "claude-opus-5(medium)" --turns 50 \
             --record simple --record-speed cut-thinking
 
 # Play until a story event instead of a fixed length (--turns is still the cap)
@@ -218,6 +218,7 @@ Aliases come from `configs/models.yaml`. Raw `"provider/model"` OpenRouter ids a
 | `--continue PATH`     | off                              | Resume from the source run's latest savepoint. Single-run only. Mutex with `--config` / `--model`. |
 | `--record VIEW`       | off                              | Record to `<run_dir>/recording.mp4`. `simple` = the 1:1 view (1080×1080); `detailed` = the full wide panel (1920×1080). See [recording.md](recording.md). |
 | `--record-speed S`    | `realtime`                       | `realtime` keeps every pause; `cut-thinking` records only each turn's execution window, cutting the model's response time. |
+| `--provider-profile N`| base profile                     | Named provider-profile **variant** for the append harness (`config-5.x`), e.g. `gemma-replay`. Names come from the `variants:` block of [`configs/provider-profiles.yaml`](../configs/provider-profiles.yaml) and must apply to the chosen `--model`. Appended to the run name and label. The queue equivalent is `pokemon queue add --profile`. |
 | `--record-fps N`      | `30`                             | Recording frame rate, 1–60.                   |
 
 Run output lands in `local/runs/<timestamp>_<config-stem>__<model-slug>/` (gitignored): `events.jsonl`, `state.json`, `tasks.json`, `run_summary.json`, and screenshots. Reports are rendered natively in the `pokemon app` SPA (History view) from these files.
@@ -260,10 +261,14 @@ pokemon queue clear --yes               # drop all pending, keep the active run
 ```bash
 # four models, one benchmark
 pokemon queue add --benchmark pokebench-easy \
-    "claude-opus-5(high)" "gpt-5.6-sol(medium)" "gemini-3.6-flash(high)" "grok-4.5(high)"
+    "claude-opus-5(high)" "gpt-5.6-sol(medium)" "gemini-3.8-flash(high)" "grok-4.6(high)"
 
 # one model three times, to see the spread
-pokemon queue add "gemini-3.5-flash(high)" --kind casual --max-turns 50 --repeat 3
+pokemon queue add "kimi-k3(high)" --kind casual --max-turns 50 --repeat 3
+
+# the two Gemma profile arms, same model, same config, different transport
+pokemon queue add "gemma-4-31b(thinking)" --kind casual --profile gemma-guidance
+pokemon queue add "gemma-4-31b(thinking)" --kind casual --profile gemma-replay
 ```
 
 | Flag | Kind | Meaning |
@@ -277,13 +282,19 @@ pokemon queue add "gemini-3.5-flash(high)" --kind casual --max-turns 50 --repeat
 | `--stop-at EVENT` | casual | End early on a story event. `--max-turns` still caps it. FireRed only. |
 | `--max-spend USD` | casual | All-in spend ceiling (Player + OCR + TaskMaster). Checked at the turn boundary, so the final total overshoots by up to one turn's cost. |
 | `--gameplay exploration\|speed` | casual | Which steering block the agent gets. `exploration` (default) wanders and roleplays; `speed` races the top goal. Official runs always race. |
+| `--profile NAME` | casual | Named **provider-profile variant** from the `variants:` block of [`configs/provider-profiles.yaml`](../configs/provider-profiles.yaml) — e.g. `gemma-replay`. Omit for the model's **base** profile, which is what every run has always used and the only thing an official run may use. Requires a **profile-aware config** (`agent_type: append_compact`, i.e. `config-5.x`): named on `config-4.0` it is a 400. The name is appended to the run name and label, so two arms of an A/B are distinguishable on disk and on the queue card. |
 | `--repeat N` | both | Enqueue each model N times. |
 | `--record simple\|detailed` | both | MP4 to `<run_dir>/recording.mp4`, rendered server-side. |
 | `--record-speed realtime\|cut-thinking` | both | `cut-thinking` drops the model's response time from the video. |
 
 Enqueue is where every value is checked. An unknown model, config, ROM, start,
-stop event or benchmark is a 400 naming the valid ones — including the values the
-server **defaulted** for you, which the confirmation line echoes back:
+stop event, benchmark or profile variant is a 400 naming the valid ones — as is
+an **unknown spec key** (a typo'd `max_turn` used to enqueue a 1500-turn run with
+a straight 201). Enqueue also **loads the run's config exactly as dispatch
+will**, so a thinking level the model's provider profile does not allow is
+refused here, with the legal list, instead of raising inside `build_run_config`
+after the item was dequeued. The confirmation line echoes what the server
+**stored**, including the values it defaulted for you:
 
 ```
 $ pokemon queue add "gpt-5.6-sol(medium)" --kind casual --rom firered --max-turns 20
@@ -293,7 +304,24 @@ enqueued 1 run(s):
 $ pokemon queue add "claude-opus-5(high)" --kind casual --rom firered --start gril
 ERROR: unknown start 'gril' for rom 'firered'; known: boy, girl
   try: pokemon ls starts
+
+$ pokemon queue add "gemma-4-31b(thinking)" --kind casual --profile gemma-replay
+enqueued 1 run(s):
+  q_1f0c92aa  casual   gemma-4-31b(thinking)  config-5.0  provider_profile=gemma-replay
+
+$ pokemon queue add "kimi-k3(high)" --kind casual --profile gemma-replay
+ERROR: provider profile 'gemma-replay' applies to 'google/gemma-4-31b-it', but
+this run's model is 'kimi-k3(high)' (moonshotai/kimi-k3)
+
+$ pokemon queue add "gemma-4-31b(thinking)" --kind casual --config config-4.0 \
+      --profile gemma-replay
+ERROR: provider profile 'gemma-replay' needs a profile-aware config
+(agent_type: append_compact); config-4.0 is not one
 ```
+
+`pokemon queue get` prints the queue **and the last dispatch failure** — the item
+that was dequeued and then never became a run. It names the model, config and
+variant, and it clears itself the moment a run actually starts.
 
 A start label is validated against *that item's* ROM, because labels are only
 unique within a game — `--rom emerald --start girl` is refused even though
@@ -428,6 +456,6 @@ pokemon snapshot save has_starter -d "Received starter Pokemon from Oak"
 ### Compare two models on the same snapshot
 ```bash
 pokemon run --config configs/config-5.0.yaml \
-            --model "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" \
+            --model "gemini-3.8-flash(medium)" "claude-opus-5(medium)" \
             --snapshot local/snapshots/has_starter --turns 50
 ```

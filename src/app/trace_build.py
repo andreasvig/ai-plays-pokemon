@@ -219,10 +219,18 @@ def _run_config(run_dir: Path) -> dict:
         return {}
 
 
-# Harness identity for the report's chip. ``run_summary.json["agent_type"]``
-# exists but has no readers and is absent from RunSummary, so the config is the
-# source: ``append_compact`` is the append harness, and a legacy run is
-# TaskMaster-driven or self-directed depending on its ``task_master`` block.
+# Harness identity for the report's chip, read off the run's ``config.json``:
+# ``append_compact`` is the append harness, and a legacy run is TaskMaster-driven
+# or self-directed depending on its ``task_master`` block.
+#
+# ``run_summary.json["agent_type"]`` DOES have a reader now — ``RunSummary.harness``
+# (src/app/models.py), projected by ``projection.project_run_dir`` — so this is no
+# longer "the only source". The two are deliberately different GRAINS of the same
+# fact and neither is derived from the other: ``RunSummary.harness`` is the coarse
+# canonical ``current``/``append_compact`` that index rows, guards and the API key
+# on, while this splits the legacy side further into ``task_master`` vs
+# ``self_directed`` for the chip. Keep it reading the config: this projection also
+# runs for a run dir whose summary predates the ``agent_type`` stamp.
 _HARNESS_LABELS = {
     "append_compact": "append-and-compact",
     "task_master": "TaskMaster",

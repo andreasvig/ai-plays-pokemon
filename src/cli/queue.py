@@ -5,10 +5,16 @@ A thin wrapper over the running app's ``/api/queue*`` routes (the app must be up
 ``add`` takes a list of models, ``reorder`` takes the full id order, ``cancel``
 takes a list of ids.
 
+Model aliases in the examples below are ILLUSTRATIVE and may have been pruned
+from the registry since; `pokemon ls models` is the live list, and the argparse
+epilog (`pokemon queue add --help`) builds its examples FROM the registry so
+they always name something runnable.
+
   pokemon queue get
-  pokemon queue add --benchmark pokebench-easy gemini-3.1-flash-lite claude-haiku-4-5
-  pokemon queue add --kind casual --max-turns 50 claude-haiku-4-5 --repeat 3
+  pokemon queue add --benchmark pokebench-easy "claude-opus-5(max)"
+  pokemon queue add --kind casual --max-turns 50 "claude-haiku-4.5(high)" --repeat 3
   pokemon queue add --kind casual --rom firered --stop-at starter_chosen "gpt-5.6-sol(medium)"
+  pokemon queue add --kind casual --profile gemma-replay "gemma-4-31b(thinking)"
   pokemon queue events
   pokemon queue reorder q_ab12cd34 q_99ff00aa
   pokemon queue cancel q_ab12cd34 q_99ff00aa
@@ -29,7 +35,20 @@ import argparse
 import sys
 
 from src.cli.ctl_client import api, detail, emit_json
-from src.config import default_config_stem
+from src.config import default_config_stem, example_model_aliases
+
+
+def _ex(i: int) -> str:
+    """The i-th registry-derived example alias, for help text.
+
+    Never a literal: the epilog used to print `gemini-3.5-flash(high)` and
+    `grok-4.5(high)`, both of which the 2026-09-07 registry prune removed, so
+    copying an example out of `--help` produced a 400. Falls back to a shape
+    hint rather than raising if the registry cannot be read — `--help` must work
+    in a broken checkout.
+    """
+    aliases = example_model_aliases(i + 1)
+    return aliases[i] if len(aliases) > i else "<model>(<level>)"
 
 
 def _print_last_error(payload: dict) -> None:
@@ -44,7 +63,12 @@ def _print_last_error(payload: dict) -> None:
         return
     print()
     print(f"!! last dispatch FAILED  {err.get('at', '')}")
-    print(f"   {err.get('queue_id', '?')}  {err.get('model', '?')}")
+    bits = [err.get("queue_id", "?"), err.get("model", "?")]
+    if err.get("config"):
+        bits.append(err["config"])
+    if err.get("provider_profile"):
+        bits.append(f"profile={err['provider_profile']}")
+    print("   " + "  ".join(bits))
     print(f"   {err.get('error', '')}")
 
 
@@ -76,6 +100,8 @@ def _print_queue(payload: dict) -> None:
             flags.append(f"start={it['start']}")
         if it.get("gameplay"):
             flags.append(f"gameplay={it['gameplay']}")
+        if it.get("provider_profile"):
+            flags.append(f"profile={it['provider_profile']}")
         if it.get("record"):
             r = it["record"]
             flags.append(f"rec={r.get('view')}/{r.get('speed')}")
@@ -137,6 +163,12 @@ def _cmd_add(args) -> int:
                 spec["max_spend_usd"] = args.max_spend
             if args.gameplay:
                 spec["gameplay"] = args.gameplay
+            if args.profile:
+                # Named append-profile variant. Validated server-side (400 on an
+                # unknown name, one that belongs to another model, or one named
+                # on a legacy config), so a typo rejects the batch instead of
+                # enqueuing runs that would die at dispatch.
+                spec["provider_profile"] = args.profile
         if args.record:
             # Validated server-side (400 on a bad view/speed or a missing
             # ffmpeg/Chrome), so a batch that can't actually be recorded is
@@ -164,7 +196,8 @@ def _cmd_add(args) -> int:
             # see a defaulted config or a dropped official-only field, rather
             # than assuming the request was taken verbatim.
             bits = [it.get("benchmark") or it.get("config") or ""]
-            for key in ("rom", "start", "max_turns", "stop_at", "max_spend_usd", "gameplay"):
+            for key in ("rom", "start", "max_turns", "stop_at", "max_spend_usd",
+                        "gameplay", "provider_profile"):
                 if it.get(key) is not None:
                     bits.append(f"{key}={it[key]}")
             if it.get("record"):
@@ -271,29 +304,35 @@ def main() -> None:
         prog="pokemon queue",
         description="Drive the control center's run queue (the app must be running).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""\
-Examples:
+        epilog=f"""\
+Examples (model aliases come from configs/models.yaml, so they always name a
+model you can actually start — `pokemon ls models` for the full list):
   # a scored benchmark run, recorded
-  pokemon queue add "claude-opus-5(high)" --benchmark pokebench-easy --record simple
+  pokemon queue add "{_ex(0)}" --benchmark pokebench-easy --record simple
 
   # a casual run: 20 turns of FireRed, stopping early if the starter is picked
-  pokemon queue add "gpt-5.6-sol(medium)" --kind casual --rom firered \\
+  pokemon queue add "{_ex(1)}" --kind casual --rom firered \\
       --max-turns 20 --stop-at starter_chosen --record simple --record-speed cut-thinking
 
   # the same model three times, to see the spread
-  pokemon queue add "gemini-3.5-flash(high)" --kind casual --max-turns 50 --repeat 3
+  pokemon queue add "{_ex(0)}" --kind casual --max-turns 50 --repeat 3
 
   # several models on one benchmark
-  pokemon queue add --benchmark pokebench-easy "claude-haiku-4.5(high)" "grok-4.5(high)"
+  pokemon queue add --benchmark pokebench-easy "{_ex(0)}" "{_ex(1)}"
+
+  # a named provider-profile variant (casual + append configs only)
+  pokemon queue add "gemma-4-31b(thinking)" --kind casual --profile gemma-replay
 
   pokemon queue get              # what is queued, and the last dispatch failure
   pokemon queue cancel q_ab12cd34
   pokemon queue clear --yes      # drop everything pending, keep the active run
 
 Naming things: `pokemon ls models|roms|configs|events|benchmarks`.
-Casual defaults: the latest config, default ROM, no early stop, no recording.
-Official runs ignore --config/--max-turns/--stop-at/--rom — a benchmark is
-frozen by definition, and takes its ROM from its own ladder.
+Casual defaults: {default_config_stem()}, default ROM, base provider profile, no
+early stop, no recording.
+Official runs ignore --config/--max-turns/--stop-at/--rom/--profile — a benchmark
+is frozen by definition, takes its ROM from its own ladder and runs the model's
+base profile.
 """,
     )
     # A shared parent so --port / --json work BEFORE or AFTER the subcommand.
@@ -366,6 +405,14 @@ frozen by definition, and takes its ROM from its own ladder.
         help="How the agent is told to play (casual only). `exploration` "
              "(default) = wander, catch, roleplay. `speed` = shortest path to "
              "the top goal. Official runs always race.",
+    )
+    p_add.add_argument(
+        "--profile", default=None,
+        help="Named provider-profile variant (casual + append configs only), "
+             "e.g. `gemma-replay`. Omit for the model's base profile, which is "
+             "what an official run always uses. The names live in the "
+             "`variants:` block of configs/provider-profiles.yaml (served by "
+             "GET /api/profiles).",
     )
     p_add.add_argument("--repeat", type=int, default=1, help="Enqueue each model N times (default 1).")
     p_add.add_argument(

@@ -241,6 +241,43 @@ def default_config_stem() -> str:
     return find_latest_config().stem
 
 
+def example_model_aliases(count: int = 2) -> list[str]:
+    """``count`` REAL ``model(level)`` selections, for help strings and doc examples.
+
+    The sibling of :func:`default_config_stem`, and it exists for the same
+    reason: ``pokemon queue --help`` and ``pokemon run --help`` used to print
+    hand-written aliases (``gemini-3.1-flash-lite``, ``grok-4.5(high)``,
+    ``claude-haiku-4-5``), and the 2026-09-07 registry prune removed the models
+    they named while the help kept advertising them — copy one and the command
+    400s. Derived from the registry instead, so an example is a selection you
+    can actually run.
+
+    Deterministic and STABLE rather than "interesting": one alias per model in
+    sorted order, each at its default (highest) level, taking the first
+    ``count``. Help text that reshuffles on every registry edit would be its own
+    kind of noise, and a sort is the only ordering that does not need a second
+    opinion. Retired entries are excluded — they resolve but must not be offered
+    (the same rule ``catalog.list_models`` applies).
+
+    Returns fewer than ``count`` (possibly none) on an empty registry rather
+    than raising: a broken registry must not take `--help` down with it.
+    """
+    try:
+        registry = _load_models_registry()
+    except (OSError, ValueError):
+        return []
+    out: list[str] = []
+    for base in sorted(registry):
+        entry = registry.get(base)
+        if not isinstance(entry, dict) or entry.get("retired"):
+            continue
+        level = model_default_level(entry)
+        out.append(f"{base}({level})" if level else base)
+        if len(out) >= count:
+            break
+    return out
+
+
 def _hoist_player_agent(config: dict[str, Any], config_path: Path) -> None:
     """Lift keys from an optional ``player_agent:`` block to the top level.
 

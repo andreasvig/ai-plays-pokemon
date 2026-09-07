@@ -919,6 +919,186 @@ def _validate_config_stem(config: Any, *, is_continue: bool) -> str | None:
     return config
 
 
+# The keys ``POST /api/queue`` (and the batch route) accept on one spec. An
+# unknown key is a 400 rather than a silent drop (finding #10): the queue's whole
+# purpose is that a run you asked for is the run that dispatches, and a typo'd
+# `max_turn` used to enqueue a 1500-turn run with a straight 201. Two kinds of
+# key are deliberately absent:
+#   - ``task_master_model``: a real ``QueuedRun`` field, but only the CONTINUE
+#     route sets it (a fresh run's TaskMaster is resolved from the config), so
+#     sending it here never did anything.
+#   - anything the DIALOG derives (``playerModel``, camelCase spellings): the
+#     wire contract is snake_case, and a camelCase key is a client bug worth
+#     seeing.
+# Known-but-inapplicable keys still behave as they always did: an official spec
+# DROPS config/max_turns/stop_at/max_spend_usd/gameplay/rom/start rather than
+# rejecting them, because "official freezes its wiring" is the documented
+# semantics of that branch (test_control_routes::test_official_forces_frozen_config).
+_ENQUEUE_KEYS = frozenset({
+    "kind", "model", "benchmark", "config", "max_turns", "stop_at",
+    "max_spend_usd", "gameplay", "rom", "start", "continue_from",
+    "provider_profile", "record",
+})
+
+
+def _reject_unknown_spec_keys(spec: dict) -> None:
+    """400 on any key ``_ENQUEUE_KEYS`` does not name."""
+    if not isinstance(spec, dict):
+        raise HTTPException(status_code=400, detail="each spec must be an object")
+    unknown = sorted(set(spec) - _ENQUEUE_KEYS)
+    if unknown:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"unknown spec key(s): {', '.join(unknown)}; accepted: "
+                f"{', '.join(sorted(_ENQUEUE_KEYS))}"
+            ),
+        )
+
+
+def _validate_provider_profile(
+    raw: Any, *, model: str, kind: Any, config_stem: str | None, is_continue: bool = False
+) -> str | None:
+    """Return a NAMED provider-profile variant for a casual append run, or None.
+
+    ``None``/``""`` mean "the model's base profile", which is what every run has
+    always had and what an official run is restricted to (decision Q3): a
+    variant changes the transport contract — the endpoint tag, whether prior
+    reasoning is replayed — so two official runs under different variants would
+    not be comparable, and the leaderboard has no column to tell them apart.
+
+    Four rejections, all at the door rather than at dispatch:
+
+    - an official run naming any variant;
+    - a CONTINUE naming one (it has no config of its own; see below);
+    - a variant on a config whose ``agent_type`` is not ``append_compact`` —
+      ``resolve_provider_profile`` raises "Named provider profiles require
+      append_compact" there, and it raises it inside ``build_run_config``, after
+      the item was dequeued and its card went active;
+    - a name the catalog does not define;
+    - a variant whose ``model:`` is a different model from the one picked
+      (``gemma-replay`` on kimi-k3): the resolver refuses that too, and the
+      message here can name both sides while the queue is still editable.
+    """
+    from src.app.catalog import list_config_facts, load_profile_catalog
+    from src.app.models import RunKind
+
+    if raw is None or raw == "":
+        return None
+    if not isinstance(raw, str):
+        raise HTTPException(
+            status_code=400, detail="provider_profile must be a named variant string"
+        )
+    if is_continue:
+        # A continue has NO config of its own — ``continue_from_run`` reads the
+        # source run's, which already carries its RESOLVED ``_provider_profile``,
+        # and ``build_run_config``'s continue branch never calls
+        # ``prepare_config``. So a variant named here would be stored on the item
+        # and read by nobody: refuse it rather than let the queue card advertise
+        # an arm the run will not use. Changing arm means a fresh run.
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"provider_profile {raw!r} cannot be set on a continue — a continue "
+                "resumes the source run's own resolved profile. Start a fresh run to "
+                "change the profile."
+            ),
+        )
+    catalog = load_profile_catalog()
+    variants = catalog.get("variants") or {}
+    known = ", ".join(sorted(variants)) or "(none defined)"
+    if kind == RunKind.official:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"provider_profile {raw!r} is not available for an official run — "
+                "a benchmark runs the model's base profile so its runs stay "
+                "comparable. Queue it as a casual run instead."
+            ),
+        )
+    spec = variants.get(raw)
+    if not isinstance(spec, dict):
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown provider profile {raw!r}; known: {known}",
+        )
+    facts = {f["stem"]: f for f in list_config_facts()}
+    stem_facts = facts.get(config_stem or "")
+    if stem_facts is not None and not stem_facts["profile_aware"]:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"provider profile {raw!r} needs a profile-aware config "
+                f"(agent_type: append_compact); {config_stem} is not one"
+            ),
+        )
+    from src.config import _load_models_registry, is_valid_model_selection
+
+    registry = _load_models_registry()
+    if is_valid_model_selection(model, registry):
+        from src.config import resolve_model_selection
+
+        try:
+            resolved_id = resolve_model_selection(model, registry)["openrouter_id"]
+        except ValueError:
+            resolved_id = None
+        if resolved_id is not None and spec.get("model") != resolved_id:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"provider profile {raw!r} applies to {spec.get('model')!r}, "
+                    f"but this run's model is {model!r} ({resolved_id})"
+                ),
+            )
+    return raw
+
+
+def _preflight_run_config(
+    config_stem: str | None, model: str, provider_profile: str | None
+) -> None:
+    """Load the run's config exactly as dispatch will, and 400 on what it refuses.
+
+    This is the guard behind finding #5. The thinking-level dropdown offered the
+    registry's ladder while the append harness's legality lives in the PROFILE's
+    ``reasoning_efforts``, so an illegal pair raised ``ValueError`` inside
+    ``executor.build_run_config`` — after the item was dequeued, its card had
+    gone active and the only trace was a traceback on the app's stdout.
+
+    It calls the REAL builder (``src.config.load_config``, which is the first
+    thing ``cli.runner.prepare_config`` does) instead of re-implementing the
+    rules. That is the point: an effort check written here would be a second
+    reader of ``reasoning_efforts`` free to drift from the one that actually
+    gates the request. The resolver's own ValueError text — which names the legal
+    list — becomes the 400 body. ``load_config`` is pure reads (dotenv + three
+    YAML files); it creates nothing, so running it twice per run costs only the
+    parse.
+
+    The late ValueError inside ``build_run_config`` STAYS as defence in depth: a
+    queue.json can be hand-edited, and an item enqueued before a registry or
+    profile edit must still be refused rather than dispatched.
+
+    Skipped for a continue (no config of its own — ``continue_from_run`` reads
+    the source run's, which was already validated when that run started).
+    """
+    if not config_stem:
+        return
+    from src.app.executor import RunExecutor
+    from src.config import load_config
+
+    try:
+        load_config(
+            RunExecutor._resolve_config_path(config_stem),
+            llm_alias=model,
+            provider_profile=provider_profile,
+        )
+    except HTTPException:
+        raise
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
 def _active_run_turn() -> Optional[int]:
     """Live game turn of the run that is currently playing, or None.
 
@@ -988,6 +1168,7 @@ def _enqueue_kwargs(spec: dict) -> dict:
     """
     from src.app.models import RunKind
 
+    _reject_unknown_spec_keys(spec)
     raw_kind = spec.get("kind")
     try:
         kind = RunKind(raw_kind)
@@ -1003,6 +1184,18 @@ def _enqueue_kwargs(spec: dict) -> dict:
 
     if kind == RunKind.official:
         benchmark = _validate_benchmark_id(spec.get("benchmark"))
+        # Base profile only (decision Q3) — 400, not a silent drop like
+        # config/max_turns, because a variant is a request for DIFFERENT
+        # transport, not a request for a setting official happens to freeze.
+        _validate_provider_profile(
+            spec.get("provider_profile"), model=model, kind=kind, config_stem=None
+        )
+        # The frozen official config is loaded here too: an official run's
+        # model/level pair has to be legal on config-5.0's profile before the
+        # item is accepted, exactly like a casual one.
+        from src.app.executor import OFFICIAL_CONFIG
+
+        _preflight_run_config(OFFICIAL_CONFIG, model, None)
         return {
             "kind": kind, "model": model, "config": None,
             "benchmark": benchmark, "max_turns": None, "record": record,
@@ -1028,15 +1221,24 @@ def _enqueue_kwargs(spec: dict) -> dict:
                     f"ladder is authored for {rom.game}"
                 ),
             )
+    config_stem = _validate_config_stem(
+        spec.get("config"), is_continue=bool(spec.get("continue_from"))
+    )
+    # Which named profile variant (casual + append-aware only). Resolved BEFORE
+    # the preflight so the preflight loads the same profile dispatch will.
+    provider_profile = _validate_provider_profile(
+        spec.get("provider_profile"), model=model, kind=kind, config_stem=config_stem,
+        is_continue=bool(spec.get("continue_from")),
+    )
+    _preflight_run_config(config_stem, model, provider_profile)
     return {
         "kind": kind,
         "model": model,
         # Defaulted to the latest config when absent, 400 when unknown — either
         # way the item that reaches the queue is dispatchable. See
         # :func:`_validate_config_stem`.
-        "config": _validate_config_stem(
-            spec.get("config"), is_continue=bool(spec.get("continue_from"))
-        ),
+        "config": config_stem,
+        "provider_profile": provider_profile,
         "max_turns": spec.get("max_turns"),
         "stop_at": stop_at,
         "max_spend_usd": _validate_max_spend(spec.get("max_spend_usd")),
@@ -1665,6 +1867,37 @@ async def api_configs():
     from src.app.catalog import list_configs
 
     return JSONResponse(list_configs())
+
+
+@app.get("/api/profiles")
+async def api_profiles():
+    """The append harness's per-model transport contract + per-config harness facts.
+
+    ``{version, reviewed, profiles: [...], configs: [...]}``:
+
+    - ``profiles`` — one row per PICKABLE model (same membership as
+      ``/api/models``, so a retired entry is absent from both): ``{model,
+      openrouter_id, unprofiled, endpoint, reasoning_efforts, reasoning_default,
+      final_turn_text_only, cache_mode, variants}``. ``reasoning_efforts`` is the
+      probed legal ladder for that ONE endpoint and is what the dialog
+      intersects the registry's display ladder with; an EMPTY list means "not
+      probed" and imposes no constraint, matching ``resolve_provider_profile``.
+    - ``configs`` — ``{stem, agent_type, profile_aware, compaction_interval}``
+      per casual config stem, in the same order ``/api/configs`` returns.
+      ``profile_aware`` is the flag that tells the dialog whether the profile
+      owns the ladder at all: a legacy config (config-4.0 / 3.13) resolves NO
+      profile, so it must keep offering the full registry ladder.
+
+    Why one route and not two: the dialog needs both halves on the same open,
+    and it cannot use either without the other — a profile row is meaningless
+    until you know whether the chosen config reads profiles.
+
+    Pure on-disk projection like ``/api/models`` and ``/api/benchmarks``: no
+    control plane needed, so a headless ``pokemon run`` dashboard serves it too.
+    """
+    from src.app.catalog import list_provider_profiles
+
+    return JSONResponse(list_provider_profiles())
 
 
 @app.get("/api/emulator/status")

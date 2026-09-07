@@ -153,6 +153,15 @@ class RunExecutor:
                 "queue_id": item.queue_id,
                 "kind": item.kind.value if hasattr(item.kind, "value") else str(item.kind),
                 "model": item.model,
+                # WHICH config and profile the failed item asked for. Without
+                # these the strip in the queue UI can say a run died but not
+                # which of two same-model items it was — and the two most common
+                # dispatch failures (an illegal effort for the profile, a
+                # variant on the wrong config) are precisely about these two
+                # fields. ``model`` is already the ALIAS (``kimi-k3(high)``), not
+                # the raw OpenRouter id, so no separate alias key is needed.
+                "config": item.config,
+                "provider_profile": item.provider_profile,
                 "error": error,
                 "at": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()),
             }
@@ -291,7 +300,21 @@ class RunExecutor:
             # None / unknown falls back to the registry default so a stale queue
             # item still runs rather than wedging the drain.
             benchmark = get_benchmark(item.benchmark)
-            cfg = prepare_config(self.official_config_path, item.model)
+            # Base profile only (decision Q3). The API refuses a variant on an
+            # official spec, so this fires only on a hand-edited queue.json or an
+            # item enqueued before that rule existed — and it must fire, because
+            # a variant changes the endpoint tag and the reasoning-replay
+            # contract, which would make the score incomparable while looking
+            # identical on the board. Raised BEFORE the run dir exists, so the
+            # drain records it as a dispatch failure and advances.
+            if item.provider_profile:
+                raise ValueError(
+                    f"provider profile {item.provider_profile!r} is not eligible for "
+                    "an official run — a benchmark runs the model's base profile"
+                )
+            cfg = prepare_config(
+                self.official_config_path, item.model, provider_profile=None
+            )
             # Override the frozen config's goal with the benchmark's overall goal
             # — the meta-goal the agent (TaskMaster) plays toward. The frozen
             # config stays the same across all benchmarks; only the objective +
@@ -327,7 +350,20 @@ class RunExecutor:
         # guidelines on the chosen config gets freeplay_guidelines. A config with
         # no task_master block (4.0+) skips TM model resolution entirely — there
         # is no TaskMaster to give a model to.
-        cfg = prepare_config(self._resolve_config_path(item.config), item.model)
+        # ``provider_profile`` is the item's named append-profile variant (None =
+        # the model's base profile). It travels through ``load_config``, so a
+        # variant that does not exist, does not apply to this model, or was named
+        # on a legacy config raises HERE rather than reaching the wire — and
+        # ``prepare_config`` suffixes ``run_name``/``run_label`` with the name it
+        # resolved, so a queue-dispatched variant run is distinguishable on disk
+        # and in every card (finding #31). The API validated all of this at
+        # enqueue; this is the defence-in-depth copy for a hand-edited queue.json
+        # or an item that predates a catalog edit.
+        cfg = prepare_config(
+            self._resolve_config_path(item.config),
+            item.model,
+            provider_profile=item.provider_profile,
+        )
         self._stamp_mode(cfg, self._mode_for_gameplay(item.gameplay))
         if self._tm_enabled(cfg):
             from src.cli.runner import _resolve_task_master_model

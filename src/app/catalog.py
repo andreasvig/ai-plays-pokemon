@@ -224,3 +224,166 @@ def stop_at_referee_config(stop_at: str | None) -> dict[str, Any] | None:
         "enforce": False,
         "stop_at": stop_at,
     }
+
+
+# ---------------------------------------------------------------------------
+# Provider profiles + per-config harness facts (backs ``GET /api/profiles``).
+#
+# The dialog needs two things config-5.0 introduced and nothing served: WHICH
+# configs are profile-aware (so it knows when the profile owns the thinking
+# ladder) and, per model, the profile's own contract — the legal reasoning
+# levels, its default, the endpoint it was probed on, its cache mode, and the
+# named variants that apply to it.
+#
+# Kept here rather than in ``src.agent.provider_profiles`` because these are
+# CATALOG reads — "what may I pick now" — and the resolver answers a different
+# question: "what does this config mean once bound to a model". The resolver
+# needs a config; the picker has none yet.
+# ---------------------------------------------------------------------------
+
+APPEND_AGENT_TYPE = "append_compact"
+
+
+def _config_agent_facts(path: Path) -> dict[str, Any]:
+    """``{agent_type, compaction_interval}`` for one config file. Raw read.
+
+    Deliberately NOT ``load_config``: that requires a model alias to resolve, runs
+    the whole validator, and would make listing the configs fail because ONE of
+    them is broken. This only needs two authored values, so it reads the YAML.
+
+    Both keys may be authored either inside the optional ``player_agent:`` block
+    (the config-4.0+ layout) or flat at the top level (config-1.x..3.12), which
+    is exactly what ``src.config._hoist_player_agent`` normalises at load time —
+    so both places are checked here, block first, mirroring the hoist.
+    """
+    import yaml
+
+    try:
+        raw = yaml.safe_load(path.read_text())
+    except (OSError, ValueError):
+        return {"agent_type": None, "compaction_interval": None}
+    if not isinstance(raw, dict):
+        return {"agent_type": None, "compaction_interval": None}
+    block = raw.get("player_agent")
+    block = block if isinstance(block, dict) else {}
+
+    def _pick(key):
+        return block[key] if key in block else raw.get(key)
+
+    agent_type = _pick("agent_type")
+    compaction = _pick("compaction")
+    every = compaction.get("every_n_turns") if isinstance(compaction, dict) else None
+    if not isinstance(every, int) or isinstance(every, bool) or every <= 0:
+        every = None
+    return {
+        "agent_type": agent_type if isinstance(agent_type, str) else None,
+        "compaction_interval": every,
+    }
+
+
+def list_config_facts(configs_dir: Path | None = None) -> list[dict[str, Any]]:
+    """``[{stem, agent_type, profile_aware, compaction_interval}]`` per casual config.
+
+    Same order (and same membership) as :func:`list_configs` — the LAST entry is
+    the default. ``profile_aware`` is the one flag the dialog branches on: an
+    ``append_compact`` config resolves a provider profile, so the profile owns
+    the legal thinking levels and the endpoint; a legacy config ignores profiles
+    entirely (``resolve_provider_profile`` returns before reading the catalog),
+    so its dialog must keep offering the full registry ladder.
+
+    Keyed on the config's ``agent_type``, never on its stem: "config-5.x" is
+    today's answer, not the rule, and a hand-passed config path has no stem to
+    match.
+    """
+    base = Path(configs_dir) if configs_dir is not None else CONFIGS_DIR
+    out: list[dict[str, Any]] = []
+    for stem in list_configs(base):
+        facts = _config_agent_facts(base / f"{stem}.yaml")
+        out.append(
+            {
+                "stem": stem,
+                "agent_type": facts["agent_type"],
+                "profile_aware": facts["agent_type"] == APPEND_AGENT_TYPE,
+                "compaction_interval": facts["compaction_interval"],
+            }
+        )
+    return out
+
+
+def load_profile_catalog(path: Path | None = None) -> dict[str, Any]:
+    """The raw ``configs/provider-profiles.yaml`` mapping; ``{}`` when unreadable.
+
+    Forgiving like :func:`_load_release_dates`: a missing catalog costs the
+    dialog its Advanced panel and its level filter (it falls back to the full
+    registry ladder, which is what a legacy config gets), not the dialog.
+    """
+    import yaml
+
+    from src.agent.provider_profiles import PROFILE_PATH
+
+    target = Path(path) if path is not None else PROFILE_PATH
+    try:
+        data = yaml.safe_load(target.read_text())
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def list_provider_profiles(
+    profile_path: Path | None = None, configs_dir: Path | None = None
+) -> dict[str, Any]:
+    """The append harness's transport contract per pickable model, + config facts.
+
+    ``profiles`` has one row per row of :func:`list_models` — so a retired
+    registry entry is absent here too, and a model with no profile entry still
+    gets a row (``unprofiled: true``, empty ``reasoning_efforts``) rather than
+    vanishing: it IS startable on an append config, it just runs on the
+    ``defaults:`` block with no pinned endpoint.
+
+    ``reasoning_efforts`` is the PROBED legal set for that one endpoint, and the
+    empty list means "not probed" — the same meaning it has in
+    ``resolve_provider_profile``, which waves an empty list through rather than
+    rejecting every effort. A caller intersecting a registry ladder with this
+    list must therefore treat empty as "no constraint", not as "nothing legal".
+
+    ``variants`` names the profile catalog's named variants whose ``model``
+    matches this row — the gemma-guidance / gemma-replay family. They were
+    reachable only from ``pokemon run --provider-profile`` until the queue grew
+    a profile axis.
+    """
+    catalog = load_profile_catalog(profile_path)
+    profiles = catalog.get("profiles") or {}
+    defaults = catalog.get("defaults") or {}
+    variants = catalog.get("variants") or {}
+    by_model: dict[str, list[str]] = {}
+    for name, spec in sorted(variants.items()):
+        if isinstance(spec, dict) and isinstance(spec.get("model"), str):
+            by_model.setdefault(spec["model"], []).append(name)
+
+    rows: list[dict[str, Any]] = []
+    for row in list_models():
+        orid = row.get("openrouter_id")
+        entry = profiles.get(orid) if isinstance(profiles, dict) else None
+        unprofiled = not isinstance(entry, dict)
+        merged = {**defaults, **(entry if isinstance(entry, dict) else {})}
+        rows.append(
+            {
+                "model": row["model"],
+                "openrouter_id": orid,
+                "unprofiled": unprofiled,
+                # "" = unpinned, which is what an unprofiled model gets: a
+                # default cannot invent an endpoint nobody probed.
+                "endpoint": "" if unprofiled else (merged.get("endpoint") or ""),
+                "reasoning_efforts": list(merged.get("reasoning_efforts") or []),
+                "reasoning_default": merged.get("reasoning_default") or {},
+                "final_turn_text_only": bool(merged.get("final_turn_text_only", False)),
+                "cache_mode": merged.get("cache_mode") or "unknown",
+                "variants": by_model.get(orid, []),
+            }
+        )
+    return {
+        "version": catalog.get("version"),
+        "reviewed": catalog.get("reviewed"),
+        "profiles": rows,
+        "configs": list_config_facts(configs_dir),
+    }

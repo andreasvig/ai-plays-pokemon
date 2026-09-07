@@ -1,6 +1,11 @@
 <script>
   import Icon from './Icon.svelte'
-  let { active = null, queue = [], onkill, onremove, onreorder, onnew } = $props()
+  import QueueError from './QueueError.svelte'
+  // Same `lastError` contract as QueueBar, rendered by the same component.
+  // NOTE: this panel is the alternate (sidebar) queue layout and currently has
+  // no importer — App.svelte mounts QueueBar. It is kept in step with QueueBar
+  // deliberately, so mounting it does not resurrect a fixed bug.
+  let { active = null, queue = [], lastError = null, onkill, onremove, onreorder, onnew } = $props()
   let dragIndex = $state(null)
   let overIndex = $state(null)
 
@@ -16,6 +21,8 @@
     <h3>Queue</h3>
     <button class="btn ghost sm" onclick={() => onnew()}>+ Add</button>
   </div>
+
+  <QueueError error={lastError} />
 
   {#if active}
     <div class="qcard active">
@@ -48,7 +55,7 @@
             </div>
             <div class="cmodel mono">{q.model}</div>
             <div class="cmeta faint">
-              {#if q.kind === 'casual'}<span class="mono">{q.config}</span> · {q.maxTurns}t{#if q.stopAt} · ⇥ <span class="mono">{q.stopAt}</span>{/if}{#if q.maxSpend} · ≤${q.maxSpend}{/if}{#if q.gameplay === 'speed'} · speed{/if}{#if q.rom} · <span class="mono">{q.rom}</span>{/if}{:else}pokebench-v1{/if}
+              {#if q.kind === 'casual'}<span class="mono">{q.config}</span> · {q.maxTurns}t{#if q.stopAt} · ⇥ <span class="mono">{q.stopAt}</span>{/if}{#if q.maxSpend} · ≤${q.maxSpend}{/if}{#if q.gameplay === 'speed'} · speed{/if}{#if q.rom} · <span class="mono">{q.rom}</span>{/if}{#if q.providerProfile} · <span class="mono">{q.providerProfile}</span>{/if}{:else}pokebench-v1{/if}
             </div>
           </div>
           <button class="rm" onclick={() => onremove(q.queueId)} title="Remove from queue"><Icon name="close" size={12} /></button>
@@ -63,6 +70,8 @@
 <style>
   .queue { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow); }
   .qhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  /* QueueError sits between the header and the cards; it renders nothing when
+     there is no failure, so the gap only appears with one. */
   h3 { font-size: 13px; font-weight: 750; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0; }
   .btn.sm { padding: 3px 9px; font-size: 12px; }
 

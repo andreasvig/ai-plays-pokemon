@@ -93,14 +93,27 @@ def _print_crash_banner(exc: BaseException, turn_mgr, config: dict, run_dir, han
                 _print_mgba_log_tail(log_path)
     print(bar + "\n")
 from src.cli.slots import get_slot
-from src.config import default_config_stem, load_config
+from src.config import default_config_stem, example_model_aliases, load_config
 from src.core import RunLogger, StateManager
 from src.emulator import EmulatorClient, VisionPipeline, OCRRunner
 from src.agent import TurnManager
 
 
+def _ex(i: int) -> str:
+    """The i-th registry-derived example alias, for help text.
+
+    Sibling of ``default_config_stem()`` in the same help strings, and there for
+    the same reason: the epilog used to name ``gemini-3.5-flash(medium)`` and
+    ``claude-opus-4.7(medium)``, which the 2026-09-07 registry prune retired, so
+    an example copied out of ``--help`` no longer resolved. Degrades to a shape
+    hint rather than raising — ``--help`` must work in a broken checkout.
+    """
+    aliases = example_model_aliases(i + 1)
+    return aliases[i] if len(aliases) > i else "<model>(<level>)"
+
+
 def _slug(s: str) -> str:
-    """Filesystem-safe slug for model aliases like 'gemini-3.5-flash(medium)'."""
+    """Filesystem-safe slug for a model alias or profile name, e.g. 'kimi-k3(high)'."""
     return re.sub(r"[^a-zA-Z0-9]+", "-", s).strip("-").lower()
 
 
@@ -1105,24 +1118,28 @@ def main():
         prog="pokemon run",
         description="Run the agent for one or more (config, model) pairs against mGBA.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""\
-Examples:
-  # Single run on the standard harness (the latest config: config-5.0)
-  pokemon run --model "gemini-3.5-flash(medium)" --turns 50
+        epilog=f"""\
+Examples (model aliases are read from configs/models.yaml, so they always name a
+model you can actually start — `pokemon ls models` for the full list):
+  # Single run on the standard harness (the latest config: {default_config_stem()})
+  pokemon run --model "{_ex(0)}" --turns 50
 
   # Single run, specific config (config-4.0 and config-3.13 still run)
-  pokemon run --config configs/config-4.0.yaml --model "claude-opus-4.7(medium)"
+  pokemon run --config configs/config-4.0.yaml --model "{_ex(1)}"
 
   # Fan-out: one config across N models
-  pokemon run --config configs/config-5.0.yaml \\
-              --model "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" --turns 50
+  pokemon run --config configs/{default_config_stem()}.yaml \\
+              --model "{_ex(0)}" "{_ex(1)}" --turns 50
 
   # Paired 1:1: N configs × N models
-  pokemon run --config configs/config-5.0.yaml configs/config-4.0.yaml \\
-              --model "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" --turns 50
+  pokemon run --config configs/{default_config_stem()}.yaml configs/config-4.0.yaml \\
+              --model "{_ex(0)}" "{_ex(1)}" --turns 50
+
+  # A named provider-profile variant (append configs only)
+  pokemon run --model "gemma-4-31b(thinking)" --provider-profile gemma-replay --turns 50
 
   # Continue a prior run from its latest savepoint (fresh turn counter)
-  pokemon run --continue local/runs/2026-05-26_..._config-5.0__claude-opus-4-7 --turns 30
+  pokemon run --continue local/runs/2026-09-07_..._{default_config_stem()}__kimi-k3-high --turns 30
 """,
     )
     parser.add_argument(
@@ -1136,7 +1153,7 @@ Examples:
     )
     parser.add_argument(
         "--model", nargs="+", default=None,
-        help='One or more model aliases (e.g. "gemini-3.5-flash(medium)") or raw '
+        help=f'One or more model aliases (e.g. "{_ex(0)}") or raw '
              '"provider/model" OpenRouter ids. Required unless --continue is set.',
     )
     parser.add_argument(

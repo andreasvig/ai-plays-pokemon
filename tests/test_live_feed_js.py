@@ -1,11 +1,18 @@
-"""Runs the live-feed JS unit tests (``tests/js/live.test.mjs``) under pytest.
+"""Runs EVERY JS unit suite in ``tests/js/`` under pytest.
 
-The live spectate view's event → box mapping is the one piece of frontend logic
-with real rules in it: which box an event becomes, whether it belongs to a
-gameplay TURN or to a COMPACTION BLOCK, and which boxes must not exist. Those
-rules live in ``src/dashboard/web/src/lib/{live,feed}.js`` — plain ESM with no
-svelte imports precisely so node can check them — and this test makes the suite
-fail when they break, instead of leaving them to a browser walk.
+The frontend's pure logic — the pieces with real rules rather than markup — is
+deliberately written as import-free ESM in ``src/dashboard/web/src/lib/`` so node
+can check it without a browser, and these are the suites:
+
+- ``live.test.mjs`` → ``lib/{live,feed}.js``: the live spectate view's event →
+  box mapping (which box an event becomes, whether it belongs to a gameplay TURN
+  or a COMPACTION BLOCK, and which boxes must not exist).
+- ``queue.test.mjs`` → ``lib/queue.js``: ``/api/queue``'s ``last_error`` → the
+  dismissible dispatch-failure strip, including its dismissal identity.
+
+Discovered by glob rather than listed, so adding ``tests/js/<name>.test.mjs``
+puts it in the suite with no wiring here — and an empty ``tests/js/`` fails
+rather than passing vacuously.
 
 node is a hard requirement of this repo's frontend (`npm run build` produces the
 served SPA), so a missing node is a failure, not a skip.
@@ -17,16 +24,26 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
+
 REPO = Path(__file__).resolve().parent.parent
-SUITE = REPO / "tests/js/live.test.mjs"
+JS_DIR = REPO / "tests/js"
+SUITES = sorted(JS_DIR.glob("*.test.mjs"))
 
 
-def test_live_feed_js_unit_tests_pass():
+def test_the_js_suite_directory_is_not_empty():
+    """Mutation control for the parametrisation below: a glob that matched
+    nothing would collect zero cases and report green."""
+    assert SUITES, f"no *.test.mjs found in {JS_DIR}"
+
+
+@pytest.mark.parametrize("suite", SUITES, ids=lambda p: p.name)
+def test_live_feed_js_unit_tests_pass(suite):
     node = shutil.which("node")
     assert node, "node is required (the SPA is built with it) — install node"
-    assert SUITE.exists(), f"missing JS suite: {SUITE}"
+    assert suite.exists(), f"missing JS suite: {suite}"
     proc = subprocess.run(
-        [node, str(SUITE)],
+        [node, str(suite)],
         cwd=REPO,
         capture_output=True,
         text=True,
@@ -34,7 +51,7 @@ def test_live_feed_js_unit_tests_pass():
     )
     # node:test exits non-zero on any failing test and prints a TAP-ish report.
     assert proc.returncode == 0, (
-        f"node {SUITE.relative_to(REPO)} failed:\n{proc.stdout}\n{proc.stderr}"
+        f"node {suite.relative_to(REPO)} failed:\n{proc.stdout}\n{proc.stderr}"
     )
     # A green exit with zero tests run would be a silently empty suite.
     assert "# pass " in proc.stdout or "pass " in proc.stdout, proc.stdout

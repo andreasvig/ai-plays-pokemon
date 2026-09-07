@@ -26,13 +26,18 @@
 #   observed:         {level: {avg_turn_cost_usd, avg_turn_latency_s,
 #                     sample_turns, last_updated, notes}} — per-level telemetry.
 #   retired:          true on an entry kept ONLY so an alias hard-coded in code or
-#                     in a frozen config still resolves. A retired entry has NO
-#                     provider profile, so it cannot run on config-5.0 (the append
-#                     harness needs one) — it exists for the legacy path and for the
-#                     telemetry already attached to it. It MUST be hidden from the
-#                     model picker; that filtering is not implemented here, only the
-#                     flag. Never add one for convenience: the only reason to retire
-#                     rather than remove is that removing breaks a caller.
+#                     in a frozen config still resolves. It exists for the legacy
+#                     path and for the telemetry already attached to it, and it is
+#                     hidden from the model picker (the filter lives in
+#                     src/app/catalog.py:list_models, and /api/models + /api/profiles
+#                     both honour it — the flag is NOT read by src/config.py, so an
+#                     old run's model stays resolvable). A retired entry has no
+#                     provider profile, but that no longer stops it running on
+#                     config-5.0: since the 2026-09-07 D2 decision the profile
+#                     `defaults:` block applies to every model, so it runs UNPROFILED
+#                     — everything except a pinned endpoint. Never add one for
+#                     convenience: the only reason to retire rather than remove is
+#                     that removing breaks a caller.
 # ============================================================================
 # ----------------------------------------------------------------------------
 # PRUNED 2026-09-07 to the keep list Andreas chose when config-5.0 (the append
@@ -454,6 +459,13 @@ glm-5.3-flash:
   # Smoke 2026-09-06: Z.AI answers 400 "Tool choice must be auto" to the legacy transport's forced
   # tool_choice, and pydantic-ai refuses native_json for this model ("Native structured output is not
   # supported by the model"), so the legacy path uses locally validated prompted JSON, like Gemma/Qwen.
+  # TWO READERS, TWO ANSWERS, both correct: this `prompted` is what the LEGACY path
+  # (config-4.0 / 3.13, pydantic-ai) sends, while config-5.x reads the provider
+  # profile, whose `output_mode` for z-ai/glm-5.3-flash is the default `tool` —
+  # tools ARE supported on the direct endpoint the profile pins. Neither value is
+  # a mistake and neither is changed: the profile wins on the append path by
+  # design (AppendAgent._body builds from the profile), and the profile's `notes:`
+  # flags the divergence for the validator rather than silently reconciling it.
   output_mode: prompted
   thinking_levels:
   - max

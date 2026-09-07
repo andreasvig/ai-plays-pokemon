@@ -6,10 +6,11 @@
 // `openSource`, `furthestGateName`). This module maps snake→camel and keeps
 // the SAME derivation formulas the mock used so the components don't change.
 import { gate, GATE_INDEX } from './gates.js'
+import { toQueueError } from './queue.js'
 import { runSlug } from './router.svelte.js'
 
 // open-weight families (for the All / Open-source filter) — same regex as the mock
-const OSS = /^(kimi|qwen|mimo|gemma|perceptron)/
+const OSS = /^(kimi|qwen|mimo|gemma|glm|minimax|deepseek)/  // open-weights vendors in configs/models.yaml
 export const isOpenSource = (m) => OSS.test(m)
 
 async function getJSON(path) {
@@ -131,6 +132,51 @@ export async function fetchConfigs() {
   return getJSON('/api/configs')
 }
 
+export async function fetchProfiles() {
+  // GET /api/profiles → {version, reviewed, profiles:[…], configs:[…]}.
+  //
+  // Two halves the append harness needs and nothing else served:
+  //  - `profiles` — one row per pickable model: {model, openrouter_id,
+  //    unprofiled, endpoint, reasoning_efforts, reasoning_default,
+  //    final_turn_text_only, cache_mode, variants}. `reasoning_efforts` is the
+  //    PROBED legal ladder for that one endpoint; an EMPTY array means "not
+  //    probed", i.e. NO constraint — the same meaning the server's resolver
+  //    gives it. Intersecting with an empty list would offer nothing, so
+  //    `allowedLevels()` in AddRunDialog treats empty as "keep the registry
+  //    ladder".
+  //  - `configs` — {stem, agent_type, profile_aware, compaction_interval} per
+  //    config stem. `profile_aware` is the branch: a legacy config resolves NO
+  //    profile, so its dialog keeps the full registry ladder and hides the
+  //    profile UI entirely.
+  //
+  // Failure is degradation, not breakage: App catches it to `{profiles:[],
+  // configs:[]}`, and the dialog then behaves exactly as it did before profiles
+  // existed. Never derive `profile_aware` from a stem here — the server keys it
+  // on the config's own `agent_type`.
+  const data = await getJSON('/api/profiles')
+  return {
+    version: data.version ?? null,
+    reviewed: data.reviewed ?? null,
+    profiles: (data.profiles || []).map((p) => ({
+      model: p.model,
+      openrouterId: p.openrouter_id ?? null,
+      unprofiled: !!p.unprofiled,
+      endpoint: p.endpoint ?? '',
+      reasoningEfforts: Array.isArray(p.reasoning_efforts) ? p.reasoning_efforts : [],
+      reasoningDefault: p.reasoning_default ?? {},
+      finalTurnTextOnly: !!p.final_turn_text_only,
+      cacheMode: p.cache_mode ?? 'unknown',
+      variants: Array.isArray(p.variants) ? p.variants : [],
+    })),
+    configs: (data.configs || []).map((c) => ({
+      stem: c.stem,
+      agentType: c.agent_type ?? null,
+      profileAware: !!c.profile_aware,
+      compactionInterval: c.compaction_interval ?? null,
+    })),
+  }
+}
+
 export async function fetchBenchmarks() {
   // GET /api/benchmarks → [{id, name, goal, ladder, default, official_config}, ...]
   // in registry order. `default` marks the pre-selected benchmark
@@ -208,9 +254,22 @@ export async function fetchQueue() {
   // written at finalise), so the queue item IS the card's data source.
   // Absent (idle, or a run whose turn isn't known yet) → null, which the cards
   // render as "turn —" rather than inventing a turn 0.
-  const { active, items, active_current_turn: activeTurn } = await getJSON('/api/queue')
+  const { active, items, active_current_turn: activeTurn, last_error: lastError } =
+    await getJSON('/api/queue')
   return {
     active,
+    // The last DISPATCH failure — an item that was dequeued and then never
+    // became a run (an illegal effort for the model's profile, a variant on the
+    // wrong config, a ROM that won't load). `drain_loop` swallows those so one
+    // poisoned item can't freeze the serial queue, which also means the card
+    // flashes active and then vanishes with nothing said. The route has served
+    // this since the queue existed and NO component read it (finding #5b).
+    // Cleared server-side the moment a run actually starts, so a stale strip
+    // cannot outlive the failure. `at` is the identity the UI dismisses on: a
+    // NEW failure has a new timestamp and re-shows.
+    // Mapped by lib/queue.js, which plain node can import — see
+    // tests/js/queue.test.mjs.
+    lastError: toQueueError(lastError),
     items: (items || []).map((q) => ({
       currentTurn: q.queue_id === active && typeof activeTurn === 'number' ? activeTurn : null,
       queueId: q.queue_id,
@@ -221,6 +280,10 @@ export async function fetchQueue() {
       stopAt: q.stop_at ?? null,
       maxSpend: q.max_spend_usd ?? null,
       gameplay: q.gameplay ?? null,
+      // Named append-profile variant (gemma-replay, …), or null for the model's
+      // base profile — which is every run that never asked for one, so the card
+      // only shows this when it is set.
+      providerProfile: q.provider_profile ?? null,
       // Which game — only shown on a card when it is NOT the default ROM.
       rom: q.rom ?? null,
       continueFrom: q.continue_from ?? null,
@@ -358,6 +421,10 @@ export function enqueueRun(spec) {
     // choice stays byte-identical to what it was before starts existed. The
     // server validates the label against this item's ROM.
     if (spec.start) body.start = spec.start
+    // Named append-profile variant. Omitted when unset so a run that did not
+    // ask for one sends exactly the body it always sent; the server reads
+    // absent as "the model's base profile".
+    if (spec.providerProfile) body.provider_profile = spec.providerProfile
     if (spec.continueFrom != null) body.continue_from = spec.continueFrom
   } else if (spec.benchmark != null) {
     // Official: send WHICH benchmark (ladder + goal). config/max_turns are

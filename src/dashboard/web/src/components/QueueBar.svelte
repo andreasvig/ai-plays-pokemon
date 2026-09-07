@@ -1,6 +1,9 @@
 <script>
   import Icon from './Icon.svelte'
-  let { active = null, queue = [], onkill, onremove, onreorder, onnew, onspectate } = $props()
+  import QueueError from './QueueError.svelte'
+  // `lastError` is /api/queue's last_error (see lib/queue.js): the item that was
+  // dequeued and never became a run. Rendered above the track by QueueError.
+  let { active = null, queue = [], lastError = null, onkill, onremove, onreorder, onnew, onspectate } = $props()
   let dragIndex = $state(null)
   let overIndex = $state(null)
   // Remove needs an explicit confirm (Andreas) — clicking ✕ arms an inline
@@ -27,8 +30,10 @@
   const label = (k) => k === 'official' ? 'benchmark' : 'custom'
 </script>
 
-<section class="qbar">
+<section class="qbar" class:haserr={!!lastError}>
   <span class="qtitle">Queue</span>
+  <div class="qcol">
+  <QueueError error={lastError} />
   <div class="track">
     {#if active}
       <div class="card active" onclick={() => onspectate()} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onspectate() } }} role="button" tabindex="0">
@@ -80,7 +85,11 @@
           <button class="rm" onclick={() => confirmId = q.queueId} title="Remove"><Icon name="close" size={11} /></button>
         </div>
         <div class="cmodel mono">{q.model}</div>
-        <div class="cmeta faint">{#if q.kind === 'casual'}<span class="mono">{q.config}</span> · {q.maxTurns}t{#if q.stopAt} · ⇥ <span class="mono">{q.stopAt}</span>{/if}{#if q.maxSpend} · ≤${q.maxSpend}{/if}{#if q.gameplay === 'speed'} · speed{/if}{#if q.rom} · <span class="mono">{q.rom}</span>{/if}{:else}pokebench-v1{/if}</div>
+        <!-- `providerProfile` only ever renders when a NAMED variant was chosen:
+             the base profile is the default for every run and naming it on each
+             card would be noise. Two config-5.0 runs of the same model under
+             different variants are otherwise indistinguishable here. -->
+        <div class="cmeta faint">{#if q.kind === 'casual'}<span class="mono">{q.config}</span> · {q.maxTurns}t{#if q.stopAt} · ⇥ <span class="mono">{q.stopAt}</span>{/if}{#if q.maxSpend} · ≤${q.maxSpend}{/if}{#if q.gameplay === 'speed'} · speed{/if}{#if q.rom} · <span class="mono">{q.rom}</span>{/if}{#if q.providerProfile} · <span class="mono">{q.providerProfile}</span>{/if}{:else}pokebench-v1{/if}</div>
         {#if confirmId === q.queueId}
           <div class="confirm">
             <span class="confirm-q">Remove this run?</span>
@@ -95,11 +104,17 @@
 
     <button class="add" onclick={() => onnew()}>+ Add run</button>
   </div>
+  </div>
 </section>
 
 <style>
   .qbar { max-width: var(--maxw); margin: 0 auto; padding: 14px 24px 0; display: flex; align-items: stretch; gap: 12px; }
   .qtitle { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); align-self: center; flex: none; }
+  /* The strip stacks ABOVE the card track rather than beside it: it wraps to two
+     lines on a real error message, and squeezing the track would push the
+     "+ Add run" button off-screen. min-width:0 keeps the track's own
+     overflow-x:auto working inside this column. */
+  .qcol { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
   .track { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; flex: 1; align-items: stretch; }
 
   .card { flex: none; width: 178px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 9px 11px; background: var(--surface); position: relative; transition: border-color .12s, box-shadow .12s, opacity .12s; }

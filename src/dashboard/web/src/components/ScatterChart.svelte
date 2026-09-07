@@ -78,8 +78,11 @@
   const onFrontier = (p) => frontier.includes(p)
 
   // Show the thinking/effort tier in the label: a model alias carries it as a
-  // parenthesised suffix, e.g. "gemini-3-flash(high)" → "gemini-3-flash · high".
-  // Aliases without a tier (e.g. "claude-haiku-4-5") are left untouched.
+  // parenthesised suffix, e.g. "kimi-k3(high)" → "kimi-k3 · high". An alias with
+  // NO parenthesised tier — a `reasoning_type: none` model, whose run identity
+  // is the bare model name — is left untouched. Regex, not a name list: rows
+  // come from finished runs, so a label here may name a model the registry no
+  // longer offers.
   const fmtLabel = (s) => s.replace(/\(([^)]*)\)/, ' · $1')
 
   // Which side of its dot a label sits on (mirrors the per-point render below).
