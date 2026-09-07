@@ -131,3 +131,18 @@
 - **Q3 → base profile only is official-eligible.** Variants (gemma-guidance, gemma-replay, …) remain casual. Note: the replay variant was NOT removed from `provider-profiles.yaml` (all five Gemma variants still exist); the base Gemma profile already defaults to `omit_prior`, i.e. guidance behaviour, and the ten-turn samples showed DeepInfra does not consume replayed reasoning.
 - **Thinking levels stay a leaderboard dimension.** Rows remain model + level as today. Legality per endpoint lives in the profile's `reasoning_efforts`; the registry's `thinking_levels` (display list, carries observed stats) must be a subset, enforced by a test; the dialog offers the intersection.
 - **Live compaction row.** The live feed gets an unnumbered "Compaction N · after turn M" row with its own elapsed timer and the handover summary on completion, mirroring the trace viewer.
+
+## Delivered 2026-09-07 (branch harness/config-5.0, commits 735c127, f003168 + this doc)
+
+Built in two waves by four then one parallel builders, each with file ownership and mutation-controlled tests. Full suite: 5 failed / 768 passed; the 5 are the pre-existing OCR and TaskMaster failures, unchanged since HEAD (which had 13 before the registry prune removed the three grok-4.3-shaped ones).
+
+**Live verification (real emulator, real model).** Two 5–6 turn config-5.0 runs of glm-5.3-flash(high) with compaction every 2 turns, $0.004 each: 2 compactions each, 7 requests, alias stamped, agent_type append_compact, max_turns in the summary. Watched on `/spectate` mid-run: the compaction block is its own unnumbered row ("Compaction 1 · after turn 2 · 29.3s") with request diagnostics inside it under "Request", handover text and memory before/after; the Turn stat stayed at the gameplay turn; Cost read "$0.0016 of $0.300 cap"; the memory panel filled after the first compaction. Report on the review server: harness chip, "6 turns · 2 compactions", two compaction rows, Completion "—", 36.4% cache reuse. A 100-turn config-3.13 official report and the config-4.0 reports render as before, minus the "(0 tool calls)" label and the unenforced scorecard.
+
+Two relaunches crashed mGBA (exit -11, then a `SEQUENCE_DONE` protocol desync) because I loaded the Lua connector a second time while the runner's own AppleScript load was in flight. Rule: after `pokemon run` prints "Waiting for mGBA to connect", give the runner's load ~15 s; load manually only if the log never says "mGBA connected", and only once. Run 1 worked because my loads came minutes later, after the runner's had failed for lack of a Scripting window.
+
+**Open for Andreas**
+- Legacy pins: the registry `provider:` blocks for gpt-6-astra, gemini-3.8-flash, glm-5.3-flash and gemma-4-31b were deleted (profile owns the endpoint), so config-4.0/3.13 runs of those four are now default-routed. Each removal is a comment at its site with the old block verbatim.
+- claude-haiku-4.5 thinking ladder: OpenRouter advertises no efforts for it but accepts `effort` values live; the profile legalises [high, medium, low, minimal]. Confirm or trim.
+- `QueuePanel.svelte` has no importer (App mounts QueueBar); its new profile chip and error strip are code-verified only.
+- Cosmetic: Svelte trims the space before "·" at the start of `{#if}` blocks on queue cards and level options.
+- Not produced live: a dispatch failure (last_error strip verified by pytest + patched response), a failed compaction, `budget_exhausted`, `endpoint_warning`, an official first-badge 5.0 run (verified through build_run_config only). The first real official 5.0 run will populate the empty leaderboard.
