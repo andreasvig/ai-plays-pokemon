@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 
 import pytest
+from pydantic import ValidationError
 
 from src.agent.append_agent import AppendAgent, ContinuityError, StreamAssembly, cache_economics, cache_totals, implied_cache, normalize_usage, replay_check
 from src.config import load_config, default_config_stem, find_latest_config, _validate_config
@@ -396,6 +397,22 @@ def test_final_serialization_loss_detected(config, tmp_path):
             await agent.play(2, "", IMAGE)
         assert len(provider.requests) == 1
     asyncio.run(run())
+
+
+def test_play_action_decodes_stringified_scalars_from_tool_arguments():
+    """meta/muse-spark-1.3, 2026-09-07 turn 1: the tool call carried the literal string "null"."""
+    from src.agent.append_agent import Handover, PlayAction
+    base = {"inputs": ["down"], "reasoning": "go"}
+    assert PlayAction.model_validate({**base, "last_turn_succeeded": "null"}).last_turn_succeeded is None
+    assert PlayAction.model_validate({**base, "last_turn_succeeded": "true"}).last_turn_succeeded is True
+    assert PlayAction.model_validate({**base, "last_turn_succeeded": "false"}).last_turn_succeeded is False
+    # Control: correctly typed values pass through unchanged.
+    assert PlayAction.model_validate({**base, "last_turn_succeeded": None}).last_turn_succeeded is None
+    assert PlayAction.model_validate({**base, "last_turn_succeeded": True}).last_turn_succeeded is True
+    # Mutation control: an arbitrary string is still rejected, so the rule decodes, it does not sanitize.
+    with pytest.raises(ValidationError):
+        PlayAction.model_validate({**base, "last_turn_succeeded": "probably"})
+    assert Handover.model_validate({"continuation_summary": "s", "memory": '{"a": 1}'}).memory == {"a": 1}
 
 
 def test_context_pressure_compacts_before_interval(config, tmp_path):

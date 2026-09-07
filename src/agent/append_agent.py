@@ -16,9 +16,10 @@ from typing import Any, Literal
 import uuid
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.core.prompts import fill_prompt
+from src.agent.coerce import coerce_stringified_object
 from src.agent.provider_profiles import project_history, router_diagnostics, output_json_text
 
 
@@ -28,11 +29,22 @@ class PlayAction(BaseModel):
     reasoning: str = Field(min_length=1)
     last_turn_succeeded: bool | None
 
+    # Some endpoints encode non-string tool-call arguments as JSON *strings*:
+    # meta/muse-spark-1.3 returned `"last_turn_succeeded":"null"` on turn 1
+    # (2026-09-07, three identical attempts, run died before its first action).
+    # Decoding "null"/"true"/"false" is lossless, the same 2026-06-17 rule the
+    # legacy agent applies via src/agent/coerce.py; a correctly typed value
+    # passes through untouched and any other string still fails strict validation.
+    _coerce_last_turn = field_validator("last_turn_succeeded", mode="before")(coerce_stringified_object)
+
 
 class Handover(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     continuation_summary: str = Field(min_length=1)
     memory: dict[str, Any]
+
+    # Same rule for a stringified memory object (the mimo shape from 2026-06-17).
+    _coerce_memory = field_validator("memory", mode="before")(coerce_stringified_object)
 
 
 class ContinuityError(RuntimeError):
