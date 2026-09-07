@@ -59,11 +59,11 @@ Don't know a name? `pokemon ls models sol`, `pokemon ls roms`,
 wrong value is rejected with the valid ones named — never accepted and dropped
 later.
 
-Casual defaults: the latest config, the default ROM, that ROM's default opening,
-no early stop, no recording. Official runs ignore `--config` / `--max-turns` /
-`--stop-at` / `--rom` / `--start` — a benchmark is frozen, takes its ROM from its
-own ladder, and always begins at the canonical savepoint so two scores stay
-comparable.
+Casual defaults: the latest config (`config-5.0`), the default ROM, that ROM's
+default opening, no early stop, no recording. Official runs ignore `--config` /
+`--max-turns` / `--stop-at` / `--rom` / `--start` — a benchmark is frozen (also
+`config-5.0`), takes its ROM from its own ladder, and always begins at the
+canonical savepoint so two scores stay comparable.
 
 ---
 
@@ -159,18 +159,18 @@ the official/casual distinction and the gate ladder.
 Launches mGBA, opens its Scripting window (so you can `File > Load recent script` once), waits for the Lua client to connect, then runs the agent for `--turns` turns per `(config, model)` pair. Multiple pairs reuse the same mGBA + Lua connection.
 
 ```bash
-# Single run — latest config, one model, default 10 turns
+# Single run — latest config (config-5.0), one model, default 10 turns
 pokemon run --model "gemini-3.5-flash(medium)"
 
-# Specific config + 50 turns
-pokemon run --config configs/config-3.13.yaml --model "claude-opus-4.7(medium)" --turns 50
+# Specific config + 50 turns (config-4.0 and config-3.13 are legacy but runnable)
+pokemon run --config configs/config-4.0.yaml --model "claude-opus-4.7(medium)" --turns 50
 
 # Fan-out: one config across N models
-pokemon run --config configs/config-3.13.yaml \
+pokemon run --config configs/config-5.0.yaml \
             --model "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" --turns 50
 
-# Paired 1:1: N configs × N models
-pokemon run --config configs/config-3.13.yaml configs/config-tm-smoke.yaml \
+# Paired 1:1: N configs × N models — e.g. the two harnesses side by side
+pokemon run --config configs/config-5.0.yaml configs/config-4.0.yaml \
             --model "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" --turns 50
 
 # Custom snapshot
@@ -180,7 +180,7 @@ pokemon run --model "gemini-3.5-flash(medium)" --snapshot local/snapshots/has_st
 pokemon run --model "gemini-3.5-flash(medium)" --kill-existing
 
 # Continue a prior run from its latest savepoint (resumes where it left off)
-pokemon run --continue local/runs/2026-05-26_..._config-3.13__claude-opus-4-7 --turns 30
+pokemon run --continue local/runs/2026-05-26_..._config-5.0__claude-opus-4-7 --turns 30
 
 # Record the run to MP4 while it plays (headless — unaffected by your browser)
 pokemon run --model "claude-opus-4.7(medium)" --turns 50 \
@@ -195,7 +195,7 @@ pokemon run --model "claude-opus-5(medium)" --turns 400 \
 
 | `--config` count | `--model` count | Behaviour                                |
 |------------------|-----------------|------------------------------------------|
-| 0 (omitted)      | N               | All N models use the latest config.      |
+| 0 (omitted)      | N               | All N models use the latest config (`config-5.0`). |
 | 1                | 1               | Single run.                              |
 | 1                | N               | Fan-out — one config across N models.    |
 | N                | 1               | Fan-out — one model across N configs.    |
@@ -270,7 +270,7 @@ pokemon queue add "gemini-3.5-flash(high)" --kind casual --max-turns 50 --repeat
 |---|---|---|
 | `--kind official\|casual` | — | `official` (default) is the frozen scored benchmark. `casual` is everything else. |
 | `--benchmark ID` | official | Which ladder + goal. Omit for the registry default. |
-| `--config STEM` | casual | e.g. `config-4.0`. Omit for the latest. |
+| `--config STEM` | casual | e.g. `config-4.0` for the legacy sliding-window harness. Omit for the latest (`config-5.0`). |
 | `--rom ID` | casual | e.g. `firered`. Omit for the default ROM. The executor switches the emulator for you. |
 | `--start LABEL` | casual | Which opening to play from — e.g. `girl`. Labels are scoped to `--rom`; `pokemon ls starts` lists them. Omit for that game's default opening. |
 | `--max-turns N` | casual | Turn cap. Official runs end at their ladder. |
@@ -288,7 +288,7 @@ server **defaulted** for you, which the confirmation line echoes back:
 ```
 $ pokemon queue add "gpt-5.6-sol(medium)" --kind casual --rom firered --max-turns 20
 enqueued 1 run(s):
-  q_6b65abdb  casual   gpt-5.6-sol(medium)  config-4.0  rom=firered  max_turns=20
+  q_6b65abdb  casual   gpt-5.6-sol(medium)  config-5.0  rom=firered  max_turns=20
 
 $ pokemon queue add "claude-opus-5(high)" --kind casual --rom firered --start gril
 ERROR: unknown start 'gril' for rom 'firered'; known: boy, girl
@@ -339,7 +339,7 @@ Launches mGBA, starts the TCP server, opens the Scripting window, and idles afte
 ```bash
 pokemon launch
 pokemon launch --snapshot local/snapshots/bedroom_start
-pokemon launch --config configs/config-3.13.yaml
+pokemon launch --config configs/config-5.0.yaml
 ```
 
 Press `Ctrl+C` to shut mGBA down cleanly.
@@ -427,7 +427,7 @@ pokemon snapshot save has_starter -d "Received starter Pokemon from Oak"
 
 ### Compare two models on the same snapshot
 ```bash
-pokemon run --config configs/config-3.13.yaml \
+pokemon run --config configs/config-5.0.yaml \
             --model "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" \
             --snapshot local/snapshots/has_starter --turns 50
 ```

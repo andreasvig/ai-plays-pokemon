@@ -270,6 +270,32 @@ def _run_headless(args) -> None:
         print("\nStopping headless serve.")
 
 
+def _placeholder_alias() -> str:
+    """Any live registry selection, for a config that will never run an agent.
+
+    ``prepare_config`` requires a model because it binds the registry entry, so
+    booting the supervisor needs SOME alias — and it must be one the registry
+    still resolves. It used to be the literal ``claude-opus-4.7(medium)``, which
+    broke `pokemon app` outright the day that model left ``models.yaml``: the
+    whole control center failed to boot over a placeholder nobody reads.
+
+    Picked at runtime from the live, non-retired selections instead, so a
+    registry edit cannot take the app down. Sorted for determinism (two boots of
+    the same checkout produce the same config), and a raw ``provider/model`` id
+    is the last resort — ``load_config`` accepts those without touching the
+    registry at all, so the boot survives even an empty registry.
+    """
+    from src.config import _load_models_registry, list_competitor_aliases
+
+    registry = {
+        name: entry
+        for name, entry in _load_models_registry().items()
+        if isinstance(entry, dict) and not entry.get("retired")
+    }
+    aliases = sorted(list_competitor_aliases(registry))
+    return aliases[0] if aliases else "openai/placeholder"
+
+
 def _build_supervisor_config() -> dict:
     """Load the app's emulator config (latest config + a default model alias).
 
@@ -277,12 +303,15 @@ def _build_supervisor_config() -> dict:
     per-run model binding happens when the executor (P3) dispatches each run. We
     reuse ``prepare_config`` for a fully-formed config so the emulator section
     (rom_path, port) is populated identically to ``pokemon run``.
+
+    The config is the LATEST one (``path=None``) — config-5.0, the append harness
+    — which changes nothing here: the supervisor reads only the emulator/paths
+    block, and the agent_type it would select is never instantiated.
     """
     # A model alias is required by prepare_config's registry binding, but the
-    # supervisor never runs the agent itself — it only owns the emulator. Use
-    # the latest config (path=None) with a placeholder alias; the executor
-    # rebinds the real model per run.
-    return prepare_config(None, "claude-opus-4.7(medium)")
+    # supervisor never runs the agent itself — it only owns the emulator. The
+    # executor rebinds the real model per run.
+    return prepare_config(None, _placeholder_alias())
 
 
 def main() -> None:

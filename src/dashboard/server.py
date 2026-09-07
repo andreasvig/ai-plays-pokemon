@@ -346,6 +346,25 @@ async def get_config(run_id: str):
         # false during the first turns of a TaskMaster run.
         "task_master": bool((s.config.get("task_master") or {}).get("enabled", False)),
     }
+    # The run's own spend ceiling (`pokemon run --max-spend`, or a queued item's
+    # `max_spend_usd`, both of which land on the config — executor._apply_max_spend).
+    # Omitted when the run is unbounded, which is what every run had before the
+    # ceiling existed. Without this the cap was visible ONLY on the queued card,
+    # which disappears the moment the run goes active — i.e. it vanished exactly
+    # when the number started to matter (finding #16).
+    max_spend = s.config.get("max_spend_usd")
+    if isinstance(max_spend, (int, float)) and not isinstance(max_spend, bool):
+        payload["max_spend_usd"] = float(max_spend)
+    # Compaction cadence for an append-style run, so the live view can say WHEN
+    # memory will first be written instead of showing a bare "(empty)" for the
+    # whole first segment (finding #15). Keyed on the config block's presence,
+    # never on a config NAME or an agent_type string: a run either has a
+    # compaction interval or it does not.
+    every_n = ((s.config.get("player_agent") or {}).get("compaction") or {}).get(
+        "every_n_turns"
+    )
+    if isinstance(every_n, int) and not isinstance(every_n, bool) and every_n > 0:
+        payload["compaction"] = {"every_n_turns": every_n}
     referee = _referee_payload(s.config)
     if referee is not None:
         payload["referee"] = referee
@@ -862,8 +881,10 @@ def _validate_config_stem(config: Any, *, is_continue: bool) -> str | None:
 
     - **A continue** carries no config of its own — ``continue_from_run`` reads
       it off the source run — so ``None`` passes straight through.
-    - **Absent** defaults to the newest ``config-X.Y``, matching what a bare
-      ``pokemon run`` already does (``src.config.find_latest_config``). It used
+    - **Absent** defaults to the newest ``config-X.Y`` — ``config-5.0`` today,
+      and whatever ``src.config.default_config_stem()`` says tomorrow, which is
+      the same rule a bare ``pokemon run`` follows
+      (``src.config.find_latest_config``). It used
       to pass ``None`` through, and the executor's ``_resolve_config_path`` then
       raised ``"casual run requires a config"`` at DISPATCH — after the item had
       been dequeued, where the only trace was a traceback on the app's stdout.
@@ -898,6 +919,32 @@ def _validate_config_stem(config: Any, *, is_continue: bool) -> str | None:
     return config
 
 
+def _active_run_turn() -> Optional[int]:
+    """Live game turn of the run that is currently playing, or None.
+
+    Read from the run's own :class:`EventBridge` (``turns`` there is stamped by
+    ``turn_start`` and by nothing else — a compaction is not a turn_start, so
+    this never moves during one). The flat run index is NOT a source: it is only
+    upserted when a run FINISHES (``executor._finalise``), so a running run has
+    no entry to read a turn out of.
+
+    Prefers the control-plane executor's active run id, and falls back to the
+    newest registered session so a headless ``pokemon run`` (which registers a
+    live session but wires no executor) reports its turn too — the same
+    precedence ``/api/emulator/status`` uses.
+    """
+    executor = _CONTROL["executor"]
+    run_id = getattr(executor, "_active_run_id", None) if executor is not None else None
+    session = _REGISTRY.get(run_id) if run_id else None
+    if session is None:
+        sessions = _REGISTRY.all()
+        if not sessions:
+            return None
+        session = max(sessions, key=lambda s: s.registered_at)
+    turn = session.bridge.get_stats().get("turns")
+    return int(turn) if isinstance(turn, (int, float)) and not isinstance(turn, bool) else None
+
+
 @app.get("/api/queue")
 async def api_queue_get():
     """`{active, items, last_error}` — the serial queue + the last dispatch failure.
@@ -910,13 +957,21 @@ async def api_queue_get():
     looks idle. See ``RunExecutor.last_error``.
     """
     queue, executor, _index = _require_control()
-    return JSONResponse(
-        {
-            "active": queue.active,
-            "items": [it.model_dump(mode="json") for it in queue.items],
-            "last_error": getattr(executor, "last_error", None),
-        }
-    )
+    payload = {
+        "active": queue.active,
+        "items": [it.model_dump(mode="json") for it in queue.items],
+        "last_error": getattr(executor, "last_error", None),
+    }
+    # The active card's "turn N". Present only when a run is actually playing —
+    # the Home card used to read `active.currentTurn`, a field that exists only
+    # in mockData.js and no route ever emitted, so every live run rendered
+    # "turn 0" (finding #7). Added conditionally so the idle payload keeps its
+    # exact prior shape.
+    if queue.active is not None:
+        turn = _active_run_turn()
+        if turn is not None:
+            payload["active_current_turn"] = turn
+    return JSONResponse(payload)
 
 
 def _enqueue_kwargs(spec: dict) -> dict:
@@ -1123,10 +1178,13 @@ async def api_run_continue(run_id: str, body: dict | None = None):
     ``player_model`` and ``task_master_model`` (both ``model(level)`` aliases).
     Omitted → the source's models are reused. OFFICIAL continues are model-locked
     (locked #10): passing an override for an official source is a 400.
+
+    An APPEND continue (source ``harness == "append_compact"``, i.e. config-5.x)
+    is model-locked too, for a different reason — see the guard below.
     """
     from src.app.models import RunKind
 
-    queue, executor, _index = _require_control()
+    queue, executor, index = _require_control()
     body = body or {}
     player_model = body.get("player_model")
     task_master_model = body.get("task_master_model")
@@ -1134,6 +1192,27 @@ async def api_run_continue(run_id: str, body: dict | None = None):
         _validate_model_alias(player_model)
     if task_master_model is not None:
         _validate_model_alias(task_master_model)
+    # An append run's conversation is BOUND to the model that wrote it. Continue
+    # restores the saved conversation checkpoint, and ``AppendAgent.restore``
+    # refuses one whose model doesn't match — but by then the run dir, the
+    # dashboard session and the recorder exist, so the caller's 201 was followed
+    # by a card that flashed running and vanished, with the misleading
+    # "checkpoint does not match model/game turn" as the only trace. Refuse at
+    # the door instead. Read from the INDEX row's ``harness``, not from the
+    # config stem: what matters is how the source was WIRED, which survives a
+    # config rename. A source missing from the index falls through — the 400
+    # belongs to "you asked for a swap we cannot do", not to "we cannot find it"
+    # (``build_continue_spec`` below owns that 400).
+    source = index.get(run_id)
+    if player_model and source is not None and source.harness == "append_compact":
+        raise HTTPException(
+            status_code=400,
+            detail="cannot change the player model on a continue of an "
+            "append-and-compact run (config-5.x) — the saved conversation and "
+            "its cached prefix belong to the source run's model, and restoring "
+            "them under a different one is rejected at the first request. "
+            "Start a fresh run for the other model instead.",
+        )
     try:
         spec = executor.build_continue_spec(
             run_id,
@@ -1286,19 +1365,32 @@ async def api_run_delete(run_id: str):
 
 @app.get("/api/benchmarks")
 async def api_benchmarks():
-    """The benchmark registry — ``[{id, name, goal, ladder, default}, ...]``.
+    """The benchmark registry — ``[{id, name, goal, ladder, default, official_config}, ...]``.
 
     Backs the new-run dialog's benchmark picker and the main-page benchmark
     filter. Pure projection of ``configs/benchmarks.yaml``; no control plane
     needed (the registry is on disk), so this stays usable on any server.
+
+    ``official_config`` is the same on every row — it is not a property of a
+    benchmark (a benchmark is a ladder + a goal; the config is frozen across all
+    of them, which is what makes cross-benchmark comparisons possible at all).
+    It rides here because the dialog already receives this payload, and because
+    the alternative was worse: the dialog printed ``config-3.13 (frozen…)`` as
+    literal UI text, a second copy of ``executor.OFFICIAL_CONFIG`` that a flip
+    of that constant could not reach. Now the label cannot disagree with what
+    dispatch actually loads.
     """
     from src.app.benchmarks import load_benchmarks
+    from src.app.executor import OFFICIAL_CONFIG
 
     try:
         benchmarks = load_benchmarks()
     except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(status_code=500, detail=f"benchmark registry: {exc}")
-    return JSONResponse([b.to_dict() for b in benchmarks])
+    official_config = Path(OFFICIAL_CONFIG).stem
+    return JSONResponse(
+        [{**b.to_dict(), "official_config": official_config} for b in benchmarks]
+    )
 
 
 @app.get("/api/roms")
@@ -1527,6 +1619,11 @@ async def api_run_screenshot(run_id: str, name: str):
 async def api_models():
     """Collapsed model registry for the picker (one row per model + levels).
 
+    ``retired: true`` registry entries are NOT served — see
+    ``catalog.list_models``. They stay resolvable by ``load_config`` (a frozen
+    config, a saved run config or a boot placeholder may still name one); they
+    are just no longer offerable as a new run, which is what this route is for.
+
     Each row is ``{model, openrouter_id, reasoning_type, default_level, levels,
     observed, run_count}``. ``levels`` is an ordered list of
     ``{level, observed, run_count}`` — the picker shows a model dropdown plus a
@@ -1558,7 +1655,13 @@ async def api_models():
 
 @app.get("/api/configs")
 async def api_configs():
-    """Casual config stems discovered from ``configs/config-*.yaml``."""
+    """Casual config stems discovered from ``configs/config-*.yaml``.
+
+    A plain version-sorted list, LAST = the default a casual run gets when it
+    names none (see :func:`_validate_config_stem`, and ``src.config``'s
+    ``default_config_stem``, which is the same value by construction). Kept a
+    bare list rather than an envelope so every existing consumer keeps working.
+    """
     from src.app.catalog import list_configs
 
     return JSONResponse(list_configs())

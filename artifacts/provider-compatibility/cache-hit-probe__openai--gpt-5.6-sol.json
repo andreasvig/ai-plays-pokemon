@@ -1,0 +1,92 @@
+{
+  "model": "openai/gpt-5.6-sol",
+  "image": "tests/ocr_benchmark/images/overworld_viridian_grid.png",
+  "note": "grow:live/grow:split rows are the WITH-image runs (the real request shape); the no_image_control rows repeat grow:live with no screenshot, to price the image (A: 8158 with vs 7743 without = 415 image tokens) so a shortfall can be read against it. Probed 2026-09-07, reasoning effort medium, tag pinned.",
+  "endpoints": {
+    "openai": [
+      {
+        "placement": "grow:live",
+        "image": true,
+        "calls": [
+          {
+            "request": "A",
+            "prompt_tokens": 8158,
+            "cached": 0,
+            "cache_write": 8155,
+            "prompt_cost": 0.0203935,
+            "cost": 0.0209935,
+            "provider": "OpenAI"
+          },
+          {
+            "request": "A+turn",
+            "prompt_tokens": 9323,
+            "cached": 8155,
+            "cache_write": 1165,
+            "prompt_cost": 0.0045495,
+            "cost": 0.0051495,
+            "provider": "OpenAI"
+          }
+        ],
+        "verdict": "prefix_extends",
+        "cached_shortfall_tokens": 3
+      },
+      {
+        "placement": "grow:split",
+        "image": true,
+        "calls": [
+          {
+            "request": "A",
+            "prompt_tokens": 8179,
+            "cached": 8155,
+            "cache_write": 21,
+            "prompt_cost": 0.0016895,
+            "cost": 0.0022895,
+            "provider": "OpenAI"
+          },
+          {
+            "request": "A+turn",
+            "prompt_tokens": 9365,
+            "cached": 8176,
+            "cache_write": 1186,
+            "prompt_cost": 0.0046062,
+            "cost": 0.0052062,
+            "provider": "OpenAI"
+          }
+        ],
+        "verdict": "prefix_extends",
+        "cached_shortfall_tokens": 3
+      }
+    ]
+  },
+  "no_image_control": {
+    "openai": [
+      {
+        "placement": "grow:live",
+        "image": false,
+        "calls": [
+          {
+            "request": "A",
+            "prompt_tokens": 7743,
+            "cached": 7719,
+            "cache_write": 21,
+            "prompt_cost": 0.0016023,
+            "cost": 0.0022023,
+            "provider": "OpenAI"
+          },
+          {
+            "request": "A+turn",
+            "prompt_tokens": 8493,
+            "cached": 7740,
+            "cache_write": 750,
+            "prompt_cost": 0.003429,
+            "cost": 0.004029,
+            "provider": "OpenAI"
+          }
+        ],
+        "verdict": "prefix_extends",
+        "cached_shortfall_tokens": 3
+      }
+    ]
+  },
+  "reported_spend_usd": 0.03987
+}

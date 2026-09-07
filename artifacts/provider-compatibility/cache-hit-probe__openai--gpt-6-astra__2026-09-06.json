@@ -1,6 +1,6 @@
 {
   "model": "openai/gpt-6-astra",
-  "image": "tests/ocr_benchmark/images/overworld_viridian_grid.png",
+  "image": "local/runs/2026-09-06_16-05-44_config-new__openai-gpt-6-astra/screenshots/00001_turn_1.png",
   "endpoints": {
     "openai": [
       {
@@ -9,25 +9,23 @@
         "calls": [
           {
             "request": "A",
-            "prompt_tokens": 8158,
+            "prompt_tokens": 9364,
             "cached": 0,
-            "cache_write": 8155,
-            "prompt_cost": 0.1019675,
-            "cost": 0.1049675,
+            "cache_write": 9361,
+            "prompt_cost": 0.1170425,
             "provider": "OpenAI"
           },
           {
             "request": "A+turn",
-            "prompt_tokens": 9323,
+            "prompt_tokens": 11735,
             "cached": 7719,
-            "cache_write": 1601,
-            "prompt_cost": 0.0277615,
-            "cost": 0.0305115,
+            "cache_write": 4013,
+            "prompt_cost": 0.0579115,
             "provider": "OpenAI"
           }
         ],
         "verdict": "prefix_does_not_extend",
-        "cached_shortfall_tokens": 439
+        "cached_shortfall_tokens": 1645
       },
       {
         "placement": "grow:split",
@@ -35,20 +33,18 @@
         "calls": [
           {
             "request": "A",
-            "prompt_tokens": 8179,
+            "prompt_tokens": 9385,
             "cached": 7719,
-            "cache_write": 457,
-            "prompt_cost": 0.0134615,
-            "cost": 0.0164615,
+            "cache_write": 1663,
+            "prompt_cost": 0.0285365,
             "provider": "OpenAI"
           },
           {
             "request": "A+turn",
-            "prompt_tokens": 9365,
-            "cached": 8176,
-            "cache_write": 1186,
-            "prompt_cost": 0.023031,
-            "cost": 0.025731,
+            "prompt_tokens": 11777,
+            "cached": 9382,
+            "cache_write": 2392,
+            "prompt_cost": 0.039312,
             "provider": "OpenAI"
           }
         ],
@@ -56,6 +52,5 @@
         "cached_shortfall_tokens": 3
       }
     ]
-  },
-  "reported_spend_usd": 0.177672
+  }
 }

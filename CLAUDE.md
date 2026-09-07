@@ -42,8 +42,8 @@ pokemon queue add "gpt-5.6-sol(medium)" --kind casual --rom firered \
     --max-turns 20 --stop-at starter_chosen --record simple --record-speed cut-thinking
 ```
 
-Casual defaults: latest config, default ROM, that ROM's default opening, no early
-stop, no recording. Every value is validated at enqueue — an unknown
+Casual defaults: the latest config (`config-5.0`, the standard append-and-compact
+harness), default ROM, that ROM's default opening, no early stop, no recording. Every value is validated at enqueue — an unknown
 model/config/rom/start/event is a 400 that names the valid ones. `--rom` switches
 the emulator for you.
 
@@ -92,10 +92,22 @@ pre-commit hook** on this machine, so nothing runs the gates for you.
 - **Never `git add -A` / `git add .`** — the working tree routinely carries
   unrelated work in progress. Stage explicit paths.
 - **Never push or open a PR** without being asked.
-- `configs/config-3.13.yaml` is the **frozen official benchmark config**.
-  Changing it changes what every official run sees; the control center
-  hardcodes it (`src/app/executor.py`). `config-4.0` is the current
-  self-directed line and what a bare `pokemon run` loads.
+- `configs/config-5.0.yaml` is the **frozen standard harness** — the
+  append-and-compact agent. It is BOTH the official benchmark config (the
+  control center hardcodes it: `executor.OFFICIAL_CONFIG`) and, being the
+  highest `config-X.Y`, what a bare `pokemon run` loads. Changing it changes
+  what every official run sees, so don't: put changes in a new `config-5.1+`,
+  which becomes the casual default by itself and is promoted to official by
+  moving that one constant. The leaderboard ranks `config-5.x` only
+  (`RunSummary.leaderboard_eligible`).
+- `config-4.0` (self-directed, sliding window) and `config-3.13` (the previous
+  frozen official config, TaskMaster-enabled) are **legacy but runnable**: they
+  load, list, queue as casual runs and continue. They are not the default and
+  not leaderboard-eligible — `turns` counts game turns plus TaskMaster turns
+  there and game turns only on 5.x, and turns is the ranking tiebreak.
+- Never write the default config's name into a help string or an error. Ask
+  `src.config.default_config_stem()` (or, in the browser, `/api/configs`'s last
+  entry); the old literal fanned out to eight sites.
 - Registries are data, not code: adding a model, ROM, start state, benchmark or
   gate is a YAML edit in `configs/`.
 

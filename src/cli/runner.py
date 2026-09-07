@@ -93,7 +93,7 @@ def _print_crash_banner(exc: BaseException, turn_mgr, config: dict, run_dir, han
                 _print_mgba_log_tail(log_path)
     print(bar + "\n")
 from src.cli.slots import get_slot
-from src.config import load_config
+from src.config import default_config_stem, load_config
 from src.core import RunLogger, StateManager
 from src.emulator import EmulatorClient, VisionPipeline, OCRRunner
 from src.agent import TurnManager
@@ -601,6 +601,40 @@ def run_connect_phase(handle: dict, timeout: float = 300.0) -> None:
     print("Connected.")
 
 
+def _warn_if_compaction_unreachable(config: dict, turns: int, logger) -> None:
+    """Say so when an append run's turn cap is below its compaction interval.
+
+    ``compaction.every_n_turns`` (20 in config-5.0) is the periodic trigger; the
+    other trigger is the context-limit estimate, which a short run never reaches
+    either. So a run capped below the interval exercises the append harness with
+    its defining behaviour — the handover — switched off, while looking like a
+    normal 5.0 run in the queue card, the run name and History. The dialog's
+    default max-turns is 100, so this is a hand-set cap: a warning, never an
+    error. Two audiences, matching ``_record_failure``: one loud terminal line,
+    and a ``config_warning`` event so the trace/live feed can show it after the
+    fact. Best-effort — never fail a run over a warning.
+    """
+    try:
+        if config.get("agent_type") != "append_compact":
+            return
+        every = (config.get("compaction") or {}).get("every_n_turns")
+        if not isinstance(every, int) or every <= 0 or not turns or turns >= every:
+            return
+        message = (
+            f"max_turns ({turns}) is below compaction.every_n_turns ({every}) — "
+            "this run will never compact, so it never exercises the handover. "
+            f"Raise the turn cap to at least {every} to see one."
+        )
+        print(f"WARNING: {message}")
+        logger.log_custom(
+            "config_warning",
+            {"warning": "compaction_unreachable", "max_turns": turns,
+             "every_n_turns": every, "message": message},
+        )
+    except Exception:
+        pass
+
+
 def run_single_loop(
     handle: dict,
     config: dict,
@@ -659,6 +693,7 @@ def run_single_loop(
     logger = RunLogger(config)
     run_dir = Path(logger.run_dir)
     print(f"Run log: {run_dir}")
+    _warn_if_compaction_unreachable(config, turns, logger)
     # Publish the run dir to a long-lived caller (executor) the instant it's
     # known, so the control plane can expose the active run id DURING the run.
     if on_run_dir is not None:
@@ -1072,27 +1107,32 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 Examples:
-  # Single run with the latest config
+  # Single run on the standard harness (the latest config: config-5.0)
   pokemon run --model "gemini-3.5-flash(medium)" --turns 50
 
-  # Single run, specific config
-  pokemon run --config configs/config-3.13.yaml --model "claude-opus-4.7(medium)"
+  # Single run, specific config (config-4.0 and config-3.13 still run)
+  pokemon run --config configs/config-4.0.yaml --model "claude-opus-4.7(medium)"
 
   # Fan-out: one config across N models
-  pokemon run --config configs/config-3.13.yaml \\
+  pokemon run --config configs/config-5.0.yaml \\
               --model "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" --turns 50
 
   # Paired 1:1: N configs × N models
-  pokemon run --config configs/config-3.13.yaml configs/config-tm-smoke.yaml \\
+  pokemon run --config configs/config-5.0.yaml configs/config-4.0.yaml \\
               --model "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" --turns 50
 
   # Continue a prior run from its latest savepoint (fresh turn counter)
-  pokemon run --continue local/runs/2026-05-26_..._config-3.13__claude-opus-4-7 --turns 30
+  pokemon run --continue local/runs/2026-05-26_..._config-5.0__claude-opus-4-7 --turns 30
 """,
     )
     parser.add_argument(
         "--config", nargs="+", default=[None],
-        help="One or more config files. Default: latest config in configs/.",
+        # The default is NAMED from src.config, never spelled out here: the rule
+        # is "highest config-X.Y", and this help string was one of the eight
+        # sites the old literal (config-4.0) had to be grepped out of when the
+        # default moved.
+        help="One or more config files. Default: the latest config in configs/ "
+             f"({default_config_stem()}).",
     )
     parser.add_argument(
         "--model", nargs="+", default=None,

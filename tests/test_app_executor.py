@@ -229,7 +229,14 @@ def test_stop_official_voids_run_excluded_from_leaderboard(harness):
     index = harness["index"]
 
     queue.enqueue(kind=RunKind.official, model="m")
-    expected = "2026-06-15_00-00-01_config-3.13__m"
+    # The run-dir name carries the OFFICIAL config's stem, so it moved with
+    # OFFICIAL_CONFIG (config-3.13 -> config-5.0, 2026-09-07). Derived from the
+    # constant rather than re-hardcoded, so the next promotion needs no edit here.
+    from pathlib import Path as _Path
+
+    from src.app.executor import OFFICIAL_CONFIG
+
+    expected = f"2026-06-15_00-00-01_{_Path(OFFICIAL_CONFIG).stem}__m"
     executor._stop_requested_run_id = expected
 
     run_id = executor.drain_once()
@@ -271,10 +278,16 @@ def test_official_enqueue_forces_frozen_config_enforce_no_maxturns(harness):
     assert config["task_master"]["mode"] == "benchmark"  # official = benchmark
 
 
-def test_official_default_benchmark_is_easy_ladder(harness):
-    """An official item with NO benchmark falls back to the registry default
-    (pokebench-easy) — the easy ladder + the easy goal text."""
-    from src.app.benchmarks import get_benchmark
+def test_official_default_benchmark_is_first_badge_ladder(harness):
+    """An official item with NO benchmark falls back to the registry default.
+
+    That default moved easy → pokebench-first-badge on 2026-09-07. Asserted
+    against ``default_benchmark()`` rather than the literal ladder path, so the
+    test says "dispatch uses THE default", not "dispatch uses this file" — and
+    the id is pinned separately (in test_benchmarks.py) so both halves have to
+    move deliberately.
+    """
+    from src.app.benchmarks import default_benchmark, get_benchmark
 
     queue = harness["queue"]
     executor = harness["executor"]
@@ -282,12 +295,17 @@ def test_official_default_benchmark_is_easy_ladder(harness):
     item = queue.enqueue(kind=RunKind.official, model="m")  # no benchmark
     config, _snapshot, _turns = executor.build_run_config(item)
 
-    easy = get_benchmark("pokebench-easy")
-    assert easy.is_default  # registry default is now easy
-    assert config["referee"]["checkpoints"] == easy.ladder
+    expected = default_benchmark()
+    assert expected.id == "pokebench-first-badge"
+    assert get_benchmark(None).id == expected.id
+    assert config["referee"]["checkpoints"] == expected.ladder
+    # Official dispatch ENFORCES the ladder. Unchanged by the config flip: the
+    # referee block is injected here, not authored in any config file (neither
+    # config-3.13 nor config-5.0 carries one), so promoting config-5.0 to
+    # official did not have to move an `enforce` flag anywhere.
     assert config["referee"]["enforce"] is True
     # Goal override: the frozen config's task.goal is replaced by the benchmark's.
-    assert config["task"]["goal"] == easy.goal
+    assert config["task"]["goal"] == expected.goal
 
 
 def test_official_benchmark_selects_ladder_and_overrides_goal(harness):
@@ -730,14 +748,19 @@ def test_no_valid_output_abort_stamps_crashed_not_completed(tmp_path):
     # ...and the projection of that summary can never post a row.
     from src.app.models import RunKind as _Kind, RunStatus as _Status, RunSummary
 
+    # A config-5.x stem, so `status` is the ONLY thing left that can disqualify
+    # this row — eligibility also requires the append harness's config family
+    # since 2026-09-07, and a row without one would pass this test for the
+    # wrong reason.
     row = RunSummary(
-        run_id="r1", kind=_Kind.official, model="m", status=_Status.crashed
+        run_id="r1", kind=_Kind.official, model="m", status=_Status.crashed,
+        config_stem="config-5.0",
     )
     assert row.leaderboard_eligible is False
     # Control: the same row as `completed` WOULD have posted — which is exactly
     # what the gemma-4-26b row on the published board is.
-    assert RunSummary(
-        run_id="r1", kind=_Kind.official, model="m", status=_Status.completed
+    assert row.model_copy(
+        update={"status": _Status.completed}
     ).leaderboard_eligible is True
 
 

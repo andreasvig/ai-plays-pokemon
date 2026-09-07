@@ -26,11 +26,18 @@
 # OCR, savepoints, context window, per-turn limits — is carried over
 # unchanged, so a 4.0-vs-3.13 comparison isolates the agent architecture.
 #
-# NOTE ON DEFAULTING: `find_latest_config()` picks the highest config-X.Y, so
-# this file is what a bare `pokemon run` (no --config) now loads. OFFICIAL
-# benchmark runs are NOT affected — the control center hardcodes frozen
-# config-3.13 (see src/app/executor.py). Promoting 4.0 to official is a
-# separate decision; it would split the leaderboard.
+# STATUS 2026-09-07 — LEGACY, still runnable, no longer the default.
+# `find_latest_config()` picks the highest config-X.Y, and that is now
+# config-5.0 (the frozen append-and-compact harness), which is BOTH what a bare
+# `pokemon run` loads and what OFFICIAL runs use (src/app/executor.py's
+# OFFICIAL_CONFIG). What 4.0 keeps: it loads, it lists in `pokemon ls configs`
+# and the dialog's config picker, it queues as a casual run, and it continues.
+# What it loses: default status, and leaderboard eligibility — the board is
+# partitioned to config-5.x (`RunSummary.leaderboard_eligible`), because
+# `turns` does not mean the same thing on the two harnesses (4.0/3.13 count
+# game turns plus TaskMaster invocations, 5.x counts game turns only) and the
+# ranking tiebreak is turns. Finished official 3.13 runs keep their badge and
+# stay in History.
 # ============================================================================
 #
 # Layout: variables are grouped into two sections — GENERAL / ROOT and

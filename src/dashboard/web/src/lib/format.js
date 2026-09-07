@@ -15,8 +15,12 @@ export function perTurn(s) {
   if (s == null) return '—'
   return s >= 1 ? `${s.toFixed(1)}s` : `${Math.round(s * 1000)}ms`
 }
+// "now" is the CLOCK, not a build-time constant. This was pinned to
+// 2026-06-15 while the run archive was seeded from that day; left in, every
+// run started after it read "today" in History and everything older was
+// off by however long ago the pin was.
 export function ago(iso) {
-  const d = (Date.parse('2026-06-15T00:00:00Z') - Date.parse(iso)) / 86400000
+  const d = (Date.now() - Date.parse(iso)) / 86400000
   if (d < 1) return 'today'
   if (d < 2) return 'yesterday'
   return `${Math.round(d)}d ago`

@@ -17,7 +17,21 @@ import json
 from copy import deepcopy
 from pathlib import Path
 
-TRACE_VERSION = 5
+# Cache-invalidation stamp for ``run_dir/trace.json``. ``/api/runs/{id}/trace``
+# serves a cached projection only while its stamp equals this constant, so a
+# BUMP is the only thing that retires every stale cache on disk — and the only
+# thing that has to happen when the builder's output shape changes.
+#
+# BUMP THIS whenever a projected key is added, renamed, dropped or re-meaned.
+# ``tests/test_trace_build.py::TRACE_SHAPES`` holds a golden of the projected
+# key sets per version and fails both ways: a shape change without a bump, and
+# a bump without a recorded golden.
+#
+# Version 5 shipped twice: the implied-cache economics (fe1e7a7) and the
+# split-turn fold (5b8ab07) both landed under it, which left 13 append runs
+# serving a pre-fe1e7a7 projection whose Cache overview read "No pricing
+# snapshot" for runs whose ``endpoint-pricing.json`` was on disk.
+TRACE_VERSION = 6
 
 
 def _screenshot_ref(file_path: str | None) -> str | None:
@@ -191,6 +205,66 @@ def _load_endpoint_pricing(run_dir: Path):
     return None
 
 
+def _run_config(run_dir: Path) -> dict:
+    """The run's frozen ``config.json``, or ``{}`` when it was never written.
+
+    The report reads run-shape facts the summary projection does not carry —
+    which harness drove the run, whether the referee's deadlines were armed —
+    and the trace is the channel it already fetches, so they are derived here
+    rather than grown onto ``RunSummary``.
+    """
+    try:
+        return json.loads((run_dir / "config.json").read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+# Harness identity for the report's chip. ``run_summary.json["agent_type"]``
+# exists but has no readers and is absent from RunSummary, so the config is the
+# source: ``append_compact`` is the append harness, and a legacy run is
+# TaskMaster-driven or self-directed depending on its ``task_master`` block.
+_HARNESS_LABELS = {
+    "append_compact": "append-and-compact",
+    "task_master": "TaskMaster",
+    "self_directed": "self-directed",
+}
+
+
+def _harness(config: dict) -> dict | None:
+    """``{"id", "label"}`` for the agent that drove the run, or None.
+
+    None when the run wrote no ``config.json`` — the report then shows no chip
+    rather than guessing a harness from event vocabulary (which is what the
+    ``if diagnostics:`` gate in ``_project_turn`` has to do, and is exactly the
+    coupling the chip exists to replace).
+    """
+    if not config:
+        return None
+    if config.get("agent_type") == "append_compact":
+        key = "append_compact"
+    elif (config.get("task_master") or {}).get("enabled"):
+        key = "task_master"
+    else:
+        key = "self_directed"
+    return {"id": key, "label": _HARNESS_LABELS[key]}
+
+
+def _referee_enforced(config: dict) -> bool | None:
+    """Were the gate DEADLINES armed for this run? None when unknowable.
+
+    Calibration and casual runs run the referee observe-only
+    (``referee.enforce: false``): the ladder is still scored into
+    ``run_summary.json``, so the report used to show a Completion % and a full
+    deadline scorecard for a run that was never scored against them, while
+    History showed a dash for the same run. The report needs this to tell the
+    two apart; ``None`` (no config.json) means "cannot tell", and the report
+    falls back to the run's ``kind``.
+    """
+    if not config:
+        return None
+    return bool((config.get("referee") or {}).get("enforce"))
+
+
 def _attach_implied_cache(run_dir: Path, events: list[dict]) -> None:
     """Add the billing-implied cache estimate to each usage event, in place."""
     from src.agent.append_agent import implied_cache
@@ -212,6 +286,7 @@ def build_run_trace(run_dir: Path) -> dict:
     """
     from src.core import event_parsing
 
+    config = _run_config(run_dir)
     events = event_parsing.load_events(run_dir)
     _attach_implied_cache(run_dir, events)
     turns = event_parsing.group_events_by_turn(events)
@@ -260,6 +335,11 @@ def build_run_trace(run_dir: Path) -> dict:
 
     compaction_count = _add_conversation_timeline(tasks_out)
     from src.agent.append_agent import cache_totals
+    # The gate statuses the leaderboard/index treat as CLEARED, shipped to the
+    # report so its header count cannot drift from the Completion % the
+    # projection computed. The report must not re-declare the set: a gate that
+    # is `auto` was counted by the projection and read as pending in the header.
+    from src.app.projection import _CLEARED_STATUSES
     attempts = {}
     for event in events:
         if event.get("type") in ("llm_request_usage", "llm_request_error"):
@@ -288,6 +368,9 @@ def build_run_trace(run_dir: Path) -> dict:
         "task_count": len(tasks_out),
         "turn_count": len(turns),
         "compaction_count": compaction_count,
+        "harness": _harness(config),
+        "referee_enforced": _referee_enforced(config),
+        "cleared_gate_statuses": list(_CLEARED_STATUSES),
         "tasks": tasks_out,
         "cache": cache_totals(measurements) if measurements else None,
         "cache_breakdown": {key: cache_totals(value) for key, value in breakdown.items()},

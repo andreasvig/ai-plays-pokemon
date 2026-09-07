@@ -41,7 +41,11 @@
           {/if}
         </div>
         <div class="cmodel mono">{active.model}</div>
-        <div class="cmeta faint">turn {active.currentTurn ?? 0}</div>
+        <!-- Real live turn, served on /api/queue from the run's EventBridge
+             (finding #7). "turn —" when the run has not reported one yet;
+             never a fabricated 0. It does not move during a compaction:
+             `turns` there is stamped by turn_start and nothing else. -->
+        <div class="cmeta faint">turn {active.currentTurn ?? '—'}</div>
         {#if isStopping}
           <div class="stopping-note faint">stopping after this turn — saving a savepoint…</div>
         {:else if killArmed}

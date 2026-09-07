@@ -9,7 +9,7 @@
 //
 // Node-importable: no svelte imports, so the logic can be unit-checked directly.
 
-export function windowFeed({ turnBoxes, masterCards, maxTasks = 3, fallbackTurns = 40 }) {
+export function windowFeed({ turnBoxes, masterCards, compactionsByTurn = null, maxTasks = 3, fallbackTurns = 40 }) {
   // bound firstTurns of every master card that has been bound to a turn, asc.
   const boundFirstTurns = []
   for (const c of masterCards.values()) {
@@ -45,6 +45,12 @@ export function windowFeed({ turnBoxes, masterCards, maxTasks = 3, fallbackTurns
     if (t < cutoffTurn) { hiddenTurns += 1; continue }
     const m = mastersByTurn.get(t)
     if (m) feed.push({ kind: 'master', id: 'm' + m.taskIndex, ...m })
+    // Compaction blocks sit BEFORE the turn they precede and carry no turn
+    // number of their own — the same placement and numbering the run report
+    // uses (trace_build._add_conversation_timeline emits the compaction row
+    // ahead of the turn whose diagnostics it was pulled out of). Their `id`
+    // comes from the block, so the {#each} key is stable while it streams.
+    for (const c of (compactionsByTurn?.get(t) || [])) feed.push(c)
     feed.push({ kind: 'turn', id: 't' + t, turn: t, boxes: turnBoxes.get(t) })
   }
 

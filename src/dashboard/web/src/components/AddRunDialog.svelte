@@ -28,6 +28,14 @@
   // "config-3.13" → 3.13) and pick the max. /api/configs isn't guaranteed
   // newest-first, so don't trust order. Unparseable stems fall back to the
   // last element of the list.
+  //
+  // This is one of three sites that answer "which config by default", and all
+  // three now say config-5.0: here, the server's `_validate_config_stem`, and
+  // `src.config.default_config_stem()`. They agree because they follow the same
+  // rule — highest config-X.Y — not because anyone wrote the name down. The
+  // append harness used to be exempt from that rule (it lived in a non-numeric
+  // `config-append` stem this function structurally could not return); renaming
+  // it to config-5.0 removed the exemption rather than adding a case here.
   function latestConfig(stems) {
     if (!stems || !stems.length) return ''
     // Compare versions COMPONENT-WISE as integers so "3.13" > "3.9"
@@ -169,6 +177,11 @@
   // Casual continue is the one mode that exposes a TaskMaster override picker.
   const casualContinue = $derived(isContinue && !isOfficial)
   const selectedBench = $derived(BENCHMARKS.find((b) => b.id === benchmark) ?? null)
+  // The frozen config official dispatch loads, served by /api/benchmarks. Read
+  // off any row (it is the same on all of them — the config is frozen across
+  // benchmarks, which is what makes cross-benchmark comparison possible), so
+  // changing the benchmark cannot change it and a missing selection cannot hide it.
+  const officialConfig = $derived(BENCHMARKS.find((b) => b.official_config)?.official_config ?? '')
   // The picked game, and whether any benchmark ladder is authored for it. A
   // game with none can only be played casually — the Benchmark segment is
   // disabled rather than hidden, so the reason is visible instead of the option
@@ -396,9 +409,16 @@
           {#if selectedBench}
             <p class="goal">{selectedBench.goal}</p>
           {/if}
+          <!-- The official config is NOT a choice, but it must not be a UI
+               literal either: this used to read "config-3.13" as hard-coded
+               text, a second copy of executor.OFFICIAL_CONFIG that flipping the
+               constant could not reach — so the dialog would have kept
+               advertising 3.13 while dispatch loaded 5.0. It now comes from
+               /api/benchmarks. Falls back to "frozen config" rather than to a
+               name, because a wrong name is worse than no name. -->
           <div class="field">
             <span class="flabel">Config</span>
-            <div class="frozen mono">config-3.13 <span class="faint">(frozen · gates enforced · no turn cap)</span></div>
+            <div class="frozen mono">{officialConfig || 'frozen config'} <span class="faint">(frozen · gates enforced · no turn cap)</span></div>
           </div>
         {:else}
           <label class="field">

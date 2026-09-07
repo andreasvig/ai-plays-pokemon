@@ -50,6 +50,11 @@ export function toRun(s) {
     startedAt: s.started_at,
     endedAt: s.ended_at,
     turns: s.turns ?? 0,
+    // Same field name the ACTIVE queue card reads (see fetchQueue). A run that
+    // is still playing has no index entry, so this branch only ever fires for a
+    // finished — or stale-`running` — projection, where `turns` IS the last
+    // turn the run recorded. Null, never 0, when there is nothing to say.
+    currentTurn: s.turns ?? null,
     durationS: s.duration_s ?? 0,
     totalCostUsd: s.total_cost_usd ?? 0,
     avgCostPerTurn: s.avg_cost_per_turn_usd ?? 0,
@@ -118,12 +123,22 @@ export async function fetchModels() {
 }
 
 export async function fetchConfigs() {
-  // GET /api/configs → ["config-3.13", ...]
+  // GET /api/configs → ["config-3.13", "config-4.0", "config-5.0"], version-sorted.
+  // The LAST entry is the default a casual run gets when it names none (the
+  // server's own rule — see _validate_config_stem). Don't re-derive the default
+  // by sorting here; AddRunDialog's latestConfig() picks the highest version and
+  // the two agree because both follow "highest config-X.Y".
   return getJSON('/api/configs')
 }
 
 export async function fetchBenchmarks() {
-  // GET /api/benchmarks → [{id, name, goal, ladder, default}, ...] (registry order).
+  // GET /api/benchmarks → [{id, name, goal, ladder, default, official_config}, ...]
+  // in registry order. `default` marks the pre-selected benchmark
+  // (pokebench-first-badge since 2026-09-07). `official_config` is the frozen
+  // config stem official dispatch loads — identical on every row, because the
+  // config is frozen ACROSS benchmarks; it rides here so the dialog's "Config"
+  // label for an official run comes from the server instead of the hard-coded
+  // `config-3.13` text it used to print.
   return getJSON('/api/benchmarks')
 }
 
@@ -152,6 +167,12 @@ export async function fetchLeaderboard(benchmark = null) {
   // GET /api/leaderboard[?benchmark=] → best official run per model for that
   // benchmark, gates desc / turns asc. Add displayed rank + perfScore (the same
   // derivations the mock baked in).
+  //
+  // Server-side the board is also partitioned to config-5.x runs (the append
+  // harness): `turns` is the ranking tiebreak and it counts different things on
+  // the two harnesses. Legacy official runs are still served by /api/runs, so
+  // they stay in History — an empty board means no 5.x official run exists yet,
+  // not a broken request.
   const path = benchmark ? `/api/leaderboard?benchmark=${encodeURIComponent(benchmark)}` : '/api/leaderboard'
   const rows = (await getJSON(path)).map(toRun)
   stampPerfScore(rows)
@@ -174,14 +195,24 @@ export async function fetchRun(runId) {
 }
 
 export async function fetchQueue() {
-  // GET /api/queue → {active: <queue_id|null>, items: [QueuedRun, ...]}.
-  // QueuedRun is snake_case; map to the camelCase queue-card shape (queueId,
-  // continueFrom, maxTurns). `active` is a queue_id, but the running run isn't
-  // in `items` — App joins it to the live RunSummary / stats separately.
-  const { active, items } = await getJSON('/api/queue')
+  // GET /api/queue → {active: <queue_id|null>, items: [QueuedRun, ...],
+  // last_error, active_current_turn?}. QueuedRun is snake_case; map to the
+  // camelCase queue-card shape (queueId, continueFrom, maxTurns). `active` is a
+  // queue_id, but the running run isn't in `items` — App joins it to the live
+  // RunSummary / stats separately.
+  //
+  // `active_current_turn` is the LIVE game turn of the running run, served from
+  // its EventBridge. It is stamped onto the active item (and only that one),
+  // because that item is what App hands the Home cards as `active`: a running
+  // run has no run-index entry to resolve a RunSummary from (the index is
+  // written at finalise), so the queue item IS the card's data source.
+  // Absent (idle, or a run whose turn isn't known yet) → null, which the cards
+  // render as "turn —" rather than inventing a turn 0.
+  const { active, items, active_current_turn: activeTurn } = await getJSON('/api/queue')
   return {
     active,
     items: (items || []).map((q) => ({
+      currentTurn: q.queue_id === active && typeof activeTurn === 'number' ? activeTurn : null,
       queueId: q.queue_id,
       kind: q.kind,
       model: q.model,

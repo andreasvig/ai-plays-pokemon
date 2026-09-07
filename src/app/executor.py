@@ -13,9 +13,9 @@ clears ``active``, frees the supervisor, and auto-advances.
 
 Single-active invariant (locked decision #1): only one run executes at a time —
 ``drain_once`` is a no-op while ``supervisor.status().busy``. Official runs
-(locked #4/#7) use the FROZEN config (``config-3.13`` — TaskMaster-enabled) +
-the v1 gate ladder, gates ENFORCED, NO max-turns. Casual runs use their chosen
-config + max-turns and have no gates.
+(locked #4/#7) use the FROZEN config (``config-5.0`` — the append-and-compact
+harness) + the chosen benchmark's gate ladder, gates ENFORCED, NO max-turns.
+Casual runs use their chosen config + max-turns and have no gates.
 
 Everything heavy is injectable so tests run fully headless with a FAKE
 ``run_fn`` (and never launch mGBA): the config builders, the savepoint
@@ -39,7 +39,17 @@ from src.app.trace_build import build_and_cache_trace
 
 # Frozen official benchmark wiring (locked decisions #4 / #7). Read at runtime —
 # never hardcode gate numbers; the ladder + config stay WIP until launch.
-OFFICIAL_CONFIG = "configs/config-3.13.yaml"
+#
+# 2026-09-07: promoted from config-3.13 (TaskMaster-enabled, sliding window) to
+# config-5.0, the append-and-compact harness — it was faster on all three models
+# in the 25-turn comparison and cheaper wherever whole-prefix caching exists
+# (artifacts/system-comparison/findings.md). config-5.0 is FROZEN for exactly
+# this reason; a 5.1 becomes the casual default on its own but is promoted here
+# only by editing this line. The leaderboard is partitioned on the config stem
+# (``RunSummary.leaderboard_eligible`` keeps only config-5.x), so the config-3.13
+# runs that used to hold the board stay in History with their badge instead of
+# being ranked against a different harness's turn units.
+OFFICIAL_CONFIG = "configs/config-5.0.yaml"
 OFFICIAL_LADDER = "configs/checkpoints-firered-v1.yaml"
 OFFICIAL_BENCHMARK_VERSION = "pokebench-v1"
 
@@ -180,7 +190,7 @@ class RunExecutor:
     def build_run_config(self, item: QueuedRun) -> tuple[dict, str | None, int]:
         """Build (config, snapshot_dir, turns) for a queued item.
 
-        - Official (locked #4/#7): FROZEN ``config-3.13`` (TaskMaster on) + the
+        - Official (locked #4/#7): FROZEN ``config-5.0`` (append-and-compact) + the
           chosen benchmark's gate ladder injected with ``enforce: true``, the
           benchmark's overall goal overriding the config's ``task.goal``, NO
           max-turns (a large sentinel turn cap that the gate ladder bounds in

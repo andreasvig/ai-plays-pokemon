@@ -4,7 +4,8 @@ The nested writer (``agent/turn.py:_write_run_summary``) is the source of truth;
 this module reads it (plus ``config.json`` for the ladder pointer) and produces
 the flat denormalized index entry. It must tolerate LEGACY runs that predate the
 control-center fields — missing ``referee``, missing top-level ``kind``/``status``,
-missing ``llm_alias`` — and still produce a valid entry, inferring defensively.
+missing ``llm_alias``, missing ``agent_type`` — and still produce a valid entry,
+inferring defensively.
 
 Gate counting MUST agree with ``cli/report.py``'s "N/total cleared" header:
   - ``total_gates`` = number of ladder *nodes* (== ``len(referee["gates"])``).
@@ -213,6 +214,27 @@ def project_run_dir(run_dir: Path) -> RunSummary | None:
         total_gates=total_gates,
         termination_reason=termination_reason,
         continued_from=summary.get("continued_from"),
+        # WHICH HARNESS ran. ``run_summary.json["agent_type"]`` is stamped only
+        # when an AppendAgent was active (turn.py:2844), so its ABSENCE is the
+        # legacy sliding-window agent — hence the "current" default rather than
+        # None. First reader of a field that has been written since the append
+        # work landed. A non-string value (a hand-edited summary) falls back the
+        # same way: this row is a display + guard input, never worth a crash.
+        harness=(
+            summary["agent_type"]
+            if isinstance(summary.get("agent_type"), str) and summary["agent_type"]
+            else "current"
+        ),
+        # The turn cap the run ran under, as recorded by the writer. Absent on an
+        # official run (pace is its only bound) and on any run that predates the
+        # summary carrying it — both mean "no cap to show", which is None, NOT 0:
+        # a 0 would render as a run that was allowed no turns.
+        max_turns=(
+            summary["max_turns"]
+            if isinstance(summary.get("max_turns"), int)
+            and not isinstance(summary.get("max_turns"), bool)
+            else None
+        ),
         # resumed: explicit when the writer stamped it; else infer from a
         # continued_from link so legacy continued runs still flag as multi-segment.
         resumed=bool(session.get("resumed") or summary.get("continued_from")),

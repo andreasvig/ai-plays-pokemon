@@ -1,7 +1,9 @@
 <script>
-  import { usd } from '../lib/format.js'
+  import { usd, dur } from '../lib/format.js'
   import { mdToHtml } from '../lib/md.js'
+  import { compactionElapsedS, turnPreview } from '../lib/live.js'
   import Action, { actionTokens } from './Action.svelte'
+  import JsonTree from './JsonTree.svelte'
 
   // turns: chronological feed of tagged entries — {kind:'turn', turn, boxes} and
   // {kind:'master', ...} (the TaskMaster card, interleaved at task boundaries
@@ -12,11 +14,20 @@
   // hiddenTurns: count of older turns dropped below the live window (Spectate
   // keeps only the last few tasks live); shown as a muted note so the operator
   // knows the rail is windowed and the full trace lives in the run report.
-  let { turns = [], hiddenTurns = 0 } = $props()
+  // nowMs: the parent's 1s client clock. Only a RUNNING compaction reads it —
+  // it has no turn boundary to redraw its elapsed timer.
+  let { turns = [], hiddenTurns = 0, nowMs = null } = $props()
 
   // handback + error are present in the real event stream (static/index.html)
   // but were omitted from the mock; wired in here for P6 parity.
-  const boxName = { thinking: 'Thinking', output: 'Output', action: 'Action', tool: 'Tool', memory: 'Memory', ocr: 'OCR', settle: 'Screen settling', handback: 'Return to TaskMaster', retry: 'Retry', error: 'Error' }
+  //
+  // `settle` means EXACTLY ONE thing: the emulator wait after buttons were
+  // pressed. Model requests and compactions used to be pushed as `settle` too,
+  // so the defining behaviour of the append harness was labelled "Screen
+  // settling" on every turn — hence `diag` (one model request's transport
+  // diagnostics), `withheld` (billed reasoning the endpoint did not return),
+  // `warning` (endpoint_warning) and `terminal` (the run's own stop condition).
+  const boxName = { thinking: 'Thinking', output: 'Output', action: 'Action', tool: 'Tool', memory: 'Memory', ocr: 'OCR', settle: 'Screen settling', handback: 'Return to TaskMaster', retry: 'Retry', error: 'Error', diag: 'Request', withheld: 'Reasoning', warning: 'Endpoint warning', terminal: 'Run ended' }
 
   // TaskMaster's verdict on the PREVIOUS task → labeled chip + tone.
   const VERDICT = {
@@ -29,13 +40,41 @@
     return VERDICT[String(status || '').toLowerCase()] || { label: status || 'Rated', tone: 'partial' }
   }
 
-  // turn ids (numbers), oldest→newest, ignoring master cards
+  // turn ids (numbers), oldest→newest, ignoring master cards and compaction rows
   const turnIds = $derived(turns.filter((e) => e.kind === 'turn').map((e) => e.turn))
   const currentId = $derived(turnIds.length ? turnIds[turnIds.length - 1] : null)
   let open = $state(new Set())
   // A1: auto-open the last TWO turns (current + previous); guard when <2 exist.
   $effect(() => { open = new Set(turnIds.slice(-2)) })
   function toggle(id) { const n = new Set(open); n.has(id) ? n.delete(id) : n.add(id); open = n }
+
+  // Compaction rows carry NO turn number, so they cannot live in `open` (which
+  // is keyed by turn and rebuilt from turnIds). Their default is "open while it
+  // is running, and for the newest one" — a compaction is the one thing you
+  // actually want to watch happen — and a click flips that default. Keyed on
+  // the block's stable id, so a toggle survives the next rebuild; `open` above
+  // deliberately does not, and that behaviour is unchanged.
+  const lastCompactionId = $derived(
+    turns.filter((e) => e.kind === 'compaction').map((e) => e.id).at(-1) ?? null
+  )
+  let compToggled = $state(new Set())
+  function compIsOpen(c) {
+    const dflt = !c.complete || c.id === lastCompactionId
+    return compToggled.has(c.id) ? !dflt : dflt
+  }
+  function toggleComp(id) {
+    const n = new Set(compToggled)
+    n.has(id) ? n.delete(id) : n.add(id)
+    compToggled = n
+  }
+  // A compaction runs for minutes, so past a minute it reads as m/s (`dur`)
+  // rather than "252.0s". The trailing ellipsis marks the one still going.
+  function elapsedLabel(c) {
+    const s = compactionElapsedS(c, nowMs)
+    if (s == null) return ''
+    const label = s < 60 ? `${s.toFixed(c.complete ? 1 : 0)}s` : dur(s)
+    return c.complete ? label : `${label}…`
+  }
 
   // Sticky auto-scroll: only re-pin to the bottom when the user was ALREADY at
   // (or near) the bottom. An onscroll handler tracks `atBottom`; the effect that
@@ -59,8 +98,70 @@
     {#if hiddenTurns > 0}
       <div class="hidden-note">↑ {hiddenTurns} earlier turn{hiddenTurns === 1 ? '' : 's'} hidden — full trace in the run report</div>
     {/if}
+    {#snippet boxList(boxes)}
+  <!-- One event box. Shared by the gameplay-turn rows and the compaction
+       block so a new kind is wired ONCE, not per row. -->
+  {#each boxes as b}
+    <div class="ebox {b.k}">
+      <div class="ebox-h">{boxName[b.k] ?? b.k}{#if b.meta}<span class="ebox-meta faint">{b.meta}</span>{/if}</div>
+      <div class="ebox-b">
+        {#if b.k === 'action'}<span class="act">{#each actionTokens(b.t) as tok}<Action token={tok} />{/each}</span>
+        {:else if b.k === 'tool'}{#if b.args}<div class="mono call">{b.name}({b.args})</div>{/if}{#if b.resp != null}<div class="resp faint">→ {b.resp}</div>{/if}
+        {:else if b.k === 'memory'}<span class="mono">{b.t}</span>
+        {:else if b.k === 'diag'}<span class="mono diag-b">{b.t}</span>
+        {:else if b.k === 'withheld'}<span class="withheld-b">{b.t}</span>
+        {:else if b.k === 'thinking'}<div class="md">{@html mdToHtml(b.t)}</div>
+        {:else if b.k === 'handback'}<div class="hb-verdict {b.tone}">{b.verdict}</div>{#if b.summary}<div class="hb-summary">{b.summary}</div>{/if}
+        {:else if b.k === 'output'}{#if b.ok != null}<div class="out-tag"><span class="ok-tag" class:ok={b.ok} class:no={!b.ok}>{b.ok ? '✓ ok' : '✗ failed'}</span></div>{/if}{#if b.t}<div class="out-body">{b.t}</div>{/if}
+        {:else}{b.t}{/if}
+      </div>
+    </div>
+  {/each}
+{/snippet}
+
     {#each turns as entry (entry.id)}
-      {#if entry.kind === 'master'}
+      {#if entry.kind === 'compaction'}
+        <!-- A compaction is NOT a turn: its own row, its own counter, no turn
+             number — the same shape the run report gives it
+             (trace_build._add_conversation_timeline → Report.svelte's
+             `kind === 'compaction'` row). The gameplay turns either side keep
+             their numbers, and the Turn stat does not move while this runs. -->
+        {@const cOpen = compIsOpen(entry)}
+        <div class="comp-block" class:running={!entry.complete} class:collapsed={!cOpen}>
+          <button class="comp-head" onclick={() => toggleComp(entry.id)}>
+            <span class="arr">{cOpen ? '▾' : '▸'}</span>
+            <span class="c-n mono">Compaction {entry.number}</span>
+            <span class="c-after faint">after turn {entry.afterTurn}{#if entry.reason}&nbsp;· {entry.reason.replace(/_/g, ' ')}{/if}</span>
+            {#if !entry.complete}<span class="c-live"><span class="dot live"></span>compacting</span>{/if}
+            <span class="c-timer faint mono">{elapsedLabel(entry)}</span>
+          </button>
+          {#if cOpen}
+            <div class="boxes">
+              {@render boxList(entry.boxes)}
+              {#if entry.complete}
+                <div class="ebox memory">
+                  <div class="ebox-h">Handover</div>
+                  <div class="ebox-b">{#if entry.summary}<div class="out-body">{entry.summary}</div>{:else}<span class="faint">(no continuation summary)</span>{/if}</div>
+                </div>
+                <div class="ebox memory">
+                  <div class="ebox-h">Memory after compaction</div>
+                  <div class="ebox-b">
+                    {#if entry.memory && Object.keys(entry.memory).length}<JsonTree data={entry.memory} />{:else}<span class="faint">(empty)</span>{/if}
+                    {#if entry.previousMemory}
+                      <details class="mem-before"><summary>Memory before</summary><JsonTree data={entry.previousMemory} /></details>
+                    {/if}
+                  </div>
+                </div>
+              {:else}
+                <div class="ebox settle">
+                  <div class="ebox-h">Status</div>
+                  <div class="ebox-b faint">Writing the handover — the conversation is being replaced. Gameplay resumes at turn {entry.beforeTurn}.</div>
+                </div>
+              {/if}
+            </div>
+          {/if}
+        </div>
+      {:else if entry.kind === 'master'}
         <div class="master-block">
           <div class="master-head">TaskMaster{#if entry.model}<span class="m-meta mono">{entry.model}</span>{/if}{#if entry.cost != null}<span class="m-meta mono">{usd(entry.cost)}</span>{/if}</div>
           <div class="master-body">
@@ -88,25 +189,14 @@
             <span class="t-n mono">Turn {turn.turn}</span>
             {#if nRetry}<span class="retry-tag">{nRetry} {nRetry === 1 ? 'retry' : 'retries'}</span>{/if}
             {#if isCurrent}<span class="cur-tag"><span class="dot live"></span>current</span>{/if}
-            {#if !isOpen}<span class="t-sum faint">{turn.boxes.find((b) => b.k === 'thinking')?.t.slice(0, 52)}…</span>{/if}
+            <!-- A collapsed row previewed `thinking` only, so a turn whose
+                 endpoint returned no readable reasoning showed a bare "…"
+                 (finding #22). turnPreview falls through to the decision's own
+                 prose, then to the reason nothing was said. -->
+            {#if !isOpen}<span class="t-sum faint">{turnPreview(turn.boxes)}</span>{/if}
           </button>
           {#if isOpen}
-            <div class="boxes">
-              {#each turn.boxes as b}
-                <div class="ebox {b.k}">
-                  <div class="ebox-h">{boxName[b.k]}{#if b.meta}<span class="ebox-meta faint">{b.meta}</span>{/if}</div>
-                  <div class="ebox-b">
-                    {#if b.k === 'action'}<span class="act">{#each actionTokens(b.t) as tok}<Action token={tok} />{/each}</span>
-                    {:else if b.k === 'tool'}{#if b.args}<div class="mono call">{b.name}({b.args})</div>{/if}{#if b.resp != null}<div class="resp faint">→ {b.resp}</div>{/if}
-                    {:else if b.k === 'memory'}<span class="mono">{b.t}</span>
-                    {:else if b.k === 'thinking'}<div class="md">{@html mdToHtml(b.t)}</div>
-                    {:else if b.k === 'handback'}<div class="hb-verdict {b.tone}">{b.verdict}</div>{#if b.summary}<div class="hb-summary">{b.summary}</div>{/if}
-                    {:else if b.k === 'output'}{#if b.ok != null}<div class="out-tag"><span class="ok-tag" class:ok={b.ok} class:no={!b.ok}>{b.ok ? '✓ ok' : '✗ failed'}</span></div>{/if}{#if b.t}<div class="out-body">{b.t}</div>{/if}
-                    {:else}{b.t}{/if}
-                  </div>
-                </div>
-              {/each}
-            </div>
+            <div class="boxes">{@render boxList(turn.boxes)}</div>
           {/if}
         </div>
       {/if}
@@ -165,6 +255,35 @@
   .ebox.retry    { border-color: var(--retry); background: var(--retry-wash); }
   .ebox.retry .ebox-h { color: var(--retry); }
   .ebox.error    { border-color: var(--red); background: var(--red-soft); }
+  /* One model request's transport diagnostics — informational, so it reads
+     quieter than everything the model actually said. */
+  .ebox.diag     { border-color: var(--border-2, var(--border)); }
+  .diag-b { font-size: 11px; color: var(--muted); }
+  /* Billed reasoning the endpoint refused to return. Muted on purpose: it is
+     the ABSENCE of content, not content. */
+  .ebox.withheld { border-color: var(--border-2, var(--border)); }
+  .withheld-b { font-size: 11.5px; color: var(--faint); font-style: italic; }
+  .ebox.warning  { border-color: var(--amber); background: var(--tm-wash); }
+  .ebox.warning .ebox-h { color: var(--tm); }
+  /* The run's own stop condition firing. Loud — it is the last thing that
+     happens. */
+  .ebox.terminal { border-color: var(--red); background: var(--red-soft); }
+  .ebox.terminal .ebox-h { color: var(--red); }
+  .ebox.terminal .ebox-b { font-weight: 650; }
+
+  /* ── compaction block: a row of its own, with no turn number ──────────
+     Green (the memory colour) rather than the accent turn colour, because what
+     it produces IS the memory + handover. Visually a sibling of the turn
+     cards, never nested in one. */
+  .comp-block { background: var(--surface); border: 1px solid var(--green); border-left: 3px solid var(--green); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; flex: none; }
+  .comp-head { width: 100%; display: flex; align-items: center; gap: 8px; padding: 9px 12px; border: none; background: none; text-align: left; }
+  .comp-block.collapsed .comp-head:hover { background: var(--surface-2); }
+  .c-n { font-size: 12px; font-weight: 750; color: var(--green); flex: none; }
+  .c-after { font-size: 11px; }
+  .c-live { font-size: 10px; font-weight: 700; color: var(--green); display: inline-flex; align-items: center; gap: 4px; }
+  .c-timer { margin-left: auto; font-size: 11px; flex: none; }
+  .comp-block.running { border-color: var(--green); }
+  .mem-before { margin-top: 6px; font-size: 11px; color: var(--muted); }
   /* Action is 2.35em tall — considerably bigger than the emoji it replaced.
      Shrink the container's font-size (not the glyph's own height) so it reads
      at roughly the old emoji's footprint inside a compact trace row. */

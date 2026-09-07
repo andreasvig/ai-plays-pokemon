@@ -61,6 +61,18 @@
   let pendingVisible = $state(false)
   let dots = $state('')
 
+  // Compaction (append harness): between `compaction_start` and
+  // `compaction_complete` the model is writing its own handover and the game
+  // screen is frozen — multiple MINUTES on a long segment. Without a phase of
+  // its own that window is indistinguishable from a slow think: the same dot
+  // cycle on the same "TURN n" strip, with nothing moving (finding #14). It
+  // reuses the pending strip rather than adding a box, so the layout does not
+  // shift; only the label and the clock change.
+  let compacting = $state(false)
+  let compactAfter = $state(null)
+  let compactS = $state(0)
+  let compactTimer = null
+
   let card = $state(null) // {id, turn, tokens, animate}
   let outgoing = $state(false) // retiring slot phases up while the morph lands
   let morph = $state(null) // {turn, dots, top, left, w, h, landed}
@@ -179,6 +191,21 @@
     dotTimer = null
   }
 
+  // Wall clock for the compaction strip. Ticks twice a second so a whole-second
+  // label never sits one second behind what the viewer feels.
+  function startCompactClock() {
+    stopCompactClock()
+    const t0 = Date.now()
+    compactS = 0
+    compactTimer = setInterval(() => {
+      compactS = Math.round((Date.now() - t0) / 1000)
+    }, 500)
+  }
+  function stopCompactClock() {
+    if (compactTimer) clearInterval(compactTimer)
+    compactTimer = null
+  }
+
   // ── the morph (plan §5.3) ────────────────────────────────────────────────
   // The pending box does not slide — it BECOMES the main box. A clone is
   // pinned at the pending box's exact rect, the real pending box vacates, the
@@ -242,6 +269,12 @@
       const args = parseArgs(data.args)
       if (!args) return
       enqueue(() => promote(data.turn, args.inputs, args.reasoning))
+    } else if (type === 'compaction_start') {
+      enqueue(() => beginCompaction(data.after_turn, data.turn))
+    } else if (type === 'compaction_complete') {
+      // Back to thinking about the turn the compaction interrupted — the
+      // gameplay request for `data.turn` is issued the moment it returns.
+      enqueue(() => endCompaction(data.turn))
     } else if (type === 'screen_settled') {
       // The executing window is over. The pending box STAYS hidden: no next
       // turn exists yet, and showing it here is exactly the thing Andreas
@@ -273,6 +306,24 @@
     pendingTurn = turn ?? null
     pendingVisible = true
     startDots()
+  }
+
+  async function beginCompaction(afterTurn, turn) {
+    if (dead) return
+    compacting = true
+    compactAfter = afterTurn ?? (typeof turn === 'number' ? turn - 1 : null)
+    phase = 'compacting'
+    pendingVisible = true
+    startDots()
+    startCompactClock()
+  }
+
+  async function endCompaction(turn) {
+    if (dead) return
+    stopCompactClock()
+    compacting = false
+    compactAfter = null
+    await beginThinking(turn)
   }
 
   async function promote(turn, inputs, reasoning) {
@@ -364,6 +415,9 @@
 
   // Back to the state a fresh mount would have, minus the DOM teardown.
   function clearForNewRun() {
+    stopCompactClock()
+    compacting = false
+    compactAfter = null
     ratchetPx = null
     fitPx = null
     card = null
@@ -442,6 +496,7 @@
   onDestroy(() => {
     dead = true
     stopDots()
+    stopCompactClock()
     clearTimeout(chromeTimer)
   })
 
@@ -498,8 +553,12 @@
     <!-- Kept in the DOM at opacity 0 rather than removed: it holds its slot in
          the flex column, so the main box never jumps when the model starts
          thinking, and the morph can read its rect. -->
-    <div class="pending" class:idle={!pendingVisible} bind:this={pendingEl} aria-hidden={!pendingVisible}>
-      Turn <b>{pendingTurn ?? '—'}</b> <span class="dots">{dots}</span>
+    <div class="pending" class:idle={!pendingVisible} class:compacting bind:this={pendingEl} aria-hidden={!pendingVisible}>
+      {#if compacting}
+        Compacting memory{#if compactAfter != null}&nbsp;after turn <b>{compactAfter}</b>{/if}&nbsp;<span class="dots">{dots}</span> <span class="celapsed">{compactS}s</span>
+      {:else}
+        Turn <b>{pendingTurn ?? '—'}</b> <span class="dots">{dots}</span>
+      {/if}
     </div>
 
     {#if morph}
@@ -741,6 +800,19 @@
   }
   .pending.idle {
     opacity: 0;
+  }
+  /* Solid rule + ink label while compacting: the dashed "waiting for a turn"
+     strip must not be the only thing on screen during a multi-minute pause
+     that is NOT a turn. */
+  .pending.compacting {
+    border-style: solid;
+    color: var(--body);
+  }
+  .celapsed {
+    margin-left: auto;
+    color: var(--faint);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
   }
   .dots {
     color: var(--ink);

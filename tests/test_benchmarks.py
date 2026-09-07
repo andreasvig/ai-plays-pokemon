@@ -44,11 +44,18 @@ def _make_manifest(tmp_path, entries):
 
 def test_real_registry_loads_three_benchmarks():
     """The committed configs/benchmarks.yaml has the three expected benchmarks,
-    easy is the default, and each points at its own ladder file."""
+    FIRST BADGE is the default, and each points at its own ladder file.
+
+    The default moved easy → first-badge on 2026-09-07 with the config-5.0
+    flip: easy is too short to separate models and full too long to fill a
+    board. Easy and full stay listed and selectable — asserted by the id list
+    above, so demoting easy cannot quietly remove it.
+    """
     bs = load_benchmarks()
     ids = [b.id for b in bs]
     assert ids == ["pokebench-easy", "pokebench-first-badge", "pokebench-full"]
-    assert default_benchmark().id == "pokebench-easy"
+    assert default_benchmark().id == "pokebench-first-badge"
+    assert [b.id for b in bs if b.is_default] == ["pokebench-first-badge"]
     assert {b.ladder for b in bs} == {
         "configs/checkpoints-firered-easy.yaml",
         "configs/checkpoints-firered-firstbadge.yaml",
@@ -57,9 +64,11 @@ def test_real_registry_loads_three_benchmarks():
 
 
 def test_get_benchmark_unknown_falls_back_to_default():
-    assert get_benchmark(None).id == "pokebench-easy"
-    assert get_benchmark("does-not-exist").id == "pokebench-easy"
+    assert get_benchmark(None).id == "pokebench-first-badge"
+    assert get_benchmark("does-not-exist").id == "pokebench-first-badge"
+    # A named benchmark is still honoured — the fallback is only for None/unknown.
     assert get_benchmark("pokebench-easy").id == "pokebench-easy"
+    assert get_benchmark("pokebench-full").id == "pokebench-full"
 
 
 def test_registry_rejects_duplicate_ids(tmp_path):
@@ -119,7 +128,10 @@ def test_default_benchmark_falls_back_to_first_when_none_flagged(tmp_path):
 
 
 def _run(run_id, *, benchmark, gates, turns, kind=RunKind.official,
-         status=RunStatus.completed, model="m"):
+         status=RunStatus.completed, model="m", config_stem="config-5.0"):
+    # config_stem defaults to a config-5.x stem: leaderboard eligibility
+    # requires one since the 2026-09-07 harness flip, and these tests are about
+    # the BENCHMARK filter, not the harness partition.
     return RunSummary(
         run_id=run_id,
         kind=kind,
@@ -130,6 +142,7 @@ def _run(run_id, *, benchmark, gates, turns, kind=RunKind.official,
         gates_reached=gates,
         turns=turns,
         total_gates=20,
+        config_stem=config_stem,
     )
 
 

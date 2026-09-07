@@ -495,6 +495,12 @@ class AppendAgent:
         """Text-only final user message for gameplay requests on split-turn profiles."""
         if not self._splits_turn():
             return []
+        # config-5.0 declares `action_prompt` and `_validate_append_config`
+        # requires it, so this fallback is unreachable for any config loaded
+        # from disk. It survives for RESUMED runs: `continue_from_run` replays
+        # the saved `config.json` of a run started before the key existed, and
+        # that path never re-validates. Do not read it as "the prompt is
+        # optional".
         text = self.config.get("action_prompt") or "Turn {{turn_number}}: respond with your next action now."
         return [{"role": "user", "content": fill_prompt(text, turn_number=turn)}]
 
@@ -571,11 +577,17 @@ class AppendAgent:
         resolved = self.config.get("_llm_resolved") or {}
         if self.profile:
             # Profile owns endpoint-sensitive settings; aliases still select reasoning level.
+            # An UNPROFILED model carries the `defaults:` contract with endpoint "" —
+            # nobody probed a serving endpoint for it, so it must NOT be pinned to one.
+            # It keeps the registry's own `provider:` block (None for most models, which
+            # is then omitted from the body) instead of being pinned to the empty tag.
+            pin = ({"only": [self.profile["endpoint"]], "allow_fallbacks": False, "require_parameters": True}
+                   if self.profile["endpoint"] else deepcopy(resolved.get("provider")))
             resolved = {"output_mode": self.profile["output_mode"], "reasoning": self.profile["reasoning"],
-                        "provider": {"only": [self.profile["endpoint"]], "allow_fallbacks": False, "require_parameters": True},
+                        "provider": pin,
                         **self.profile["sampling"],
                         **({"max_tokens": resolved["max_tokens"]} if "max_tokens" in resolved else {})}
-            if self.profile.get("excluded_endpoints"):
+            if self.profile.get("excluded_endpoints") and isinstance(resolved["provider"], dict):
                 resolved["provider"]["ignore"] = deepcopy(self.profile["excluded_endpoints"])
         messages = project_history(messages, self.profile)
         mode = resolved.get("output_mode", "tool")

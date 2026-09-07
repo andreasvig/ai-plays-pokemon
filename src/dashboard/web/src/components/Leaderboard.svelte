@@ -18,9 +18,16 @@
 
 <section class="hero">
   <h1>PokeBench</h1>
+  <!-- "Same harness, same config" is now a load-bearing claim rather than a
+       boast: the board is partitioned to config-5.x official runs, so it is
+       literally true of every row. Legacy config-3.13 runs keep their badge and
+       their scorecard in History — they are not ranked here because `turns`
+       (the tiebreak) counts game turns PLUS TaskMaster invocations on that
+       harness and game turns only on this one. -->
   <p class="tagline">Can a language model play Pokémon FireRed <em>at pace</em>? A deterministic
     referee reads game memory out-of-band and stamps story gates; a progressive deadline ladder
-    ends runs that fall behind. Same harness, same config, same ROM — the model is the only variable.</p>
+    ends runs that fall behind. Every run here is the same frozen append-and-compact harness
+    (config-5.x), the same first-badge ladder and the same ROM — the model is the only variable.</p>
   <div class="chips">
     <span class="chip"><b>{stats.completers}</b> models at 100%</span>
     <span class="chip"><b>{stats.modelsRanked}</b> ranked</span>
@@ -64,7 +71,7 @@
       </div>
     </div>
   </div>
-  <p class="rule-note faint">Ranked by gate completion, then fewest turns. 100%-clears compared head-to-head on turns. Best official run per model.</p>
+  <p class="rule-note faint">Ranked by gate completion, then fewest turns. 100%-clears compared head-to-head on turns. Best official run per model, config-5.x only — earlier harnesses stay in History.</p>
 
   <div class="lhead">
     <span class="c-rank">#</span>

@@ -2,8 +2,10 @@
 agent sets its own goals in its memory dictionary.
 
 Covers the four things that make the mode real rather than nominal:
-  1. config-4.0 loads, carries NO task_master block, and is what a bare
-     `pokemon run` now picks up (find_latest_config).
+  1. config-4.0 loads and carries NO task_master block. It is NO LONGER what a
+     bare `pokemon run` picks up — the 2026-09-07 flip made config-5.0 (the
+     append-and-compact harness) the default — but it stays fully runnable, and
+     that is what is pinned here.
   2. The model-facing output schema on that path is the four-field
      _LegacyGameAction — no `return_to_taskmaster` handoff field.
   3. The freeplay/benchmark steering reaches the PLAYER now that there is no
@@ -52,9 +54,27 @@ def test_config_4_0_exists_and_has_no_task_master_block():
     )
 
 
-def test_config_4_0_is_the_default_config():
-    """A bare `pokemon run` (no --config) resolves to the self-directed mode."""
-    assert find_latest_config().name == "config-4.0.yaml"
+def test_config_4_0_is_no_longer_the_default_but_still_loads():
+    """config-4.0 is legacy-runnable, not the default.
+
+    Inverted 2026-09-07: this test used to assert config-4.0 WAS what a bare
+    `pokemon run` resolves to. The default is now config-5.0, the frozen
+    append-and-compact harness — and the point of keeping a test here is the
+    other half of that decision: demoting 4.0 must not break it. So this
+    asserts BOTH directions (the default moved AND 4.0 still loads), because an
+    assertion that only checked the new default would pass just as happily if
+    config-4.0.yaml had been deleted.
+    """
+    assert find_latest_config().name == "config-5.0.yaml"
+    # Alias picked from the registry at runtime, not pinned: this assertion is
+    # about config-4.0 still loading, and a hardcoded model name makes it fail
+    # for an unrelated reason the day that model is pruned.
+    from src.config import _load_models_registry, list_competitor_aliases
+
+    alias = list_competitor_aliases(_load_models_registry())[0]
+    cfg = load_config(str(CONFIG_4_0), llm_alias=alias)
+    assert cfg["_config_path"].endswith("config-4.0.yaml")
+    assert cfg.get("agent_type", "current") == "current"
 
 
 def test_top_level_goal_is_the_only_goal_given(raw_4_0):

@@ -222,6 +222,25 @@ def find_latest_config() -> Path:
     return configs[-1][1]
 
 
+def default_config_stem() -> str:
+    """The config stem a caller gets when it names none — e.g. ``config-5.0``.
+
+    THE single source for "the casual default" in prose. Every help string, doc
+    hint and error message that wants to *name* the default asks here instead of
+    embedding a literal, which is how the old name (config-4.0) ended up written
+    into eight places that then had to be found by grep. Derived from
+    :func:`find_latest_config`, so it and ``catalog.list_configs()[-1]`` and
+    ``server._validate_config_stem``'s fallback are the same value by
+    construction, and adding a config-5.1 moves all of them at once.
+
+    A function rather than a module constant on purpose: a constant would run
+    ``find_latest_config`` at import time (so ``import src.config`` would raise
+    in a checkout with no ``configs/``) and would then be stale for the rest of
+    the process.
+    """
+    return find_latest_config().stem
+
+
 def _hoist_player_agent(config: dict[str, Any], config_path: Path) -> None:
     """Lift keys from an optional ``player_agent:`` block to the top level.
 
@@ -445,22 +464,32 @@ def _validate_config(config: dict[str, Any], *, require_llm_model: bool = True) 
                 f"max_spend_usd must be a positive number of USD, got {msu!r}"
             )
 
-    # historic_images_count: how many of the most recent visible turns should
-    # have their start-of-turn screenshot included inline alongside the current
-    # screenshot. 0 = text-only history (default).
-    hic = config.get("historic_images_count", 0)
-    if not isinstance(hic, int) or isinstance(hic, bool) or hic < 0:
-        raise ValueError(
-            f"historic_images_count must be a non-negative int, got {hic!r}"
-        )
-    if hic > 0:
-        trim = config.get("max_turns_before_trim")
-        if trim is not None and hic > trim:
+    # historic_images_count / max_turns_before_trim: sliding-window keys of the
+    # LEGACY agent — how many recent turns keep their start-of-turn screenshot
+    # inline, and how many turns of text history survive before truncation.
+    # 0 / None = text-only, untrimmed.
+    #
+    # Validated for the legacy harness ONLY. On ``agent_type: append_compact``
+    # the conversation is append-only and bounded by compaction, and
+    # ``TurnManager`` hands the turn to ``AppendAgent.play()`` before it ever
+    # assembles a windowed message (turn.py:2098, ahead of the only two readers
+    # at 2129 and 2612) — so neither key is read there. Checking them anyway
+    # made config-5.0 carry two inert zeros just to satisfy a validator, which
+    # reads as "this harness trims its history". It does not.
+    if config.get("agent_type", "current") != "append_compact":
+        hic = config.get("historic_images_count", 0)
+        if not isinstance(hic, int) or isinstance(hic, bool) or hic < 0:
             raise ValueError(
-                f"historic_images_count ({hic}) cannot exceed max_turns_before_trim "
-                f"({trim}). A historic image only makes sense for turns that are "
-                "still visible in the text history."
+                f"historic_images_count must be a non-negative int, got {hic!r}"
             )
+        if hic > 0:
+            trim = config.get("max_turns_before_trim")
+            if trim is not None and hic > trim:
+                raise ValueError(
+                    f"historic_images_count ({hic}) cannot exceed max_turns_before_trim "
+                    f"({trim}). A historic image only makes sense for turns that are "
+                    "still visible in the text history."
+                )
 
     sp = config.get("savepoints")
     if sp is not None:
@@ -490,7 +519,16 @@ def _validate_append_config(config: dict[str, Any]) -> None:
         return
     if config.get("task_master", {}).get("enabled"):
         raise ValueError("append_compact is self-directed and cannot enable TaskMaster")
-    for key in ("system_prompt", "user_prompt", "segment_start_prompt"):
+    # The four model-facing prompts of this harness, all required in YAML.
+    # ``action_prompt`` is the fourth: on a split-turn profile
+    # (``final_turn_text_only``) it is the text-only user message that ENDS every
+    # gameplay request, so it is as load-bearing as the other three — it had a
+    # code fallback and no declaration site, which made docs/append-agent.md's
+    # "all prompts are authored in YAML" false. Required unconditionally rather
+    # than only for split-turn profiles: which profile a run gets is decided by
+    # the model, one layer down from the config, so a config that validates for
+    # one model and silently falls back for another is the worse contract.
+    for key in ("system_prompt", "user_prompt", "segment_start_prompt", "action_prompt"):
         if not isinstance(config.get(key), str) or not config[key].strip():
             raise ValueError(f"append_compact requires {key} in config")
     for section in ("compaction", "transport", "observability", "caching"):

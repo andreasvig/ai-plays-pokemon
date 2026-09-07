@@ -8,7 +8,7 @@ import shutil
 import pytest
 
 from src.agent.append_agent import AppendAgent, ContinuityError, StreamAssembly, cache_economics, cache_totals, implied_cache, normalize_usage, replay_check
-from src.config import load_config, find_latest_config, _validate_config
+from src.config import load_config, default_config_stem, find_latest_config, _validate_config
 from src.app.catalog import list_configs
 
 
@@ -18,7 +18,7 @@ IMAGE = "data:image/png;base64,c2NyZWVu"
 
 @pytest.fixture
 def config():
-    cfg = load_config(str(ROOT / "configs/config-append.yaml"), llm_alias="openai/test-model")
+    cfg = load_config(str(ROOT / "configs/config-5.0.yaml"), llm_alias="openai/test-model")
     cfg["compaction"]["every_n_turns"] = 2
     cfg["transport"]["max_retries"] = 0
     cfg["compaction"]["max_retries"] = 0
@@ -208,15 +208,96 @@ def test_stream_assembly_retains_encrypted_data_and_calls():
         assembly.add({"choices": [{"delta": {"reasoning_details": [{"data": "no identity"}]}}]})
 
 
-def test_config_is_selectable_but_does_not_replace_default(config):
-    assert "config-append" in list_configs()
-    assert list_configs()[-1] == "config-4.0"
-    assert find_latest_config().name == "config-4.0.yaml"
+def test_config_5_0_is_the_default_config(config):
+    """The append harness IS the default now (2026-09-07 flip).
+
+    Inverted from ``…_does_not_replace_default``, which pinned the old state:
+    the harness lived in a non-numeric ``config-append`` stem that
+    ``catalog.list_configs`` force-fed to the FRONT of its list so ``[-1]``
+    stayed config-4.0. Renaming it to ``config-5.0`` makes the ordinary
+    "highest config-X.Y" rule pick it and the special case is gone, so all
+    three default sites have to agree on it.
+    """
+    assert "config-5.0" in list_configs()
+    assert list_configs()[-1] == "config-5.0"
+    assert find_latest_config().name == "config-5.0.yaml"
+    # The one prose site allowed to NAME the default, so nothing else has to.
+    assert default_config_stem() == "config-5.0"
+    # config-append must not be resurrected by a stray copy of the old file.
+    assert "config-append" not in list_configs()
     assert "memory_updates" not in config["system_prompt"]
     assert "Suggested keys" in config["compaction"]["prompt"]
     config["compaction"]["every_n_turns"] = 0
     with pytest.raises(ValueError):
         _validate_config(config)
+
+
+def test_legacy_configs_still_load_list_and_stay_selectable():
+    """config-4.0 and config-3.13 keep working; they are just not the default.
+
+    The flip removes their DEFAULT status, not their runnability — a casual run
+    can still pick either from the dialog or ``--config``, and every finished
+    legacy run has to keep projecting. Named per config so a failure says WHICH
+    one broke.
+    """
+    stems = list_configs()
+    for stem in ("config-3.13", "config-4.0", "config-5.0"):
+        assert stem in stems, f"{stem} disappeared from the config catalog"
+    for stem, agent_type in (
+        ("config-3.13", "current"),
+        ("config-4.0", "current"),
+        ("config-5.0", "append_compact"),
+    ):
+        cfg = load_config(
+            str(ROOT / f"configs/{stem}.yaml"), llm_alias="gpt-6-astra(medium)"
+        )
+        assert cfg["_config_path"].endswith(f"{stem}.yaml")
+        assert cfg.get("agent_type", "current") == agent_type
+        # Every config still has to satisfy the shared validator, not just load.
+        _validate_config(cfg)
+
+
+def test_action_prompt_is_declared_and_required(config):
+    """``action_prompt`` is the fourth required prompt, not a code fallback.
+
+    It had exactly one reader (``AppendAgent._action_prompt``) and no
+    declaration site, so on a split-turn profile the message that ENDS every
+    gameplay request came from a string literal in the agent while
+    docs/append-agent.md claimed all prompts are authored in YAML.
+    """
+    assert config["action_prompt"].strip()
+    assert "{{turn_number}}" in config["action_prompt"]
+    # Mutation control: without it the validator must refuse the config.
+    missing = deepcopy(config)
+    del missing["action_prompt"]
+    with pytest.raises(ValueError, match="action_prompt"):
+        _validate_config(missing)
+    blank = deepcopy(config)
+    blank["action_prompt"] = "   "
+    with pytest.raises(ValueError, match="action_prompt"):
+        _validate_config(blank)
+
+
+def test_append_config_does_not_validate_legacy_window_keys(config):
+    """The sliding-window keys are validated for the LEGACY harness only.
+
+    ``TurnManager`` returns into ``AppendAgent.play()`` (turn.py:2098) before it
+    assembles a windowed message, so ``historic_images_count`` /
+    ``max_turns_before_trim`` have no reader on this path. config-5.0 therefore
+    declares neither, and a nonsense pair must not fail an append config —
+    while still failing a legacy one (the with/without-trigger control).
+    """
+    assert "historic_images_count" not in config
+    assert "max_turns_before_trim" not in config
+    nonsense = deepcopy(config)
+    nonsense["historic_images_count"] = 5
+    nonsense["max_turns_before_trim"] = 1
+    _validate_config(nonsense)  # append: not read, so not judged
+    legacy = load_config(str(ROOT / "configs/config-4.0.yaml"), llm_alias="gpt-6-astra(medium)")
+    legacy["historic_images_count"] = 5
+    legacy["max_turns_before_trim"] = 1
+    with pytest.raises(ValueError, match="historic_images_count"):
+        _validate_config(legacy)
 
 
 def test_integrated_loop_saves_compaction_and_preserves_trace(config, tmp_path):
@@ -507,7 +588,7 @@ def test_final_turn_text_only_closes_the_screenshot_turn(tmp_path):
     final turn contains one (2026-09-06). The Astra profile splits the turn: screenshot, assistant
     acknowledgement, text-only action prompt. Compaction requests keep the acknowledgement and end
     with the compaction prompt. The default profile keeps the screenshot as the final message."""
-    cfg = load_config(str(ROOT / "configs/config-append.yaml"), llm_alias="openai/gpt-6-astra")
+    cfg = load_config(str(ROOT / "configs/config-5.0.yaml"), llm_alias="openai/gpt-6-astra")
     cfg["compaction"]["every_n_turns"] = 2
     cfg["transport"]["max_retries"] = 0
     cfg["compaction"]["max_retries"] = 0
@@ -537,7 +618,7 @@ def test_final_turn_text_only_closes_the_screenshot_turn(tmp_path):
     assert after[-1]["content"] == "Turn 3: respond with your next action now."
     assert any(e["type"] == "compaction_complete" for e in events)
     # Control: the default profile ends the request with the screenshot itself.
-    control_cfg = load_config(str(ROOT / "configs/config-append.yaml"), llm_alias="openai/test-model")
+    control_cfg = load_config(str(ROOT / "configs/config-5.0.yaml"), llm_alias="openai/test-model")
     control_cfg["transport"]["max_retries"] = 0
     control, control_provider, _ = engine(control_cfg, tmp_path / "control")
     asyncio.run(control.play(1, "first screen", IMAGE))
@@ -562,3 +643,76 @@ def test_implied_cache_prefers_the_exact_endpoint_tag_over_cheaper_prefix_matche
     # Without an exact tag the prefix fallback still works (and here still picks the cheapest qualifying tier).
     loose = implied_cache({**attempt, "continuity": {"configured_endpoint": "openai/"}}, endpoints)
     assert loose["tier"] == "flex"
+
+
+def test_short_turn_cap_warns_that_the_run_will_never_compact(config, capsys):
+    """A run capped below `compaction.every_n_turns` never exercises a handover.
+
+    Both triggers are out of reach on a short run: the periodic one by
+    definition, and the context-limit estimate because a handful of turns never
+    approaches the limit. So the run looks like a normal config-5.0 run in the
+    queue card, the run name and History while running with the harness's
+    defining behaviour switched off. A warning, not an error — the dialog's
+    default cap is 100, so a low cap is a deliberate hand-set value.
+
+    Asserted with AND without the trigger, and against a legacy config, since
+    the warning must key on the harness rather than just on a small number.
+    """
+    from src.cli.runner import _warn_if_compaction_unreachable
+
+    class FakeLogger:
+        def __init__(self):
+            self.events = []
+
+        def log_custom(self, kind, data):
+            self.events.append((kind, data))
+
+    every = config["compaction"]["every_n_turns"]
+
+    fired = FakeLogger()
+    _warn_if_compaction_unreachable(config, every - 1, fired)
+    assert [k for k, _ in fired.events] == ["config_warning"]
+    payload = fired.events[0][1]
+    assert payload["warning"] == "compaction_unreachable"
+    assert payload["max_turns"] == every - 1 and payload["every_n_turns"] == every
+    assert "WARNING" in capsys.readouterr().out
+
+    # Without the trigger: a cap AT the interval can compact, so no warning.
+    quiet = FakeLogger()
+    _warn_if_compaction_unreachable(config, every, quiet)
+    assert quiet.events == []
+
+    # And a legacy config has no compaction to miss, at any cap.
+    legacy = load_config(str(ROOT / "configs/config-4.0.yaml"), llm_alias="gpt-6-astra(medium)")
+    legacy_logger = FakeLogger()
+    _warn_if_compaction_unreachable(legacy, 1, legacy_logger)
+    assert legacy_logger.events == []
+
+
+def test_official_config_is_config_5_0_and_agrees_with_the_casual_default():
+    """One constant for official, one rule for casual, and they name one file.
+
+    The flip made the SAME config both — worth pinning, because the two are
+    reached by different mechanisms (a literal constant vs "highest
+    config-X.Y") and nothing else would notice them diverging. The official
+    path additionally has to be the append harness, or the leaderboard's
+    config-5.x partition would rank nothing.
+    """
+    from pathlib import Path as _Path
+
+    from src.app.executor import OFFICIAL_CONFIG
+
+    stem = _Path(OFFICIAL_CONFIG).stem
+    assert stem == "config-5.0"
+    assert stem == default_config_stem() == list_configs()[-1]
+    official = load_config(str(ROOT / OFFICIAL_CONFIG), llm_alias="gpt-6-astra(medium)")
+    assert official["agent_type"] == "append_compact"
+    # No referee block is AUTHORED in the official config — the executor injects
+    # the benchmark's ladder with enforce: true at dispatch. Pinned so a future
+    # config cannot smuggle in an observe-only referee that dispatch then
+    # merely overwrites (or, worse, that a casual run inherits).
+    import yaml as _yaml
+
+    raw = _yaml.safe_load((ROOT / OFFICIAL_CONFIG).read_text())
+    assert "referee" not in raw
+    assert "referee" not in (raw.get("player_agent") or {})

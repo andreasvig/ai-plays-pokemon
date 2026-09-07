@@ -73,6 +73,11 @@ def _summary(**kw) -> RunSummary:
         turns=100,
         gates_reached=5,
         total_gates=21,
+        # Leaderboard eligibility requires a config-5.x stem since the
+        # 2026-09-07 harness flip; these rows exercise ranking and filtering,
+        # so they default to an eligible stem. The partition itself is tested
+        # in test_app_derivations.py and by the route test below.
+        config_stem="config-5.0",
     )
     base.update(kw)
     return RunSummary(**base)
@@ -150,11 +155,71 @@ def test_benchmarks_endpoint_lists_registry(seeded):
     rows = seeded["tc"].get("/api/benchmarks").json()
     ids = [r["id"] for r in rows]
     assert ids == ["pokebench-easy", "pokebench-first-badge", "pokebench-full"]
-    # exactly one default, and it's easy
+    # exactly one default, and it's FIRST BADGE (moved from easy 2026-09-07)
     defaults = [r["id"] for r in rows if r["default"]]
-    assert defaults == ["pokebench-easy"]
+    assert defaults == ["pokebench-first-badge"]
     # each carries its goal + ladder
     assert all(r["goal"] and r["ladder"] for r in rows)
+
+
+def test_benchmarks_endpoint_carries_the_official_config_stem(seeded):
+    """The dialog's "official config" label comes from HERE, not a UI literal.
+
+    It used to print ``config-3.13 (frozen…)`` as hard-coded text — a second
+    copy of ``executor.OFFICIAL_CONFIG`` that flipping the constant could not
+    reach, so the dialog would have kept advertising 3.13 while dispatch loaded
+    5.0. Asserted against the constant, not the string, so the two cannot drift.
+    """
+    from pathlib import Path as _Path
+
+    from src.app.executor import OFFICIAL_CONFIG
+
+    rows = seeded["tc"].get("/api/benchmarks").json()
+    stem = _Path(OFFICIAL_CONFIG).stem
+    assert stem == "config-5.0"
+    assert rows and all(r["official_config"] == stem for r in rows)
+
+
+def test_leaderboard_shows_only_config_5_x_runs(seeded):
+    """The route inherits the harness partition — legacy officials drop out.
+
+    Both directions on one index, since the point is the partition and not the
+    ordering: the config-5.0 row ranks, the config-3.13 row does not, and the
+    legacy row is still served by /api/runs (History), which is where the
+    decision said it should stay.
+    """
+    index = seeded["index"]
+    index._entries = [
+        _summary(run_id="new", model="a", gates_reached=8,
+                 config_stem="config-5.0"),
+        _summary(run_id="old", model="b", gates_reached=20,
+                 config_stem="config-3.13"),
+    ]
+    board = seeded["tc"].get("/api/leaderboard").json()
+    assert [r["run_id"] for r in board] == ["new"]
+    history_ids = {r["run_id"] for r in seeded["tc"].get("/api/runs").json()}
+    assert history_ids == {"new", "old"}
+
+
+def test_runs_route_exposes_harness_and_max_turns(seeded):
+    """``harness`` + ``max_turns`` reach the browser on every row.
+
+    ``run_summary.json["agent_type"]`` had zero readers; these two fields are
+    the first. ``api.js``'s ``toRun`` was already reading ``s.max_turns`` — off
+    a row that never carried it.
+    """
+    index = seeded["index"]
+    index._entries = [
+        _summary(run_id="ap", model="a", harness="append_compact", max_turns=100),
+        _summary(run_id="lg", model="b"),
+    ]
+    rows = {r["run_id"]: r for r in seeded["tc"].get("/api/runs").json()}
+    assert rows["ap"]["harness"] == "append_compact"
+    assert rows["ap"]["max_turns"] == 100
+    # Default, not absent: a legacy row has to say "current", not omit the key.
+    assert rows["lg"]["harness"] == "current"
+    assert rows["lg"]["max_turns"] is None
+    assert seeded["tc"].get("/api/runs/ap").json()["harness"] == "append_compact"
 
 
 def test_leaderboard_benchmark_filter(seeded):
@@ -239,22 +304,41 @@ def test_run_get_unknown_404(seeded):
 
 
 def test_models_reflect_registry(seeded):
+    """The route serves the live registry, one row per model + a level axis.
+
+    Re-pointed 2026-09-07: this used to pin ``gemini-3-flash`` and its exact
+    ladder ``[high, medium, low, minimal]``, so pruning that model out of the
+    registry failed the test for a reason that had nothing to do with the route.
+    The membership + ladder claims are now made against the registry itself, so
+    they still assert the SAME relationship (route agrees with models.yaml,
+    default level is the highest) without naming a model that can be retired.
+    """
+    from src.config import _load_models_registry
+
+    registry = {
+        name: entry
+        for name, entry in _load_models_registry().items()
+        if isinstance(entry, dict) and not entry.get("retired")
+    }
     rows = seeded["tc"].get("/api/models").json()
     assert isinstance(rows, list) and rows
-    # Collapsed shape: one row per model with a thinking-level axis.
+    # Collapsed shape: one row per non-retired model, with a thinking-level axis.
     models = {r["model"] for r in rows}
-    assert "gemini-3-flash" in models
+    assert models == set(registry)
     for r in rows:
         assert {"model", "openrouter_id", "reasoning_type", "default_level",
                 "levels", "observed"} <= set(r)
         if r["observed"] is not None:
             assert "avg_turn_cost_usd" in r["observed"]
             assert "avg_turn_latency_s" in r["observed"]
-    # gemini-3-flash is effort-tiered; default level is the highest (high).
-    gf = next(r for r in rows if r["model"] == "gemini-3-flash")
-    assert gf["reasoning_type"] == "effort"
-    assert gf["default_level"] == "high"
-    assert [lv["level"] for lv in gf["levels"]] == ["high", "medium", "low", "minimal"]
+    # Every effort-tiered row carries its registry ladder verbatim, highest
+    # first, and its default level IS that highest one.
+    effort = [r for r in rows if r["reasoning_type"] == "effort"]
+    assert effort, "registry has no effort-tiered model — retarget this test"
+    for r in effort:
+        levels = registry[r["model"]]["thinking_levels"]
+        assert [lv["level"] for lv in r["levels"]] == levels
+        assert r["default_level"] == levels[0]
 
 
 def test_models_tolerate_missing_observed(seeded):
@@ -296,3 +380,75 @@ def test_emulator_status_unconfigured_no_500():
     assert body["configured"] is False
     assert body["process_up"] is False
     assert body["busy"] is False
+
+
+# ───────────── retired models: resolvable by name, not offerable ─────────────
+
+
+def test_retired_models_are_hidden_from_the_picker_but_still_resolve(seeded, monkeypatch):
+    """`retired: true` is a CATALOG state, not a deletion.
+
+    A model reaches it when you would no longer start a new run with it, while a
+    frozen config, a saved run config or the app's boot placeholder may still
+    name it. So the two readers must diverge: ``/api/models`` (what may I pick
+    NOW) drops it, and ``load_config``/``resolve_model_selection`` (what does
+    this name mean) keeps resolving it. Filtering it in the registry LOADER
+    instead would make an old run's model unresolvable, which is the failure
+    retirement exists to prevent.
+
+    Both directions on one fake registry, so a filter that dropped everything —
+    or nothing — fails.
+    """
+    from src.app import catalog
+    from src.config import is_valid_model_selection, resolve_model_selection
+
+    fake = {
+        "live-model": {
+            "openrouter_id": "vendor/live",
+            "reasoning_type": "effort",
+            "thinking_levels": ["high", "low"],
+        },
+        "retired-model": {
+            "openrouter_id": "vendor/retired",
+            "reasoning_type": "effort",
+            "thinking_levels": ["high"],
+            "retired": True,
+        },
+    }
+    monkeypatch.setattr(catalog, "_load_models_registry", lambda: fake)
+
+    served = {row["model"] for row in seeded["tc"].get("/api/models").json()}
+    assert "live-model" in served
+    assert "retired-model" not in served
+
+    # ...and the retired name still means what it meant, straight from the
+    # registry helpers the loader uses (unpatched — they read the real file).
+    assert resolve_model_selection("retired-model(high)", fake)["openrouter_id"] == (
+        "vendor/retired"
+    )
+    assert is_valid_model_selection("retired-model(high)", fake)
+
+
+def test_the_app_boot_placeholder_is_a_live_selection(seeded):
+    """`pokemon app` must not be bootable-only-by-luck.
+
+    ``_build_supervisor_config`` needs SOME alias (``prepare_config`` binds the
+    registry entry) even though the supervisor never runs an agent. It used to
+    be a literal, and the whole control center stopped booting the day that
+    model left models.yaml. Asserted as "resolves AND is offerable", so a future
+    prune or retirement cannot break the boot silently.
+    """
+    from src.app.catalog import list_models
+    from src.cli.app import _build_supervisor_config, _placeholder_alias
+    from src.config import _load_models_registry, is_valid_model_selection
+
+    alias = _placeholder_alias()
+    assert is_valid_model_selection(alias, _load_models_registry())
+    base = alias.split("(")[0]
+    assert base in {row["model"] for row in list_models()}, (
+        f"boot placeholder {alias!r} names a retired/absent model"
+    )
+    # And the real boot path constructs — no emulator needed, config only.
+    cfg = _build_supervisor_config()
+    assert cfg["_config_path"].endswith("config-5.0.yaml")
+    assert cfg["emulator"]["rom_path"]

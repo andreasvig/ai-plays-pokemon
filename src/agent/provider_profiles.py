@@ -63,10 +63,48 @@ def resolve_provider_profile(config):
             raise ValueError(f"Unknown provider profile {name!r}; available: {', '.join(catalog.get('variants', {}))}")
         if variant["model"] != model:
             raise ValueError(f"Provider profile {name!r} requires model {variant['model']}, got {model}")
-    if entry is None:
-        return  # Existing/unlisted models keep their original transport contract.
+    # UNPROFILED models still get the `defaults:` block (decision 2026-09-07,
+    # finding #9). The early return that used to sit here made `defaults:`
+    # unreachable for 37 of the 43 registry models, so an append run on one of
+    # them silently lost `transforms: []` (OpenRouter's middle-out compression
+    # is then free to truncate the very history our compaction owns), the
+    # cache-mode contract, `final_turn_text_only`, and the provider/model-drift
+    # guard — while looking identical to a probed run in the queue card, the run
+    # name and History.
+    #
+    # What an unprofiled model does NOT get is a fabricated ENDPOINT. A profile
+    # entry exists because someone probed one specific serving endpoint; a
+    # default cannot invent that. So `endpoint` stays "" (empty = unpinned) and
+    # the request keeps whatever routing the REGISTRY asks for — including a
+    # registry `provider:` block, which is the one legitimate place an
+    # unprofiled model's routing can be expressed.
+    unprofiled = entry is None
     profile = deepcopy(catalog["defaults"])
-    profile.update(deepcopy(entry))
+    if unprofiled:
+        resolved_registry = config.get("_llm_resolved") or {}
+        # Unpinned. `_body` omits `provider.only` on an empty endpoint.
+        profile["endpoint"] = ""
+        # Registry-derived, because these are the two settings the collapsed
+        # registry genuinely owns per model and `defaults:` cannot: forcing the
+        # default `output_mode: tool` onto a model whose registry entry says
+        # `prompted` would break it on the first request.
+        if resolved_registry.get("output_mode"):
+            profile["output_mode"] = resolved_registry["output_mode"]
+        sampling = {
+            k: resolved_registry[k]
+            for k in ("temperature", "top_p")
+            if resolved_registry.get(k) is not None
+        }
+        if sampling:
+            profile["sampling"] = sampling
+        # Descriptive only for an unprofiled model: these are the config's OWN
+        # authored budgets, recorded on the profile so the saved run config and
+        # the trace say what the run actually ran under. The write-back at the
+        # bottom is skipped, so the config is not rewritten from itself.
+        profile["context_length"] = config["compaction"]["context_token_limit"]
+        profile["max_completion_tokens"] = config["transport"]["max_output_tokens"]
+    else:
+        profile.update(deepcopy(entry))
     if variant:
         profile.update(deepcopy(variant["settings"]))
     overrides = settings.get("overrides", {})
@@ -81,7 +119,16 @@ def resolve_provider_profile(config):
     resolved = config.get("_llm_resolved") or {}
     reasoning = deepcopy(resolved.get("reasoning") or config.get("thinking") or profile["reasoning_default"])
     effort = reasoning.get("effort")
-    if effort and effort not in profile["reasoning_efforts"]:
+    # `reasoning_efforts` is the PROBED legality list for one endpoint. An empty
+    # list means "not probed" (it is the `defaults:` value), which every
+    # unprofiled model now inherits — so checking against it would reject every
+    # effort-tiered model in the registry, not just the illegal combinations.
+    # Absence of evidence is not evidence of illegality, so an empty list waves
+    # the request through. That is not a hole for PROFILED models: a companion
+    # test asserts every profiled effort-tiered model lists a non-empty
+    # `reasoning_efforts` that covers its registry `thinking_levels`, so an
+    # empty list can never mean "profiled but unchecked".
+    if effort and profile["reasoning_efforts"] and effort not in profile["reasoning_efforts"]:
         raise ValueError(f"{model}: unsupported reasoning effort {effort!r}; supported: {profile['reasoning_efforts']}")
     if profile["reasoning_mandatory"] and (reasoning.get("enabled") is False or effort == "none"):
         raise ValueError(f"{model}: reasoning cannot be disabled on this profile")
@@ -101,8 +148,26 @@ def resolve_provider_profile(config):
         raise ValueError("Invalid provider profile memory_encoding")
     if not isinstance(profile.get("final_turn_text_only", False), bool):
         raise ValueError("Provider profile final_turn_text_only must be true or false")
-    if not isinstance(profile["endpoint"], str) or not profile["endpoint"]:
+    if not isinstance(profile["endpoint"], str):
+        raise ValueError("Provider profile endpoint must be a string")
+    if not unprofiled and not profile["endpoint"]:
         raise ValueError("Provider profile requires one endpoint")
+    # THE PROFILE OWNS THE ENDPOINT (decision D3, 2026-09-07). When a profile
+    # pins one, a registry `provider:` block for the same model is a SECOND
+    # declaration of the same fact in a file nobody consults on this path:
+    # `AppendAgent._body` rebuilds the request's provider block from the profile
+    # and discards the registry's, so a disagreement (gemma-4-31b's registry
+    # `sort: throughput` vs its profile's `deepinfra/turbo` tag) resolved
+    # silently in the profile's favour with nothing saying so. Refuse instead of
+    # picking a winner. Only the append path reaches here, so a legacy run on
+    # the same model keeps reading its registry block unchanged.
+    if not unprofiled and (config.get("_llm_resolved") or {}).get("provider") is not None:
+        raise ValueError(
+            f"{model}: configs/models.yaml sets a `provider:` block for a model whose "
+            f"provider profile already pins endpoint {profile['endpoint']!r}. The profile "
+            "owns the endpoint on the append path — delete the registry `provider:` block "
+            "for this model, or drop its profile entry."
+        )
     for key in ("context_length", "max_completion_tokens"):
         if type(profile[key]) is not int or profile[key] <= 0:
             raise ValueError(f"Provider profile requires positive {key}")
@@ -111,10 +176,20 @@ def resolve_provider_profile(config):
     # the endpoint's context length. An explicit per-alias max_tokens still applies
     # if set, but may not exceed the ceiling.
     if resolved.get("max_tokens", 0) > profile["max_completion_tokens"]:
-        raise ValueError(f"max_tokens {resolved['max_tokens']} exceeds {profile['endpoint']} limit {profile['max_completion_tokens']}")
-    config["transport"]["max_output_tokens"] = profile["max_completion_tokens"]
-    config["compaction"]["max_output_tokens"] = profile["max_completion_tokens"]
-    config["compaction"]["context_token_limit"] = profile["context_length"]
+        raise ValueError(f"max_tokens {resolved['max_tokens']} exceeds {profile['endpoint'] or 'the configured'} limit {profile['max_completion_tokens']}")
+    # Only a PROBED profile may raise the config's budgets: the numbers come from
+    # the endpoint's own advertised ceilings. An unprofiled model has no measured
+    # ceiling, so its config keeps the conservative authored values and this
+    # write-back is skipped — writing the config's own numbers back would also
+    # collapse `compaction.max_output_tokens` onto `transport.max_output_tokens`,
+    # which are deliberately different (12288 vs 8192 in config-5.0).
+    if not unprofiled:
+        config["transport"]["max_output_tokens"] = profile["max_completion_tokens"]
+        config["compaction"]["max_output_tokens"] = profile["max_completion_tokens"]
+        config["compaction"]["context_token_limit"] = profile["context_length"]
+    # Recorded so the trace, the saved run config and any later audit can tell a
+    # probed contract from a defaults-only one without re-deriving it.
+    profile["unprofiled"] = unprofiled
     config["_provider_profile"] = profile
 
 

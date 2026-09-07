@@ -35,13 +35,50 @@ def _turn_settled(turn: dict) -> bool:
     / explanation / usage is recorded. The resume re-runs that SAME turn number
     and logs it fully. This predicate distinguishes the complete turn from the
     aborted fragment so the latter can be superseded.
+
+    ``usage`` is read off the raw events, not off the folded ``turn["usage"]``
+    key: a turn whose only usage event was the compaction's does not contribute
+    to the turn's own cost (see ``_accumulate_turn_usage``) but it still proves
+    the turn ran, and dropping it as an "aborted fragment" on a resume would
+    lose that compaction's diagnostics from the report.
     """
     return bool(
         turn.get("trace") is not None
         or turn.get("action")
         or turn.get("explanation")
-        or "usage" in turn
+        or any(e["type"] == "turn_usage" for e in turn.get("events", []))
     )
+
+
+def _accumulate_turn_usage(prior: dict | None, event: dict) -> dict:
+    """Fold one ``turn_usage`` event into the turn's running gameplay usage.
+
+    The legacy agent emits exactly ONE ``turn_usage`` per turn, so this is an
+    identity for it. The append harness emits one per REQUEST: every gameplay
+    retry, plus the compaction that runs inside the same turn bucket. Keeping
+    only the last event (what this did until 2026-09-07) under-reported a
+    retried turn — a gemma run's turn 6 billed three gameplay attempts
+    ($0.00055 + $0.00054 + $0.00029) and the row showed the last one alone.
+
+    So the turn's ``cost_usd`` is every non-compaction attempt SUMMED. The
+    compaction's own cost is not the turn's: it belongs to the compaction row,
+    which ``trace_build._add_conversation_timeline`` totals from that request's
+    own usage events, so a compaction event is skipped here entirely.
+
+    Token counts stay the LAST attempt's — they describe the request that
+    actually produced the turn's action, and are read as "how big is the
+    conversation now", not as a bill.
+
+    ABSENT IS NOT ZERO: an attempt whose provider reported no cost contributes
+    nothing and does not void the attempts that did report, so a partly-measured
+    turn shows what is known rather than a dash. ``cost_usd`` stays None only
+    when no attempt reported one. Run-level accounting keeps the
+    measured/total request split (``trace_build``'s ``segment_costs``).
+    """
+    if not prior:
+        return dict(event)
+    known = [u.get("cost_usd") for u in (prior, event) if u.get("cost_usd") is not None]
+    return {**prior, **event, "cost_usd": sum(known) if known else None}
 
 
 def group_events_by_turn(events: list[dict]) -> list[dict]:
@@ -99,7 +136,12 @@ def group_events_by_turn(events: list[dict]) -> list[dict]:
             elif event["type"] == "turn_user_message":
                 current_turn["user_message"] = event.get("message", "")
             elif event["type"] == "turn_usage":
-                current_turn["usage"] = event
+                # One per request on the append harness (retries + compaction),
+                # one per turn on the legacy one. See _accumulate_turn_usage.
+                if event.get("phase") != "compaction":
+                    current_turn["usage"] = _accumulate_turn_usage(
+                        current_turn.get("usage"), event
+                    )
             elif event["type"] == "ocr_flush":
                 current_turn["ocr"] = event
 

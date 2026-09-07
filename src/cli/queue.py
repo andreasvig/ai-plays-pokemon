@@ -29,6 +29,7 @@ import argparse
 import sys
 
 from src.cli.ctl_client import api, detail, emit_json
+from src.config import default_config_stem
 
 
 def _print_last_error(payload: dict) -> None:
@@ -290,7 +291,7 @@ Examples:
   pokemon queue clear --yes      # drop everything pending, keep the active run
 
 Naming things: `pokemon ls models|roms|configs|events|benchmarks`.
-Casual defaults: latest config, default ROM, no early stop, no recording.
+Casual defaults: the latest config, default ROM, no early stop, no recording.
 Official runs ignore --config/--max-turns/--stop-at/--rom — a benchmark is
 frozen by definition, and takes its ROM from its own ladder.
 """,
@@ -325,8 +326,12 @@ frozen by definition, and takes its ROM from its own ladder.
     )
     p_add.add_argument(
         "--config",
-        help="Config stem (casual only), e.g. `config-4.0`. `pokemon ls configs`. "
-             "Omit for the latest.",
+        # Names the live default instead of an example stem: the old text said
+        # `config-4.0`, which read as "the one you want" long after it stopped
+        # being the default.
+        help="Config stem (casual only), e.g. `config-4.0` for the legacy "
+             "harness. `pokemon ls configs`. Omit for the latest "
+             f"({default_config_stem()}).",
     )
     p_add.add_argument(
         "--rom",

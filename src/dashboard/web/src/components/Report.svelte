@@ -38,9 +38,47 @@
   // a run has no referee block — e.g. a casual run); each gate carries
   // {id, name, deadline_turn, turn, status} from the referee.
   const gates = $derived(summary?.referee?.gates ?? [])
-  const reachedN = $derived(gates.filter((g) => g.status === 'done').length)
+  // "Cleared" is the projection's OWN status set (`projection._CLEARED_STATUSES`),
+  // shipped on the trace so this header cannot disagree with the Completion %
+  // the index computed from the same scorecard. It counted `done` AND `auto`;
+  // this counted only `done`, so an auto-cleared gate read as not reached here
+  // and as reached there. The literal is the loading/no-trace fallback only.
+  const clearedStatuses = $derived(new Set(trace?.cleared_gate_statuses ?? ['done', 'auto']))
+  const reachedN = $derived(gates.filter((g) => clearedStatuses.has(g.status)).length)
   const totalN = $derived(gates.length || GATES.length)
   const termination = $derived(summary?.referee?.termination_reason ?? null)
+
+  // Was anything actually GATED on the ladder? Casual and calibration runs run
+  // the referee observe-only (`referee.enforce: false`) — the ladder is still
+  // scored into run_summary.json, but no deadline was armed and no run was
+  // stopped for missing one. Showing a Completion % and a deadline scorecard
+  // for such a run asserts a score it never received; History shows a dash for
+  // exactly these runs. `referee_enforced: null` means the run dir has no
+  // config.json, so the run's own kind decides.
+  const gatesEnforced = $derived(trace?.referee_enforced === true || run?.kind === 'official')
+  // Furthest rung an observe-only run actually reached, for the note that
+  // replaces the scorecard. `referee.furthest` when the referee recorded one,
+  // else the last gate the projection counts as cleared.
+  const furthestGate = $derived.by(() => {
+    const named = gates.find((g) => g.id === summary?.referee?.furthest)
+    if (named) return named.name
+    const cleared = gates.filter((g) => clearedStatuses.has(g.status))
+    return cleared.length ? cleared[cleared.length - 1].name : ''
+  })
+
+  // Which harness drove this run. The report rendered config-3.13 (TaskMaster),
+  // config-4.0 (self-directed) and the append harness through the same view and
+  // never named the one that ran; the trace derives it from the run's recorded
+  // config (agent_type + task_master), not from event vocabulary. The version
+  // comes off the config stem the run recorded — a non-numeric stem
+  // (config-append, config-new) shows the bare harness name.
+  const harnessLabel = $derived.by(() => {
+    const label = trace?.harness?.label
+    if (!label) return ''
+    const version = (run?.config ?? '').match(/\d+(?:\.\d+)*/)
+    return version ? `${label} ${version[0]}` : label
+  })
+  const isAppendRun = $derived(trace?.harness?.id === 'append_compact')
 
   const verdict = $derived(() => {
     if (!summary) return ''
@@ -54,7 +92,9 @@
     const fg = gates.find((g) => g.id === furthest)
     return fg ? `Furthest: ${fg.name}` : `${reachedN}/${totalN} gates`  // gate names are sentences ("Reached Route 1"), so no "Reached" prefix
   })
-  const stIcon = { done: '✓', missed: '✗', failed: '✗', pending: '·', unmet: '·' }
+  // `auto` is a CLEARED status (the projection counts it), so it gets the tick —
+  // a gate inside the header's "N/M cleared" must not draw a pending dot.
+  const stIcon = { done: '✓', auto: '✓', missed: '✗', failed: '✗', pending: '·', unmet: '·' }
 
   // two-level master→player trace (B1). Each group is a master/TaskMaster node
   // with its objective + rating + the screenshots it saw, nesting the player
@@ -227,10 +267,24 @@
     const tok = (tin != null || tout != null) ? `${tin ?? '?'}→${tout ?? '?'} tok` : ''
     return [cost, tok].filter(Boolean).join(' · ')
   }
+  // A null self-grade is legal on ANY turn (the field is optional, and the
+  // append harness leaves it null on a segment's first turn too), so the label
+  // must not assert which turn it is — it used to read "n/a (first turn)" for
+  // every null, including turn 84's.
   function turnGrade(succeeded) {
     if (succeeded === true) return '✓ succeeded'
     if (succeeded === false) return '✗ failed'
-    return '– n/a (first turn)'
+    return '– n/a'
+  }
+  // An uncommitted compaction (the request was accepted and traced, but the
+  // run died before `compaction_complete` wrote the handover) still carries the
+  // model's proposed handover in its final_result step. Surfacing it beats the
+  // bare "No committed compaction output" that hid it — labelled, so nobody
+  // reads a proposal as the memory the next segment actually started from.
+  function proposedHandover(ptr) {
+    const fr = (ptr?.steps ?? []).find((s) => s.type === 'final_result')
+    const args = fr ? parseArgs(fr.args) : null
+    return args && typeof args === 'object' && !Array.isArray(args) ? args : null
   }
   function shotUrl(t) {
     return `/api/runs/${encodeURIComponent(run.runId)}/screenshots/${t.screenshot}`
@@ -247,6 +301,7 @@
     <div class="bar">
       <button class="btn ghost" onclick={() => onback()}><Icon name="back" size={13} /> Back</button>
       <span class="badge {run.kind}">{run.kind}</span>
+      {#if harnessLabel}<span class="harness" title="The agent that drove this run, from its recorded config (agent_type + task_master)">{harnessLabel}</span>{/if}
       <button class="btn cont full-report" disabled={run.status === 'running' || summary?.protocol_probe} onclick={() => oncontinue(run)}><Icon name="rerun" size={13} /> Continue this run</button>
     </div>
 
@@ -260,7 +315,15 @@
         {#if run.continuedFrom}· continued from <span class="mono">{run.continuedFrom}</span>{/if}
       </div>
       <div class="kpis">
-        <div class="k"><span class="kl">Completion</span><span class="kv" class:full={run.completion >= 100}>{run.completion}%</span></div>
+        <!-- Completion is a BENCHMARK score. It shows only when the referee
+             enforced the ladder; an observe-only run gets History's dash. -->
+        <div class="k"><span class="kl">Completion</span>
+          {#if gatesEnforced}
+            <span class="kv" class:full={run.completion >= 100}>{run.completion}%</span>
+          {:else}
+            <span class="kv dash faint" title="Gates were observed, not enforced — this run was never scored against the ladder">—</span>
+          {/if}
+        </div>
         <div class="k"><span class="kl">Turns</span><span class="kv tnum">{run.turns}{#if run.maxTurns}<span class="faint"> / {run.maxTurns}</span>{/if}</span></div>
         <div class="k"><span class="kl">Total cost</span><span class="kv tnum">{usd(run.totalCostUsd)}</span></div>
         <div class="k"><span class="kl">Cost / turn</span><span class="kv tnum">{usd(run.avgCostPerTurn)}</span></div>
@@ -275,8 +338,13 @@
       <p class="faint load">Could not load run details ({loadError}). The KPIs above are from the index.</p>
     {/if}
 
-    <!-- benchmark gate scorecard (real, from referee.gates) -->
-    {#if gates.length}
+    <!-- benchmark gate scorecard (real, from referee.gates). Only for a run the
+         referee actually enforced — the deadline columns are a claim about what
+         the run was judged against, and an observe-only run was judged against
+         nothing. It still reached rungs, so say how far it got instead. -->
+    {#if gates.length && !gatesEnforced}
+      <p class="observed faint">Gates observed, not enforced — the referee scored the ladder but armed no deadline{#if furthestGate}&nbsp;· furthest: {furthestGate}{/if}</p>
+    {:else if gates.length}
       <section class="score">
         <div class="score-head">
           <h3>Benchmark gates</h3>
@@ -328,7 +396,11 @@
         {/if}
         <h3>
           {#if hasTasks}TaskMaster trace{:else}Turn-by-turn{/if}
-          <span class="faint">({trace.turn_count} turns{#if hasTasks} · {trace.task_count} tasks{/if})</span>
+          <!-- compaction_count is computed by the builder and was rendered
+               nowhere. It is the defining event of the append harness, so it
+               belongs beside the turn count — omitted at zero so a legacy run's
+               header is unchanged. -->
+          <span class="faint">({trace.turn_count} turns{#if hasTasks}&nbsp;· {trace.task_count} tasks{/if}{#if trace.compaction_count > 0}&nbsp;· {trace.compaction_count} compaction{trace.compaction_count === 1 ? '' : 's'}{/if})</span>
         </h3>
         {#each tasks as g, gi (groupKey(g, gi))}
           {@const gk = groupKey(g, gi)}
@@ -354,7 +426,10 @@
 
                     {#if mt}
                       <div class="trace-section">
-                        <div class="trace-header">TaskMaster trace ({nToolCalls(mt.steps)} tool call{nToolCalls(mt.steps) === 1 ? '' : 's'})</div>
+                        <!-- the count is a fact worth stating only when there
+                             is one; "(0 tool calls)" appeared on every legacy
+                             task node, where the master calls no tools. -->
+                        <div class="trace-header">TaskMaster trace{#if nToolCalls(mt.steps) > 0} ({nToolCalls(mt.steps)} tool call{nToolCalls(mt.steps) === 1 ? '' : 's'}){/if}</div>
                         <div class="trace-container">
                           {#if mt.system_prompt}
                             <details class="trace-step trace-system">
@@ -452,7 +527,10 @@
               </div>
             </div>
           {:else if !hasTasks}
-            <div class="casual-head faint">Casual run — no TaskMaster</div>
+            <!-- "no TaskMaster" is a description of an ABSENCE, which is right
+                 for a legacy casual run and wrong for the append harness: it
+                 has a strategy layer (the handover), just not a second agent. -->
+            <div class="casual-head faint">{isAppendRun ? 'Self-directed · append-and-compact' : 'Casual run — no TaskMaster'}</div>
           {/if}
 
           <!-- nested player turns (collapsible) -->
@@ -504,7 +582,23 @@
                                   </div>
                                 </details>
                               {:else}
-                                <p class="faint">No committed compaction output.</p>
+                                {@const proposed = proposedHandover(ptr)}
+                                {#if proposed}
+                                  <details class="trace-step trace-output proposed" open>
+                                    <summary>
+                                      <span class="step-label">Proposed handover</span>
+                                      <span class="step-preview">proposed, not committed — the run ended before this handover was saved</span>
+                                    </summary>
+                                    <div class="step-body">
+                                      {#if proposed.continuation_summary}<div class="dec-row"><span class="dec-lab">Continuation summary</span><div class="dec-desc">{proposed.continuation_summary}</div></div>{/if}
+                                      {#if proposed.memory !== undefined}<div class="dec-row"><span class="dec-lab">Proposed memory</span><pre class="dec-mem">{fmtArgs(proposed.memory)}</pre></div>{/if}
+                                      <div class="dec-row faint"><span class="dec-val">Never committed: the next segment kept the previous memory.</span></div>
+                                      <details class="structured-output"><summary>Structured output (JSON)</summary><pre class="step-content">{JSON.stringify(proposed, null, 2)}</pre></details>
+                                    </div>
+                                  </details>
+                                {:else}
+                                  <p class="faint">No committed compaction output.</p>
+                                {/if}
                               {/if}
                             </div>
                           </div>
@@ -649,6 +743,15 @@
   .empty { text-align: center; padding: 80px 0; }
   .bar { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
   .bar .full-report { margin-left: auto; text-decoration: none; }
+  /* Harness chip: reads as metadata next to the kind badge, not as a second
+     status — outline rather than a filled wash, and not upper-cased so the
+     version stays legible. */
+  .harness {
+    display: inline-flex; align-items: center;
+    font-size: 10.5px; font-weight: 650; letter-spacing: .02em;
+    padding: 2px 7px; border-radius: var(--radius-sm);
+    border: 1px solid var(--border); color: var(--muted); cursor: help;
+  }
   .load { margin: 12px 2px; font-size: 13px; }
 
   .rhead { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; box-shadow: var(--shadow); }
@@ -659,6 +762,9 @@
   .kl { font-size: 10px; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); font-weight: 700; }
   .kv { font-size: 16px; font-weight: 700; }
   .kv.full { color: var(--green); }
+  .kv.dash { cursor: help; }
+  /* Replaces the scorecard on an observe-only run (same slot, same margin). */
+  .observed { margin: 16px 2px 0; font-size: 12.5px; }
 
   .score { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; box-shadow: var(--shadow); margin-top: 16px; }
   .score-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
@@ -724,6 +830,9 @@
   .trace-system .step-label, .trace-input .step-label { color: var(--muted); }
   .trace-tool .step-label { color: var(--accent); }
   .trace-output .step-label { color: var(--green); }
+  /* An uncommitted handover is not the run's memory — amber, not the green of
+     a committed Output, so the two never read alike at a glance. */
+  .trace-output.proposed .step-label { color: var(--tm); }
   .trace-thinking-only .step-label { color: var(--faint); }
   .step-tool-name { font-size: 11.5px; font-weight: 700; color: var(--ink); }
   .step-preview { font-size: 11px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

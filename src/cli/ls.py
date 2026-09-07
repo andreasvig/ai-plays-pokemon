@@ -181,7 +181,7 @@ Examples:
   pokemon ls roms                  # which games are registered AND on disk
   pokemon ls starts                # which openings a casual run can pick
   pokemon ls events                # the ids --stop-at accepts
-  pokemon ls configs               # config stems; the last one is the default
+  pokemon ls configs               # config stems; the LAST one is the default
 
 Reads the registries on disk — works whether or not `pokemon app` is running.
 """,

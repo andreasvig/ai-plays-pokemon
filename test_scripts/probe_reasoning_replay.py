@@ -17,6 +17,16 @@ from src.agent.provider_profiles import fetch_endpoint_pricing
 from src.config import load_config
 
 ROOT = Path(__file__).resolve().parents[1]
+def append_config_path():
+    """The append harness config. Renamed config-append.yaml -> config-5.0.yaml when
+    the append harness became the standard (2026-09-07); accept either so an older
+    checkout still probes."""
+    for name in ("configs/config-5.0.yaml", "configs/config-append.yaml"):
+        candidate = ROOT / name
+        if candidate.exists():
+            return str(candidate)
+    raise FileNotFoundError("no append harness config under configs/")
+
 SYSTEM = ("You are playing Pokemon FireRed. Think carefully before answering. "
           "Answer in one short sentence.")
 USER1 = "You are in the bedroom at game start. What is your plan to leave the house?"
@@ -112,7 +122,7 @@ async def effort_sweep(model, tag, key, transport, timeout, efforts):
 
 
 async def main(args):
-    key = load_config(str(ROOT / "configs/config-append.yaml"), llm_alias=args.model)["openrouter_api_key"]
+    key = load_config(append_config_path(), llm_alias=args.model)["openrouter_api_key"]
     snapshot = await fetch_endpoint_pricing(args.model, key)
     tags = args.tag or [e["tag"] for e in snapshot["endpoints"]]
     reasoning = json.loads(args.reasoning)

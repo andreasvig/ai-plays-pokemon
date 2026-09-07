@@ -81,6 +81,13 @@ class RecordSpec(BaseModel):
     fps: int = 30
 
 
+# The config family the leaderboard ranks. Module-level (not a class attribute)
+# because pydantic reads underscore-prefixed class attributes as private-attr
+# declarations, and a ClassVar here would still read as a per-run field. Bumping
+# it is a deliberate board reset — see ``RunSummary.leaderboard_eligible``.
+LEADERBOARD_CONFIG_PREFIX = "config-5."
+
+
 class RunSummary(BaseModel):
     """Flat, denormalized per-run index entry (Plan "run_summary.json schema").
 
@@ -111,18 +118,70 @@ class RunSummary(BaseModel):
     termination_reason: str | None = None
     continued_from: str | None = None
     resumed: bool = False
+    # WHICH HARNESS ran this run — the ``agent_type`` the config selected:
+    # "append_compact" (config-5.x, one append-only conversation + compaction) or
+    # "current" (config-4.0 / 3.13, the sliding-window pydantic-ai agent).
+    # ``run_summary.json["agent_type"]`` has been written since the append work
+    # landed and read by nobody; this is its first reader. Defaults to "current"
+    # because that is what its ABSENCE means on every legacy run on disk — the
+    # writer only stamps the key when an AppendAgent was active (turn.py:2844).
+    #
+    # It is here rather than inferred from ``config_stem`` because the two answer
+    # different questions: the stem says which FILE ran (and is what partitions
+    # the leaderboard), this says how the agent was WIRED. A guard that must
+    # refuse an append conversation (the model-swap continue) needs the second
+    # one, and must keep working for a run whose config was renamed or hand-passed.
+    #
+    # Related but NOT the same field: ``trace.harness`` ({id,label}, built by
+    # ``trace_build._harness``) splits the legacy side further into
+    # ``task_master`` vs ``self_directed`` for the report's chip. Both read the
+    # same fact — the config's ``agent_type`` — one hop apart: that one off
+    # ``config.json`` directly, this one off ``run_summary.json["agent_type"]``,
+    # which ``turn.py`` stamps from the live AppendAgent. They cannot disagree
+    # about append vs legacy; they are deliberately different GRAINS, so this
+    # stays the coarse canonical field (``current`` / ``append_compact``) that
+    # index rows, guards and the API key on.
+    harness: str = "current"
+    # The turn cap the run actually ran under. Written to run_summary.json since
+    # the cap moved onto the summary (it arrives as a call argument, not a config
+    # key, so it is otherwise unrecoverable from the folder) and, until now,
+    # absent from this row — while ``api.js``'s ``toRun`` already read
+    # ``s.max_turns``. None on an official run: pace is its only bound.
+    max_turns: int | None = None
 
     @property
     def leaderboard_eligible(self) -> bool:
         """True iff this run can post a leaderboard entry (locked decision #9).
 
-        Only ``official`` runs that reached a terminal benchmark verdict
-        (``completed`` = won, ``terminated`` = referee killed on a missed gate)
-        count. A ``cancelled`` official run is voided — it never qualifies.
+        Three requirements, all necessary:
+
+        - ``official`` — a casual run is never ranked, whatever it scored;
+        - a terminal benchmark verdict (``completed`` = won, ``terminated`` =
+          referee killed it on a missed gate deadline). A ``cancelled`` official
+          run is voided;
+        - the config stem is ``config-5.x``.
+
+        The stem requirement is the 2026-09-07 harness flip. The board ranks
+        "farthest, then fastest", and ``turns`` does not mean the same thing on
+        both harnesses — legacy counts game turns PLUS TaskMaster invocations,
+        append counts game turns only — so a mixed board would silently reward
+        the append runs on the tiebreak. Partitioning on the config rather than
+        rebasing the metric keeps every old number intact: the config-3.13 runs
+        that used to hold the board stay in History with their badge and their
+        scorecard, they are just no longer ranked against a different harness.
+        A future config-5.1 joins the SAME board (same harness, same units); a
+        6.0 would need this prefix moved, deliberately, with the board reset.
+
+        Matched as a string prefix, not by parsing a version: the stem is
+        whatever the run recorded, including ``None`` on a run dir whose name it
+        could not be inferred from, and a missing stem must fail closed.
         """
-        return self.kind == RunKind.official and self.status in (
-            RunStatus.completed,
-            RunStatus.terminated,
+        if self.kind != RunKind.official:
+            return False
+        if self.status not in (RunStatus.completed, RunStatus.terminated):
+            return False
+        return bool(self.config_stem) and self.config_stem.startswith(
+            LEADERBOARD_CONFIG_PREFIX
         )
 
 

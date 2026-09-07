@@ -1,25 +1,46 @@
 # Append-and-compact agent
 
-Select `config-append` in the casual-run config picker, or pass its file to the CLI:
+**This is the standard harness.** It lives in `configs/config-5.0.yaml` (renamed from the experimental `config-append.yaml` on 2026-09-07) and is now BOTH the casual default and the official benchmark config, so you get it without asking:
 
 ```bash
-./venv/bin/pokemon run --config configs/config-append.yaml \
+# no --config: `find_latest_config()` picks the highest config-X.Y, which is config-5.0
+./venv/bin/pokemon run --model 'gpt-5.6-sol(medium)' --turns 30 --max-spend 1 \
+  --snapshot configs/saves/pokebench-v1
+```
+
+Name it explicitly when you want to be unambiguous in a script:
+
+```bash
+./venv/bin/pokemon run --config configs/config-5.0.yaml \
   --model 'gpt-5.6-sol(medium)' --turns 30 --max-spend 1 \
   --snapshot configs/saves/pokebench-v1
 ```
 
-If the control center already owns mGBA, use its queue rather than starting a second emulator runner:
+If the control center already owns mGBA, use its queue rather than starting a second emulator runner (omit `--config` for the default):
 
 ```bash
 ./venv/bin/pokemon queue add 'gpt-5.6-sol(medium)' --kind casual \
-  --config config-append --max-turns 30 --max-spend 1
+  --max-turns 30 --max-spend 1
 ```
 
-The current numbered default remains `config-4.0`; official runs retain `config-3.13`. This experiment does not join or change the official benchmark leaderboard.
+config-5.0 is **frozen**: it is what official runs are scored on, so a scored run has to stay reproducible. Changes go to a new `config-5.1+`, which becomes the casual default on its own (highest `config-X.Y` wins) and is promoted to official by moving `executor.OFFICIAL_CONFIG`. The leaderboard ranks config-5.x runs only, so a 5.1 joins the same board.
+
+Legacy configs still run. `config-4.0` (self-directed, sliding window) and `config-3.13` (the old official config, TaskMaster-enabled) both load, list in `pokemon ls configs` and the dialog's config picker, queue as casual runs, and continue. What they lost is default status and leaderboard eligibility — `turns` is the ranking tiebreak and it counts game turns PLUS TaskMaster invocations on those harnesses versus game turns only here, so the board is partitioned on the config stem rather than mixing two units. Finished official config-3.13 runs keep their badge and their scorecard in History.
 
 ## Behavior and configuration
 
-All behavioral prompts and adjustable limits are authored under `player_agent` in `configs/config-append.yaml`; model selection, reasoning effort, sampling, and provider preferences still use `configs/models.yaml` and `--model`.
+All behavioral prompts and adjustable limits are authored under `player_agent` in `configs/config-5.0.yaml`; model selection, reasoning effort, sampling, and provider preferences still use `configs/models.yaml` and `--model`.
+
+Four prompts are required, and `_validate_append_config` refuses a config missing any of them:
+
+| Key | When it is sent |
+| --- | --- |
+| `system_prompt` | Once per segment, at the segment's first turn. |
+| `user_prompt` | Every gameplay turn — turn number, new OCR text, current screenshot. |
+| `segment_start_prompt` | The first turn of a segment after a compaction: goal, continuation summary, memory, last action, recent grades. |
+| `action_prompt` | Split-turn profiles only (`final_turn_text_only: true`, e.g. the `openai` tag): the screenshot turn is closed with a one-word assistant acknowledgement and the request ENDS with this text-only user message. It exists because OpenAI cannot extend the prompt cache past the first image when the final turn carries one. On every other profile `user_prompt` is the last message and `action_prompt` is never sent. |
+
+`action_prompt` is required unconditionally rather than only for split-turn profiles: which profile a run gets is decided by the model, one layer below the config, so a config that validates for one model and silently falls back for another is the worse contract. `{{turn_number}}` is the one placeholder it takes.
 
 Normal turns append a turn number, the new OCR text, the current screenshot, and a short action request. The agent returns `inputs`, visible `reasoning` ending in a prediction, and `last_turn_succeeded`. It does not write memory on gameplay turns. Earlier screenshots and complete responses remain in the conversation until compaction.
 
@@ -49,7 +70,7 @@ The default non-streaming transport avoids ambiguous endpoint-specific delta ass
 
 The existing turn report, screenshots, OCR, explanations, action display, success grades, and live events continue to work. Expand a turn in the report for **Conversation, cache & compaction**. Compaction events include the complete display trace, handover text, and memory before/after.
 
-The gameplay trace shows additions to the conversation: the system prompt and initial context/handover appear only at each segment's first turn. Later turns show the new observation and response, without repeating earlier history in the Input panel. The transport still sends the retained conversation with every request; this display choice does not change model inputs or caching. Older report caches rebuild automatically for this layout.
+The gameplay trace shows additions to the conversation: the system prompt and initial context/handover appear only at each segment's first turn. Later turns show the new observation and response, without repeating earlier history in the Input panel. The transport still sends the retained conversation with every request; this display choice does not change model inputs or caching. A cached `trace.json` is only reused while it carries the current `TRACE_VERSION` (`src/app/trace_build.py`), so a report built under an older layout is rebuilt on first open — but only if that layout change came with a version bump, which is what retires the caches.
 
 Segment-opening turns are labeled `(fresh)`. Compactions have their own numbered rows between gameplay turns, with their request usage and handover diagnostics. For an interval of five: Turn 1 (fresh), Turns 2–5, Compaction 1, Turn 6 (fresh). Compaction rows do not increase the gameplay turn count.
 
@@ -97,7 +118,7 @@ Gemma has two named profiles for comparing reasoning replay:
 | `gemma-replay` | Replayed unchanged until compaction | Same base Gemma settings |
 
 Select one using `--provider-profile gemma-guidance` or `--provider-profile gemma-replay`
-with `--config configs/config-append.yaml --model google/gemma-4-31b-it`.
+with `--config configs/config-5.0.yaml --model google/gemma-4-31b-it`.
 Alternatively set `player_agent.provider_profiles.name` in your config. Omitting
 the selection keeps the existing Gemma behavior (omit prior thoughts). The selected
 name appears in run filenames, labels, saved checkpoints, and trace technical details.
@@ -111,7 +132,7 @@ The append config automatically selects a profile for each of the ten models in
 `configs/provider-profiles.yaml`. Use the exact OpenRouter ID, for example:
 
 ```sh
-./venv/bin/pokemon run --config configs/config-append.yaml --model google/gemini-3.8-flash --turns 20
+./venv/bin/pokemon run --config configs/config-5.0.yaml --model google/gemini-3.8-flash --turns 20
 ```
 
 All settings and transport prompts remain in YAML. `player_agent.provider_profiles`

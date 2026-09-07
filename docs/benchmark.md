@@ -19,14 +19,14 @@ watches and scores.
 
 | | **Official (a benchmark)** | **Casual** |
 |---|---|---|
-| Config | `config-3.13.yaml` (frozen) | you choose |
-| Benchmark | you choose (easy / first-badge / full) | n/a |
+| Config | `config-5.0.yaml` (frozen) | you choose (`config-5.0` by default) |
+| Benchmark | you choose (easy / **first-badge**, the default / full) | n/a |
 | Goal | the benchmark's goal (overrides the config's) | the config's |
 | Model | you choose | you choose |
 | Max turns | none — gate deadlines bound it | you choose |
 | Stop at an event | n/a — ends at its own ladder | optional ([below](#stopping-at-a-story-event)) |
 | Gate ladder | the benchmark's, enforced (`enforce: true`) | none, unless you stop at an event (then observe-only) |
-| Leaderboard | eligible (if completed/terminated), per benchmark | never |
+| Leaderboard | eligible (if completed/terminated **and config-5.x**), per benchmark | never |
 | Continues | yes — stays official on the SAME benchmark | always casual |
 
 **Official** is the comparable benchmark: same frozen config, same start save
@@ -103,7 +103,7 @@ edited independently. Reaching a benchmark's *final* rung **wins** the run
 **Goal override.** When an official run is queued, the executor loads the chosen
 benchmark and (a) injects its ladder as the run's enforced `referee` block, and
 (b) overwrites the frozen config's `task.goal` with the benchmark's `goal` — so
-the same `config-3.13` plays toward a different objective per benchmark. The
+the same frozen `config-5.0` plays toward a different objective per benchmark. The
 benchmark id is stamped onto the run and drives the **per-benchmark leaderboard**
 (rankings aren't comparable across benchmarks, since the ladders differ).
 
@@ -237,9 +237,19 @@ views render.
 
 ---
 
-## The agent: TaskMaster + Player
+## The agent
 
-Official runs (config-3.13) use a **two-level agent loop**:
+Official runs use **config-5.0, the append-and-compact single agent** — one
+self-directed agent on one append-only conversation, with periodic self-written
+handovers instead of a sliding window. See
+[Append-and-compact agent](append-agent.md) for how it works, what it records,
+and its provider contracts. It has no TaskMaster: `append_compact` is
+self-directed and `_validate_append_config` refuses a config that enables one.
+
+### Legacy: TaskMaster + Player (config-3.13 / 3.x)
+
+config-3.13 was the frozen official config until 2026-09-07 and is still
+runnable as a casual config. It uses a **two-level agent loop**:
 
 - **TaskMaster** (`src/agent/task_master.py`) — a strategic meta-agent. It doesn't
   press buttons. Each handoff it (a) **rates the previous task** — cross-checking
@@ -254,7 +264,8 @@ Official runs (config-3.13) use a **two-level agent loop**:
 
 In the run log this shows up as `task_started{N}`, `task_master_trace{N}`, and
 `task_completed{N}` events; every Player turn carries a `task_index` so the
-Report view buckets turns under their task. config-3.13 is the first frozen
-official config with TaskMaster enabled.
+Report view buckets turns under their task. config-3.13 was the first frozen
+official config with TaskMaster enabled — and the last: config-5.0 replaced it
+as official on 2026-09-07, and TaskMaster does not exist on that harness.
 
 See also: [Control center](control-center.md) · [CLI reference](cli.md).

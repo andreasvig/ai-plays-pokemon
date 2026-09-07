@@ -1,6 +1,35 @@
-# Experimental append-and-compact agent. Select explicitly; numbered-config default remains unchanged.
+# ============================================================================
+# Config 5.0 — the append-and-compact harness. THE STANDARD, and FROZEN.
+# ============================================================================
+# What 5.0 is: one self-directed agent on ONE append-only conversation. Every
+# turn is appended (observation -> action) instead of a history window being
+# re-assembled, so the provider's prompt cache covers the whole prefix; when the
+# conversation approaches the endpoint's context limit — or every
+# `compaction.every_n_turns` turns — the agent writes itself a handover
+# (continuation_summary + a free-form memory dictionary) and the segment
+# restarts from that handover. `agent_type: append_compact` selects it; the
+# transport contract per model/endpoint comes from configs/provider-profiles.yaml.
+# Renamed from the experimental `config-append.yaml` on 2026-09-07.
+#
+# FROZEN. This file is the OFFICIAL benchmark config (src/app/executor.py's
+# OFFICIAL_CONFIG) AND — being the highest `config-X.Y` — what a bare
+# `pokemon run` / an unspecified casual queue item loads. A scored run has to be
+# reproducible, so nothing in here changes: edits go to a NEW config-5.1+, which
+# then becomes the casual default on its own and is promoted to official only by
+# moving OFFICIAL_CONFIG. Only config-5.x runs appear on the leaderboard
+# (`RunSummary.leaderboard_eligible`), so a 5.1 joins the same board and a 4.0
+# run cannot.
+#
+# LEGACY still runs. config-4.0 (self-directed, single agent, sliding window)
+# and config-3.13 (the old frozen official config, TaskMaster-enabled) both
+# still load, list, queue as casual runs and continue — they are simply no
+# longer the default and no longer leaderboard-eligible. Their finished official
+# runs keep their badge and stay in History.
+#
 # Model and reasoning settings come from --model and configs/models.yaml.
-# stream: false retains complete provider blocks without endpoint-specific delta assumptions.
+# stream: false retains complete provider blocks without endpoint-specific delta
+# assumptions.
+# ============================================================================
 task:
   goal: beat the game
   description: Play toward the top goal. Choose and revise your own smaller goals
@@ -79,8 +108,12 @@ player_agent:
     path: provider-profiles.yaml
     # name: gemma-guidance # Or gemma-replay; CLI --provider-profile overrides this.
     overrides: {} # Per-experiment override, frozen in saved config; use raw model IDs for new models.
-  historic_images_count: 0
-  max_turns_before_trim: null
+  # No `historic_images_count` / `max_turns_before_trim` here: both are
+  # sliding-window keys of the LEGACY agent. TurnManager returns into
+  # AppendAgent.play() before it ever assembles a windowed message, so neither
+  # is read on this path (grep: turn.py:2098 vs 2129/2612). They were carried
+  # over from config-4.0 as inert zeros; keeping them would imply the
+  # conversation gets trimmed, which is exactly what compaction replaces.
   system_prompt: |-
     You are an AI agent playing {{game_name}}. Work toward the top goal supplied at the start. Choose your own smaller goals and revise them as the game changes.
 
@@ -119,6 +152,13 @@ player_agent:
     {{ocr_text}}
 
     The attached image is the current screen. Choose your next sequence of game inputs.
+  # Split-turn profiles only (`final_turn_text_only: true`, e.g. the openai
+  # endpoint): the screenshot turn is closed with a one-word assistant ack and
+  # the request ENDS with this text-only user message. It exists because OpenAI
+  # cannot extend the prompt cache past the first image when the final turn
+  # carries one. On every other profile the user_prompt above is the last
+  # message and this is never sent.
+  action_prompt: 'Turn {{turn_number}}: respond with your next action now.'
   segment_start_prompt: |-
     Top goal:
     {{task_block}}

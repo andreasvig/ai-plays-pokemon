@@ -14,6 +14,9 @@
   import { gate, GATE_INDEX } from '../lib/gates.js'
   import { usd, dur, coerceHandback } from '../lib/format.js'
   import { windowFeed } from '../lib/feed.js'
+  // The event → box mapping (and the compaction block that is NOT a turn) lives
+  // in lib/live.js so it can be unit-checked without a browser or a run.
+  import { LiveTrace, memoryHint } from '../lib/live.js'
   import JsonTree from './JsonTree.svelte'
   import TraceFeed from './TraceFeed.svelte'
   import SimpleView from './SimpleView.svelte'
@@ -54,6 +57,16 @@
   let hasTaskMaster = $state(true)
   let ladder = $state([])              // [{id, name, deadline_turn, group?}]
   let enforce = $state(false)
+  // Spend ceiling for THIS run, from /api/config (`max_spend_usd`), or null when
+  // the run is unbounded. Without it the Cost stat is a number with no scale:
+  // the cap is shown on the queued card and disappears the moment the run
+  // starts, which is exactly when it starts to matter (finding #16).
+  let spendCap = $state(null)
+  // Compaction interval (`player_agent.compaction.every_n_turns`), or null on a
+  // run that never compacts. Backs the memory panel's "written at compaction"
+  // note (finding #15) — an append run's memory is empty for its whole first
+  // segment, which is 20 turns by default.
+  let compactionHint = $state(null)
   let stamps = $state({})              // {checkpoint_id: turn} latched
   let currentTurn = $state(0)
   let feed = $state([])                // [{kind:'master'|'turn', ...}] chronological
@@ -64,6 +77,9 @@
   let screenUrl = $state(null)
   let startedAtMs = $state(null)
   let elapsedS = $state(0)
+  // Client clock, republished every second (see the elapsed $effect). The trace
+  // feed's running-compaction timer reads it.
+  let nowMs = $state(Date.now())
 
   // ── simple view (plan §4.3) ──
   // The recording-optimised presentation. It is NOT a route: /spectate stays one
@@ -117,12 +133,12 @@
   // order. Returns null when nothing has landed yet (SimpleView then just waits).
   function buildSeed() {
     let best = null
-    for (const [turn, boxes] of turnBoxes) {
+    for (const [turn, boxes] of liveTrace.turnBoxes) {
       if (typeof turn !== 'number' || (best != null && turn <= best)) continue
       if (boxes.some((b) => b.k === 'output' || b.k === 'action')) best = turn
     }
     if (best == null) return null
-    const boxes = turnBoxes.get(best)
+    const boxes = liveTrace.turnBoxes.get(best)
     let out = null
     let act = null
     for (const b of boxes) {
@@ -140,8 +156,10 @@
     }
   }
 
-  // per-turn box accumulation while streaming (turn → boxes[])
-  let turnBoxes = new Map()
+  // Box accumulation while streaming: gameplay turns (turn → boxes[]) AND the
+  // compaction blocks that sit between them. Plain object (not $state): the
+  // rendered `feed` is the reactive surface, rebuilt by scheduleRebuild().
+  let liveTrace = new LiveTrace()
   // master (TaskMaster) trace accumulation. The master trace for task N arrives
   // BEFORE task_started{N}, which in turn arrives before that task's turns. So
   // we buffer the raw trace + objective by task_index, then bind the resulting
@@ -156,9 +174,15 @@
   let rebuildRaf = null
 
   // ── derivations for the gate HUD ──
-  // Gates only apply to OFFICIAL runs. When we KNOW the run is casual, hide every
-  // gate reference; null run (early) is treated as non-casual so we don't crash.
-  const showGates = $derived(run?.kind !== 'casual')
+  // The HUD renders whenever the run HAS a gate ladder — never on `kind`.
+  // `kind !== 'casual'` was wrong in both directions: a `--stop-at` run is
+  // casual-only and gets the FULL ladder observe-only (executor._apply_stop_at,
+  // whose docstring already promises "the live gate HUD"), so the one casual
+  // run that has gates was the one hiding them; and a null ladder on a
+  // non-casual run showed "—/—". The ladder comes from /api/config, so this is
+  // also empty until the config lands — which is correct, not a flicker: there
+  // is nothing to count yet (finding #4).
+  const showGates = $derived(ladder.length > 0)
   const reached = $derived(Object.keys(stamps).length)
   const totalGates = $derived(ladder.length || 0)
   // next gate = first ladder rung NOT yet stamped; `tone` drives the Gates stat's
@@ -232,9 +256,7 @@
   }
 
   function pushBox(turn, box) {
-    const t = turn ?? currentTurn
-    if (!turnBoxes.has(t)) turnBoxes.set(t, [])
-    turnBoxes.get(t).push(box)
+    liveTrace.push(turn, box)
     scheduleRebuild()
   }
   // Coalesce a burst of events into a single rebuild per animation frame. The
@@ -254,16 +276,15 @@
   }
   function rebuildFeed() {
     const { feed: f, cutoffTurn, hiddenTurns: h } = windowFeed({
-      turnBoxes, masterCards, maxTasks: MAX_LIVE_TASKS, fallbackTurns: FALLBACK_LIVE_TURNS,
+      turnBoxes: liveTrace.turnBoxes, masterCards, compactionsByTurn: liveTrace.compactionsByTurn,
+      maxTasks: MAX_LIVE_TASKS, fallbackTurns: FALLBACK_LIVE_TURNS,
     })
     feed = f
     hiddenTurns = h
     // Prune accumulators below the cutoff so memory stays bounded on long runs.
     // cutoffTurn === 0 means "keep everything" → prune nothing.
     if (cutoffTurn > 0) {
-      for (const t of [...turnBoxes.keys()]) {
-        if (t < cutoffTurn) turnBoxes.delete(t)
-      }
+      liveTrace.prune(cutoffTurn)
       for (const [idx, c] of [...masterCards.entries()]) {
         // never drop the card whose firstTurn === cutoffTurn (it opens the window)
         if (c.firstTurn != null && c.firstTurn < cutoffTurn) {
@@ -309,7 +330,7 @@
 
     if (t === 'turn_start') {
       if (typeof evt.turn === 'number') currentTurn = evt.turn
-      if (!turnBoxes.has(evt.turn)) turnBoxes.set(evt.turn, [])
+      liveTrace.ingest(evt)
       // bind the just-started task's master card to its first turn (once)
       if (pendingTaskIndex != null) {
         const card = masterCards.get(pendingTaskIndex)
@@ -369,17 +390,6 @@
       // surfaced via the HUD tone; nothing to add to the feed
       return
     }
-    if (t === 'llm_thinking') { pushBox(evt.turn, { k: 'thinking', t: evt.content || '' }); return }
-    if (t === 'llm_request_usage') {
-      const cache = evt.cache_read_fraction == null ? 'unknown' : `${(evt.cache_read_fraction * 100).toFixed(1)}% of input`
-      const c = evt.continuity || {}
-      pushBox(evt.turn, { k: 'settle', t: `${evt.phase} · cache ${cache} · reasoning replay ${c.replayed_blocks ?? 0}/${c.expected_blocks ?? 0} (${c.local_replay || 'unknown'}) · provider feedback: ${c.provider_feedback || 'not reported'}` })
-      return
-    }
-    if (t === 'compaction_start') { pushBox(evt.turn, { k: 'settle', t: `Compacting after turn ${evt.after_turn} (${evt.reason})…` }); return }
-    if (t === 'compaction_complete') { pushBox(evt.turn, { k: 'memory', t: `Handover saved; private reasoning reset expected. ${evt.handover?.continuation_summary || ''}` }); return }
-    if (t === 'compaction_thinking') { pushBox(evt.turn, { k: 'thinking', t: `Compaction: ${evt.content || ''}` }); return }
-    if (t === 'llm_request_error') { pushBox(evt.turn, { k: 'error', t: `${evt.phase}: ${evt.error}` }); return }
     if (t === 'llm_output') {
       const args = parseArgs(evt.args || '')
       if (args && typeof args === 'object') {
@@ -402,53 +412,13 @@
       }
       return
     }
-    if (t === 'memory_update_output') {
-      const raw = evt.content || '(no changes)'
-      let display = raw
-      if (raw !== '(no changes)' && raw.toLowerCase() !== 'none') {
-        try { display = JSON.stringify(JSON.parse(raw)) } catch { /* keep raw */ }
-      }
-      pushBox(evt.turn, { k: 'memory', t: display })
-      return
-    }
-    if (t === 'ocr_flush') {
-      const n = evt.n_captures || 0
-      const cleaned = evt.cleaned || ''
-      if (n === 0 && !cleaned) return
-      const cost = evt.cost_usd ? ` · $${Number(evt.cost_usd).toFixed(5)}` : ''
-      pushBox(evt.turn, { k: 'ocr', t: cleaned || '(empty)', meta: `${n} captures · ${evt.duration || 0}s${cost}` })
-      return
-    }
-    if (t === 'llm_text') { pushBox(evt.turn, { k: 'output', ok: null, t: evt.content || '' }); return }
-    if (t === 'tool_call') { pushBox(evt.turn, { k: 'tool', name: evt.tool, args: JSON.stringify(evt.args), resp: null }); return }
-    if (t === 'tool_response') {
-      const resp = typeof evt.response === 'string' ? evt.response : JSON.stringify(evt.response)
-      pushBox(evt.turn, { k: 'tool', name: '↳ response', args: '', resp })
-      return
-    }
-    if (t === 'screen_settled') { pushBox(evt.turn, { k: 'settle', t: `Settled in ${evt.duration || 0}s` }); return }
-    // Per-attempt LLM call retries (timeout / transient provider error). The
-    // backend re-rolls the provider with escalating routing; surface each
-    // attempt LOUDLY so a stalling turn is obvious live, not a silent freeze.
-    if (t === 'agent_retry') {
-      const n = evt.attempt, max = evt.max_attempts
-      const why = evt.error_type === 'TimeoutError'
-        ? `timed out after ${Math.round(evt.timeout_s || 0)}s`
-        : `${evt.error_type || 'error'}${evt.error ? ` (${String(evt.error).slice(0, 80)})` : ''}`
-      const next = (evt.retryable && n < max)
-        ? ` — re-rolling provider (sort: ${evt.provider_sort || 'default'})…`
-        : ' — no attempts left, falling through'
-      pushBox(evt.turn, { k: 'retry', t: `Attempt ${n}/${max} ${why}${next}` })
-      return
-    }
-    if (t === 'output_retry') { pushBox(evt.turn, { k: 'retry', t: evt.content ? `Output validation failed — retrying: ${evt.content}` : 'Output validation failed — retrying.' }); return }
-    if (t === 'agent_error' || t === 'action_error') {
-      pushBox(evt.turn, { k: 'error', t: evt.error || evt.message || JSON.stringify(evt) })
-      return
-    }
-    // screenshot, state_change, button_sequence, turn_trace/explanation/usage,
-    // screen_settling, run_start/end — ignored for the live feed (covered by
-    // dedicated streaming events above or by the stats msg).
+    // Everything else that becomes a box — the gameplay-turn taxonomy AND the
+    // compaction block (its own unnumbered row, with the per-request
+    // diagnostics and thinking inside it) — is mapped by lib/live.js, which is
+    // unit-tested on its own. Events it doesn't claim return false and add
+    // nothing (screenshot, state_change, button_sequence, turn_trace,
+    // compaction_trace, screen_settling, run_start/end).
+    if (liveTrace.ingest(evt)) scheduleRebuild()
   }
 
   function resetLiveState() {
@@ -456,10 +426,14 @@
     memory = {}
     task = null
     hasTaskMaster = true   // re-answered by the new run's /api/config
+    spendCap = null        // ditto — a run with no ceiling must not inherit one
+    compactionHint = null
+    ladder = []            // gate HUD hides again until the new run's ladder lands
+    enforce = false
     stamps = {}
     currentTurn = 0
     eventCount = 0
-    turnBoxes = new Map()
+    liveTrace.reset()
     masterTraces = new Map()
     masterCards = new Map()
     pendingTaskIndex = null
@@ -518,6 +492,11 @@
     api.fetchRunConfig(id).then((cfg) => {
       if (cfgRunId !== id) return
       hasTaskMaster = !!cfg.task_master
+      // The run's own spend ceiling and compaction interval. Both are absent on
+      // a run that has neither, and `null` is then the honest answer — the Cost
+      // stat shows no denominator and the memory panel keeps its own text.
+      spendCap = typeof cfg.max_spend_usd === 'number' ? cfg.max_spend_usd : null
+      compactionHint = memoryHint(cfg)
       if (cfg.referee && Array.isArray(cfg.referee.ladder)) {
         ladder = cfg.referee.ladder
         enforce = !!cfg.referee.enforce
@@ -532,11 +511,18 @@
   })
 
   // ── elapsed = client clock from the run's start ──
+  // The same 1s tick also publishes `nowMs`, which is what makes a RUNNING
+  // compaction's elapsed timer count up in the trace feed — a compaction has no
+  // turn boundary to redraw it, so without a clock its row would sit frozen at
+  // 0s for the whole multi-minute wait.
   $effect(() => {
     if (!activeRunId) { elapsedS = 0; return }
     // + prior_duration_s makes a --continue keep counting from the source run's
     // elapsed time instead of restarting at 0 (seeded via the stats WS msg).
-    const tick = () => { if (startedAtMs) elapsedS = Math.max(0, (Date.now() - startedAtMs) / 1000 + (stats.prior_duration_s || 0)) }
+    const tick = () => {
+      nowMs = Date.now()
+      if (startedAtMs) elapsedS = Math.max(0, (nowMs - startedAtMs) / 1000 + (stats.prior_duration_s || 0))
+    }
     tick()
     const iv = setInterval(tick, 1000)
     return () => clearInterval(iv)
@@ -546,6 +532,16 @@
     `${Math.round((stats.input_tokens || 0) / 1000)}k`
   )
   const tokensSub = $derived(`${Math.round((stats.output_tokens || 0) / 1000)}k`)
+
+  // Spend against the ceiling. `stats.cost` is the LINEAGE total on a
+  // --continue (the bridge seeds it from the source run's summary), while the
+  // ceiling bounds THIS segment — turn.py measures the budget from
+  // `_spend_baseline_usd`. So the ratio is built on the segment's own spend,
+  // and the row says "this segment" whenever the two differ. A cap ratio that
+  // silently compared a lineage total against a segment cap would read as
+  // over-budget on every resumed run.
+  const priorCost = $derived(Number(stats.prior_cost_usd) || 0)
+  const segmentCost = $derived(Math.max(0, (Number(stats.cost) || 0) - priorCost))
 </script>
 
 <section class="letterbox">
@@ -588,7 +584,11 @@
       <div class="main">
         <div class="stats" style={`grid-template-columns: repeat(4, 1fr)${showGates ? ' 30%' : ''}`}>
           <div class="stat"><span class="sl">Turn</span><span class="sv tnum">{stats.turns || currentTurn}</span></div>
-          <div class="stat"><span class="sl">Cost</span><span class="sv tnum">{usd(stats.cost)}</span></div>
+          <div class="stat"><span class="sl">Cost</span><span class="sv tnum">{usd(stats.cost)}</span>
+            {#if spendCap != null}
+              <span class="scap tnum">{#if priorCost > 0}{usd(segmentCost)} of {usd(spendCap)} this segment{:else}of {usd(spendCap)} cap{/if}</span>
+            {/if}
+          </div>
           <div class="stat"><span class="sl">Tokens</span><span class="sv tnum">{tokensLabel}<span class="su">/{tokensSub}</span></span></div>
           <div class="stat"><span class="sl">Elapsed</span><span class="sv tnum">{dur(elapsedS)}</span></div>
           {#if showGates}
@@ -596,7 +596,7 @@
               <span class="sl">Gates</span>
               <span class="sv tnum">{reached}/{totalGates || '—'}</span>
               {#if nextGate}
-                <span class="gnext">next gate to complete{#if deadline != null} before turn {deadline}{/if}: {nextGate.name}{#if turnsLeft != null} · {turnsLeft} turns left{/if}</span>
+                <span class="gnext">next gate to complete{#if deadline != null}&nbsp;before turn {deadline}{/if}: {nextGate.name}{#if turnsLeft != null}&nbsp;· {turnsLeft} turns left{/if}</span>
               {:else}
                 <span class="gnext">all gates reached</span>
               {/if}
@@ -630,7 +630,9 @@
           <div class="panel mem">
             <div class="p-h">Memory dictionary</div>
             <div class="p-scroll">
-              {#if memory && Object.keys(memory).length}<JsonTree data={memory} />{:else}<p class="t-body faint">(empty)</p>{/if}
+              {#if memory && Object.keys(memory).length}<JsonTree data={memory} />
+              {:else if compactionHint}<p class="t-body faint">{compactionHint}</p>
+              {:else}<p class="t-body faint">(empty)</p>{/if}
             </div>
           </div>
         </div>
@@ -638,7 +640,7 @@
       </div>
 
       <!-- side: live trace feed (own component) -->
-      <TraceFeed turns={feed} {hiddenTurns} />
+      <TraceFeed turns={feed} {hiddenTurns} {nowMs} />
     </div>
   {/if}
   </div>
@@ -701,6 +703,9 @@
   .stat.gates.red .gnext { color: var(--red); }
   .sl { display: block; font-size: 9.5px; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); font-weight: 700; }
   .sv { font-size: 18px; font-weight: 750; }
+  /* Segment-relative spend note under the Cost stat — only on a --continue,
+     where the displayed total is the lineage's and the cap is this segment's. */
+  .scap { display: block; font-size: 10px; font-weight: 600; color: var(--muted); margin-top: 2px; }
   .su { font-size: 11px; color: var(--muted); font-weight: 600; }
 
   /* Current task gets more room than the memory dictionary — 60/40 split.

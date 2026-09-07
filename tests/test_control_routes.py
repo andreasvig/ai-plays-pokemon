@@ -163,6 +163,21 @@ def test_stop_active_run(client):
     assert body["stopping"] == "some_run_id"
 
 
+def _another_alias(not_this: str) -> str:
+    """A valid ``model(level)`` selection that is NOT ``not_this``.
+
+    The append guard fires on the PRESENCE of a player_model override, so the
+    alias only has to be a different, registry-valid one — picked at runtime so
+    no specific model is pinned.
+    """
+    from src.config import _load_models_registry, list_competitor_aliases
+
+    for alias in list_competitor_aliases(_load_models_registry()):
+        if alias != not_this:
+            return alias
+    raise AssertionError("models.yaml has fewer than two selections")
+
+
 def test_continue_enqueues_casual_reusing_source_model(client):
     tc = client["tc"]
     runs_root = client["runs_root"]
@@ -187,6 +202,76 @@ def test_continue_enqueues_casual_reusing_source_model(client):
     # And it landed in the queue.
     items = tc.get("/api/queue").json()["items"]
     assert any(it["continue_from"] == source_id for it in items)
+
+
+def test_model_swap_continue_of_an_append_run_is_400(client):
+    """An append run's conversation is bound to one model — refuse at the door.
+
+    Mirrors ``test_continue_enqueues_casual_reusing_source_model``'s shape (seed
+    a run dir + savepoint, rebuild the index, POST /continue). Without this the
+    route returned 201, the executor built the run dir + dashboard session +
+    recorder, and then ``AppendAgent.restore`` raised "checkpoint does not match
+    model/game turn" — the same "201 then the card vanished" failure the
+    defaulted-config edge above was written to kill.
+
+    Both directions are asserted: the swap is refused, and the plain reuse
+    continue of the SAME append run still works (a guard that refused both would
+    make append runs uncontinuable, which is not the decision).
+    """
+    tc = client["tc"]
+    runs_root = client["runs_root"]
+    index = client["index"]
+
+    source_id = "2026-09-06_src_config-5.0__astra"
+    source_dir = runs_root / source_id
+    (source_dir / "savepoints" / "turn_25").mkdir(parents=True)
+    with open(source_dir / "run_summary.json", "w") as f:
+        json.dump(
+            {
+                "agent_type": "append_compact",
+                "session": {"llm_alias": "gpt-6-astra(medium)",
+                            "llm_model": "openai/gpt-6-astra"},
+            },
+            f,
+        )
+    index.rebuild_from_scan()
+    assert index.get(source_id).harness == "append_compact"
+
+    other = _another_alias("gpt-6-astra(medium)")
+    r = tc.post(f"/api/runs/{source_id}/continue", json={"player_model": other})
+    assert r.status_code == 400
+    assert "append" in r.json()["detail"].lower()
+
+    # Without the trigger: no player_model override → the continue is fine.
+    r = tc.post(f"/api/runs/{source_id}/continue", json={"max_turns": 10})
+    assert r.status_code == 201
+    assert r.json()["continue_from"] == source_id
+
+
+def test_model_swap_continue_of_a_legacy_run_is_still_allowed(client):
+    """The control for the guard above: a legacy (sliding-window) source may swap.
+
+    Same request shape, only ``agent_type`` differs — so a guard that keyed on
+    anything broader than the harness (the config stem, "is it a continue",
+    "does the body carry a model") would fail here.
+    """
+    tc = client["tc"]
+    runs_root = client["runs_root"]
+    index = client["index"]
+
+    source_id = "2026-06-15_src_config-4.0__legacy"
+    source_dir = runs_root / source_id
+    (source_dir / "savepoints" / "turn_40").mkdir(parents=True)
+    with open(source_dir / "run_summary.json", "w") as f:
+        json.dump({"session": {"llm_alias": "gpt-6-astra(medium)",
+                               "llm_model": "openai/gpt-6-astra"}}, f)
+    index.rebuild_from_scan()
+    assert index.get(source_id).harness == "current"
+
+    other = _another_alias("gpt-6-astra(medium)")
+    r = tc.post(f"/api/runs/{source_id}/continue", json={"player_model": other})
+    assert r.status_code == 201
+    assert r.json()["model"] == other
 
 
 def test_continue_without_savepoint_400(client):
@@ -315,15 +400,24 @@ def test_routes_503_when_unconfigured():
 # These pin the edge behaviour that replaced it.
 
 
-def test_casual_enqueue_without_config_gets_the_latest(client):
+def test_casual_enqueue_without_config_gets_config_5_0(client):
+    """The defaulted config is config-5.0, and all three default sites agree.
+
+    Renamed + strengthened 2026-09-07. The old assertion was
+    ``== list_configs()[-1]``, which is self-referential: it proved the route
+    and the catalog agree, but would have passed unchanged whichever config was
+    last — so it could not witness the flip at all. Now it names the value AND
+    ties the route to ``src.config.default_config_stem()``, the one prose
+    source, so a future 5.1 has to move both together.
+    """
     from src.app.catalog import list_configs
+    from src.config import default_config_stem
 
     tc = client["tc"]
     r = tc.post("/api/queue", json={"kind": "casual", "model": _some_alias()})
     assert r.status_code == 201
-    # Not None — that was the bug. And specifically the newest config, matching
-    # what a bare `pokemon run` loads.
-    assert r.json()["config"] == list_configs()[-1]
+    assert r.json()["config"] == "config-5.0"
+    assert list_configs()[-1] == "config-5.0" == default_config_stem()
 
 
 def test_casual_enqueue_with_unknown_config_is_rejected(client):

@@ -15,11 +15,20 @@ from src.app.models import RunKind, RunStatus, RunSummary
 
 def _run(run_id, model, *, kind=RunKind.official, status=RunStatus.completed,
          gates=0, turns=100, cost=1.0, duration=100.0, started="2026-06-01",
-         continued_from=None) -> RunSummary:
+         continued_from=None, config_stem="config-5.0") -> RunSummary:
+    """A summary that is leaderboard-eligible unless a kwarg makes it otherwise.
+
+    ``config_stem`` defaults to a config-5.x stem because eligibility now
+    REQUIRES one (2026-09-07 harness flip): the board ranks only the append
+    harness, since ``turns`` — the ranking tiebreak — counts different things on
+    the two harnesses. Every ordering test below is about ordering, so they all
+    want the eligible default; the stem partition has its own tests.
+    """
     return RunSummary(
         run_id=run_id, model=model, kind=kind, status=status,
         gates_reached=gates, total_gates=20, turns=turns, total_cost_usd=cost,
         duration_s=duration, started_at=started, continued_from=continued_from,
+        config_stem=config_stem,
     )
 
 
@@ -44,6 +53,49 @@ def test_leaderboard_excludes_casual_continue_cancelled_crashed():
     lb = leaderboard(rows)
     assert [r.run_id for r in lb] == ["r1"]
     assert all(r.leaderboard_eligible for r in lb)
+
+
+def test_leaderboard_ranks_only_config_5_x_runs():
+    """The harness partition (2026-09-07): only config-5.x is ranked.
+
+    ``turns`` mixes two units across harnesses — config-4.0/3.13 count game
+    turns PLUS TaskMaster invocations, config-5.x counts game turns only — and
+    turns is the tiebreak, so a mixed board would systematically favour 5.x on
+    ties without saying so. Legacy official runs are not deleted or downgraded;
+    they simply stop being ranked and stay in History (asserted below).
+
+    A 5.1 must join the SAME board: same harness, same units. A run with no
+    recorded stem must fail closed — an unknown harness cannot be ranked.
+    """
+    rows = [
+        _run("r5_0", "model-a", gates=8, config_stem="config-5.0"),
+        _run("r5_1", "model-b", gates=7, config_stem="config-5.1"),
+        _run("r4_0", "model-c", gates=20, config_stem="config-4.0"),
+        _run("r3_13", "model-d", gates=19, config_stem="config-3.13"),
+        _run("r_none", "model-e", gates=18, config_stem=None),
+    ]
+    assert [r.run_id for r in leaderboard(rows)] == ["r5_0", "r5_1"]
+    # And the excluded ones are still in History, untouched — the decision was
+    # "leave the leaderboard", not "leave the app".
+    assert {r.run_id for r in history(rows)} == {
+        "r5_0", "r5_1", "r4_0", "r3_13", "r_none"
+    }
+
+
+def test_leaderboard_eligibility_needs_all_three_conditions():
+    """Each condition alone must be able to disqualify a run.
+
+    Written as a per-condition sweep rather than one combined row so a failure
+    names WHICH condition stopped biting — the previous version of this property
+    had only two conditions and no such test.
+    """
+    ok = _run("ok", "m", gates=5)
+    assert ok.leaderboard_eligible
+    assert not ok.model_copy(update={"kind": RunKind.casual}).leaderboard_eligible
+    assert not ok.model_copy(update={"status": RunStatus.cancelled}).leaderboard_eligible
+    assert not ok.model_copy(update={"config_stem": "config-4.0"}).leaderboard_eligible
+    # Not a prefix of "config-5." — a "config-50" must not sneak in.
+    assert not ok.model_copy(update={"config_stem": "config-50.0"}).leaderboard_eligible
 
 
 def test_leaderboard_terminated_official_is_eligible():

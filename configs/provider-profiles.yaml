@@ -2,7 +2,7 @@
 # private reasoning use. Sources and probe results: docs/openrouter-provider-compatibility.md.
 # Endpoint tags are OpenRouter tags (including quantization/tier where available).
 version: 1
-reviewed: '2026-09-06'
+reviewed: '2026-09-07'
 # Named variants inherit the model's base profile; names and reasoning_use are
 # diagnostic metadata. Decision 2026-09-06: Gemma runs use guidance (omit_prior,
 # the base profile) from now on. The replay variants stay selectable for
@@ -71,20 +71,46 @@ defaults:
   tool_descriptions:
     gameplay: 'Return the next game action on an ordinary observation turn. Use exactly this tool unless the user explicitly requests a handover.'
     compaction: 'Return the complete handover only when the user explicitly asks to pause gameplay and prepare a handover. Do not call gameplay on that request.'
+# ============================================================================
+# One profile per registry model (2026-09-07). The profile OWNS the endpoint and
+# the legal reasoning ladder: `configs/models.yaml` no longer carries a
+# `provider:` block for any of these, and every registry `thinking_levels` list
+# is a subset of the `reasoning_efforts` below (tests/test_model_registry_collapse.py).
+#
+# reasoning_efforts is the source of truth the dialog and the config validator
+# read, so it is written out per model and never inherited from `defaults`.
+#   effort models  -> OpenRouter effort names, from that model's
+#                     `reasoning.supported_efforts` in /api/v1/models.
+#   binary models  -> [thinking, non-thinking]. These are LEVEL names, not
+#                     efforts: the registry's `reasoning_type: binary` turns them
+#                     into `reasoning {enabled: true|false}` and no `effort` is
+#                     ever sent, so the effort check in resolve_provider_profile
+#                     never fires. The list exists so the dialog and the
+#                     registry-subset test have one legal set to read.
+# cache_mode and final_turn_text_only are also written out per model rather than
+# inherited: a change to `defaults` must not silently rewrite 21 transport
+# contracts.
+#
+# Endpoint rule: the model author's own endpoint tag where one exists, otherwise
+# the cheapest cache-read price. Facts (context, output ceiling, prices,
+# quantization, supported params) come from
+# artifacts/provider-compatibility/endpoint-survey-2026-09-07.md, which is a
+# snapshot of GET /api/v1/models/{author}/{slug}/endpoints on that date.
+# Family rule: one representative probed live, siblings carry `probed_as:` and
+# their OWN survey facts (context, prices, efforts are never copied).
+# ============================================================================
 profiles:
-  meta/muse-spark-1.3:
-    endpoint: meta
-    context_length: 1048576
-    max_completion_tokens: 943718
-    reasoning_mandatory: true
-    reasoning_efforts: [max, xhigh, high, medium, low, minimal]
-    reasoning_default: {effort: medium}
-    cache_mode: unknown
-    notes: 'Encrypted replay supported by OpenRouter normalization; endpoint access and cache activation require a live probe.'
+
+  # --- OpenAI ---------------------------------------------------------------
+  # gpt-6-astra is the ONE model here that needs final_turn_text_only. The
+  # gpt-5.6 family does not, which is why all three siblings were probed
+  # individually instead of copying from the representative: see the note on
+  # gpt-5.6-sol.
   openai/gpt-6-astra:
     endpoint: openai
     context_length: 1050000
     max_completion_tokens: 128000
+    reasoning_mandatory: true
     reasoning_efforts: [max, xhigh, high, medium, low]
     reasoning_default: {effort: medium}
     # Probe 2026-09-06 (openai tag, effort medium): replayed reasoning_details (reasoning.encrypted +
@@ -93,27 +119,40 @@ profiles:
     # an 8.5k identical prefix, no marker) at a 90% read discount, so no cache_control is sent.
     cache_mode: implicit
     final_turn_text_only: true
-    notes: 'Only effort medium verified live; other efforts follow the gpt-5.6 family ladder. $10/$50 per M on the openai tag (openai/flex half price, openai/fast double). CACHING RULE (2026-09-06): when the request''s final turn contains an image, the cache cannot be extended past the first image anywhere in the prompt; the agent ends every request with the screenshot, so the 25-turn run cached 1,192 tokens per turn and paid the 1.25x cache-write price on the rest (2.7x the sliding-window agent). final_turn_text_only fixes it: rerun cached 87%, $1.11 for 25 turns vs $4.61 (artifacts/provider-compatibility/openai-image-prefix-caching-probe.md). Astra at medium reports 0 reasoning tokens on ~90% of gameplay turns.'
-  google/gemini-3.8-flash:
-    endpoint: google-ai-studio
-    context_length: 1048576
-    max_completion_tokens: 65536
-    reasoning_mandatory: true
-    reasoning_efforts: [high, medium, low]
+    notes: 'Only effort medium verified live; other efforts follow the catalog ladder (reasoning.supported_efforts, mandatory true). $10/$50 per M prompt/completion on the openai tag, cache read $1.00, cache write $12.50 (openai/flex half price, openai/fast double). CACHING RULE: when the request''s final turn contains an image, the cache cannot be extended past the first image anywhere in the prompt; the agent ends every request with the screenshot, so the 25-turn run cached 1,192 tokens per turn and paid the 1.25x cache-write price on the rest (2.7x the sliding-window agent). final_turn_text_only fixes it: rerun cached 87%, $1.11 for 25 turns vs $4.61 (artifacts/provider-compatibility/openai-image-prefix-caching-probe.md). RE-CONFIRMED 2026-09-07 on this endpoint with a 415-token screenshot: live shape cached 7,719 of 8,158 tokens = exactly the pre-image system block (shortfall 439), split shape cached all of it. Astra at medium reports 0 reasoning tokens on ~90% of gameplay turns.'
+  openai/gpt-5.6-sol:
+    endpoint: openai
+    context_length: 1050000
+    max_completion_tokens: 128000
+    reasoning_efforts: [max, xhigh, high, medium, low, none]
     reasoning_default: {effort: medium}
-    cache_mode: system_breakpoint
-    notes: 'Return complete signed assistant parts. Signature validation is not proof that all prior private thoughts were used. Cache probe 2026-09-06: implicit caching never hit through OpenRouter (0 of 11 campaign requests, 0 in a 13k-token identical-prefix probe); an explicit cache_control marker on the system prompt caches that block at 90% off. A marker on the last message caches nothing extra on AI Studio and double-bills on Vertex, so only the system block is marked.'
-  google/gemma-4-31b-it:
-    endpoint: deepinfra/turbo
-    context_length: 262144
-    max_completion_tokens: 16384
-    output_mode: prompted
-    allow_json_fence: true
-    reasoning_default: {enabled: true}
-    reasoning_replay: omit_prior
-    reasoning_use: not_preserved_between_user_turns
-    sampling: {temperature: 0.3, top_p: 0.95}
-    notes: 'Live host rejects json_schema despite catalog advertising support; use locally validated prompted JSON. Google specifies omitting old raw thoughts between ordinary user turns; originals remain archived.'
+    cache_mode: implicit
+    final_turn_text_only: false
+    notes: 'Family representative for gpt-5.6. $2/$10 per M, cache read $0.20, cache write $2.50 on the openai tag (openai/flex half, openai/fast double, azure 2.5x). Efforts incl. `none` from reasoning.supported_efforts; reasoning is NOT mandatory on 5.6, so `none` is legal and the registry keeps its `none` rung. PROBE 2026-09-07 (openai tag, effort medium, 8,158-token prompt with a 415-token screenshot): the live shape (final turn = user[text, image]) DID extend the prefix — A+turn cached 8,155 of 8,158, shortfall 3 tokens — so final_turn_text_only is NOT needed here. This REFUTES carrying the gpt-6-astra image-prefix rule across the OpenAI family: the same script, image, day and endpoint tag reproduced astra''s poisoning (shortfall 439 = the whole screenshot) in the same session, so the behaviour is per MODEL, not per endpoint tag. luna and terra were therefore probed separately rather than copied. Evidence: artifacts/provider-compatibility/cache-hit-probe__openai--gpt-5.6-sol.json.'
+  openai/gpt-5.6-luna:
+    endpoint: openai
+    context_length: 1050000
+    max_completion_tokens: 128000
+    reasoning_efforts: [max, xhigh, high, medium, low, none]
+    reasoning_default: {effort: medium}
+    cache_mode: implicit
+    final_turn_text_only: false
+    notes: 'Cheapest OpenAI endpoint here: $0.20/$1.20 per M, cache read $0.02, cache write $0.25 on the openai tag. Probed individually (not copied) 2026-09-07: live shape cached 8,155 of 8,158, shortfall 3 -> prefix extends through the final-turn image, final_turn_text_only false. Evidence: cache-hit-probe__openai--gpt-5.6-luna.json.'
+  openai/gpt-5.6-terra:
+    endpoint: openai
+    context_length: 1050000
+    max_completion_tokens: 128000
+    reasoning_efforts: [max, xhigh, high, medium, low, none]
+    reasoning_default: {effort: medium}
+    cache_mode: implicit
+    final_turn_text_only: false
+    notes: '$2/$12 per M, cache read $0.20, cache write $2.50 on the openai tag. Probed individually (not copied) 2026-09-07: live shape cached 8,155 of 8,158, shortfall 3 -> prefix extends through the final-turn image, final_turn_text_only false. Evidence: cache-hit-probe__openai--gpt-5.6-terra.json.'
+
+  # --- Anthropic Claude -----------------------------------------------------
+  # Family representative: claude-opus-5. All four run on the first-party
+  # `anthropic` tag with automatic cache_control, so the segment-level cache and
+  # replay facts copy; context, output ceiling, prices and the reasoning ladder
+  # are each model's own.
   anthropic/claude-opus-5:
     endpoint: anthropic
     context_length: 1000000
@@ -122,9 +161,22 @@ profiles:
     reasoning_efforts: [max, xhigh, high, medium, low]
     reasoning_default: {effort: high}
     cache_mode: automatic
-    notes: 'Prompted JSON allows flexible memory and avoids forced tool choice with thinking. Replay signed blocks unchanged.'
+    final_turn_text_only: false
+    notes: 'Family representative for Claude 5 on the anthropic tag. Prompted JSON allows flexible memory and avoids forced tool choice with thinking. Replay signed blocks unchanged. $5/$25 per M, cache read $0.50 (90% off), cache write $6.25. Campaign 2026-09-06: automatic caching ran 63->85% within a segment and the growing screenshot conversation cached without any final-turn restriction, so final_turn_text_only stays false.'
+  anthropic/claude-sonnet-5:
+    endpoint: anthropic
+    probed_as: anthropic/claude-opus-5
+    context_length: 1000000
+    max_completion_tokens: 128000
+    output_mode: prompted
+    reasoning_efforts: [max, xhigh, high, medium, low]
+    reasoning_default: {effort: high}
+    cache_mode: automatic
+    final_turn_text_only: false
+    notes: 'Copied from claude-opus-5 (same first-party anthropic tag, same automatic top-level cache_control rule, same signed-thinking replay contract); not probed live. Own survey facts: $2/$10 per M, cache read $0.20 (90% off), cache write $2.50, 1M context / 128k output, reasoning optional with efforts max..low (default high). The anthropic tag does NOT advertise temperature/top_p, so no sampling is sent. Registry `thinking_levels` had a `minimal` rung that OpenRouter does not list for this model; it was dropped.'
   anthropic/claude-fable-5.1:
     endpoint: anthropic
+    probed_as: anthropic/claude-opus-5
     context_length: 1000000
     max_completion_tokens: 128000
     output_mode: prompted
@@ -132,40 +184,100 @@ profiles:
     reasoning_efforts: [max, xhigh, high, medium, low]
     reasoning_default: {effort: high}
     cache_mode: automatic
-    notes: 'Mandatory thinking; no tool_choice advertised. Preserve signed blocks including empty thinking blocks.'
-  qwen/qwen3.8-flash:
-    endpoint: alibaba
+    final_turn_text_only: false
+    notes: 'Mandatory thinking (catalog reasoning.mandatory true); no tool_choice advertised on ANY of its four endpoints, re-verified 2026-09-07 — hence prompted output. Preserve signed blocks including empty thinking blocks. Cache/replay behaviour copied from claude-opus-5 on the shared anthropic tag. Own survey facts: $10/$50 per M, cache read $0.25 (97.5% off), cache write $12.50. NOTE: OpenRouter serves BOTH anthropic/claude-fable-5 (2026-06-09, cache read $1.00, tool_choice advertised) and anthropic/claude-fable-5.1 (2026-09-01); the registry pointed at 5 and this profile at 5.1, and the registry was moved to 5.1 to match the keep list.'
+  anthropic/claude-haiku-4.5:
+    endpoint: anthropic
+    probed_as: anthropic/claude-opus-5
+    context_length: 200000
+    max_completion_tokens: 64000
+    output_mode: prompted
+    # The odd one out. OpenRouter publishes NO reasoning.supported_efforts for this
+    # model and none of its eight endpoints advertises `reasoning_effort` — only
+    # `reasoning` — so the catalog sanctions no effort name at all. It is listed
+    # here anyway, because the ladder was MEASURED to work rather than assumed:
+    # 2026-09-07, `anthropic` tag, provider.require_parameters true, one live call
+    # per shape -> {effort: minimal} 200, {effort: high} 200, {enabled: true} 200.
+    # OpenRouter translates the effort into a thinking budget instead of filtering
+    # the endpoint out, so an effort ladder is legal on the wire and the profile
+    # must legalise what the registry offers. Whether the ladder is MEANINGFUL is a
+    # separate, open question owned by Andreas: models.yaml records n=3 per tier
+    # showing high (mean 571 reasoning tokens) separating while medium/low/minimal
+    # sit in one 370-480 band and are ordered backwards, and the two calls above
+    # returned 33 reasoning tokens at both minimal and high. Those four levels
+    # carry real run telemetry, so collapsing them to [thinking, non-thinking]
+    # would rewrite four benchmark identities; not done here.
+    reasoning_efforts: [high, medium, low, minimal]
+    reasoning_default: {effort: high}
+    cache_mode: automatic
+    final_turn_text_only: false
+    notes: 'Cache and replay copied from claude-opus-5 (same first-party anthropic tag, same automatic cache_control) and not probed live: the brief only calls for a cache probe if the endpoint tag differs, and it does not. Own survey facts, and they differ sharply from the rest of the family: 200k context / 64k output (not 1M/128k), $1/$5 per M, cache read $0.10 (90% off), cache write $1.25. Reasoning is optional here (catalog reasoning.mandatory false) and this is the only Anthropic entry with no published effort ladder — see the comment above for what was measured and what stays open.'
+
+  # --- Google Gemini --------------------------------------------------------
+  google/gemini-3.8-flash:
+    endpoint: google-ai-studio
+    context_length: 1048576
+    max_completion_tokens: 65536
+    reasoning_mandatory: true
+    reasoning_efforts: [high, medium, low]
+    reasoning_default: {effort: medium}
+    cache_mode: system_breakpoint
+    final_turn_text_only: false
+    notes: 'Family representative for Gemini. Return complete signed assistant parts. Signature validation is not proof that all prior private thoughts were used. Cache probe 2026-09-06: implicit caching never hit through OpenRouter (0 of 11 campaign requests, 0 in a 13k-token identical-prefix probe); an explicit cache_control marker on the system prompt caches that block at 90% off. A marker on the last message caches nothing extra on AI Studio and double-bills on Vertex, so only the system block is marked. $0.75/$3.75 per M, cache read $0.075, cache write $0.0417.'
+  google/gemini-3.5-flash-lite:
+    endpoint: google-ai-studio
+    context_length: 1048576
+    max_completion_tokens: 65536
+    reasoning_mandatory: true
+    reasoning_efforts: [high, medium, low, minimal]
+    reasoning_default: {effort: minimal}
+    cache_mode: system_breakpoint
+    final_turn_text_only: false
+    notes: 'PROBED LIVE 2026-09-07 on google-ai-studio (effort minimal, 9,880-token prompt with screenshot), not copied: no marker -> 0 cached on the identical second call, $0.002964 both times; system marker -> 8,041 cached (exactly the marked block) and $0.000793 on the second call, a 73% cut; system+last -> the same 8,041, so the last-message marker buys nothing here either. Same verdict as gemini-3.8-flash, now on its own evidence: cache_mode system_breakpoint. Own survey facts: $0.30/$2.50 per M, cache read $0.03, cache write $0.0833, and an extra `minimal` rung (catalog default_effort minimal) that 3.8-flash does not have. Evidence: cache-hit-probe__google--gemini-3.5-flash-lite.json.'
+
+  # --- Google Gemma (open weights) ------------------------------------------
+  google/gemma-4-31b-it:
+    endpoint: deepinfra/turbo
+    context_length: 262144
+    max_completion_tokens: 16384
     output_mode: prompted
     allow_json_fence: true
+    reasoning_efforts: [thinking, non-thinking]
+    reasoning_default: {enabled: true}
+    reasoning_replay: omit_prior
+    reasoning_use: not_preserved_between_user_turns
+    cache_mode: implicit
+    final_turn_text_only: false
+    sampling: {temperature: 0.3, top_p: 0.95}
+    notes: 'Live host rejects json_schema despite the catalog advertising support, and deepinfra/turbo advertises neither tools nor tool_choice; use locally validated prompted JSON. Google specifies omitting old raw thoughts between ordinary user turns; originals remain archived. Replay probe 2026-09-06: 14 of 15 endpoints drop replayed reasoning in every field, deepinfra/turbo included. BINARY reasoning axis (no supported_efforts in the catalog, default_enabled false). $0.09/$0.34 per M, cache read $0.05 (44% off), no cache-write price. Sampling moved here from the registry: on a profiled run the append agent replaces the resolved registry settings wholesale, so registry temperature/top_p would never reach the wire.'
+
+  # --- Alibaba Qwen ---------------------------------------------------------
+  qwen/qwen3.8-flash:
+    endpoint: alibaba
     context_length: 1000000
     max_completion_tokens: 131072
+    output_mode: prompted
+    allow_json_fence: true
+    reasoning_efforts: [thinking, non-thinking]
+    reasoning_default: {enabled: true}
     cache_mode: implicit
-    notes: 'Live routing rejects required tool choice; auto can skip tools, and native JSON failed the envelope during compaction. Use validated prompted JSON. Cache probe 2026-09-06: Alibaba caches the whole identical prefix implicitly (98% on the second call); an explicit system marker LIMITED caching to the system block (11% in the campaign), so no markers are sent. Native preserve_thinking defaults on, gateway use remains unverified.'
-  z-ai/glm-5.3-flash:
-    endpoint: z-ai/fp8
-    context_length: 1048576
+    final_turn_text_only: false
+    notes: 'Family representative for Qwen. Live routing rejects required tool choice; auto can skip tools, and native JSON failed the envelope during compaction. Use validated prompted JSON. Cache probe 2026-09-06: Alibaba caches the whole identical prefix implicitly (98% on the second call); an explicit system marker LIMITED caching to the system block (11% in the campaign), so no markers are sent. Native preserve_thinking defaults on, gateway use remains unverified. BINARY reasoning axis (no supported_efforts in the catalog). $0.15/$0.47 per M, cache read $0.016, cache write $0.20.'
+  qwen/qwen3.7-plus:
+    endpoint: alibaba
+    probed_as: qwen/qwen3.8-flash
+    context_length: 1000000
     max_completion_tokens: 131072
-    reasoning_mandatory: true
-    reasoning_efforts: [max, high, low]
-    reasoning_default: {effort: high}
-    notes: 'Tools supported on direct endpoint. Native clear_thinking:false has no confirmed OpenRouter passthrough; do not claim preserved internal reasoning.'
-  deepseek/deepseek-v4-flash-vision-exp:
-    endpoint: deepseek
-    context_length: 1048576
-    max_completion_tokens: 384000
-    reasoning_efforts: [max, high, low]
-    reasoning_default: {effort: high}
-    notes: 'Use tools: native API requires previous reasoning_content in thinking tool conversations; non-tool history may be ignored.'
-  x-ai/grok-4.6:
-    endpoint: xai
-    excluded_endpoints: [xai/zdr, xai/zdr/priority]
-    memory_encoding: json_string
-    context_length: 500000
-    max_completion_tokens: 450000
-    reasoning_mandatory: true
-    reasoning_efforts: [xhigh, high, medium, low]
-    reasoning_default: {effort: high}
-    notes: 'OpenRouter documents xai-responses-v1 normalized encrypted blocks; verify returned payload through chat gateway.'
+    output_mode: prompted
+    allow_json_fence: true
+    reasoning_efforts: [thinking, non-thinking]
+    reasoning_default: {enabled: true}
+    cache_mode: implicit
+    final_turn_text_only: false
+    sampling: {temperature: 0.3, top_p: 0.95}
+    notes: 'Copied from qwen3.8-flash and NOT probed: the survey settled it — qwen3.7-plus has exactly ONE endpoint, `alibaba`, the same tag the representative was probed on, with the same supported-parameter set. So the implicit-cache-no-markers rule and the prompted-JSON contract carry over. Own survey facts: $0.32/$1.28 per M, cache read $0.064, cache write $0.40, same 1M/131k limits, BINARY reasoning. Sampling 0.3/0.95 moved here from the registry (alibaba advertises temperature and top_p).'
+
+  # --- Moonshot Kimi --------------------------------------------------------
   moonshotai/kimi-k3:
     endpoint: moonshotai/mxfp4
     context_length: 1048576
@@ -176,4 +288,98 @@ profiles:
     reasoning_mandatory: true
     reasoning_efforts: [max, high, low]
     reasoning_default: {effort: high}
-    notes: 'Native documentation says always-on thinking (catalog disagrees). Auto tool choice avoids incompatible named forced calls. Probe 2026-09-06: all 17 reachable endpoints, Moonshot included, drop replayed reasoning in every field; thinking is brief (~120 reasoning tokens at high, max is no higher).'
+    cache_mode: implicit
+    final_turn_text_only: false
+    notes: 'Native documentation says always-on thinking and OpenRouter''s catalog disagrees (reasoning.mandatory false, and the 2026-09-06 effort sweep got 0 reasoning tokens for an explicit off) — reasoning_mandatory stays true as the conservative reading, and the registry offers no off rung, so nothing depends on resolving it. Auto tool choice avoids incompatible named forced calls. Probe 2026-09-06: all 17 reachable endpoints, Moonshot included, drop replayed reasoning in every field; thinking is brief (~120 reasoning tokens at high, max is no higher). Registry `thinking_levels` had xhigh/medium/none, none of which OpenRouter supports for this model (supported_efforts max/high/low); all three were dropped. $3/$15 per M, cache read $0.30 (90% off), no cache-write price. moonshotai/mxfp4 advertises no temperature/top_p, so no sampling is sent.'
+
+  # --- xAI ------------------------------------------------------------------
+  x-ai/grok-4.6:
+    endpoint: xai
+    excluded_endpoints: [xai/zdr, xai/zdr/priority]
+    memory_encoding: json_string
+    context_length: 500000
+    max_completion_tokens: 450000
+    reasoning_mandatory: true
+    reasoning_efforts: [xhigh, high, medium, low]
+    reasoning_default: {effort: high}
+    cache_mode: implicit
+    final_turn_text_only: false
+    notes: 'OpenRouter documents xai-responses-v1 normalized encrypted blocks; verify returned payload through chat gateway. Campaign 2026-09-06: 46% cache hits on the xai tag saved $0.11 on one run. $2/$6 per M, cache read $0.50 (75% off), no cache-write price. The ZDR tags price identically but are excluded deliberately.'
+
+  # --- Z.AI GLM -------------------------------------------------------------
+  z-ai/glm-5.3-flash:
+    endpoint: z-ai/fp8
+    context_length: 1048576
+    max_completion_tokens: 131072
+    reasoning_mandatory: true
+    reasoning_efforts: [max, high, low]
+    reasoning_default: {effort: high}
+    cache_mode: implicit
+    final_turn_text_only: false
+    notes: 'Tools supported on the direct endpoint. Native clear_thinking:false has no confirmed OpenRouter passthrough; do not claim preserved internal reasoning. Campaign 2026-09-06: 67% hits on z-ai/fp8. $0.075/$0.25 per M, cache read $0.015 (80% off), no cache-write price. NOTE the registry entry declares output_mode: prompted while this profile leaves it at the default `tool`; on a profiled run the profile wins. Flagged for the validator rather than silently changed either way.'
+
+  # --- MiniMax --------------------------------------------------------------
+  minimax/minimax-m3:
+    endpoint: minimax/fp8
+    context_length: 524288
+    max_completion_tokens: 512000
+    reasoning_efforts: [thinking, non-thinking]
+    reasoning_default: {enabled: true}
+    # Replay probe 2026-09-07: minimax/fp8 bills the same 255 prompt tokens for all
+    # seven replay shapes, padding included, so the replayed thoughts never reach
+    # the model. Do not send them.
+    reasoning_replay: omit_prior
+    reasoning_use: not_consumed_by_endpoint
+    cache_mode: implicit
+    final_turn_text_only: false
+    sampling: {temperature: 0.3, top_p: 0.95}
+    notes: 'PROBED LIVE 2026-09-07 on the first-party minimax/fp8 tag, both probes. CACHE: implicit caching hits the whole prefix with no marker — A+turn cached 8,354 of 8,369 (shortfall 15) in the live shape and 8,377 of 8,392 in the split shape, so cache_mode implicit and final_turn_text_only false. REPLAY: dropped — none / harness / details_only / reasoning_only / reasoning_content / details_padded / reasoning_padded all billed 255 prompt tokens (delta 0, padded delta 0), hence omit_prior. BINARY reasoning axis (the catalog lists no supported_efforts and no endpoint advertises reasoning_effort). Own survey facts: $0.30/$1.20 per M, cache read $0.06 (80% off), no cache-write price, 524,288 context / 512,000 output on this tag — the model-wide row claims 1,048,576 context, which only parasail/gmicloud/novita serve. First-party chosen over the four endpoints tied at cache read $0.06. Sampling 0.3/0.95 moved here from the registry. Evidence: cache-hit-probe__minimax--minimax-m3.json, reasoning-replay-probe__minimax--minimax-m3.json.'
+
+  # --- DeepSeek -------------------------------------------------------------
+  deepseek/deepseek-v4-flash-vision-exp:
+    endpoint: deepseek
+    context_length: 1048576
+    max_completion_tokens: 384000
+    reasoning_efforts: [max, high, low]
+    reasoning_default: {effort: high}
+    cache_mode: implicit
+    final_turn_text_only: false
+    notes: 'Use tools: the native API requires previous reasoning_content in thinking tool conversations; non-tool history may be ignored. Campaign 2026-09-06: 89% hits on the deepseek tag. Survey 2026-09-07: the first-party deepseek tag is $0.44/$1.32 per M with cache read $0.014 (97% off) and no cache-write price. Fireworks is half that ($0.22/$0.66, cache read $0.007) but the first-party endpoint keeps the documented reasoning-with-tools contract, which the endpoint rule prefers. The 2026-09-06 lessons table listed the deepseek row at $0.22/$0.007 — that is Fireworks'' pricing, or the first-party price has since doubled; either way the current snapshot is the one this profile is priced against.'
+
+  # --- Meta Muse ------------------------------------------------------------
+  meta/muse-spark-1.3:
+    endpoint: meta
+    context_length: 1048576
+    max_completion_tokens: 943718
+    reasoning_mandatory: true
+    reasoning_efforts: [max, xhigh, high, medium, low, minimal]
+    reasoning_default: {effort: medium}
+    reasoning_use: consumed_by_endpoint
+    cache_mode: implicit
+    final_turn_text_only: false
+    notes: 'PROBED LIVE 2026-09-07 on the sole `meta` endpoint, replacing the earlier cache_mode unknown. CACHE: implicit caching hits the whole prefix with no marker — A+turn cached 8,177 of 8,183 (shortfall 6) in the live shape, and the split shape needed nothing extra, so cache_mode implicit and final_turn_text_only false. REPLAY: consumed — harness/details_only/reasoning_only/reasoning_content each added the reasoning''s own length to billed prompt tokens and the padded variants added ~1,100, so encrypted replay is tokenized and reasoning_replay stays `all`. `consumed_by_endpoint` means BILLED, which is not proof the model attended to it. Own survey facts: single endpoint, $1.25/$4.25 per M, cache read $0.15 (88% off), no cache-write price, 1,048,576 context / 943,718 output, mandatory reasoning with the widest ladder here (max..minimal). Evidence: cache-hit-probe__meta--muse-spark-1.3.json, reasoning-replay-probe__meta--muse-spark-1.3.json.'
+
+  # --- Sakana ---------------------------------------------------------------
+  sakana/fugu-ultra:
+    endpoint: sakana
+    context_length: 1000000
+    max_completion_tokens: 128000
+    reasoning_mandatory: true
+    reasoning_efforts: [max, xhigh, high]
+    reasoning_default: {effort: xhigh}
+    cache_mode: unknown
+    final_turn_text_only: false
+    notes: 'UNREACHABLE FROM HERE, TWO INDEPENDENT BLOCKERS, both confirmed live 2026-09-07, so nothing below the endpoint line is probed. (1) REGION BLOCK: every request to its only endpoint returns HTTP 403 "sakana/fugu-ultra is not available in your region: Sakana AI blocks requests originating from your location" — reproduced both through the probe and through a bare unpinned request, so it is not a probe artifact. (2) PARAMETER FILTER: the `sakana` endpoint does not advertise `max_tokens`, and the append agent sends max_tokens on every request together with provider.require_parameters true, so the pinned route returns HTTP 404 "No endpoints found that can handle the requested parameters" with routing_funnel failed_routing_step "Filter by Parameters" — this one would still bite if the region block lifted. It also advertises no temperature/top_p (so no sampling) and no response_format (so native_json is impossible; tools and tool_choice ARE advertised, hence output_mode tool). Kept in the registry because it is on the keep list, but it cannot run on the append harness today. Survey facts: $5/$30 per M, cache read $0.50 (90% off), no cache-write price, 1,000,000 context / 128,000 output, mandatory reasoning with efforts max/xhigh/high (the registry offered high/medium/low/minimal — three of the four were never legal). cache_mode stays `unknown`: a listed cache-read price is not an observed hit.'
+
+  # --- Xiaomi ---------------------------------------------------------------
+  xiaomi/mimo-v2.5:
+    endpoint: gmicloud/fp8
+    context_length: 1050000
+    max_completion_tokens: 945000
+    reasoning_efforts: [thinking, non-thinking]
+    reasoning_default: {enabled: true}
+    reasoning_use: consumed_by_endpoint
+    cache_mode: implicit
+    final_turn_text_only: false
+    sampling: {temperature: 0.3, top_p: 0.95}
+    notes: 'PROBED LIVE 2026-09-07 on gmicloud/fp8, both probes. CACHE: implicit caching hits the whole prefix with no marker — A+turn cached 8,704 of 8,767 (shortfall 63) in the live shape and 8,768 of 8,789 in the split shape, so cache_mode implicit and final_turn_text_only false. REPLAY: consumed — harness/details_only/reasoning_only/reasoning_content each added 36 prompt tokens and both padded variants added 1,116, so reasoning_replay stays `all`. `consumed_by_endpoint` means BILLED, not proof of internal use. Note the endpoint misreports usage: turn 1 returned 163 characters of reasoning while reporting reasoning_tokens 0. ENDPOINT CHOICE: Xiaomi serves no first-party endpoint, so the cheapest cache read wins — gmicloud/fp8 at $0.0026 read on $0.119 prompt (98% off) with 1,050,000 context / 945,000 output, against deepinfra/fp8 at $0.026 read on $0.13 prompt with only 262,144 context. gmicloud/fp8 advertises no response_format or structured_outputs, so output_mode stays the default `tool` (tools and tool_choice ARE advertised). BINARY reasoning axis. Sampling 0.3/0.95 moved here from the registry. Evidence: cache-hit-probe__xiaomi--mimo-v2.5.json, reasoning-replay-probe__xiaomi--mimo-v2.5.json.'

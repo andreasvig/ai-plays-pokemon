@@ -192,6 +192,36 @@ def test_project_official_run_fields_and_averages(runs_root: Path):
     )
 
 
+def test_project_stamps_harness_and_max_turns(tmp_path: Path):
+    """``agent_type`` + ``max_turns`` come off the nested summary onto the row.
+
+    ``run_summary.json["agent_type"]`` had been written since the append work
+    landed and read by NOBODY; ``max_turns`` was written too and absent from the
+    row while ``api.js`` already read it. Both directions are asserted, because
+    the interesting half is the DEFAULT: absence of ``agent_type`` means the
+    legacy harness (the writer only stamps the key when an AppendAgent ran), so
+    a projection that produced None would make the continue guard's
+    ``== "append_compact"`` test vacuous rather than wrong.
+    """
+    root = tmp_path / "runs"
+    root.mkdir()
+    appended = _write_run(
+        root, "2026-09-06_10-00-00_config-5.0__m",
+        top_level={"agent_type": "append_compact", "max_turns": 100,
+                   "kind": "casual", "status": "completed"},
+    )
+    legacy = _write_run(
+        root, "2026-06-01_10-00-00_config-4.0__m",
+        top_level={"kind": "casual", "status": "completed"},
+    )
+    a = project_run_dir(appended)
+    assert a is not None and a.harness == "append_compact" and a.max_turns == 100
+    b = project_run_dir(legacy)
+    # Absent agent_type = the legacy harness, and absent max_turns = no cap to
+    # show, which is None and NOT 0 (a 0 would render as "no turns allowed").
+    assert b is not None and b.harness == "current" and b.max_turns is None
+
+
 def test_project_total_gates_uses_run_ladder(tmp_path: Path):
     """total_gates reads the ladder recorded in config.json, not a hardcoded int."""
     root = tmp_path / "runs"

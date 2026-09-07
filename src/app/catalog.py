@@ -62,6 +62,17 @@ def list_models() -> list[dict[str, Any]]:
     ``reasoning_type: none`` models (e.g. grok-4.3) which have no levels and submit
     the bare model name. ``observed`` at the top level mirrors the default level so
     the picker can show a headline cost/latency.
+
+    ``retired: true`` entries are OMITTED. Retirement is a *catalog* state, not a
+    deletion: a model reaches it when it stops being something you would start a
+    new run with, while a frozen config, a saved run config or a placeholder
+    somewhere still names it — so ``load_config`` must keep resolving it (and it
+    does; nothing in ``src.config`` consults this flag) or those artefacts break.
+    The two readers are answering different questions, which is why the filter
+    lives here and not in the registry loader: this function is "what may I pick
+    NOW", ``_load_models_registry`` is "what does this name mean". Filtering in
+    the loader instead would make an old run's model unresolvable, which is the
+    failure retirement exists to avoid.
     """
     registry = _load_models_registry()
     release_dates = _load_release_dates()
@@ -69,6 +80,9 @@ def list_models() -> list[dict[str, Any]]:
     for base in sorted(registry):
         entry = registry.get(base)
         if not isinstance(entry, dict):
+            continue
+        # Retired: still resolvable by name, no longer offered as a new choice.
+        if entry.get("retired"):
             continue
         observed_map = entry.get("observed") or {}
         levels = model_thinking_levels(entry)
@@ -127,11 +141,13 @@ def list_configs(configs_dir: Path | None = None) -> list[str]:
         major, minor = stem.split("config-")[1].split(".")
         stems.append(((int(major), int(minor)), stem))
     stems.sort(key=lambda t: t[0])
-    result = [stem for _, stem in stems]
-    if (base / "config-append.yaml").is_file():
-        # API callers use the last item as the latest numbered default.
-        result.insert(0, "config-append")
-    return result
+    # API callers (and ``_validate_config_stem``) use the LAST item as the
+    # default. That is the whole rule: highest ``config-X.Y`` wins. The append
+    # harness used to be the non-numeric ``config-append`` and was force-fed to
+    # the FRONT of this list so it could be selected without ever becoming the
+    # default; it is now ``config-5.0``, so it wins the ordinary rule and the
+    # special case is gone. Nothing here knows which harness a stem selects.
+    return [stem for _, stem in stems]
 
 
 # The ladder the stop-at catalog is read from. Deliberately the FULL ladder:

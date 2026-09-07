@@ -24,7 +24,8 @@
         <span class="now"><span class="dot live"></span> running</span>
       </div>
       <div class="cmodel mono">{active.model}</div>
-      <div class="cmeta faint">turn {active.currentTurn} · <span class="mono">{active.config}</span></div>
+      <!-- See QueueBar: the live turn comes from /api/queue (finding #7). -->
+      <div class="cmeta faint">turn {active.currentTurn ?? '—'} · <span class="mono">{active.config}</span></div>
       <button class="kill" onclick={() => onkill()}>Kill run →<span class="sub">starts next</span></button>
     </div>
   {/if}

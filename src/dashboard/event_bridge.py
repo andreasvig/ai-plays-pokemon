@@ -3,6 +3,24 @@
 import threading
 
 
+# Event types the live wire deliberately drops (they are still written to
+# ``events.jsonl`` and still reach the run report, which reads the file).
+#
+# ``turn_trace`` / ``compaction_trace`` carry the WHOLE outbound conversation of
+# the request that produced them (``display_messages(outbound["messages"] +
+# [message])`` in append_agent). On an append run the conversation grows for a
+# full segment before a compaction resets it, so retaining one per turn is
+# O(segment) each and O(n²) over a segment on the wire — and the events WS
+# replays its entire backlog from cursor 0 on every (re)connect, so a reconnect
+# 19 turns into a segment re-sends every one of them.
+#
+# Nothing on the live side consumes them: Spectate.svelte ignores both types
+# (the report renders the trace from the file), and dashboard/recorder.py's
+# event loop reads only the event NAME, and only for ``llm_output`` /
+# ``turn_start`` / ``screen_settling`` / ``screen_settled``.
+LIVE_EXCLUDED_TYPES = frozenset({"turn_trace", "compaction_trace"})
+
+
 class EventBridge:
     """Receives events from RunLogger (sync callback) and makes them available to WebSocket clients.
 
@@ -22,6 +40,12 @@ class EventBridge:
             # --continue. The live "Elapsed" clock adds this to its own wall time
             # so a resumed run keeps counting up instead of restarting at 0.
             "prior_duration_s": 0.0,
+            # USD already spent by the lineage this run continues, on the same
+            # principle as prior_duration_s. `cost` is the LINEAGE total, while
+            # a spend ceiling bounds THIS segment (turn.py anchors the budget to
+            # `_spend_baseline_usd`), so the live view needs the baseline to show
+            # a cap ratio that isn't a lie on a resumed run.
+            "prior_cost_usd": 0.0,
         }
 
     def seed_stats(
@@ -47,6 +71,7 @@ class EventBridge:
             self._stats["input_tokens"] = input_tokens
             self._stats["output_tokens"] = output_tokens
             self._stats["prior_duration_s"] = prior_duration_s
+            self._stats["prior_cost_usd"] = cost
 
     def inject(self, event: dict) -> None:
         """Push a synthetic event to clients WITHOUT it touching the event log.
@@ -61,12 +86,19 @@ class EventBridge:
             self._events.append(event)
 
     def on_event(self, event: dict) -> None:
-        """RunLogger listener callback. Must be non-blocking."""
-        with self._lock:
-            self._events.append(event)
+        """RunLogger listener callback. Must be non-blocking.
+
+        Retains every event for the live stream EXCEPT the report-only whole-
+        conversation traces (see ``LIVE_EXCLUDED_TYPES``). Their stats still
+        fold in below — the filter is about what goes on the wire, not about
+        what the run counts.
+        """
+        etype = event.get("type", "")
+        if etype not in LIVE_EXCLUDED_TYPES:
+            with self._lock:
+                self._events.append(event)
 
         # Update running stats
-        etype = event.get("type", "")
         if etype == "turn_start":
             self._stats["turns"] = event.get("turn", self._stats["turns"])
         elif etype == "turn_usage":

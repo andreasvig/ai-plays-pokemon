@@ -100,6 +100,36 @@ Those event names match `SimpleView`'s phase machine exactly. Note that
 returns, so it marks the END of pressing — keying on it would start each clip
 after the action it is meant to show.
 
+### What each speed mode does during a compaction
+
+The append harness (config-5.x) pauses gameplay every `compaction.every_n_turns`
+turns and spends a whole model request writing its own handover. That takes
+**minutes**, and the emulator is paused for all of it, so the game screen is a
+still frame. The two modes treat that window very differently, and neither is a
+choice the recorder makes at compaction time — it falls out of where the gate is
+keyed (`RecordGate.on_event`, `src/dashboard/recorder.py`):
+
+| | during a compaction |
+|---|---|
+| `realtime` | **Recorded at full length.** The gate is open for the whole run, so the file contains the entire pause as a frozen game screen. A four-minute compaction is four minutes of video. |
+| `cut-thinking` | **Omitted entirely.** The gate opens only at `llm_output`, and a compaction runs *between* a turn's `turn_start` and that turn's `llm_output` — so the gate is shut for its whole duration. (`turn_start` also closes a gate still open from the previous turn, so nothing leaks in from before it.) No frame of any compaction reaches the file. |
+
+What changes the `realtime` case from "the video is frozen and unexplained" to
+"the video says what is happening" is the page being recorded, not the recorder:
+`SimpleView` now enters a `compacting` phase between `compaction_start` and
+`compaction_complete` and shows a **"Compacting memory after turn N · 1m 12s"**
+strip with a live clock, then returns to thinking about the interrupted turn. The
+detailed view shows the same thing as an unnumbered **Compaction N** row in the
+live trace. So:
+
+- `--record simple --record-speed realtime` → the pause is in the file *and*
+  labelled. This is the combination to use if you want the compaction visible.
+- `--record-speed cut-thinking` → the compaction is not in the file at all, in
+  either view. The video jumps from one turn's execution to the next with no
+  sign that a segment boundary happened. That is usually what you want for a
+  posted clip; it does mean the video is not a faithful record of elapsed time
+  across a compaction.
+
 ### Why the trim is activity-based (`src/dashboard/recorder.py`)
 
 The earlier recorder used two constants: 0.5s off the front and zero seconds

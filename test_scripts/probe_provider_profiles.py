@@ -20,6 +20,19 @@ from src.config import load_config
 from src.core.logger import RunLogger
 from src.app.trace_build import build_run_trace
 
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def append_config_path():
+    """The append harness config. Renamed config-append.yaml -> config-5.0.yaml when
+    the append harness became the standard (2026-09-07); accept either so an older
+    checkout still probes."""
+    for name in ("configs/config-5.0.yaml", "configs/config-append.yaml"):
+        candidate = ROOT / name
+        if candidate.exists():
+            return str(candidate)
+    raise FileNotFoundError("no append harness config under configs/")
+
 
 async def main(args):
     catalog = yaml.safe_load(PROFILE_PATH.read_text())
@@ -32,7 +45,7 @@ async def main(args):
     spent = 0.0
     snapshot = json.loads(Path("artifacts/provider-compatibility/snapshot-summary.json").read_text())
     for model in models:
-        config = load_config("configs/config-append.yaml", llm_alias=model, provider_profile=args.provider_profile)
+        config = load_config(append_config_path(), llm_alias=model, provider_profile=args.provider_profile)
         if not config.get("openrouter_api_key"):
             raise RuntimeError("OPENROUTER_API_KEY is not configured")
         profile = config["_provider_profile"]

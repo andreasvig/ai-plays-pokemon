@@ -96,12 +96,43 @@ The UI is a Svelte single-page app served at `/`. Client-side routes:
 A non-scrolling 16:9 kiosk (fits any TV, nothing below the fold):
 
 - the live **emulator frame** (streamed over WebSocket),
-- the **current task** the TaskMaster issued,
+- the **current task** the TaskMaster issued (TaskMaster configs only — a
+  self-directed run gives the row to memory instead),
 - the agent's **memory dictionary**,
 - a **live trace feed** of each turn's reasoning, tool calls, and button inputs,
-- the **gate ladder** with the current rung highlighted,
+- the **gate ladder** with the current rung highlighted — shown whenever the run
+  *has* a ladder, which includes a casual `--stop-at` run (it gets the full
+  ladder, observe-only), not only benchmark runs,
 - **elapsed time**, always computed from the real run start (not reset when you
-  re-open the page).
+  re-open the page),
+- **Cost** against its ceiling when the run has one (`--max-spend` / a queued
+  item's spend cap). On a `--continue` the displayed total is the whole
+  lineage's while the ceiling bounds *this* segment, so the tile says which
+  spend the ratio is about.
+
+The feed keys on what the run emits, not on which config it ran, so both
+harnesses render natively:
+
+**Compaction rows (config-5.x).** A compaction is not a turn, so it does not get
+one. `compaction_start` opens its own row — **"Compaction N · after turn M"**,
+with a live elapsed clock while it runs — the compaction's thinking and its
+model request go inside that row, and `compaction_complete` closes it with the
+handover summary and the memory before/after. The gameplay turns either side
+keep their numbers and the **Turn** stat does not move, which is the same shape
+the finished run's Report gives it. Memory on an append run is only written at a
+compaction, so until the first one the memory panel says *when* it will be
+written ("first compaction after turn 20") instead of showing an empty box.
+
+**Per-request diagnostics.** Each model request adds a **Request** box: cache
+read share, reasoning-replay state and the provider's own feedback. When an
+endpoint bills reasoning tokens but returns no readable thinking, the turn says
+so ("Reasoning withheld by endpoint (N tokens)") rather than showing nothing.
+An **Endpoint warning** box surfaces a pinned endpoint whose cache pricing
+cannot save money, and a run that spends its ceiling ends with an explicit
+**Run ended** box naming both amounts.
+
+**Legacy runs (config-3.13 / 4.0)** are unchanged: per-turn memory edits, the
+TaskMaster card at each task boundary, and no compaction rows.
 
 ### History & Report
 
@@ -124,7 +155,8 @@ Two kinds (see [the benchmark doc](benchmark.md) for the full distinction):
 
 - **Benchmark** (official) — you pick the **model** + **which benchmark**
   (`pokebench-easy` / `first-badge` / `full`). The benchmark selects the gate
-  ladder and the goal; config (`config-3.13`) and the start save are locked.
+  ladder and the goal; the config (frozen `config-5.0`, shown in the dialog from
+  `/api/benchmarks` rather than as UI text) and the start save are locked.
   Counts on that benchmark's leaderboard.
 - **Casual** — you pick **game + model + config + max-turns**, and optionally a
   **Stop at** story event (`Entered Viridian Forest`, `Reached Pewter City`, …).

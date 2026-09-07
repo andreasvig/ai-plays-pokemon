@@ -254,19 +254,19 @@ itself — the referee, the gate ladder, official vs casual, scoring — is in
 runs one or more `(config, model)` pairs, and exits:
 
 ```bash
-# Single run — latest config, one model, default 10 turns
+# Single run — latest config (config-5.0, the standard harness), one model, default 10 turns
 pokemon run --model "gemini-3.5-flash(medium)"
 
 # Pin a specific config + number of turns
-pokemon run --config configs/config-3.13.yaml --model "claude-opus-4.7(medium)" --turns 50
+pokemon run --config configs/config-4.0.yaml --model "claude-opus-4.7(medium)" --turns 50
 
 # Fan-out: one config across N models, sequential, sharing one mGBA
-pokemon run --config configs/config-3.13.yaml \
+pokemon run --config configs/config-5.0.yaml \
             --model "gemini-3.5-flash(medium)" "claude-opus-4.7(medium)" --turns 50
 
 # Continue a prior run from its latest savepoint (resumes exactly where it left
 # off — emulator, task tree, turn history, and turn counter all restored)
-pokemon run --continue local/runs/2026-05-26_..._config-3.13__claude-opus-4-7 --turns 30
+pokemon run --continue local/runs/2026-05-26_..._config-5.0__claude-opus-4-7 --turns 30
 ```
 
 It also launches mGBA and waits for the same `socketserver-1.lua` handshake.
@@ -288,7 +288,7 @@ Configs live in `configs/` as versioned files (`config-X.Y.yaml`). Each one is a
 | `ocr.*` | Background OCR pipeline (Tesseract + LLM cleanup) settings |
 | `vision_mode` | `direct_multimodal` (LLM sees pixels) or `separate_vlm` (VLM → text → LLM) |
 
-The system prompt for each version lives inline in the config file. To experiment, copy the latest config to a new version (e.g. `config-3.14.yaml`) and edit there.
+The system prompt for each version lives inline in the config file. `config-5.0` is the standard harness and is FROZEN (it is what official runs are scored on), so to experiment copy it to the next version (e.g. `config-5.1.yaml`) and edit there — the highest `config-X.Y` automatically becomes what a bare `pokemon run` loads.
 
 ## Documentation
 
