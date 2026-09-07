@@ -121,7 +121,7 @@ handover summary and the memory before/after. The gameplay turns either side
 keep their numbers and the **Turn** stat does not move, which is the same shape
 the finished run's Report gives it. Memory on an append run is only written at a
 compaction, so until the first one the memory panel says *when* it will be
-written ("first compaction after turn 20") instead of showing an empty box.
+written ("first compaction after turn 10") instead of showing an empty box.
 
 **Per-request diagnostics.** Each model request adds a **Request** box: cache
 read share, reasoning-replay state and the provider's own feedback. When an

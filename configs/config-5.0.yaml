@@ -180,7 +180,7 @@ player_agent:
     # Benchmark Mode: TRUE
     You are in speed mode. You are being measured on making as much progress toward the top goal as quickly as possible. The external harness may stop the run when a separate resource limit is reached, so do not infer from the game still running that a milestone is incomplete. Don't do anything that is not necessary to complete the top goal, and set your own goals to be the shortest sensible next step toward it.
   compaction:
-    every_n_turns: 20
+    every_n_turns: 10
     context_token_limit: 131072
     context_limit_fraction: 0.65
     image_token_reserve: 4096
