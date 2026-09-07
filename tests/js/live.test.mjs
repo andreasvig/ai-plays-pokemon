@@ -80,7 +80,7 @@ test('llm_request_usage becomes a Request/diagnostics box, never a settle box', 
   assert.equal(boxes[0].k, 'diag')
   assert.notEqual(boxes[0].k, 'settle')
   assert.match(boxes[0].t, /cache 93\.1% of input/)
-  assert.match(boxes[0].t, /reasoning replay 3\/3 \(intact\)/)
+  assert.match(boxes[0].t, /reasoning replay 3\/3 blocks(?: from \d+ earlier turns?)? \(intact\)/)
   assert.match(boxes[0].t, /provider feedback: accepted/)
   // provider + phase ride on the meta line
   assert.match(boxes[0].meta, /gameplay/)

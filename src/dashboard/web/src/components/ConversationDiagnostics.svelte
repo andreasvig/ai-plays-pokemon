@@ -33,7 +33,8 @@
     if (c?.local_replay && c.local_replay !== 'intact') return `Check failed: ${words(c.local_replay)}`
     if (c?.expected_blocks === 0) return 'No earlier reasoning blocks'
     if (c?.expected_blocks == null) return 'Not reported'
-    return `${count(c.replayed_blocks)} / ${count(c.expected_blocks)} blocks · ${words(c.local_replay)}`
+    const turns = new Set((c.manifest || []).map((m) => m.message)).size
+    return `${count(c.replayed_blocks)} / ${count(c.expected_blocks)} blocks${turns ? ` from ${turns} earlier turn${turns === 1 ? '' : 's'}` : ''} · ${words(c.local_replay)}`
   }
 </script>
 

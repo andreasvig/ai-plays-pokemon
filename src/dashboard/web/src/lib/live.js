@@ -31,6 +31,19 @@ export function usageMeta(evt) {
   return bits.join(' · ')
 }
 
+// The replay counter counts BLOCKS across three fields (reasoning, reasoning_details text,
+// reasoning_details encrypted), so one earlier turn contributes 1–3 of them. Name the turns too,
+// or "12/12" on turn 6 reads as a bug (2026-09-07, gemini-3.5-flash-lite).
+export function replayLabel(c) {
+  const expected = c?.expected_blocks ?? 0
+  const replayed = c?.replayed_blocks ?? 0
+  const turns = new Set((c?.manifest || []).map((m) => m.message)).size
+  const state = c?.local_replay || 'unknown'
+  if (expected === 0) return `reasoning replay none yet (${state})`
+  const from = turns ? ` from ${turns} earlier turn${turns === 1 ? '' : 's'}` : ''
+  return `reasoning replay ${replayed}/${expected} blocks${from} (${state})`
+}
+
 export function usageBox(evt) {
   const cache =
     evt.cache_read_fraction == null
@@ -39,7 +52,7 @@ export function usageBox(evt) {
   const c = evt.continuity || {}
   const t = [
     `cache ${cache}`,
-    `reasoning replay ${c.replayed_blocks ?? 0}/${c.expected_blocks ?? 0} (${c.local_replay || 'unknown'})`,
+    replayLabel(c),
     `provider feedback: ${c.provider_feedback || 'not reported'}`,
   ].join(' · ')
   return { k: 'diag', t, meta: usageMeta(evt) }
