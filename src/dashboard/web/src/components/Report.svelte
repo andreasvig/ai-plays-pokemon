@@ -217,10 +217,18 @@
     if (!fr) return null
     return parseArgs(fr.args)
   }
-  // Feeds two plain-text spots (the collapsed turn header `.tact` and the
-  // expanded `.exp-row .ev`), plus a handback verdict string — mixed string
-  // contexts a `<Action>` element can't sit in, so this stays plain text
-  // (Track A route (b)): real button names via actionTokens(), never emoji.
+  // The collapsed turn header draws the buttons as <Action> glyphs when the
+  // turn has real inputs (Andreas, 2026-09-07: "use icons instead of left
+  // right"); this returns those tokens, or null so the header falls back to
+  // the plain-text display below (handback verdicts and sentinel turns).
+  function turnActionTokens(t) {
+    const a = finalResultArgs(t)
+    if (a && Array.isArray(a.inputs) && a.inputs.length) return actionTokens(a.inputs)
+    return null
+  }
+  // Plain-text display: the expanded `.exp-row .ev` (a mixed string context)
+  // and the header's fallback when there are no button tokens — real button
+  // names via actionTokens(), never emoji.
   function turnActionDisplay(t) {
     const a = finalResultArgs(t)
     if (a && Array.isArray(a.inputs) && a.inputs.length) return actionTokens(a.inputs).join(' ')
@@ -611,7 +619,11 @@
                   <button class="thead" onclick={() => toggleTurn(tk)}>
                     <span class="arr">{tOpen ? '▾' : '▸'}</span>
                     <span class="tn mono">Turn {t.turn}{t.fresh ? ' (fresh)' : ''}</span>
-                    <span class="tact">{turnActionDisplay(t)}</span>
+                    {#if turnActionTokens(t)}
+                      <span class="tact acts" class:long={turnActionTokens(t).length > 17} title={turnActionDisplay(t)}>{#each turnActionTokens(t) as tok}<Action token={tok} />{/each}</span>
+                    {:else}
+                      <span class="tact">{turnActionDisplay(t)}</span>
+                    {/if}
                     <span class="tsum faint">{t.reasoning}</span>
                     <span class="tuse faint mono">{turnUsage(t)}</span>
                   </button>
@@ -878,12 +890,24 @@
   .turns.nested { margin: 0 0 12px 16px; padding-left: 10px; border-left: 2px solid var(--border); }
   .turn-shot { width: 240px; max-width: 100%; image-rendering: pixelated; border: 1px solid var(--border); border-radius: var(--radius-sm); display: block; margin-top: 2px; }
   .turn { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 8px; overflow: hidden; }
-  .thead { width: 100%; display: grid; grid-template-columns: 18px max-content auto 1fr auto; gap: 10px; align-items: center; padding: 11px 14px; border: none; background: none; text-align: left; }
+  /* The action and summary tracks are minmax(0, …) so a long button strip
+     shrinks instead of pushing the cost column off the row: before 2026-09-07
+     a 20-button turn hid its own cost and tokens. */
+  .thead { width: 100%; display: grid; grid-template-columns: 18px max-content minmax(0, max-content) minmax(0, 1fr) max-content; gap: 10px; align-items: center; padding: 11px 14px; border: none; background: none; text-align: left; }
   .compaction > .thead { grid-template-columns: 18px max-content 1fr auto; }
   .thead:hover { background: var(--surface-2); }
   .arr { color: var(--faint); font-size: 10px; }
   .tn { font-size: 12px; font-weight: 700; color: var(--accent); }
-  .tact { font-size: 13px; white-space: nowrap; }
+  /* The cap is a fixed length on purpose: a percentage max-width on a grid item
+     resolves against its own track, not the row, and 52% halved every strip. */
+  .tact { font-size: 13px; white-space: nowrap; min-width: 0; max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
+  /* Action is 2.35em tall — shrink the container's font-size (not the glyph's
+     own height) so the strip sits near the row's text height (8.5px → 20px
+     glyphs at a ~23px pitch, so 18 fit the 420px cap). A strip longer than that fades out on the
+     right; the full button list is in the title attribute and in the expanded
+     Action row. */
+  .tact.acts { display: inline-flex; align-items: center; gap: 3px; font-size: 8.5px; }
+  .tact.acts.long { mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); }
   .tsum { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tuse { font-size: 11px; }
   .tbody { padding: 4px 16px 16px; display: flex; flex-direction: column; gap: 12px; }
