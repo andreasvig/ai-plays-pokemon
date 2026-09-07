@@ -411,6 +411,39 @@ def test_context_pressure_compacts_before_interval(config, tmp_path):
     asyncio.run(run())
 
 
+def test_token_cap_compacts_when_context_fraction_is_out_of_reach(config, tmp_path):
+    """A 1M-context profile puts the fraction trigger near 680k; the cap must still fire."""
+    agent, provider, events = engine(config, tmp_path)
+    config["compaction"]["every_n_turns"] = 20
+    config["compaction"]["context_token_limit"] = 1_048_576
+    config["compaction"]["max_prompt_tokens"] = 200_000
+    async def run():
+        await agent.play(1, "", IMAGE)
+        agent.commit_action(1)
+        agent.state["last_input_tokens"] = 200_000
+        await agent.play(2, "latest result", IMAGE)
+        assert len(provider.requests) == 3
+        reasons = [e.get("reason") for e in events if e["type"] == "compaction_start"]
+        assert reasons == ["token_cap"]
+    asyncio.run(run())
+
+
+def test_no_token_cap_means_no_cap(config, tmp_path):
+    """Mutation control for the cap test: same prompt size, cap removed, no compaction."""
+    agent, provider, events = engine(config, tmp_path)
+    config["compaction"]["every_n_turns"] = 20
+    config["compaction"]["context_token_limit"] = 1_048_576
+    config["compaction"].pop("max_prompt_tokens", None)
+    async def run():
+        await agent.play(1, "", IMAGE)
+        agent.commit_action(1)
+        agent.state["last_input_tokens"] = 200_000
+        await agent.play(2, "latest result", IMAGE)
+        assert len(provider.requests) == 2
+        assert not any(e["type"] == "compaction_start" for e in events)
+    asyncio.run(run())
+
+
 def test_context_estimate_counts_tokens_not_bytes(config, tmp_path):
     """A verbose reasoner must not trigger compaction on byte count alone."""
     class Verbose(FakeProvider):

@@ -183,6 +183,13 @@ player_agent:
     every_n_turns: 20
     context_token_limit: 131072
     context_limit_fraction: 0.65
+    # Safety valve, not the interval. A profiled model replaces context_token_limit
+    # with its own context length (1M on Gemini/OpenAI/Anthropic), so the fraction
+    # trigger never fires there; this cap does. 200k sits above every normal
+    # 20-turn segment (the largest measured on 2026-09-07 was 105k, gemini-3.8 high)
+    # and only catches a run whose per-turn growth balloons. Cost is flat between
+    # 15 and 40 turns for every measured model, so the turn interval stays the rule.
+    max_prompt_tokens: 200000
     image_token_reserve: 4096
     summary_target_tokens: 1500
     max_output_tokens: 12288

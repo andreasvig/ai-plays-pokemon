@@ -524,8 +524,19 @@ class AppendAgent:
         estimate = (self.state["last_input_tokens"] + growth + approx_tokens(self.options["prompt"], image_tokens)
                     + output_reserve)
         early = estimate >= self.options["context_token_limit"] * self.options["context_limit_fraction"]
-        if (due or early) and self.state["segment_turns"] and self.state["observation_turn"] != turn:
-            await self.compact(turn, observation, "turn_interval" if due else "context_threshold")
+        # Hard cap independent of the endpoint's context length. The profile
+        # overwrites `context_token_limit` with the model's context (1M on Gemini,
+        # so the fraction trigger sits near 680k and never fires); this cap is
+        # the safety valve for a model whose per-turn growth balloons. It is
+        # deliberately ABOVE any normal segment: the 2026-09-07 cost fit put the
+        # cheapest interval at 20-100k prompt tokens for every measured model and
+        # the curve within 8% of optimal at 20 turns, so the cap must not become
+        # the de-facto interval. Optional: absent means no cap.
+        cap = self.options.get("max_prompt_tokens")
+        capped = bool(cap) and estimate >= cap
+        if (due or early or capped) and self.state["segment_turns"] and self.state["observation_turn"] != turn:
+            reason = "turn_interval" if due else ("context_threshold" if early else "token_cap")
+            await self.compact(turn, observation, reason)
         if self.budget_exhausted():
             raise SpendLimitReached("Spend budget reached before next gameplay request")
         if self.state["observation_turn"] != turn:

@@ -54,6 +54,7 @@ Defaults:
 | Context limit / early threshold | 131,072 tokens / 65%, with a conservative next-request reserve |
 | Summary target | 1,500 tokens (prompt target) |
 | Full handover size cap | 24,000 JSON characters |
+| Prompt-token cap | 200,000 estimated tokens (safety valve above any normal segment; the context-fraction trigger is out of reach once a profile sets a 1M context) |
 | Compaction output budget | 12,288 tokens |
 | Gameplay output budget | Model-registry override, otherwise 8,192 tokens |
 | Retry budget | Two retries per request phase |

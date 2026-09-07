@@ -596,6 +596,9 @@ def _validate_append_config(config: dict[str, Any]) -> None:
     reserve = config["compaction"].get("image_token_reserve", 4096)
     if type(reserve) is not int or reserve <= 0:
         raise ValueError("compaction.image_token_reserve must be a positive integer")
+    cap = config["compaction"].get("max_prompt_tokens")
+    if cap is not None and (type(cap) is not int or cap <= 0):
+        raise ValueError("compaction.max_prompt_tokens must be a positive integer")
     cache = config["caching"]
     prefixes = cache.get("cache_control_by_model_prefix", {})
     if not isinstance(prefixes, dict) or any(not isinstance(k, str) or not k or not isinstance(v, dict) for k, v in prefixes.items()):
