@@ -65,7 +65,7 @@
   // Compaction interval (`player_agent.compaction.every_n_turns`), or null on a
   // run that never compacts. Backs the memory panel's "written at compaction"
   // note (finding #15) — an append run's memory is empty for its whole first
-  // segment, which is 10 turns by default (config-5.0).
+  // segment, which is 20 turns by default (config-5.0).
   let compactionHint = $state(null)
   let stamps = $state({})              // {checkpoint_id: turn} latched
   let currentTurn = $state(0)

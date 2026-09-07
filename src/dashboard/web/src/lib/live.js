@@ -98,7 +98,7 @@ export function turnPreview(boxes, limit = 52) {
 
 // ── memory panel (finding #15) ───────────────────────────────────────────
 // An append run writes memory ONLY at a compaction, so the panel is a
-// full-width "(empty)" for the whole first segment (10 turns by default in config-5.0). Say
+// full-width "(empty)" for the whole first segment (20 turns by default in config-5.0). Say
 // what is actually going on instead. `null` = no compaction on this run
 // (legacy per-turn memory edits), so the caller keeps its own empty text.
 export function memoryHint(cfg) {

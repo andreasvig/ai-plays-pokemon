@@ -50,7 +50,7 @@ Defaults:
 
 | Setting | Default |
 | --- | --- |
-| Compaction interval | 10 completed game turns (set 2026-09-07 while the 5.0 line is being tested; the design cadence was 20) |
+| Compaction interval | 20 completed game turns (10 was tried on 2026-09-07; Gemini implicit caching needs ~16k-token prompts, which a 10-turn segment never reaches) |
 | Context limit / early threshold | 131,072 tokens / 65%, with a conservative next-request reserve |
 | Summary target | 1,500 tokens (prompt target) |
 | Full handover size cap | 24,000 JSON characters |
