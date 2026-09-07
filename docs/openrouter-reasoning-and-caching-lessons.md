@@ -23,7 +23,7 @@ replayed reasoning or whether a cache hit cost less. Both are read from billing:
 | Replay tokenized | Gemini, Claude Opus/Fable, Qwen (Alibaba), GLM (Z.AI), DeepSeek, Grok: yes. Gemma 4 31B: 1 of 15 endpoints (coreweave/fp4). Kimi K3: 0 of 17. |
 | Automatic caching | Anthropic: 63→85% within a segment; first request of a segment is mostly writes at 1.25×. |
 | Implicit caching, markers hurt | Alibaba: no marker → 98%; system marker → system block only. Send none. |
-| Implicit never fires, explicit works | Google AI Studio: 0 hits on a 13k identical prefix; system marker → that block at 90% off. Last-message marker adds nothing on AI Studio and double-bills on Vertex. |
+| Implicit caching, markers hurt (2) | Google AI Studio: on real 27k+ prompts, no marker → 89% (gemini-3.8-flash) / 60% (3.5-flash-lite) cached from the second send on, extension included; any explicit marker suppresses it and caches only the marked block. 13k prompts never hit, so the implicit minimum sits between 13k and 27k. The 2026-09-06 verdict ("implicit never fires") came from prompts below that floor. |
 | Cache priced at no discount | coreweave/fp4: read price = prompt price. Hits save $0. |
 | No cache | novita/bf16: no cache-read price listed, `cached_tokens: 0` always. |
 | Failure shape | Z.AI returned HTTP 200, empty choice, `native_finish_reason: network_error`, no usage, after 181 s. |

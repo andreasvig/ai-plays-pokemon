@@ -51,3 +51,16 @@ Reported on the second call. Probed 2026-09-06.
 | moonshotai/mxfp4 (Kimi) | 3.00 | 0.30 | 90% | 73% | saves money ($0.18) |
 | z-ai/fp8 (GLM) | 0.075 | 0.015 | 80% | 67% | saves money |
 | deepseek (DeepSeek) | 0.22 | 0.007 | 97% | 89% | saves money |
+
+## google/gemini-3.8-flash — replay of a real run, 2026-09-07
+
+The 2026-09-06 verdict above was wrong for real prompt sizes. Replaying turns 10 and 11 of `2026-09-07_12-20-20_config-5.0__gemini-3-8-flash-medium` (27,256 and 31,449 prompt tokens, 10–11 screenshots) against `google-ai-studio`:
+
+| Marker placement | turn 10 cached | turn 11 (extends) cached | turn 11 prompt cost |
+|---|---|---|---|
+| system (the run's setting) | 1,274 | 1,274 | $0.0227 |
+| last text block of the final user message | 12,717 (text before the marker) | 14,002 | $0.0147 |
+| last assistant/tool message | 12,685 | 13,941 | $0.0148 |
+| **none, second send** | **24,365 (89%)** | **28,389 (90%)** | **$0.0044** |
+
+No-marker sequence, after a 5.5-minute cool-down: first send 0 cached; second and third sends 24,365; the extension 28,389 — the whole prefix including images. An explicit marker anywhere caps the cache at the marked block, as on Alibaba. gemini-3.5-flash-lite, same prompts: 16,243 (60%) on the second send, 16,251 on the extension. Both profiles moved to `cache_mode: implicit`. The 13k and 9.9k prompts probed on 2026-09-06 never hit, so the implicit minimum lies between 13k and 27k tokens; a fresh run will pay full price for its first few turns and then cache from there. Scripts: `test_scripts/probe_replay_cache_placements.py`, `test_scripts/probe_replay_implicit_cache.py`. Spend: $0.31 (one accidental duplicate of the placement sweep included).

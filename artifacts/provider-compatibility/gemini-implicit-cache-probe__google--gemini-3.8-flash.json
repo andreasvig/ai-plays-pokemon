@@ -1,0 +1,44 @@
+{
+ "run": "local/runs/2026-09-07_12-20-20_config-5.0__gemini-3-8-flash-medium",
+ "tag": "google-ai-studio",
+ "placement": "none",
+ "waited_s": 330,
+ "results": [
+  {
+   "label": "t10 #1",
+   "prompt": 27256,
+   "cached": 0,
+   "write": 0,
+   "prompt_cost": 0.020442,
+   "cost": 0.02067075,
+   "at": 1788777973.934303
+  },
+  {
+   "label": "t10 #2",
+   "prompt": 27256,
+   "cached": 24365,
+   "write": 0,
+   "prompt_cost": 0.003995625,
+   "cost": 0.004198125,
+   "at": 1788777985.051415
+  },
+  {
+   "label": "t10 #3",
+   "prompt": 27256,
+   "cached": 24365,
+   "write": 0,
+   "prompt_cost": 0.003995625,
+   "cost": 0.004224375,
+   "at": 1788777995.432144
+  },
+  {
+   "label": "t11 (extends)",
+   "prompt": 31449,
+   "cached": 28389,
+   "write": 0,
+   "prompt_cost": 0.004424175,
+   "cost": 0.004641675,
+   "at": 1788778006.853641
+  }
+ ]
+}

@@ -1,0 +1,111 @@
+{
+ "run": "local/runs/2026-09-07_12-20-20_config-5.0__gemini-3-8-flash-medium",
+ "requests": {
+  "10": "a185dcbe44764639a102b5d5d1d7e67a",
+  "11": "00e08228eb2a4695bd6db7c4e0a8c9f1"
+ },
+ "tag": "google-ai-studio",
+ "results": {
+  "system": [
+   {
+    "turn": 10,
+    "prompt": 27256,
+    "cached": 1274,
+    "write": 0,
+    "prompt_cost": 0.01958205,
+    "cost": 0.0197958,
+    "provider": "Google AI Studio"
+   },
+   {
+    "turn": 11,
+    "prompt": 31449,
+    "cached": 1274,
+    "write": 0,
+    "prompt_cost": 0.0227268,
+    "cost": 0.02294055,
+    "provider": "Google AI Studio"
+   }
+  ],
+  "last_text": [
+   {
+    "turn": 10,
+    "prompt": 27257,
+    "cached": 12717,
+    "write": 0,
+    "prompt_cost": 0.011858775,
+    "cost": 0.012068775,
+    "provider": "Google AI Studio"
+   },
+   {
+    "turn": 11,
+    "prompt": 31450,
+    "cached": 14002,
+    "write": 0,
+    "prompt_cost": 0.01413615,
+    "cost": 0.0143424,
+    "provider": "Google AI Studio"
+   }
+  ],
+  "last_any": [
+   {
+    "turn": 10,
+    "prompt": 27256,
+    "cached": 24365,
+    "write": 0,
+    "prompt_cost": 0.003995625,
+    "cost": 0.004209375,
+    "provider": "Google AI Studio"
+   },
+   {
+    "turn": 11,
+    "prompt": 31449,
+    "cached": 28439,
+    "write": 0,
+    "prompt_cost": 0.004390425,
+    "cost": 0.004604175,
+    "provider": "Google AI Studio"
+   }
+  ],
+  "last_assistant": [
+   {
+    "turn": 10,
+    "prompt": 27256,
+    "cached": 12685,
+    "write": 0,
+    "prompt_cost": 0.011879625,
+    "cost": 0.012089625,
+    "provider": "Google AI Studio"
+   },
+   {
+    "turn": 11,
+    "prompt": 31449,
+    "cached": 13941,
+    "write": 0,
+    "prompt_cost": 0.014176575,
+    "cost": 0.014386575,
+    "provider": "Google AI Studio"
+   }
+  ],
+  "system+last_assistant": [
+   {
+    "turn": 10,
+    "prompt": 27256,
+    "cached": 12685,
+    "write": 0,
+    "prompt_cost": 0.011879625,
+    "cost": 0.012093375,
+    "provider": "Google AI Studio"
+   },
+   {
+    "turn": 11,
+    "prompt": 31449,
+    "cached": 13941,
+    "write": 0,
+    "prompt_cost": 0.014176575,
+    "cost": 0.014379075,
+    "provider": "Google AI Studio"
+   }
+  ]
+ },
+ "spend_usd": 0.130909725
+}
