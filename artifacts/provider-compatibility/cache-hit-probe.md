@@ -64,3 +64,20 @@ The 2026-09-06 verdict above was wrong for real prompt sizes. Replaying turns 10
 | **none, second send** | **24,365 (89%)** | **28,389 (90%)** | **$0.0044** |
 
 No-marker sequence, after a 5.5-minute cool-down: first send 0 cached; second and third sends 24,365; the extension 28,389 — the whole prefix including images. An explicit marker anywhere caps the cache at the marked block, as on Alibaba. gemini-3.5-flash-lite, same prompts: 16,243 (60%) on the second send, 16,251 on the extension. Both profiles moved to `cache_mode: implicit`. The 13k and 9.9k prompts probed on 2026-09-06 never hit, so the implicit minimum lies between 13k and 27k tokens; a fresh run will pay full price for its first few turns and then cache from there. Scripts: `test_scripts/probe_replay_cache_placements.py`, `test_scripts/probe_replay_implicit_cache.py`. Spend: $0.31 (one accidental duplicate of the placement sweep included).
+
+## Gemini: size floor or final-turn-image rule? 2026-09-07
+
+Two-by-two on real prompts (turn N → N+1 pairs from the config-5.0 runs), live shape (ends with the screenshot) versus split shape (assistant "Observed." + text-only action prompt after every screenshot), on `google-ai-studio`. Scripts: `probe_gemini_shape_vs_size.py`, `probe_gemini_cache_followup.py`.
+
+| Model | Pair | Prompt A → B | live: B cached | split: B cached |
+|---|---|---|---|---|
+| 3.5-flash-lite | 3→4 | 5.7k → 7.3k | 0 | 0 |
+| 3.5-flash-lite | 6→7 | 10.6k → 11.9k | 0 | 0 |
+| 3.5-flash-lite | 9→10 | 15.0k → 16.4k | 0 | 0 |
+| 3.8-flash | 5→6 | 13.8k → 16.2k | 0 | 0 |
+| 3.8-flash | 10→11 | 27.3k → 31.5k | 28,389 (extends) | 24,310 (did not extend past A) |
+| 3.8-flash | 15→16 | 43.4k → 45.9k | 40,640 (extends) | 0, twice |
+
+Follow-ups: (a) 15k sent three times identically: 0, 0, 0 — the floor is not about shape or repetition. (b) A nonce at the start of the system prompt does not isolate conditions (nonce X: 0; nonce Y, same contents: 24,316): OpenRouter sends the system message as `systemInstruction` and Gemini's implicit cache keys on `contents`. (c) The 43k split pair again: A 0, extension 0, identical repeat of A 40,531 — the content caches, the extension does not.
+
+Reading: on this route nothing caches below roughly 16k prompt tokens whatever the shape (Google documents 4,096 for Gemini 3.x Flash, so the floor is OpenRouter's or AI Studio's, not the model's). Above it the agent's live shape extends fine, and the text-only-final-turn trick that fixes OpenAI makes Gemini's extension miss. Gemini profiles stay at `cache_mode: implicit`, `final_turn_text_only: false`. Consequence for compaction: a 10-turn segment on flash-lite (~16k at turn 10) never reaches the floor; a 20-turn segment caches its second half. Research spend today, Gemini: about $0.96, including two accidental re-runs of a sweep from a missing `__main__` guard (now fixed).

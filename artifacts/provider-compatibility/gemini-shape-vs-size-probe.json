@@ -1,0 +1,355 @@
+{
+ "tag": "google-ai-studio",
+ "at": 1788781700.38714,
+ "results": [
+  {
+   "model": "google/gemini-3.5-flash-lite",
+   "pair": [
+    3,
+    4
+   ],
+   "shape": "live",
+   "nonce": "d3e7b0bf",
+   "A": {
+    "prompt": 5742,
+    "cached": 0,
+    "write": 0,
+    "prompt_cost": 0.0017226,
+    "cost": 0.0018626,
+    "provider": "Google AI Studio",
+    "turn": 3
+   },
+   "B": {
+    "prompt": 7302,
+    "cached": 0,
+    "write": 0,
+    "prompt_cost": 0.0021906,
+    "cost": 0.0023281,
+    "provider": "Google AI Studio",
+    "turn": 4
+   },
+   "shortfall": 5742,
+   "verdict": "no_hit"
+  },
+  {
+   "model": "google/gemini-3.5-flash-lite",
+   "pair": [
+    3,
+    4
+   ],
+   "shape": "split",
+   "nonce": "cc2cd57a",
+   "A": {
+    "prompt": 5789,
+    "cached": 0,
+    "write": 0,
+    "prompt_cost": 0.0017367,
+    "cost": 0.0018742,
+    "provider": "Google AI Studio",
+    "turn": 3
+   },
+   "B": {
+    "prompt": 7365,
+    "cached": 0,
+    "write": 0,
+    "prompt_cost": 0.0022095,
+    "cost": 0.002352,
+    "provider": "Google AI Studio",
+    "turn": 4
+   },
+   "shortfall": 5789,
+   "verdict": "no_hit"
+  },
+  {
+   "model": "google/gemini-3.5-flash-lite",
+   "pair": [
+    6,
+    7
+   ],
+   "shape": "live",
+   "nonce": "06c268b7",
+   "A": {
+    "prompt": 10561,
+    "cached": 0,
+    "write": 0,
+    "prompt_cost": 0.0031683,
+    "cost": 0.0033108,
+    "provider": "Google AI Studio",
+    "turn": 6
+   },
+   "B": {
+    "prompt": 11922,
+    "cached": 0,
+    "write": 0,
+    "prompt_cost": 0.0035766,
+    "cost": 0.0037191,
+    "provider": "Google AI Studio",
+    "turn": 7
+   },
+   "shortfall": 10561,
+   "verdict": "no_hit"
+  },
+  {
+   "model": "google/gemini-3.5-flash-lite",
+   "pair": [
+    6,
+    7
+   ],
+   "shape": "split",
+   "nonce": "c1a58548",
+   "A": {
+    "prompt": 10656,
+    "cached": 0,
+    "write": 0,
+    "prompt_cost": 0.0031968,
+    "cost": 0.0033343,
+    "provider": "Google AI Studio",
+    "turn": 6
+   },
+   "B": {
+    "prompt": 12033,
+    "cached": 0,
+    "write": 0,
+    "prompt_cost": 0.0036099,
+    "cost": 0.0037449,
+    "provider": "Google AI Studio",
+    "turn": 7
+   },
+   "shortfall": 10656,
+   "verdict": "no_hit"
+  },
+  {
+   "model": "google/gemini-3.5-flash-lite",
+   "pair": [
+    9,
+    10
+   ],
+   "shape": "live",
+   "nonce": "730d4f83",
+   "A": {
+    "prompt": 14965,
+    "cached": 0,
+    "write": 0,
+    "prompt_cost": 0.0044895,
+    "cost": 0.0046295,
+    "provider": "Google AI Studio",
+    "turn": 9
+   },
+   "B": {
+    "prompt": 16400,
+    "cached": 0,
+    "write": 0,
+    "prompt_cost": 0.00492,
+    "cost": 0.00507,
+    "provider": "Google AI Studio",
+    "turn": 10
+   },
+   "shortfall": 14965,
+   "verdict": "no_hit"
+  },
+  {
+   "model": "google/gemini-3.5-flash-lite",
+   "pair": [
+    9,
+    10
+   ],
+   "shape": "split",
+   "nonce": "7f878969",
+   "A": {
+    "prompt": 15109,
+    "cached": 0,
+    "write": 0,
+    "prompt_cost": 0.0045327,
+    "cost": 0.0046702,
+    "provider": "Google AI Studio",
+    "turn": 9
+   },
+   "B": {
+    "prompt": 16561,
+    "cached": 0,
+    "write": 0,
+    "prompt_cost": 0.0049683,
+    "cost": 0.0051058,
+    "provider": "Google AI Studio",
+    "turn": 10
+   },
+   "shortfall": 15109,
+   "verdict": "no_hit"
+  },
+  {
+   "model": "google/gemini-3.8-flash",
+   "pair": [
+    5,
+    6
+   ],
+   "shape": "live",
+   "nonce": "96bb678d",
+   "A": {
+    "prompt": 13829,
+    "cached": 0,
+    "write": 0,
+    "prompt_cost": 0.01037175,
+    "cost": 0.01057425,
+    "provider": "Google AI Studio",
+    "turn": 5
+   },
+   "B": {
+    "prompt": 16229,
+    "cached": 0,
+    "write": 0,
+    "prompt_cost": 0.01217175,
+    "cost": 0.0123855,
+    "provider": "Google AI Studio",
+    "turn": 6
+   },
+   "shortfall": 13829,
+   "verdict": "no_hit"
+  },
+  {
+   "model": "google/gemini-3.8-flash",
+   "pair": [
+    5,
+    6
+   ],
+   "shape": "split",
+   "nonce": "b9a5d10f",
+   "A": {
+    "prompt": 13909,
+    "cached": 0,
+    "write": 0,
+    "prompt_cost": 0.01043175,
+    "cost": 0.0106455,
+    "provider": "Google AI Studio",
+    "turn": 5
+   },
+   "B": {
+    "prompt": 16325,
+    "cached": 0,
+    "write": 0,
+    "prompt_cost": 0.01224375,
+    "cost": 0.0124575,
+    "provider": "Google AI Studio",
+    "turn": 6
+   },
+   "shortfall": 13909,
+   "verdict": "no_hit"
+  },
+  {
+   "model": "google/gemini-3.8-flash",
+   "pair": [
+    10,
+    11
+   ],
+   "shape": "live",
+   "nonce": "62f00e2a",
+   "A": {
+    "prompt": 27267,
+    "cached": 0,
+    "write": 0,
+    "prompt_cost": 0.02045025,
+    "cost": 0.020664,
+    "provider": "Google AI Studio",
+    "turn": 10
+   },
+   "B": {
+    "prompt": 31460,
+    "cached": 0,
+    "write": 0,
+    "prompt_cost": 0.023595,
+    "cost": 0.02380875,
+    "provider": "Google AI Studio",
+    "turn": 11
+   },
+   "shortfall": 27267,
+   "verdict": "no_hit"
+  },
+  {
+   "model": "google/gemini-3.8-flash",
+   "pair": [
+    10,
+    11
+   ],
+   "shape": "split",
+   "nonce": "42c52e29",
+   "A": {
+    "prompt": 27428,
+    "cached": 0,
+    "write": 0,
+    "prompt_cost": 0.020571,
+    "cost": 0.02078475,
+    "provider": "Google AI Studio",
+    "turn": 10
+   },
+   "B": {
+    "prompt": 31638,
+    "cached": 24310,
+    "write": 0,
+    "prompt_cost": 0.00731925,
+    "cost": 0.00752925,
+    "provider": "Google AI Studio",
+    "turn": 11
+   },
+   "shortfall": 3118,
+   "verdict": "partial"
+  },
+  {
+   "model": "google/gemini-3.8-flash",
+   "pair": [
+    15,
+    16
+   ],
+   "shape": "live",
+   "nonce": "6a93c8ff",
+   "A": {
+    "prompt": 43360,
+    "cached": 0,
+    "write": 0,
+    "prompt_cost": 0.03252,
+    "cost": 0.03273375,
+    "provider": "Google AI Studio",
+    "turn": 15
+   },
+   "B": {
+    "prompt": 45931,
+    "cached": 0,
+    "write": 0,
+    "prompt_cost": 0.03444825,
+    "cost": 0.034677,
+    "provider": "Google AI Studio",
+    "turn": 16
+   },
+   "shortfall": 43360,
+   "verdict": "no_hit"
+  },
+  {
+   "model": "google/gemini-3.8-flash",
+   "pair": [
+    15,
+    16
+   ],
+   "shape": "split",
+   "nonce": "155f4bad",
+   "A": {
+    "prompt": 43605,
+    "cached": 0,
+    "write": 0,
+    "prompt_cost": 0.03270375,
+    "cost": 0.03291375,
+    "provider": "Google AI Studio",
+    "turn": 15
+   },
+   "B": {
+    "prompt": 46193,
+    "cached": 0,
+    "write": 0,
+    "prompt_cost": 0.03464475,
+    "cost": 0.03487725,
+    "provider": "Google AI Studio",
+    "turn": 16
+   },
+   "shortfall": 43605,
+   "verdict": "no_hit"
+  }
+ ],
+ "spend_usd": 0.29605275
+}
