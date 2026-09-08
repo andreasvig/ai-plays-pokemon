@@ -1,0 +1,346 @@
+{
+  "session": {
+    "llm_alias": "gemini-3.6-flash(medium)",
+    "llm_model": "google/gemini-3.6-flash",
+    "thinking": {
+      "effort": "medium"
+    },
+    "fallback_models": [],
+    "task": "beat the game",
+    "total_turns": 12,
+    "player_turns": 12,
+    "task_master_turns": 0,
+    "duration_seconds": 289.9,
+    "resumed": false,
+    "segment": {
+      "continued_from": null,
+      "resumed_at_turn": null,
+      "prior_duration_s": 0.0,
+      "segment_duration_s": 289.9,
+      "segment_player_turns": 12
+    },
+    "started_at": "2026-08-01T21:33:44"
+  },
+  "cost": {
+    "total_usd": 0.23912,
+    "llm_usd": 0.234701,
+    "ocr_usd": 0.00442,
+    "task_master_usd": 0.0,
+    "total_input_tokens": 81912,
+    "total_output_tokens": 14911,
+    "per_turn": [
+      {
+        "turn": 1,
+        "cost_usd": 0.014094,
+        "model": "google/gemini-3.6-flash",
+        "duration_s": 6.9
+      },
+      {
+        "turn": 2,
+        "cost_usd": 0.016917,
+        "model": "google/gemini-3.6-flash",
+        "duration_s": 6.3
+      },
+      {
+        "turn": 3,
+        "cost_usd": 0.017439,
+        "model": "google/gemini-3.6-flash",
+        "duration_s": 8.1
+      },
+      {
+        "turn": 4,
+        "cost_usd": 0.017091,
+        "model": "google/gemini-3.6-flash",
+        "duration_s": 7.3
+      },
+      {
+        "turn": 5,
+        "cost_usd": 0.017877,
+        "model": "google/gemini-3.6-flash",
+        "duration_s": 6.9
+      },
+      {
+        "turn": 6,
+        "cost_usd": 0.020076,
+        "model": "google/gemini-3.6-flash",
+        "duration_s": 9.9
+      },
+      {
+        "turn": 7,
+        "cost_usd": 0.020505,
+        "model": "google/gemini-3.6-flash",
+        "duration_s": 12.4
+      },
+      {
+        "turn": 8,
+        "cost_usd": 0.0234345,
+        "model": "google/gemini-3.6-flash",
+        "duration_s": 12.0
+      },
+      {
+        "turn": 9,
+        "cost_usd": 0.016296,
+        "model": "google/gemini-3.6-flash",
+        "duration_s": 7.0
+      },
+      {
+        "turn": 10,
+        "cost_usd": 0.0174345,
+        "model": "google/gemini-3.6-flash",
+        "duration_s": 10.5
+      },
+      {
+        "turn": 11,
+        "cost_usd": 0.0313515,
+        "model": "google/gemini-3.6-flash",
+        "duration_s": 14.5
+      },
+      {
+        "turn": 12,
+        "cost_usd": 0.022185,
+        "model": "google/gemini-3.6-flash",
+        "duration_s": 12.3
+      }
+    ]
+  },
+  "referee": {
+    "checkpoints": {
+      "left_bedroom": 2,
+      "left_house": 5,
+      "oaks_lab_entered": 8,
+      "starter_chosen": 12,
+      "rival1_done": null,
+      "route1_reached": null,
+      "viridian_reached": null,
+      "parcel_delivered": null,
+      "pokedex_received": null,
+      "viridian_forest_reached": null,
+      "pewter_reached": null,
+      "brock_defeated": null,
+      "route3_reached": null,
+      "mt_moon_entered": null,
+      "mt_moon_cleared": null,
+      "cerulean_reached": null,
+      "cascade_badge": null,
+      "bills_errand_reached": null,
+      "vermilion_reached": null,
+      "ss_anne_boarded": null,
+      "thunder_badge": null
+    },
+    "gates": [
+      {
+        "kind": "single",
+        "id": "left_bedroom",
+        "name": "Left the bedroom",
+        "type": "map",
+        "deadline_turn": 25,
+        "turn": 2,
+        "status": "done"
+      },
+      {
+        "kind": "single",
+        "id": "left_house",
+        "name": "Stepped outside in Pallet Town",
+        "type": "map",
+        "deadline_turn": 50,
+        "turn": 5,
+        "status": "done"
+      },
+      {
+        "kind": "single",
+        "id": "oaks_lab_entered",
+        "name": "Entered Oak's Lab",
+        "type": "map",
+        "deadline_turn": 75,
+        "turn": 8,
+        "status": "done"
+      },
+      {
+        "kind": "single",
+        "id": "starter_chosen",
+        "name": "Chose a starter",
+        "type": "flag",
+        "deadline_turn": 100,
+        "turn": 12,
+        "status": "done"
+      },
+      {
+        "kind": "single",
+        "id": "rival1_done",
+        "name": "First rival battle done",
+        "type": "flag",
+        "deadline_turn": 125,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "route1_reached",
+        "name": "Reached Route 1",
+        "type": "map",
+        "deadline_turn": 150,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "viridian_reached",
+        "name": "Reached Viridian City",
+        "type": "map",
+        "deadline_turn": 200,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "parcel_delivered",
+        "name": "Delivered Oak's Parcel",
+        "type": "var",
+        "deadline_turn": 250,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "pokedex_received",
+        "name": "Received the Pokédex",
+        "type": "flag",
+        "deadline_turn": 300,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "viridian_forest_reached",
+        "name": "Entered Viridian Forest",
+        "type": "map",
+        "deadline_turn": 350,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "pewter_reached",
+        "name": "Reached Pewter City",
+        "type": "map",
+        "deadline_turn": 400,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "brock_defeated",
+        "name": "Defeated Brock (Boulder Badge)",
+        "type": "flag",
+        "deadline_turn": 500,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "route3_reached",
+        "name": "Reached Route 3",
+        "type": "map",
+        "deadline_turn": 550,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "mt_moon_entered",
+        "name": "Entered Mt. Moon",
+        "type": "map",
+        "deadline_turn": 600,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "mt_moon_cleared",
+        "name": "Cleared Mt. Moon (reached Route 4)",
+        "type": "map",
+        "deadline_turn": 700,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "cerulean_reached",
+        "name": "Reached Cerulean City",
+        "type": "map",
+        "deadline_turn": 700,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "multigate",
+        "id": "cascade_badge+bills_errand_reached",
+        "name": "Defeated Misty (Cascade Badge) / Reached Route 25 (Bill's house) (any order)",
+        "type": "multigate",
+        "deadline_turns": [
+          800,
+          900
+        ],
+        "deadline_turn": 900,
+        "members": [
+          {
+            "id": "cascade_badge",
+            "name": "Defeated Misty (Cascade Badge)",
+            "type": "flag",
+            "turn": null,
+            "status": "pending"
+          },
+          {
+            "id": "bills_errand_reached",
+            "name": "Reached Route 25 (Bill's house)",
+            "type": "map",
+            "turn": null,
+            "status": "pending"
+          }
+        ],
+        "completed_count": 0,
+        "required_count": 2,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "vermilion_reached",
+        "name": "Reached Vermilion City",
+        "type": "map",
+        "deadline_turn": 1000,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "ss_anne_boarded",
+        "name": "Boarded the S.S. Anne",
+        "type": "map",
+        "deadline_turn": 1100,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "thunder_badge",
+        "name": "Defeated Lt. Surge (Thunder Badge)",
+        "type": "flag",
+        "deadline_turn": 1200,
+        "turn": null,
+        "status": "pending"
+      }
+    ],
+    "furthest": "starter_chosen",
+    "first_unmet": "rival1_done",
+    "autofilled": [],
+    "termination_reason": null
+  },
+  "status": "completed",
+  "run_id": "2026-08-01_21-33-42_config-4.0__gemini-3-6-flash-medium",
+  "kind": "casual",
+  "continued_from": null,
+  "benchmark": null,
+  "benchmark_version": null,
+  "ended_at": "2026-08-01T21:38:35"
+}

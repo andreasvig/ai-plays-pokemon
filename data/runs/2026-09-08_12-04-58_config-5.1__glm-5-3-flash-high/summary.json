@@ -1,0 +1,61 @@
+{
+  "session": {
+    "llm_alias": "glm-5.3-flash(high)",
+    "llm_model": "z-ai/glm-5.3-flash",
+    "thinking": {
+      "effort": "high"
+    },
+    "fallback_models": [],
+    "task": "beat the game",
+    "total_turns": 93,
+    "player_turns": 93,
+    "task_master_turns": 0,
+    "duration_seconds": 3509.8,
+    "resumed": false,
+    "segment": {
+      "continued_from": null,
+      "resumed_at_turn": null,
+      "prior_duration_s": 0.0,
+      "segment_duration_s": 3509.8,
+      "segment_player_turns": 93
+    },
+    "started_at": "2026-09-08T12:04:58"
+  },
+  "cost": {
+    "total_usd": 0.092741,
+    "llm_usd": 0.066885,
+    "ocr_usd": 0.025855,
+    "task_master_usd": 0.0,
+    "total_input_tokens": 2624060,
+    "total_output_tokens": 48782,
+    "per_turn": []
+  },
+  "agent_type": "append_compact",
+  "conversation": {
+    "segment": 5,
+    "completed_game_turns": 93,
+    "compactions": 4,
+    "cache": {
+      "attempts": 101,
+      "measured_attempts": 97,
+      "cached_tokens": 2368576,
+      "measured_input_tokens": 2624060,
+      "input_read_fraction": 0.9026378969993064,
+      "request_hit_fraction": 0.9484536082474226,
+      "economics": {
+        "verdict": "unknown",
+        "saved_usd": null,
+        "discount_fraction": null
+      }
+    }
+  },
+  "error": "[Errno 8] nodename nor servname provided, or not known",
+  "max_turns": 100,
+  "status": "crashed",
+  "run_id": "2026-09-08_12-04-58_config-5.1__glm-5-3-flash-high",
+  "kind": "casual",
+  "continued_from": null,
+  "benchmark": null,
+  "benchmark_version": null,
+  "ended_at": "2026-09-08T13:03:28"
+}
