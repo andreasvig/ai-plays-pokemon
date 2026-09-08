@@ -1211,8 +1211,9 @@ model you can actually start — `pokemon ls models` for the full list):
         help="pkill any existing mGBA before launching.",
     )
     parser.add_argument(
-        "--record", choices=["simple", "detailed", "both"], default=None,
-        help="Record the run to <run_dir>/recording.mp4. `simple` captures the "
+        "--record", nargs="?", const="simple", choices=["simple", "detailed", "both"], default=None,
+        help="Record the run to <run_dir>/recording.mp4. Bare `--record` = `simple` "
+             "(a `pokemon run` is a casual run). `simple` captures the "
              "1:1 simple view (game screen + turn box) at 1080x1080; `detailed` "
              "captures the full wide spectate panel at 1920x1080; `both` runs two "
              "recorders (detailed → recording.mp4, simple → recording-simple.mp4). "
@@ -1233,7 +1234,7 @@ model you can actually start — `pokemon ls models` for the full list):
     )
     parser.add_argument(
         "--record-show", dest="record_show", default=None,
-        help="Comma-separated run facts to print in the simple view's header strip: any of model, elapsed, cost (e.g. `--record-show model,cost`). Off by default so the frame stays bare. Ignored for `detailed`, which always shows them.",
+        help="Which run facts the simple view's header strip prints: a comma list of model, elapsed, cost, or `none` for a bare frame. Default: all three. Ignored for `detailed`, which always shows them.",
     )
     args = parser.parse_args()
 

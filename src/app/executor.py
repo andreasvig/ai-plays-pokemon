@@ -32,7 +32,7 @@ from typing import Any, Callable, Optional
 
 from src.app.benchmarks import get_benchmark
 from src.app.catalog import stop_at_referee_config
-from src.app.models import QueuedRun, RunKind, RunStatus
+from src.app.models import QueuedRun, RunKind, RunStatus, default_record_view
 from src.app.roms import apply_rom, get_rom, rom_for_game
 from src.app.projection import project_run_dir
 from src.app.trace_build import build_and_cache_trace
@@ -626,7 +626,12 @@ class RunExecutor:
             # run_fn signature fixed also means every injected test fake keeps
             # working unchanged. See dashboard/recorder.py.
             if item.record is not None:
-                config["_record"] = item.record.model_dump(mode="json")
+                record = item.record.model_dump(mode="json")
+                # No view chosen → by kind: the full panel for a benchmark run,
+                # the simple frame for a casual one.
+                if record.get("view") is None:
+                    record["view"] = default_record_view(item.kind).value
+                config["_record"] = record
             run_fn = self._resolve_run_fn()
             # Publish (and capture) the active run dir the instant the run starts
             # (not after it returns) so the control plane exposes it DURING the run

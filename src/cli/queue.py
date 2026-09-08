@@ -40,11 +40,17 @@ from src.config import default_config_stem, example_model_aliases
 
 
 def record_show_flags(value: str | None) -> dict[str, bool]:
-    """`--record-show model,elapsed,cost` → the three `show_*` booleans of a
-    record spec. Every name must be one of the three, so a typo fails here
-    instead of enqueuing a recording with the overlay silently missing."""
+    """`--record-show model,elapsed,cost` → the `show_*` booleans of a record spec.
+
+    Omitted → `{}`: the flags stay absent and the recorder applies the standard
+    (all three ON for the simple frame and `both`, off for detailed). `none` →
+    all three explicitly off, a bare frame. Otherwise the named ones are on and
+    the rest off. Every name must be one of the three, so a typo fails here
+    instead of enqueuing a recording with the overlay silently wrong."""
+    if value is None:
+        return {}
     flags = {"show_model": False, "show_elapsed": False, "show_cost": False}
-    if not value:
+    if value.strip().lower() == "none":
         return flags
     for name in (n.strip() for n in value.split(",")):
         if not name:
@@ -190,9 +196,13 @@ def _cmd_add(args) -> int:
         if args.record:
             # Validated server-side (400 on a bad view/speed or a missing
             # ffmpeg/Chrome), so a batch that can't actually be recorded is
-            # rejected whole rather than half-enqueued.
+            # rejected whole rather than half-enqueued. A bare `--record` picks
+            # the view by kind: the full panel for a benchmark, simple for casual.
+            view = args.record
+            if view == "auto":
+                view = "detailed" if args.kind == "official" else "simple"
             spec["record"] = {
-                "view": args.record,
+                "view": view,
                 "speed": args.record_speed,
                 "fps": args.record_fps,
                 **record_show_flags(args.record_show),
@@ -435,12 +445,14 @@ base profile.
     )
     p_add.add_argument("--repeat", type=int, default=1, help="Enqueue each model N times (default 1).")
     p_add.add_argument(
-        "--record", choices=["simple", "detailed", "both"], default=None,
-        help="Record the run to <run_dir>/recording.mp4. `simple` = the 1:1 "
-             "recording view (game screen + turn box) at 1080x1080; `detailed` = "
-             "the whole wide spectate panel at 1920x1080; `both` = two recorders, "
-             "detailed → recording.mp4 and simple → recording-simple.mp4. Rendered "
-             "headlessly server-side, so it does not depend on any open browser.",
+        "--record", nargs="?", const="auto", choices=["auto", "simple", "detailed", "both"], default=None,
+        help="Record the run to <run_dir>/recording.mp4. Bare `--record` picks the "
+             "view by kind: `detailed` for an official run, `simple` for casual. "
+             "`simple` = the 1:1 recording view (game screen + turn box) at "
+             "1080x1080; `detailed` = the whole wide spectate panel at 1920x1080; "
+             "`both` = two recorders, detailed → recording.mp4 and simple → "
+             "recording-simple.mp4. Rendered headlessly server-side, so it does "
+             "not depend on any open browser.",
     )
     p_add.add_argument(
         "--record-speed", dest="record_speed",
@@ -455,7 +467,7 @@ base profile.
     )
     p_add.add_argument(
         "--record-show", dest="record_show", default=None,
-        help="Comma-separated run facts to print in the simple view's header strip: any of model, elapsed, cost (e.g. `--record-show model,cost`). Off by default so the frame stays bare. Ignored for `detailed`, which always shows them.",
+        help="Which run facts the simple view's header strip prints: a comma list of model, elapsed, cost, or `none` for a bare frame. Default: all three. Ignored for `detailed`, which always shows them.",
     )
 
     sub.add_parser(

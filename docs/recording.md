@@ -83,11 +83,13 @@ writes `recording.mp4` — the filename never says which view; the run's
 
 ### The simple view's header strip (`--record-show`)
 
-By default the simple frame is bare: screen + turn box. `--record-show
-model,elapsed,cost` (any subset; the dialog has the same three checkboxes under
-"Show in frame") prints a strip above the screen with the model name on the left
-and the run's total time and total cost on the right, in the box's own
-typography. The recorder passes the choice to its headless page as
+The standard simple frame (and the simple file of a `both` recording) carries a
+strip above the screen with the model name on the left and the run's total time
+and total cost on the right, in the box's own typography. All three are on
+unless you say otherwise (Andreas, 2026-09-08): `--record-show model,cost`
+keeps only the named ones, `--record-show none` gives a bare screen + turn box,
+and the dialog has the same three checkboxes under "Show in frame", ticked by
+default. The recorder passes the choice to its headless page as
 `&show=model,cost` on the pinned URL, so the file shows exactly what was chosen at
 enqueue time; a human watching the same run has their own copy of the toggles
 behind the ⚙ next to the ✕ (mouse-move to reveal), stored in the browser, and
@@ -199,13 +201,17 @@ both WebSockets, compositor and ffmpeg without a model call.
 
 | Flag | Values | Default |
 |---|---|---|
-| `--record` | `simple`, `detailed` | off |
+| `--record` | bare, `simple`, `detailed`, `both` | off; bare = by kind: `detailed` for an official run, `simple` for casual |
 | `--record-speed` | `realtime`, `cut-thinking` | `realtime` |
 | `--record-fps` | 1–60 | `30` |
-| `--record-show` | any of `model,elapsed,cost` | off |
+| `--record-show` | any of `model,elapsed,cost`, or `none` | all three (simple / both); ignored by `detailed` |
 
-**The UI defaults differ on purpose.** Ticking "Record this run to MP4" in the
-Add-run dialog gives you **simple + cut-thinking** — the pairing you'd actually
+**The view follows the kind** (Andreas, 2026-09-08): a benchmark run records
+the full panel, a casual run the 1:1 frame, in the dialog as in the CLI. Pick
+another view to override it for that run.
+
+**The UI speed default differs on purpose.** Ticking "Record this run to MP4" in
+the Add-run dialog gives you **cut-thinking** — the pairing you'd actually
 post, rather than a ten-minute file of a model thinking. The CLI keeps
 `realtime`, because there the caller is scripting and silently editing their
 footage is the surprising outcome. Both are one control away from the other.

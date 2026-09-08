@@ -45,8 +45,11 @@ def test_normalize_none_means_no_recording():
     assert normalize_spec(False) is None
 
 
-# Overlay flags every normalised spec carries; all off unless asked for.
+# Overlay flags every normalised spec carries. Absent resolves to the STANDARD:
+# all three on for the simple frame (and `both`), off for detailed, whose stats
+# row already shows them (Andreas, 2026-09-08).
 NO_SHOW = {"show_model": False, "show_elapsed": False, "show_cost": False}
+ALL_SHOW = {"show_model": True, "show_elapsed": True, "show_cost": True}
 
 
 def test_normalize_bare_view_string():
@@ -56,7 +59,7 @@ def test_normalize_bare_view_string():
 
 
 def test_normalize_defaults_to_simple_realtime_30():
-    assert normalize_spec({}) == {"view": "simple", "speed": "realtime", "fps": 30, **NO_SHOW}
+    assert normalize_spec({}) == {"view": "simple", "speed": "realtime", "fps": 30, **ALL_SHOW}
 
 
 def test_normalize_accepts_the_pydantic_model():
@@ -69,8 +72,12 @@ def test_normalize_accepts_the_pydantic_model():
 
 
 def test_normalize_keeps_the_overlay_flags_that_were_asked_for():
-    out = normalize_spec({"show_model": True, "show_cost": True})
+    # an explicit False is honoured; an absent flag takes the view's default
+    out = normalize_spec({"show_model": True, "show_elapsed": False})
     assert (out["show_model"], out["show_elapsed"], out["show_cost"]) == (True, False, True)
+    out = normalize_spec({"view": "detailed", "show_model": True})
+    assert (out["show_model"], out["show_elapsed"], out["show_cost"]) == (True, False, False)
+    assert normalize_spec("both")["show_cost"] is True
 
 
 @pytest.mark.parametrize("bad", [{"show_model": "true"}, {"show_cost": 1}, {"show_elapsed": "false"}])
@@ -124,9 +131,11 @@ def test_record_url_pins_the_run():
 
 
 def test_record_url_carries_the_overlay_flags_in_strip_order():
-    spec = normalize_spec({"show_cost": True, "show_model": True})
+    spec = normalize_spec({"show_cost": True, "show_model": True, "show_elapsed": False})
     url = record_url(3420, "2026-08-01_run-x", "simple", spec)
     assert url.endswith("&show=model,cost")
+    # the standard simple frame carries all three, in strip order
+    assert record_url(3420, "r", "simple", normalize_spec("simple")).endswith("&show=model,elapsed,cost")
 
 
 # ───────────────────────── 2. the cut-thinking gate ─────────────────────────
@@ -393,9 +402,11 @@ def test_queued_run_round_trips_a_record_spec(tmp_path: Path):
         record={"view": "detailed", "speed": "cut-thinking", "fps": 24, "show_elapsed": True},
     )
     raw = json.loads(qpath.read_text())
+    # absent flags persist as None (not chosen), so the recorder can apply the
+    # view's standard; the one that was chosen persists as chosen.
     assert raw["items"][0]["record"] == {
         "view": "detailed", "speed": "cut-thinking", "fps": 24,
-        "show_model": False, "show_elapsed": True, "show_cost": False,
+        "show_model": None, "show_elapsed": True, "show_cost": None,
     }
 
     reloaded = QueueManager(qpath)
@@ -470,9 +481,66 @@ def test_executor_stamps_the_spec_onto_the_run_config(tmp_path: Path):
     )
     ex.drain_once()
 
+    # the flags ride through as "not chosen" (None); maybe_start's normalize_spec
+    # turns them into the simple frame's standard (all on) at recorder start
     assert seen["config"]["_record"] == {
-        "view": "simple", "speed": "cut-thinking", "fps": 30, **NO_SHOW
+        "view": "simple", "speed": "cut-thinking", "fps": 30,
+        "show_model": None, "show_elapsed": None, "show_cost": None,
     }
+
+
+@pytest.mark.parametrize("kind, view", [("official", "detailed"), ("casual", "simple")])
+def test_executor_picks_the_view_by_kind_when_none_was_chosen(tmp_path: Path, kind: str, view: str):
+    """`record: {}` from the API/dialog → the benchmark run records the full
+    panel, the casual run the 1:1 frame."""
+    from src.app.models import RecordSpec, RunKind
+    from src.app.queue_manager import QueueManager
+    from src.app.executor import RunExecutor
+
+    seen: dict = {}
+
+    def fake_run_fn(handle, config, *, turns, snapshot, open_browser=False,
+                    on_run_dir=None, should_stop=None):
+        seen["config"] = config
+        run_dir = tmp_path / "runs" / "r1"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "run_summary.json").write_text("{}")
+        if on_run_dir:
+            on_run_dir(run_dir)
+        return run_dir
+
+    class FakeStatus:
+        busy = False
+
+    class FakeSupervisor:
+        handle = {}
+
+        def status(self):
+            return FakeStatus()
+
+        def set_busy(self, _v):
+            FakeStatus.busy = _v
+
+    class FakeIndex:
+        def upsert(self, *a, **k):
+            pass
+
+    q = QueueManager(tmp_path / "queue.json")
+    if kind == "official":
+        q.enqueue(RunKind.official, "claude-haiku-4-5(medium)", benchmark="pokebench-easy", record=RecordSpec())
+    else:
+        q.enqueue(RunKind.casual, "claude-haiku-4-5(medium)", config="config-3.13", max_turns=2, record=RecordSpec())
+    ex = RunExecutor(
+        supervisor=FakeSupervisor(),
+        queue_manager=q,
+        run_index=FakeIndex(),
+        runs_root=tmp_path / "runs",
+        saves_dir=tmp_path / "saves",
+        run_fn=fake_run_fn,
+        prepare_config_fn=lambda path, model, **kw: {"llm_model": model, "task": {}},
+    )
+    ex.drain_once()
+    assert seen["config"]["_record"]["view"] == view
 
 
 def test_executor_leaves_unrecorded_runs_alone(tmp_path: Path):
@@ -746,3 +814,34 @@ def test_finish_returns_the_canonical_file_when_both_were_written(tmp_path: Path
     # simple alone → recording.mp4 is still the (only) canonical file
     solo = RunRecorder(run_id="r", run_dir=tmp_path, port=1, spec=normalize_spec("simple"), chrome="x")
     assert recorder.finish(recorder.RecorderGroup([solo])) == tmp_path / "recording.mp4"
+
+
+
+# ─────────────────── 6. defaults by kind and the standard frame ───────────────────
+
+
+def test_default_record_view_follows_the_run_kind():
+    from src.app.models import RunKind, default_record_view
+
+    assert default_record_view(RunKind.official).value == "detailed"
+    assert default_record_view(RunKind.casual).value == "simple"
+
+
+def test_record_spec_with_no_view_is_not_chosen_until_dispatch():
+    """The API/dialog may omit the view; the model keeps that as None so the
+    executor can pick by kind instead of a hard-coded simple."""
+    from src.app.models import RecordSpec
+
+    spec = RecordSpec()
+    assert spec.view is None and spec.show_model is None
+    assert RecordSpec(view="both").view.value == "both"
+
+
+def test_cli_record_show_flags_omitted_none_and_named():
+    from src.cli.queue import record_show_flags
+
+    assert record_show_flags(None) == {}, "omitted → absent → the recorder's standard"
+    assert record_show_flags("none") == NO_SHOW
+    assert record_show_flags("model,cost") == {"show_model": True, "show_elapsed": False, "show_cost": True}
+    with pytest.raises(SystemExit):
+        record_show_flags("modle")

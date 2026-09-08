@@ -81,17 +81,27 @@ class RecordSpec(BaseModel):
     the default; it costs a headless browser and an encoder for the whole run.
     """
 
-    view: RecordView = RecordView.simple
+    # ``None`` = "not chosen": the executor picks by run kind — detailed for an
+    # official (benchmark) run, simple for a casual one (Andreas, 2026-09-08).
+    view: RecordView | None = None
     speed: RecordSpeed = RecordSpeed.realtime
     fps: int = 30
     # Simple-view frame overlay: which run facts to print in the recording's
-    # header strip. All off by default so a recording stays the bare "screen +
-    # turn box" frame the view was designed as; a human's own tab has the same
-    # three toggles behind the gear button, stored in localStorage instead.
-    # Ignored by the detailed view, which shows all of them in its stats row.
-    show_model: bool = False
-    show_elapsed: bool = False
-    show_cost: bool = False
+    # header strip. ``None`` = not chosen → ON for the simple and both views
+    # (the standard frame shows model, total time and total cost — Andreas,
+    # 2026-09-08), off for detailed, which shows them in its stats row anyway.
+    # ``normalize_spec`` resolves the None; an explicit False keeps a frame bare.
+    # A human's own tab has the same three toggles behind the gear button,
+    # stored in localStorage instead.
+    show_model: bool | None = None
+    show_elapsed: bool | None = None
+    show_cost: bool | None = None
+
+
+def default_record_view(kind: "RunKind") -> RecordView:
+    """The view a run records in when none was chosen: the full panel for a
+    benchmark run, the 1:1 simple frame for a casual one."""
+    return RecordView.detailed if kind == RunKind.official else RecordView.simple
 
 
 # The config family the leaderboard ranks. Module-level (not a class attribute)

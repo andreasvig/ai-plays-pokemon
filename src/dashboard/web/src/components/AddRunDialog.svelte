@@ -115,11 +115,16 @@
   // thinking. The CLI still defaults to realtime, where the caller is scripting
   // and an unasked-for edit is the surprising outcome.
   let record = $state(false)
-  let recordView = $state('simple')          // the 1:1 recording view
+  let recordView = $state('detailed')        // follows the kind below until changed
   let recordSpeed = $state('cut-thinking')   // execution windows only
   // Header overlay of the simple view; all off keeps the bare frame. Sent as
   // show_model / show_elapsed / show_cost on the record spec (RecordSpec).
-  let recordShow = $state({ model: false, elapsed: false, cost: false })
+  // The standard simple frame shows all three (Andreas, 2026-09-08); untick to bare it.
+  let recordShow = $state({ model: true, elapsed: true, cost: true })
+  // The view follows the kind: the full panel for a benchmark run, the 1:1
+  // frame for a casual one. Re-applied whenever the kind changes, so a pick
+  // made for one kind does not silently carry to the other.
+  $effect(() => { recordView = kind === 'official' ? 'detailed' : 'simple' })
   const RECORD_SHOW_LABELS = { model: 'Model name', elapsed: 'Total time', cost: 'Total cost' }
   let modelQuery = $state('')       // searchable model-picker filter text
   // Casual-continue TaskMaster override. '' = keep the source run's TaskMaster

@@ -233,11 +233,15 @@ def normalize_spec(raw: Any) -> Optional[dict]:
         raise ValueError(f"record fps must be 1..60, got {fps}")
     out = {"view": view, "speed": speed, "fps": fps}
     # Overlay flags are booleans, not truthy strings: "false" from a query
-    # string or a CLI would otherwise switch an overlay ON.
+    # string or a CLI would otherwise switch an overlay ON. Absent = the
+    # standard: ON for the simple frame (and `both`, which records one), where
+    # model / total time / total cost are what the frame is for; off for
+    # detailed, whose stats row already shows them.
+    show_default = view != "detailed"
     for key in SHOW_KEYS:
         value = raw.get(key)
         if value is None:
-            out[key] = False
+            out[key] = show_default
         elif isinstance(value, bool):
             out[key] = value
         else:
