@@ -37,12 +37,12 @@ Four prompts are required, and `_validate_append_config` refuses a config missin
 | --- | --- |
 | `system_prompt` | Once per segment, at the segment's first turn. |
 | `user_prompt` | Every gameplay turn — turn number, new OCR text, current screenshot. |
-| `segment_start_prompt` | The first turn of a segment after a compaction: goal, continuation summary, memory, last action, recent grades. |
+| `segment_start_prompt` | The first turn of a segment after a compaction: goal, continuation summary, memory, last action (and, in config-5.0 only, the last three grades). |
 | `action_prompt` | Split-turn profiles only (`final_turn_text_only: true`, e.g. the `openai` tag): the screenshot turn is closed with a one-word assistant acknowledgement and the request ENDS with this text-only user message. It exists because OpenAI cannot extend the prompt cache past the first image when the final turn carries one. On every other profile `user_prompt` is the last message and `action_prompt` is never sent. |
 
 `action_prompt` is required unconditionally rather than only for split-turn profiles: which profile a run gets is decided by the model, one layer below the config, so a config that validates for one model and silently falls back for another is the worse contract. `{{turn_number}}` is the one placeholder it takes.
 
-Normal turns append a turn number, the new OCR text, the current screenshot, and a short action request. The agent returns `inputs`, visible `reasoning` ending in a prediction, and `last_turn_succeeded`. It does not write memory on gameplay turns. Earlier screenshots and complete responses remain in the conversation until compaction.
+Normal turns append a turn number, the new OCR text, the current screenshot, and a short action request. The agent returns `inputs`, visible `reasoning` ending in a prediction, and `last_turn_succeeded`. It does not write memory on gameplay turns. Earlier screenshots and complete responses remain in the conversation until compaction. **config-5.1 (2026-09-08):** the gameplay output is `inputs` and `reasoning` only (`player_agent.self_grade: false`); the comparison with the previous prediction and the next prediction live in the reasoning, and the trace carries no `last_turn_succeeded` key for such runs. config-5.0 keeps the graded output.
 
 At the boundary, the same model sees the observed outcome of the last action and receives the configured compaction message. It returns `continuation_summary` and a complete replacement `memory` object. The memory dictionary has suggested keys only; the model may add keys, correct entries, and delete entries by omitting them. Both outputs are validated and committed together, and the next segment starts with the handover and current observation. Last-action reasoning and recent success grades are carried as ordinary continuity metadata.
 

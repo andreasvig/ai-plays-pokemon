@@ -179,7 +179,7 @@ Example trace labels (illustrative only): `Cache: 82% of reported input tokens r
 
 ## Design decisions confirmed by Andreas
 
-1. Keep visible reasoning, next-screen prediction, and previous-turn success grading during gameplay.
+1. Keep visible reasoning, next-screen prediction, and previous-turn success grading during gameplay. *Superseded 2026-09-08 for config-5.1: the boolean grade left the output (`self_grade: false`); reasoning and prediction stay.*
 2. Preserve the current flexible memory dictionary with suggested keys only; do not introduce fixed categories.
 3. Let compaction briefly review progress and revise a failing plan.
 4. Move memory-writing and compaction behavior out of the gameplay system prompt and into the message sent at the configured compaction turn.

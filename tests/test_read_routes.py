@@ -450,5 +450,6 @@ def test_the_app_boot_placeholder_is_a_live_selection(seeded):
     )
     # And the real boot path constructs — no emulator needed, config only.
     cfg = _build_supervisor_config()
-    assert cfg["_config_path"].endswith("config-5.0.yaml")
+    from src.config import default_config_stem
+    assert cfg["_config_path"].endswith(default_config_stem() + ".yaml")
     assert cfg["emulator"]["rom_path"]

@@ -36,7 +36,11 @@ from src.dashboard import server
 # bump without recording the new shape and there is no golden to compare
 # against. Values are never pinned here — only which keys exist.
 TRACE_SHAPES = {
-    6: {
+    # 7 (2026-09-08): ``last_turn_succeeded`` moved out of the turn's fixed keys.
+    # config-5.1 dropped the verdict from the gameplay output, so the builder
+    # projects the key only when the explanation carries it (config-5.0 runs);
+    # for 5.1+ it is ABSENT, not null — the report hides the row on absence.
+    7: {
         "trace": {
             "trace_version", "run_id", "has_tasks", "task_count", "turn_count",
             "compaction_count", "harness", "referee_enforced",
@@ -51,9 +55,10 @@ TRACE_SHAPES = {
         },
         "turn": {
             "kind", "turn", "task_index", "action", "reasoning",
-            "last_turn_succeeded", "screenshot", "cost_usd", "request_tokens",
+            "screenshot", "cost_usd", "request_tokens",
             "response_tokens", "trace", "diagnostics", "fresh",
         },
+        "turn_optional": {"last_turn_succeeded"},
         "turn_trace": {"system_prompt", "user_input", "steps", "conversation", "segment_context"},
         "compaction": {
             "kind", "number", "after_turn", "complete", "trace", "diagnostics",
@@ -424,7 +429,8 @@ def test_projected_key_sets_are_pinned_to_the_trace_version(append_run_dir: Path
     timeline = task["timeline"]
     turn = next(e for e in timeline if e["kind"] == "turn")
     compaction = next(e for e in timeline if e["kind"] == "compaction")
-    assert set(turn) == shape["turn"], bump
+    optional = shape.get("turn_optional", set())
+    assert shape["turn"] <= set(turn) <= shape["turn"] | optional, bump
     assert set(turn["trace"]) == shape["turn_trace"], bump
     assert set(compaction) == shape["compaction"], bump
     assert set(compaction["trace"]) == shape["compaction_trace"], bump
@@ -630,3 +636,21 @@ def test_compaction_count_is_projected_for_the_report_header(append_run_dir: Pat
     harness. Zero on a legacy run, so its header is unchanged."""
     assert build_run_trace(append_run_dir)["compaction_count"] == 1
     assert build_run_trace(run_dir)["compaction_count"] == 0
+
+
+
+def test_verdict_key_is_projected_only_when_the_run_graded(tmp_path: Path):
+    """config-5.0 explanations carry last_turn_succeeded (null on turn 1 is a VALUE);
+    config-5.1 explanations do not carry the key at all, and neither does the trace."""
+    graded = tmp_path / "graded"
+    _write_events(graded, 1)
+    events = [json.loads(l) for l in (graded / "events.jsonl").read_text().splitlines()]
+    events[1]["explanation"]["last_turn_succeeded"] = None
+    (graded / "events.jsonl").write_text("\n".join(json.dumps(e) for e in events) + "\n")
+    turn = next(e for e in build_run_trace(graded)["tasks"][0]["timeline"] if e["kind"] == "turn")
+    assert "last_turn_succeeded" in turn and turn["last_turn_succeeded"] is None
+
+    plain = tmp_path / "plain"
+    _write_events(plain, 1)
+    turn = next(e for e in build_run_trace(plain)["tasks"][0]["timeline"] if e["kind"] == "turn")
+    assert "last_turn_succeeded" not in turn

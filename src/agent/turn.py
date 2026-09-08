@@ -1767,7 +1767,11 @@ class TurnManager:
             explanation = {
                 "action": result.inputs,
                 "reasoning": result.reasoning,
-                "last_turn_succeeded": result.last_turn_succeeded,
+                # config-5.1+ gameplay output has no verdict field; the key is
+                # then ABSENT here (not null), so the trace/report can tell "not
+                # graded" from "graded null on a segment's first turn".
+                **({"last_turn_succeeded": result.last_turn_succeeded}
+                   if hasattr(result, "last_turn_succeeded") else {}),
                 "memory_updates": updates,
                 "memory_updates_raw": memory_updates,
             }
@@ -2833,7 +2837,8 @@ class TurnManager:
                     ),
                     "action": exp.get("action", ""),
                     "reasoning": exp.get("reasoning", ""),
-                    "last_turn_succeeded": exp.get("last_turn_succeeded"),
+                    **({"last_turn_succeeded": exp["last_turn_succeeded"]}
+                       if "last_turn_succeeded" in exp else {}),
                 }
                 for i, exp in enumerate(self.turn_explanations)
             ],

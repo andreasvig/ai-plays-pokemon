@@ -31,7 +31,7 @@ from pathlib import Path
 # split-turn fold (5b8ab07) both landed under it, which left 13 append runs
 # serving a pre-fe1e7a7 projection whose Cache overview read "No pricing
 # snapshot" for runs whose ``endpoint-pricing.json`` was on disk.
-TRACE_VERSION = 6
+TRACE_VERSION = 7  # 7: last_turn_succeeded is projected only when the run graded (config-5.0); absent for 5.1+
 
 
 def _screenshot_ref(file_path: str | None) -> str | None:
@@ -113,7 +113,9 @@ def _project_turn(turn: dict) -> dict:
         "task_index": turn.get("task_index"),
         "action": report_format_action(turn.get("action")),
         "reasoning": exp.get("reasoning", ""),
-        "last_turn_succeeded": exp.get("last_turn_succeeded"),
+        # Absent (not null) when the harness did not grade the previous turn
+        # (config-5.1+); the report hides the row on absence.
+        **({"last_turn_succeeded": exp["last_turn_succeeded"]} if "last_turn_succeeded" in exp else {}),
         "screenshot": _screenshot_ref(turn.get("screenshot")),
         "cost_usd": usage.get("cost_usd"),
         "request_tokens": usage.get("request_tokens"),

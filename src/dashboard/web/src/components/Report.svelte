@@ -278,7 +278,8 @@
   // A null self-grade is legal on ANY turn (the field is optional, and the
   // append harness leaves it null on a segment's first turn too), so the label
   // must not assert which turn it is — it used to read "n/a (first turn)" for
-  // every null, including turn 84's.
+  // every null, including turn 84's. An ABSENT key (config-5.1+, no verdict in
+  // the output) is different again: the callers skip the row entirely.
   function turnGrade(succeeded) {
     if (succeeded === true) return '✓ succeeded'
     if (succeeded === false) return '✗ failed'
@@ -696,7 +697,7 @@
                                   <div class="step-body">
                                     {#if p && (p.reasoning != null || p.last_turn_succeeded !== undefined)}
                                       <div class="step-decision">
-                                        <div class="dec-row"><span class="dec-lab">Last turn</span><span class="dec-val">{turnGrade(p.last_turn_succeeded)}</span></div>
+                                        {#if p.last_turn_succeeded !== undefined}<div class="dec-row"><span class="dec-lab">Last turn</span><span class="dec-val">{turnGrade(p.last_turn_succeeded)}</span></div>{/if}
                                         {#if p.reasoning}<div class="dec-row"><span class="dec-lab">Reasoning</span><div class="dec-desc">{p.reasoning}</div></div>{/if}
                                         {#if hbObj}
                                           {@const hb = fmtVerdict(hbObj.self_assessment)}
@@ -728,7 +729,8 @@
 
                       <!-- decision summary + screenshot at the BOTTOM (chronological) -->
                       <div class="exp">
-                        <div class="exp-row"><span class="el">Last turn</span><span class="ev">{turnGrade(t.last_turn_succeeded)}</span></div>
+                        <!-- config-5.1+ output has no verdict: the key is absent from the trace, so no row. -->
+                        {#if t.last_turn_succeeded !== undefined}<div class="exp-row"><span class="el">Last turn</span><span class="ev">{turnGrade(t.last_turn_succeeded)}</span></div>{/if}
                         <div class="exp-row"><span class="el">Reasoning</span><span class="ev">{t.reasoning}</span></div>
                         <div class="exp-row"><span class="el">Action</span><span class="ev">{turnActionDisplay(t)}</span></div>
                         {#if t.screenshot}

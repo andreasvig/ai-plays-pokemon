@@ -209,21 +209,19 @@ def test_stream_assembly_retains_encrypted_data_and_calls():
         assembly.add({"choices": [{"delta": {"reasoning_details": [{"data": "no identity"}]}}]})
 
 
-def test_config_5_0_is_the_default_config(config):
-    """The append harness IS the default now (2026-09-07 flip).
+def test_config_5_1_is_the_default_config(config):
+    """The append harness IS the default (2026-09-07 flip), and since 2026-09-08
+    the highest of its configs is config-5.1 (plain output, self_grade false).
 
-    Inverted from ``…_does_not_replace_default``, which pinned the old state:
-    the harness lived in a non-numeric ``config-append`` stem that
-    ``catalog.list_configs`` force-fed to the FRONT of its list so ``[-1]``
-    stayed config-4.0. Renaming it to ``config-5.0`` makes the ordinary
-    "highest config-X.Y" rule pick it and the special case is gone, so all
-    three default sites have to agree on it.
+    The ordinary "highest config-X.Y" rule picks it with no special case, so
+    all three default sites have to agree on it — and config-5.0 must still be
+    listed, because it is the frozen official config and legacy runs continue on it.
     """
-    assert "config-5.0" in list_configs()
-    assert list_configs()[-1] == "config-5.0"
-    assert find_latest_config().name == "config-5.0.yaml"
+    assert "config-5.0" in list_configs() and "config-5.1" in list_configs()
+    assert list_configs()[-1] == "config-5.1"
+    assert find_latest_config().name == "config-5.1.yaml"
     # The one prose site allowed to NAME the default, so nothing else has to.
-    assert default_config_stem() == "config-5.0"
+    assert default_config_stem() == "config-5.1"
     # config-append must not be resurrected by a stray copy of the old file.
     assert "config-append" not in list_configs()
     assert "memory_updates" not in config["system_prompt"]
@@ -401,18 +399,99 @@ def test_final_serialization_loss_detected(config, tmp_path):
 
 def test_play_action_decodes_stringified_scalars_from_tool_arguments():
     """meta/muse-spark-1.3, 2026-09-07 turn 1: the tool call carried the literal string "null"."""
-    from src.agent.append_agent import Handover, PlayAction
+    from src.agent.append_agent import GradedPlayAction, Handover
     base = {"inputs": ["down"], "reasoning": "go"}
-    assert PlayAction.model_validate({**base, "last_turn_succeeded": "null"}).last_turn_succeeded is None
-    assert PlayAction.model_validate({**base, "last_turn_succeeded": "true"}).last_turn_succeeded is True
-    assert PlayAction.model_validate({**base, "last_turn_succeeded": "false"}).last_turn_succeeded is False
+    assert GradedPlayAction.model_validate({**base, "last_turn_succeeded": "null"}).last_turn_succeeded is None
+    assert GradedPlayAction.model_validate({**base, "last_turn_succeeded": "true"}).last_turn_succeeded is True
+    assert GradedPlayAction.model_validate({**base, "last_turn_succeeded": "false"}).last_turn_succeeded is False
     # Control: correctly typed values pass through unchanged.
-    assert PlayAction.model_validate({**base, "last_turn_succeeded": None}).last_turn_succeeded is None
-    assert PlayAction.model_validate({**base, "last_turn_succeeded": True}).last_turn_succeeded is True
+    assert GradedPlayAction.model_validate({**base, "last_turn_succeeded": None}).last_turn_succeeded is None
+    assert GradedPlayAction.model_validate({**base, "last_turn_succeeded": True}).last_turn_succeeded is True
     # Mutation control: an arbitrary string is still rejected, so the rule decodes, it does not sanitize.
     with pytest.raises(ValidationError):
-        PlayAction.model_validate({**base, "last_turn_succeeded": "probably"})
+        GradedPlayAction.model_validate({**base, "last_turn_succeeded": "probably"})
     assert Handover.model_validate({"continuation_summary": "s", "memory": '{"a": 1}'}).memory == {"a": 1}
+
+
+# ───────────── config-5.1: self_grade false → inputs + reasoning only ─────────────
+
+def _ungraded(config):
+    """The test config (config-5.0 + fast compaction) with config-5.1's output contract:
+    self_grade off and 5.1's prompts, which never mention the verdict."""
+    cfg = deepcopy(config)
+    five_one = load_config(str(ROOT / "configs/config-5.1.yaml"), llm_alias="openai/test-model")
+    cfg["self_grade"] = False
+    for key in ("system_prompt", "segment_start_prompt"):
+        cfg[key] = five_one[key]
+    return cfg
+
+
+def test_ungraded_config_offers_and_accepts_the_plain_schema(config, tmp_path):
+    """The tool schema sent to the model has no verdict field, and the plain output validates."""
+    from src.agent.append_agent import PlayAction
+    agent, provider, events = engine(_ungraded(config), tmp_path)
+    assert agent._play_schema() is PlayAction
+    params = agent._play_schema().model_json_schema()
+    assert set(params["properties"]) == {"inputs", "reasoning"}
+    assert set(params["required"]) == {"inputs", "reasoning"}
+    # Mutation control: the graded default still offers the field.
+    graded_params = engine(config, tmp_path)[0]._play_schema().model_json_schema()
+    assert "last_turn_succeeded" in graded_params["properties"]
+    # A model that still emits the verdict on an ungraded run is refused (extra=forbid): the
+    # prompt and the schema must agree, and a stray field means they do not.
+    with pytest.raises(ValidationError):
+        PlayAction.model_validate({"inputs": ["a"], "reasoning": "x", "last_turn_succeeded": True})
+
+
+def test_ungraded_run_keeps_no_grades_and_renders_no_grade_line(config, tmp_path):
+    class Plain(FakeProvider):
+        async def __call__(self, *args):
+            response = await super().__call__(*args)
+            message = response["choices"][0]["message"]
+            for call in message.get("tool_calls") or []:
+                if call["function"]["name"] == "gameplay":
+                    value = json.loads(call["function"]["arguments"])
+                    value.pop("last_turn_succeeded", None)
+                    call["function"]["arguments"] = json.dumps(value)
+            return response
+    cfg = _ungraded(config)
+    cfg["compaction"]["every_n_turns"] = 2
+    agent, provider, events = engine(cfg, tmp_path, Plain())
+    async def run():
+        for turn in (1, 2, 3):
+            action = await agent.play(turn, f"obs-{turn}", IMAGE)
+            assert not hasattr(action, "last_turn_succeeded")
+            agent.commit_action(turn)
+        assert agent.state["recent_grades"] == []
+        opening = agent.state["messages"][1]["content"]
+        assert "Recent success grades" not in opening and "{{recent_grades}}" not in opening
+        assert "Last completed action and its prediction" in opening
+    asyncio.run(run())
+
+
+def test_validator_refuses_ungraded_prompts_that_still_ask_for_the_verdict(config):
+    from src.config import _validate_append_config
+    cfg = _ungraded(config)
+    _validate_append_config(cfg)  # the clean shape passes
+    stale = deepcopy(cfg)
+    stale["segment_start_prompt"] += "Recent success grades:\n{{recent_grades}}\n"
+    with pytest.raises(ValueError, match="recent_grades"):
+        _validate_append_config(stale)
+    stale = deepcopy(cfg)
+    stale["system_prompt"] += "\nSet last_turn_succeeded to true when the prediction held."
+    with pytest.raises(ValueError, match="last_turn_succeeded"):
+        _validate_append_config(stale)
+    # Mutation control: the same prompt is fine while self_grade is true.
+    graded = deepcopy(stale)
+    graded["self_grade"] = True
+    _validate_append_config(graded)
+
+
+def test_config_5_1_loads_ungraded():
+    cfg = load_config(str(ROOT / "configs/config-5.1.yaml"), llm_alias="openai/test-model")
+    assert cfg["self_grade"] is False
+    assert "last_turn_succeeded" not in cfg["system_prompt"]
+    assert "{{recent_grades}}" not in cfg["segment_start_prompt"]
 
 
 def test_context_pressure_compacts_before_interval(config, tmp_path):
@@ -739,22 +818,24 @@ def test_short_turn_cap_warns_that_the_run_will_never_compact(config, capsys):
     assert legacy_logger.events == []
 
 
-def test_official_config_is_config_5_0_and_agrees_with_the_casual_default():
-    """One constant for official, one rule for casual, and they name one file.
+def test_official_config_is_config_5_0_and_the_casual_default_is_a_5_x_sibling():
+    """One constant for official, one rule for casual — and since 2026-09-08 they
+    deliberately name DIFFERENT files: official stays on the frozen config-5.0
+    while casual runs default to config-5.1, which Andreas is prompt-engineering.
 
-    The flip made the SAME config both — worth pinning, because the two are
-    reached by different mechanisms (a literal constant vs "highest
-    config-X.Y") and nothing else would notice them diverging. The official
-    path additionally has to be the append harness, or the leaderboard's
-    config-5.x partition would rank nothing.
+    Both must be config-5.x, or the leaderboard's config-5.x partition would
+    split from the runs actually being queued. The official path additionally
+    has to be the append harness, or the partition would rank nothing.
     """
+    import re as _re
     from pathlib import Path as _Path
 
     from src.app.executor import OFFICIAL_CONFIG
 
     stem = _Path(OFFICIAL_CONFIG).stem
     assert stem == "config-5.0"
-    assert stem == default_config_stem() == list_configs()[-1]
+    assert default_config_stem() == list_configs()[-1] == "config-5.1"
+    assert _re.fullmatch(r"config-5\.\d+", stem) and _re.fullmatch(r"config-5\.\d+", default_config_stem())
     official = load_config(str(ROOT / OFFICIAL_CONFIG), llm_alias="gpt-6-astra(medium)")
     assert official["agent_type"] == "append_compact"
     # No referee block is AUTHORED in the official config — the executor injects

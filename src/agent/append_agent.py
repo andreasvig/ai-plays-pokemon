@@ -24,9 +24,23 @@ from src.agent.provider_profiles import project_history, router_diagnostics, out
 
 
 class PlayAction(BaseModel):
+    """Gameplay output since config-5.1: the buttons and the visible reasoning.
+
+    The reasoning is where the model compares the screen with its previous
+    prediction and ends with the next one; there is no separate verdict field.
+    Decision 2026-09-08 (Andreas): with the whole conversation appended, the
+    previous turn's prediction is already in context, so a forced boolean grade
+    added schema quirks (Muse's stringified null, mimo's "None") and nothing
+    downstream scored on it. `self_grade: true` in a config selects
+    GradedPlayAction instead, which is what config-5.0 and earlier emit.
+    """
     model_config = ConfigDict(extra="forbid", strict=True)
     inputs: list[Literal["up", "down", "left", "right", "a", "b", "start", "select", "wait"]]
     reasoning: str = Field(min_length=1)
+
+
+class GradedPlayAction(PlayAction):
+    """config-5.0 gameplay output: PlayAction plus the previous-turn verdict."""
     last_turn_succeeded: bool | None
 
     # Some endpoints encode non-string tool-call arguments as JSON *strings*:
@@ -448,6 +462,8 @@ class AppendAgent:
         self.budget_exhausted = budget_exhausted or (lambda: False)
         self.model = config["llm_model"]
         self.profile = deepcopy(config.get("_provider_profile") or {})
+        # config-5.0 grades the previous turn in the output; 5.1+ does not.
+        self.graded = bool(config.get("self_grade", True))
         mode = str(config.get("mode") or "benchmark").lower()
         self.system = fill_prompt(config["system_prompt"], game_name=config.get("game_name", "Pokemon FireRed"),
                                   mode_guidelines=config.get(f"{mode}_guidelines", ""))
@@ -460,6 +476,9 @@ class AppendAgent:
             self.state["provider_profile"] = deepcopy(self.profile)
         self.checkpoint = deepcopy(self.state)
         self.pending = None
+
+    def _play_schema(self):
+        return GradedPlayAction if self.graded else PlayAction
 
     def export_checkpoint(self):
         return self.store.pack(self.checkpoint)
@@ -556,7 +575,7 @@ class AppendAgent:
             self.state["observation_turn"] = turn
         output, messages = await self._request("gameplay", turn, deepcopy(self.state["messages"]))
         self.pending = (output, messages)
-        return PlayAction.model_validate(output)
+        return self._play_schema().model_validate(output)
 
     async def compact(self, turn, observation, reason):
         messages = deepcopy(self.state["messages"]) + observation + [
@@ -587,7 +606,8 @@ class AppendAgent:
         self.state["completed_turn"] = turn
         self.state["segment_turns"] += 1
         self.state["last_action"] = action
-        self.state["recent_grades"] = (self.state["recent_grades"] + [action["last_turn_succeeded"]])[-3:]
+        if self.graded:
+            self.state["recent_grades"] = (self.state["recent_grades"] + [action["last_turn_succeeded"]])[-3:]
         self.state["observation_turn"] = None
         self.pending = None
         self._commit()
@@ -614,7 +634,7 @@ class AppendAgent:
                 resolved["provider"]["ignore"] = deepcopy(self.profile["excluded_endpoints"])
         messages = project_history(messages, self.profile)
         mode = resolved.get("output_mode", "tool")
-        schemas = {"gameplay": PlayAction.model_json_schema(), "compaction": Handover.model_json_schema()}
+        schemas = {"gameplay": self._play_schema().model_json_schema(), "compaction": Handover.model_json_schema()}
         if self.profile.get("memory_encoding") == "json_string":
             schemas["compaction"]["properties"]["memory"] = {"type": "string", "description": self.profile["memory_wire_description"]}
         body = {"model": self.model, "messages": messages, "session_id": self.state["session_id"],
@@ -699,7 +719,7 @@ class AppendAgent:
 
     async def _request(self, phase, turn, messages):
         await self._snapshot_pricing()
-        schema = PlayAction if phase == "gameplay" else Handover
+        schema = self._play_schema() if phase == "gameplay" else Handover
         count = self.options["max_retries"] + 1 if phase == "compaction" else self.config["transport"]["max_retries"] + 1
         for attempt in range(1, count + 1):
             if self.budget_exhausted():

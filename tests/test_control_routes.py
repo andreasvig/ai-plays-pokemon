@@ -400,8 +400,8 @@ def test_routes_503_when_unconfigured():
 # These pin the edge behaviour that replaced it.
 
 
-def test_casual_enqueue_without_config_gets_config_5_0(client):
-    """The defaulted config is config-5.0, and all three default sites agree.
+def test_casual_enqueue_without_config_gets_config_5_1(client):
+    """The defaulted config is config-5.1 (since 2026-09-08), and all three default sites agree.
 
     Renamed + strengthened 2026-09-07. The old assertion was
     ``== list_configs()[-1]``, which is self-referential: it proved the route
@@ -416,8 +416,8 @@ def test_casual_enqueue_without_config_gets_config_5_0(client):
     tc = client["tc"]
     r = tc.post("/api/queue", json={"kind": "casual", "model": _some_alias()})
     assert r.status_code == 201
-    assert r.json()["config"] == "config-5.0"
-    assert list_configs()[-1] == "config-5.0" == default_config_stem()
+    assert r.json()["config"] == "config-5.1"
+    assert list_configs()[-1] == "config-5.1" == default_config_stem()
 
 
 def test_casual_enqueue_with_unknown_config_is_rejected(client):

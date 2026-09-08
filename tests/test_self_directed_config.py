@@ -58,14 +58,14 @@ def test_config_4_0_is_no_longer_the_default_but_still_loads():
     """config-4.0 is legacy-runnable, not the default.
 
     Inverted 2026-09-07: this test used to assert config-4.0 WAS what a bare
-    `pokemon run` resolves to. The default is now config-5.0, the frozen
-    append-and-compact harness — and the point of keeping a test here is the
+    `pokemon run` resolves to. The default is now the highest config-5.x of the
+    append-and-compact harness (5.1 since 2026-09-08) — and the point of keeping a test here is the
     other half of that decision: demoting 4.0 must not break it. So this
     asserts BOTH directions (the default moved AND 4.0 still loads), because an
     assertion that only checked the new default would pass just as happily if
     config-4.0.yaml had been deleted.
     """
-    assert find_latest_config().name == "config-5.0.yaml"
+    assert find_latest_config().name == "config-5.1.yaml"
     # Alias picked from the registry at runtime, not pinned: this assertion is
     # about config-4.0 still loading, and a hardcoded model name makes it fail
     # for an unrelated reason the day that model is pruned.

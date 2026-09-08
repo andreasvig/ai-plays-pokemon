@@ -568,6 +568,19 @@ def _validate_append_config(config: dict[str, Any]) -> None:
     for key in ("system_prompt", "user_prompt", "segment_start_prompt", "action_prompt"):
         if not isinstance(config.get(key), str) or not config[key].strip():
             raise ValueError(f"append_compact requires {key} in config")
+    # `self_grade` (default true = config-5.0's graded output). When false the
+    # gameplay schema has no last_turn_succeeded and the agent keeps no grades,
+    # so a prompt that still asks for the field or renders {{recent_grades}}
+    # would be lying to the model — refuse it here, where the prompt is edited.
+    graded = config.get("self_grade", True)
+    if type(graded) is not bool:
+        raise ValueError("self_grade must be a boolean")
+    if not graded:
+        if "{{recent_grades}}" in config["segment_start_prompt"]:
+            raise ValueError("self_grade is false but segment_start_prompt renders {{recent_grades}}")
+        for key in ("system_prompt", "user_prompt", "action_prompt", "segment_start_prompt"):
+            if "last_turn_succeeded" in config[key]:
+                raise ValueError(f"self_grade is false but {key} mentions last_turn_succeeded")
     for section in ("compaction", "transport", "observability", "caching"):
         if not isinstance(config.get(section), dict):
             raise ValueError(f"append_compact requires a {section} mapping")
