@@ -9,6 +9,7 @@
   import { usd, dur, perTurn, dateShort, coerceHandback } from '../lib/format.js'
   import { mdToHtml } from '../lib/md.js'
   import * as api from '../lib/api.js'
+  import { STATIC } from '../lib/static.js'
   import Action, { actionTokens } from './Action.svelte'
   import Icon from './Icon.svelte'
   import ConversationDiagnostics from './ConversationDiagnostics.svelte'
@@ -296,6 +297,8 @@
     return args && typeof args === 'object' && !Array.isArray(args) ? args : null
   }
   function shotUrl(t) {
+    // A published trace carries absolute R2 URLs; a local one carries basenames.
+    if (/^https?:\/\//.test(t.screenshot)) return t.screenshot
     return `/api/runs/${encodeURIComponent(run.runId)}/screenshots/${t.screenshot}`
   }
   function nToolCalls(steps) {
@@ -311,7 +314,9 @@
       <button class="btn ghost" onclick={() => onback()}><Icon name="back" size={13} /> Back</button>
       <span class="badge {run.kind}">{run.kind}</span>
       {#if harnessLabel}<span class="harness" title="The agent that drove this run, from its recorded config (agent_type + task_master)">{harnessLabel}</span>{/if}
-      <button class="btn cont full-report" disabled={run.status === 'running' || summary?.protocol_probe} onclick={() => oncontinue(run)}><Icon name="rerun" size={13} /> Continue this run</button>
+      {#if !STATIC}
+        <button class="btn cont full-report" disabled={run.status === 'running' || summary?.protocol_probe} onclick={() => oncontinue(run)}><Icon name="rerun" size={13} /> Continue this run</button>
+      {/if}
     </div>
 
     <!-- meta bar -->
@@ -370,6 +375,15 @@
             </div>
           {/each}
         </div>
+      </section>
+    {/if}
+
+    <!-- The recording, when the run was published with one (pokemon publish →
+         R2). A plain <video>: the file is browser-ready H.264, and R2 serves
+         byte ranges so the scrub bar seeks. Locally the player lives in History. -->
+    {#if run.videoUrl}
+      <section class="video">
+        <video src={run.videoUrl} controls preload="metadata" playsinline></video>
       </section>
     {/if}
 
@@ -780,6 +794,8 @@
   /* Replaces the scorecard on an observe-only run (same slot, same margin). */
   .observed { margin: 16px 2px 0; font-size: 12.5px; }
 
+  .video { margin-top: 16px; border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); border: 1px solid var(--border); background: var(--dark); }
+  .video video { display: block; width: 100%; max-height: 78vh; }
   .score { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; box-shadow: var(--shadow); margin-top: 16px; }
   .score-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
   h3 { font-size: 15px; font-weight: 750; margin: 0; }

@@ -4,15 +4,22 @@
 //   /history                   run list
 //   /history/<slug>            run detail (report)
 //   /about                     about
+//
+// Routes are RELATIVE to Vite's base path. Locally that is '/', so nothing
+// changes; the published site lives under '/ai-plays-pokemon/' on GitHub Pages,
+// and the prefix is stripped on read and re-added on navigate so every
+// component keeps talking in '/history/<id>' terms.
+const BASE = (import.meta.env.BASE_URL || '/').replace(/\/$/, '')   // '' or '/ai-plays-pokemon'
+const strip = (p) => (BASE && p.startsWith(BASE) ? p.slice(BASE.length) || '/' : p)
 export const router = (() => {
-  let path = $state(typeof location !== 'undefined' ? location.pathname : '/')
+  let path = $state(typeof location !== 'undefined' ? strip(location.pathname) : '/')
   if (typeof window !== 'undefined') {
-    window.addEventListener('popstate', () => { path = location.pathname })
+    window.addEventListener('popstate', () => { path = strip(location.pathname) })
   }
   return {
     get path() { return path },
     navigate(to) {
-      if (to !== path) { history.pushState({}, '', to); path = to; window.scrollTo(0, 0) }
+      if (to !== path) { history.pushState({}, '', BASE + to); path = to; window.scrollTo(0, 0) }
     },
   }
 })()

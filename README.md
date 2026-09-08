@@ -30,6 +30,8 @@ Detailed comparison: [`docs/analysis/compiled_summary.md`](docs/analysis/compile
 
 ## Leaderboard
 
+The live board, with run reports and recordings, is at **https://andreasvig.github.io/ai-plays-pokemon/** (published per run with `pokemon publish`; see `docs/cli.md`).
+
 Every model runs the same course — **Pallet Town → Route 1 → Viridian City**, vision-only, capped at 100 turns — scored on battles, menuing, and navigation. Models that cleared the course are ranked by **fewest turns**; the rest by how far they got.
 
 | # | Model | Result | Turns | Wall time | Sec/turn | Total cost | Cost/turn |
@@ -91,6 +93,8 @@ src/
     ├── app.py               # `pokemon app` — long-lived control center (UI + queue)
     ├── queue.py             # `pokemon queue` — add / inspect / cancel queued runs
     ├── runs.py              # `pokemon runs` — history, continue, stop, leaderboard
+    ├── publish.py           # `pokemon publish` — put a run on the online leaderboard (R2 + GitHub Pages)
+    ├── unpublish.py         # `pokemon unpublish` — take it down again
     ├── runner.py            # `pokemon run` — single or sequential agent runs
     ├── launch.py            # `pokemon launch` — manual mGBA + Lua session
     ├── snapshot.py          # `pokemon snapshot` — snapshot save/load/list

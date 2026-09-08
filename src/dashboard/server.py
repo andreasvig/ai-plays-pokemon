@@ -33,7 +33,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from src.app.recording_name import recording_filename
-from src.app.trace_build import TRACE_VERSION, build_run_trace
+from src.app.trace_build import cached_run_trace
 from src.dashboard.event_bridge import EventBridge
 from src.dashboard.screen_stream import ScreenStreamer
 
@@ -1593,17 +1593,12 @@ async def api_benchmarks():
     of that constant could not reach. Now the label cannot disagree with what
     dispatch actually loads.
     """
-    from src.app.benchmarks import load_benchmarks
-    from src.app.executor import OFFICIAL_CONFIG
+    from src.app.benchmarks import benchmarks_payload
 
     try:
-        benchmarks = load_benchmarks()
+        return JSONResponse(benchmarks_payload())
     except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(status_code=500, detail=f"benchmark registry: {exc}")
-    official_config = Path(OFFICIAL_CONFIG).stem
-    return JSONResponse(
-        [{**b.to_dict(), "official_config": official_config} for b in benchmarks]
-    )
 
 
 @app.get("/api/roms")
@@ -1752,28 +1747,10 @@ async def api_run_trace(run_id: str):
     if not run_dir.is_dir():
         raise HTTPException(status_code=404, detail=f"run dir not found: {run_id}")
 
-    # Serve the cached projection when it is at least as new as events.jsonl.
-    # A ``--continue`` appends events → events newer than the cache → rebuild.
-    cache = run_dir / "trace.json"
-    events = run_dir / "events.jsonl"
-    if cache.is_file() and (
-        not events.exists() or cache.stat().st_mtime >= events.stat().st_mtime
-    ):
-        try:
-            with open(cache) as f:
-                cached_trace = json.load(f)
-            if cached_trace.get("trace_version") == TRACE_VERSION:
-                return JSONResponse(cached_trace)
-        except Exception:
-            pass  # corrupt/partial cache → fall through and rebuild
-
-    data = build_run_trace(run_dir)
-    try:
-        with open(cache, "w") as f:
-            json.dump(data, f, indent=2)
-    except Exception:
-        pass
-    return JSONResponse(data)
+    # Cached projection when it is at least as new as events.jsonl (a
+    # ``--continue`` appends events → rebuild); the same reader `pokemon
+    # publish` uses, so the online report shows exactly this trace.
+    return JSONResponse(cached_run_trace(run_dir))
 
 
 @app.get("/api/runs/{run_id}/recording.mp4")

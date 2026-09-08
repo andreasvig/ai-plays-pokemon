@@ -21,6 +21,8 @@ SUBCOMMANDS = {
     "launch":   "src.cli.launch",
     "runs":     "src.cli.runs",
     "snapshot": "src.cli.snapshot",
+    "publish":  "src.cli.publish",
+    "unpublish": "src.cli.unpublish",
 }
 
 HELP = """\
@@ -44,6 +46,10 @@ AFTERWARDS
   runs       History: list, continue, stop, delete, leaderboard.
   snapshot   Save / load / list game snapshots.
 
+SHARE
+  publish    Put a finished run on the online leaderboard (R2 + GitHub Pages).
+  unpublish  Take it down again.
+
 RECIPES
   # what is going on
   pokemon status
@@ -59,6 +65,9 @@ RECIPES
   pokemon runs continue <run_id>
   pokemon runs stop
   pokemon runs board
+
+  # put a run online (video + screenshots to R2, JSON to the gh-pages branch)
+  pokemon publish <run_id>
 
 NOTES
   The control center is usually ALREADY RUNNING — `pokemon status` says so, and

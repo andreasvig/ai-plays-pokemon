@@ -8,17 +8,21 @@
 import { gate, GATE_INDEX } from './gates.js'
 import { toQueueError } from './queue.js'
 import { runSlug } from './router.svelte.js'
+import { STATIC, staticGet, noSocket } from './static.js'
 
 // open-weight families (for the All / Open-source filter) — same regex as the mock
 const OSS = /^(kimi|qwen|mimo|gemma|glm|minimax|deepseek)/  // open-weights vendors in configs/models.yaml
 export const isOpenSource = (m) => OSS.test(m)
 
 async function getJSON(path) {
+  // The published site has no server: reads come from the gh-pages JSON files.
+  if (STATIC) return staticGet(path)
   const res = await fetch(path, { headers: { Accept: 'application/json' } })
   if (!res.ok) throw new Error(`GET ${path} → ${res.status}`)
   return res.json()
 }
 async function send(method, path, body) {
+  if (STATIC) throw new Error(`${method} ${path}: the published site is read-only`)
   const res = await fetch(path, {
     method,
     headers: body ? { 'Content-Type': 'application/json' } : {},
@@ -71,6 +75,10 @@ export function toRun(s) {
     // Derived server-side from the run dir on every request, so it flips off by
     // itself if the mp4 is deleted to reclaim space.
     hasRecording: !!s.has_recording,
+    // Set only on a PUBLISHED row (pokemon publish): the recording's R2 URL.
+    // Locally the player streams /api/runs/{id}/recording.mp4 instead.
+    videoUrl: s.video_url ?? null,
+    publishedAt: s.published_at ?? null,
   }
   r.slug = runSlug(r)
   return r
@@ -331,6 +339,7 @@ function wsUrl(path) {
 }
 
 export function openControlSocket(onMessage) {
+  if (STATIC) return noSocket()
   // WS /api/ws/control — pushes {type:"control", active, queue_len,
   // leaderboard_dirty} on every state change (refetch-on-ping, locked #7).
   // Auto-reconnects on drop. Returns a handle with close() that stops retries.
@@ -351,6 +360,7 @@ export function openControlSocket(onMessage) {
 }
 
 export function openEventSocket(runId, onMsg) {
+  if (STATIC) return noSocket()
   // WS /runs/{id}/ws/events — pushes {type: event|state_update|stats, data};
   // the server replays the full backlog from cursor 0 on every (re)connect.
   // onMsg receives the parsed {type, data} envelope.
@@ -371,6 +381,7 @@ export function openEventSocket(runId, onMsg) {
 }
 
 export function openScreenSocket(runId, onFrame) {
+  if (STATIC) return noSocket()
   // WS /runs/{id}/ws/screen — binary PNG frames. onFrame receives an object URL
   // for an <img src>; the caller revokes the PREVIOUS url it held.
   let ws = null

@@ -1,6 +1,7 @@
 <script>
   import { usd, dur, perTurn, ago, dateShort, statusLabel, statusClass } from '../lib/format.js'
   import Icon from './Icon.svelte'
+  import { STATIC } from '../lib/static.js'
   let { runs = [], oninspect, oncontinue, ondelete } = $props()
 
   let kindFilter = $state('all')
@@ -24,7 +25,8 @@
   let watchTarget = $state(null)
   function watch(run) { watchTarget = run }
   function closeWatch() { watchTarget = null }
-  const recordingUrl = (run) => `/api/runs/${encodeURIComponent(run.runId)}/recording.mp4`
+  // A published row carries the R2 URL of its recording; a local row streams from the app.
+  const recordingUrl = (run) => run.videoUrl ?? `/api/runs/${encodeURIComponent(run.runId)}/recording.mp4`
 
   function askDelete(run) { confirmTarget = run; confirmText = ''; deleteError = ''; deleting = false }
   function cancelDelete() { confirmTarget = null; confirmText = ''; deleteError = ''; deleting = false }
@@ -124,8 +126,10 @@
                     title="Watch the recording"><Icon name="play" size={18} /></button>
           {/if}
           <button class="mini" onclick={(e) => { e.stopPropagation(); oninspect(r) }} title="Inspect report"><Icon name="report" size={18} /></button>
-          <button class="mini" disabled={r.status === 'running'} onclick={(e) => { e.stopPropagation(); oncontinue(r) }} title="Continue run"><Icon name="rerun" size={18} /></button>
-          <button class="mini danger" disabled={r.status === 'running'} onclick={(e) => { e.stopPropagation(); askDelete(r) }} title="Delete run"><Icon name="trash" size={18} /></button>
+          {#if !STATIC}
+            <button class="mini" disabled={r.status === 'running'} onclick={(e) => { e.stopPropagation(); oncontinue(r) }} title="Continue run"><Icon name="rerun" size={18} /></button>
+            <button class="mini danger" disabled={r.status === 'running'} onclick={(e) => { e.stopPropagation(); askDelete(r) }} title="Delete run"><Icon name="trash" size={18} /></button>
+          {/if}
         </span>
       </li>
     {/each}

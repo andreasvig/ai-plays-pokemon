@@ -209,3 +209,18 @@ def get_benchmark(
         if b.is_default:
             return b
     return benchmarks[0]
+
+
+def benchmarks_payload() -> list[dict[str, Any]]:
+    """``GET /api/benchmarks`` as a list — and ``data/benchmarks.json`` on the
+    published site, which is the same list written to disk so the static page
+    scopes its board the way the local one does.
+
+    ``official_config`` rides on every row; it is the frozen stem official
+    dispatch loads, not a property of a benchmark. Imported lazily because
+    ``executor`` imports this module.
+    """
+    from src.app.executor import OFFICIAL_CONFIG
+
+    official_config = Path(OFFICIAL_CONFIG).stem
+    return [{**b.to_dict(), "official_config": official_config} for b in load_benchmarks()]

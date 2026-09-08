@@ -285,6 +285,40 @@ def _attach_implied_cache(run_dir: Path, events: list[dict]) -> None:
         event["implied_cache"] = {"status": "no_pricing_snapshot"} if pricing is None else implied_cache(event, pricing)
 
 
+def cached_run_trace(run_dir: Path) -> dict:
+    """Return the run's trace, serving ``run_dir/trace.json`` when it is current.
+
+    The cache is used when it is at least as new as ``events.jsonl`` (a
+    ``--continue`` appends events, which makes the cache stale) and carries the
+    current ``TRACE_VERSION``; otherwise the trace is rebuilt and the cache
+    rewritten (best effort — a read-only run dir still gets its trace). This is
+    the one place that rule lives: the dashboard's ``/api/runs/{id}/trace``
+    route and ``pokemon publish`` both read through it, so a published trace is
+    byte-for-byte what the local Report renders.
+    """
+    run_dir = Path(run_dir)
+    cache = run_dir / "trace.json"
+    events = run_dir / "events.jsonl"
+    if cache.is_file() and (
+        not events.exists() or cache.stat().st_mtime >= events.stat().st_mtime
+    ):
+        try:
+            with open(cache) as f:
+                cached = json.load(f)
+            if cached.get("trace_version") == TRACE_VERSION:
+                return cached
+        except Exception:
+            pass  # corrupt/partial cache → fall through and rebuild
+
+    data = build_run_trace(run_dir)
+    try:
+        with open(cache, "w") as f:
+            json.dump(data, f, indent=2)
+    except Exception:
+        pass
+    return data
+
+
 def build_run_trace(run_dir: Path) -> dict:
     """Build the task-grouped trace JSON for a finished run (Round 8 B1+B2).
 

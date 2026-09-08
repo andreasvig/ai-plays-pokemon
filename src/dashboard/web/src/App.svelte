@@ -10,11 +10,13 @@
   import { router } from './lib/router.svelte.js'
   import { recording, recordRun, forcedSimple, forcedShow } from './lib/record.js'
   import * as api from './lib/api.js'
+  import { STATIC } from './lib/static.js'
 
   // route -> view + param
   const parts = $derived(router.path.split('/').filter(Boolean))
+  // The published site has no live run to spectate; that route falls back to home.
   const view = $derived(
-    parts[0] === 'spectate' ? 'spectate'
+    parts[0] === 'spectate' ? (STATIC ? 'home' : 'spectate')
     : parts[0] === 'about' ? 'about'
     : parts[0] === 'history' ? (parts[1] ? 'report' : 'history')
     : 'home'
@@ -286,8 +288,10 @@
 
 <main class:kiosk={view === 'spectate'}>
   {#if view === 'home'}
-    <QueueBar {active} {queue} lastError={queueError} onkill={killRun} onremove={removeFromQueue} onreorder={reorder}
-      onnew={openNew} onspectate={() => go('/spectate')} />
+    {#if !STATIC}
+      <QueueBar {active} {queue} lastError={queueError} onkill={killRun} onremove={removeFromQueue} onreorder={reorder}
+        onnew={openNew} onspectate={() => go('/spectate')} />
+    {/if}
     <Leaderboard rows={filteredRows} {stats} oninspect={inspect}
       {benchmarks} {benchmark} onbench={selectBenchmark}
       bind:oss={ossFilter} bind:maxPrice={maxPrice} {priceMax} />
@@ -314,7 +318,7 @@
   {/if}
 </main>
 
-<AddRunDialog open={dialogOpen} continueFrom={dialogContinueFrom} {models} {configs} {benchmarks} {checkpoints} {roms} {starts} {profiles} {submitError}
+<AddRunDialog open={dialogOpen && !STATIC} continueFrom={dialogContinueFrom} {models} {configs} {benchmarks} {checkpoints} {roms} {starts} {profiles} {submitError}
   onclose={() => { dialogOpen = false; dialogContinueFrom = null; submitError = null }} onsubmit={submitRun} />
 
 <style>

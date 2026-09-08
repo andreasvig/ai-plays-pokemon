@@ -360,6 +360,70 @@ is `crashed`, not a zero. It played nothing, so it scores nothing.
 
 ---
 
+## `pokemon publish` / `pokemon unpublish` — The online leaderboard
+
+Puts one finished run on the public site — `https://andreasvig.github.io/ai-plays-pokemon/` —
+which is the same leaderboard / history / report SPA built in static mode. Two
+stores, no server: the recording goes to a Cloudflare R2 bucket, the result row,
+the summary and the SPA bundle go to the `gh-pages` branch (checked out as a
+worktree under `local/gh-pages`). **The public page is result and video only:**
+the per-turn reasoning stays on the machine unless `--with-trace` says
+otherwise, and the published summary is `run_summary.json` without its `turns`
+list. Design and data layout: `artifacts/online-leaderboard/plan.md`.
+
+```bash
+pokemon publish <run_id>                 # result row + summary → gh-pages, video → R2, rebuild + push
+pokemon publish <run_id> --dry-run       # run the leak audit and list what would go; touch nothing
+pokemon publish <run_id> --no-video      # result only
+pokemon publish <run_id> --with-trace    # ALSO the report trace + its screenshots (opt-in)
+pokemon publish <run_id> --no-build      # data-only push; keep the bundle already on gh-pages
+pokemon unpublish <run_id>               # delete the R2 objects, drop the row + JSON, push
+```
+
+What happens, in order — and the order is the point:
+
+1. **Refuse** unless the run dir has a `run_summary.json` and its status is not
+   `running`/`queued`.
+2. **Leak audit** on the exact JSON about to leave the machine (the row, the
+   summary, and with `--with-trace` the rewritten trace): every non-trivial value in `.env` (the bucket
+   name and public URL excepted — they are public by design), key shapes
+   (`sk-…`, `AKIA…`, `Bearer …`, GitHub/Slack/Google tokens, private-key
+   blocks) and home/temp paths (`/Users/<x>/`, `/private/tmp/`, `/home/<x>/`).
+   Any hit aborts, naming file and line with the match masked. Nothing has been
+   uploaded at this point.
+3. **Upload to R2**: `runs/<run_id>/recording.mp4` (if present) — and with
+   `--with-trace` the screenshots the trace references — typed and
+   immutable-cached. Re-publishing overwrites the same keys.
+4. **Write the `gh-pages` branch**: `data/runs/<run_id>/summary.json` (plus
+   `trace.json` with screenshot refs rewritten to R2 URLs when opted in), the
+   row upserted into
+   `data/leaderboard.json`, `data/benchmarks.json` refreshed, the SPA rebuilt
+   with `VITE_STATIC=1 vite build --base=/ai-plays-pokemon/` and copied in
+   (`index.html`, `404.html`, `assets/`). One commit, one push.
+5. **Verify** by fetching the video URL (and one screenshot, if any) anonymously with a
+   named `User-Agent`. Cloudflare returns 403 to Python's default
+   `Python-urllib` agent on `r2.dev` for every key, so a default-agent probe
+   would report a false failure.
+
+Never published: `events.jsonl`, `conversation/`, `ocr/`, `savepoints/`,
+`state.json`, `terminal.log`, `screenshots/`, `trace.json` and the summary's
+`turns` list (the last three only with `--with-trace`). The local run folder is
+untouched.
+
+Settings come from `.env` (`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`,
+`R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_PUBLIC_BASE_URL`; optional
+`PAGES_BASE_URL` for a custom domain). `.env.example` says where each lives in
+the Cloudflare dashboard. The R2 token needs Object Read & Write on that one
+bucket. GitHub Pages was enabled automatically the first time the `gh-pages`
+branch was pushed (source: `gh-pages` / root); a push shows up on the site
+within about a minute.
+
+On the published site the leaderboard ranks exactly as the local one (official
++ finished + config-5.x, best per model), History lists every published run
+read-only (no continue / delete), a run's report shows its result KPIs and —
+when it was published with a recording — the video, with no turn-by-turn
+section; the queue, spectate, mute and add-run controls are gone.
+
 ## `pokemon launch` — Manual mGBA + Lua session
 
 Launches mGBA, starts the TCP server, opens the Scripting window, and idles after the Lua client connects. No agent — useful for manual play, debugging the connection, or building snapshots interactively.

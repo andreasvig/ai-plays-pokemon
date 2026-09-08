@@ -1,5 +1,6 @@
 <script>
   import Icon from './Icon.svelte'
+  import { STATIC } from '../lib/static.js'
   let { active = null, emulatorUp = false, queue = [], view = 'home', muted = true, ontogglemute,
         emulator = {}, onnav, onspectate } = $props()
   // green/live = a run is active AND the emulator is up; grey/idle otherwise.
@@ -16,11 +17,14 @@
   </div>
 
   <div class="center">
-    <button class="spectate" class:on={hasActive} disabled={!hasActive}
-            onclick={() => onspectate()}>
-      <span class="dot" class:live={hasActive}></span>
-      {hasActive ? 'Spectate' : 'Idle'}
-    </button>
+    <!-- No emulator behind the published site: nothing to spectate, nothing to mute. -->
+    {#if !STATIC}
+      <button class="spectate" class:on={hasActive} disabled={!hasActive}
+              onclick={() => onspectate()}>
+        <span class="dot" class:live={hasActive}></span>
+        {hasActive ? 'Spectate' : 'Idle'}
+      </button>
+    {/if}
   </div>
 
   <nav class="right">
@@ -34,11 +38,13 @@
     {#if emulator.awaiting_lua}
       <span class="romnote">load the Lua script in mGBA</span>
     {/if}
-    <button class="btn ghost mute" class:muted onclick={() => ontogglemute && ontogglemute()}
-            title={muted ? 'Game audio muted — click to unmute' : 'Game audio on — click to mute'}
-            aria-label={muted ? 'Unmute game audio' : 'Mute game audio'}>
-      <Icon name={muted ? 'muted' : 'audio'} size={17} />
-    </button>
+    {#if !STATIC}
+      <button class="btn ghost mute" class:muted onclick={() => ontogglemute && ontogglemute()}
+              title={muted ? 'Game audio muted — click to unmute' : 'Game audio on — click to mute'}
+              aria-label={muted ? 'Unmute game audio' : 'Mute game audio'}>
+        <Icon name={muted ? 'muted' : 'audio'} size={17} />
+      </button>
+    {/if}
     <button class="btn ghost" class:active={view === 'history'} onclick={() => onnav('/history')}>History</button>
     <button class="btn ghost" class:active={view === 'about'} onclick={() => onnav('/about')}>About</button>
   </nav>
