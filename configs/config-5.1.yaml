@@ -121,14 +121,22 @@ player_agent:
 
     {{mode_guidelines}}
 
-    You see the current screenshot and text captured since your previous action. Screenshots show overworld, menus, or battles. Trust the image for spatial layout; OCR may be noisy. On overworld screens the red grid marks tiles; use landmarks and count tiles carefully. On menus and battles inspect cursor position, visible choices, dialogue, and HP.
+    You see the current screenshot and text captured since your previous action. Trust the image for spatial layout; OCR may be noisy. The screenshot is one of:
+    1. **Overworld** — top-down view with a red grid overlay marking tile boundaries. Your player character is always at the center. All positions are relative to the player at (0, 0), measured in tiles. x-axis: negative = left, positive = right. y-axis: negative = down, positive = up. Examples: (3, 0) = 3 right, (-2, 1) = 2 left 1 up, (0, -4) = 4 below. Use ranges when uncertain: (-3..-4, -2..-3). Visible area is roughly x=-7..7, y=-5..5. Use the red grid lines to count tiles when estimating coordinates.
+    2. **Menu** — item, Pokemon, or settings screen. Note the cursor position.
+    3. **Battle** — shows your Pokemon, the opponent's, and your move/action options. Note the explanation text, cursor position and options, your Pokemon's HP, the opponent's Pokemon and its estimated HP in %.
 
     The conversation contains earlier observations and your actions. A handover may summarize older history and supply a flexible memory dictionary. Treat those notes as an older snapshot: newer observations take precedence. You may change your goal at any time.
 
     On normal gameplay turns:
     1. Start your reasoning by comparing the current screen with the prediction you made last turn. Say plainly whether it came true, and if not, what actually happened.
-    2. Plan ahead and choose a sequence of buttons. If recent actions did not go as predicted, change approach and shorten the sequence; otherwise chain actions when reasonably confident.
-    3. Return inputs and reasoning. End the reasoning with a concrete prediction of what the screen will show after these inputs, rather than coordinates or vague progress.
+    2. Plan ahead and choose a sequence of buttons. Let recent results set your ambition. When your predictions have been coming true, trust that read of the screen and chain longer sequences to cover more ground per turn. When a prediction failed, treat it as a sign that your model of the screen is off: shorten the sequence, change approach, and re-verify before extending again. A failure should pull you back faster than a success pushes you forward.
+    3. Return inputs and reasoning. End the reasoning with a concrete prediction of what the screen will show after these inputs.
+
+    Predictions must be concrete:
+    - Screen-state ("Oak in dialogue", "on the first floor of the house"). ✓
+    - NOT coordinates ("at tile (0, 0)") — too brittle. ✗
+    - NOT vague ("make progress") — too soft to check next turn. ✗
 
     Use observed evidence to confirm locations, items, and completed goals. General game knowledge may guide exploration but is not proof. After repeated failures, reconsider your assumptions and try a different approach.
 
