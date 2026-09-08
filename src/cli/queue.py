@@ -38,6 +38,23 @@ from src.cli.ctl_client import api, detail, emit_json
 from src.config import default_config_stem, example_model_aliases
 
 
+
+def record_show_flags(value: str | None) -> dict[str, bool]:
+    """`--record-show model,elapsed,cost` → the three `show_*` booleans of a
+    record spec. Every name must be one of the three, so a typo fails here
+    instead of enqueuing a recording with the overlay silently missing."""
+    flags = {"show_model": False, "show_elapsed": False, "show_cost": False}
+    if not value:
+        return flags
+    for name in (n.strip() for n in value.split(",")):
+        if not name:
+            continue
+        key = f"show_{name}"
+        if key not in flags:
+            sys.exit(f"ERROR: --record-show: unknown item {name!r} (expected: model, elapsed, cost)")
+        flags[key] = True
+    return flags
+
 def _ex(i: int) -> str:
     """The i-th registry-derived example alias, for help text.
 
@@ -104,7 +121,8 @@ def _print_queue(payload: dict) -> None:
             flags.append(f"profile={it['provider_profile']}")
         if it.get("record"):
             r = it["record"]
-            flags.append(f"rec={r.get('view')}/{r.get('speed')}")
+            shown = [k[len("show_"):] for k in ("show_model", "show_elapsed", "show_cost") if r.get(k)]
+            flags.append(f"rec={r.get('view')}/{r.get('speed')}" + (f"+{','.join(shown)}" if shown else ""))
         print(
             f"{mark}{i:>1}  {it['queue_id']:<12} {it['kind']:<8} "
             f"{(it.get('benchmark') or '—'):<16} {it['model']:<28} {', '.join(flags)}"
@@ -177,6 +195,7 @@ def _cmd_add(args) -> int:
                 "view": args.record,
                 "speed": args.record_speed,
                 "fps": args.record_fps,
+                **record_show_flags(args.record_show),
             }
         for _ in range(args.repeat):
             specs.append(dict(spec))
@@ -432,6 +451,10 @@ base profile.
     p_add.add_argument(
         "--record-fps", dest="record_fps", type=int, default=30,
         help="Recording frame rate, 1-60 (default 30).",
+    )
+    p_add.add_argument(
+        "--record-show", dest="record_show", default=None,
+        help="Comma-separated run facts to print in the simple view's header strip: any of model, elapsed, cost (e.g. `--record-show model,cost`). Off by default so the frame stays bare. Ignored for `detailed`, which always shows them.",
     )
 
     sub.add_parser(

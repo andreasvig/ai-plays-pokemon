@@ -35,3 +35,18 @@ export const recordRun = params.get('run') || null
  * localStorage preference. Only ever non-null on a recorder page.
  */
 export const forcedSimple = recording && recordView ? recordView === 'simple' : null
+
+/** The three simple-view overlay toggles, in the shape SimpleView consumes. */
+export const SHOW_NONE = Object.freeze({ model: false, elapsed: false, cost: false })
+
+/**
+ * `show=model,elapsed,cost` (any subset) → {model, elapsed, cost} booleans, or
+ * null off a recorder page. Set by the recorder from the run's record spec
+ * (src/dashboard/recorder.py record_url), so the file shows exactly what was
+ * chosen at enqueue time and never the human's localStorage toggles.
+ */
+export const forcedShow = recording
+  ? Object.fromEntries(
+      Object.keys(SHOW_NONE).map((k) => [k, (params.get('show') || '').split(',').includes(k)]),
+    )
+  : null

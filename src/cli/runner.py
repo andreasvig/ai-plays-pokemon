@@ -1230,6 +1230,10 @@ model you can actually start — `pokemon ls models` for the full list):
         "--record-fps", dest="record_fps", type=int, default=30,
         help="Recording frame rate (1-60). Default: 30.",
     )
+    parser.add_argument(
+        "--record-show", dest="record_show", default=None,
+        help="Comma-separated run facts to print in the simple view's header strip: any of model, elapsed, cost (e.g. `--record-show model,cost`). Off by default so the frame stays bare. Ignored for `detailed`, which always shows them.",
+    )
     args = parser.parse_args()
 
     if args.continue_from:
@@ -1297,8 +1301,11 @@ model you can actually start — `pokemon ls models` for the full list):
         from src.dashboard.recorder import normalize_spec, recorder_preflight
 
         try:
+            from src.cli.queue import record_show_flags
+
             record_spec = normalize_spec(
-                {"view": args.record, "speed": args.record_speed, "fps": args.record_fps}
+                {"view": args.record, "speed": args.record_speed, "fps": args.record_fps,
+                 **record_show_flags(args.record_show)}
             )
         except ValueError as e:
             sys.exit(f"ERROR: {e}")

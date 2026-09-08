@@ -45,14 +45,18 @@ def test_normalize_none_means_no_recording():
     assert normalize_spec(False) is None
 
 
+# Overlay flags every normalised spec carries; all off unless asked for.
+NO_SHOW = {"show_model": False, "show_elapsed": False, "show_cost": False}
+
+
 def test_normalize_bare_view_string():
     assert normalize_spec("detailed") == {
-        "view": "detailed", "speed": "realtime", "fps": 30
+        "view": "detailed", "speed": "realtime", "fps": 30, **NO_SHOW
     }
 
 
 def test_normalize_defaults_to_simple_realtime_30():
-    assert normalize_spec({}) == {"view": "simple", "speed": "realtime", "fps": 30}
+    assert normalize_spec({}) == {"view": "simple", "speed": "realtime", "fps": 30, **NO_SHOW}
 
 
 def test_normalize_accepts_the_pydantic_model():
@@ -60,8 +64,20 @@ def test_normalize_accepts_the_pydantic_model():
 
     spec = RecordSpec(view=RecordView.detailed, speed=RecordSpeed.cut_thinking, fps=24)
     assert normalize_spec(spec) == {
-        "view": "detailed", "speed": "cut-thinking", "fps": 24
+        "view": "detailed", "speed": "cut-thinking", "fps": 24, **NO_SHOW
     }
+
+
+def test_normalize_keeps_the_overlay_flags_that_were_asked_for():
+    out = normalize_spec({"show_model": True, "show_cost": True})
+    assert (out["show_model"], out["show_elapsed"], out["show_cost"]) == (True, False, True)
+
+
+@pytest.mark.parametrize("bad", [{"show_model": "true"}, {"show_cost": 1}, {"show_elapsed": "false"}])
+def test_normalize_rejects_non_boolean_overlay_flags(bad):
+    """A string "false" is truthy; accepting it would switch an overlay ON."""
+    with pytest.raises(ValueError):
+        normalize_spec(bad)
 
 
 @pytest.mark.parametrize(
@@ -102,6 +118,15 @@ def test_record_url_pins_the_run():
     # The pinned run id is what keeps the recorder in the view after the run
     # ends (active_run_id goes null there).
     assert "run=2026-08-01_run-x" in url
+    # No overlay asked for → no `show` param at all, so the page renders the
+    # bare frame rather than an empty header strip.
+    assert "show=" not in url
+
+
+def test_record_url_carries_the_overlay_flags_in_strip_order():
+    spec = normalize_spec({"show_cost": True, "show_model": True})
+    url = record_url(3420, "2026-08-01_run-x", "simple", spec)
+    assert url.endswith("&show=model,cost")
 
 
 # ───────────────────────── 2. the cut-thinking gate ─────────────────────────
@@ -365,16 +390,18 @@ def test_queued_run_round_trips_a_record_spec(tmp_path: Path):
     q.enqueue(
         RunKind.casual, "claude-haiku-4-5(medium)",
         config="config-3.13",
-        record={"view": "detailed", "speed": "cut-thinking", "fps": 24},
+        record={"view": "detailed", "speed": "cut-thinking", "fps": 24, "show_elapsed": True},
     )
     raw = json.loads(qpath.read_text())
     assert raw["items"][0]["record"] == {
-        "view": "detailed", "speed": "cut-thinking", "fps": 24
+        "view": "detailed", "speed": "cut-thinking", "fps": 24,
+        "show_model": False, "show_elapsed": True, "show_cost": False,
     }
 
     reloaded = QueueManager(qpath)
     assert reloaded.items[0].record.view.value == "detailed"
     assert reloaded.items[0].record.speed.value == "cut-thinking"
+    assert reloaded.items[0].record.show_elapsed is True
 
 
 def test_queued_run_without_record_stays_none(tmp_path: Path):
@@ -444,7 +471,7 @@ def test_executor_stamps_the_spec_onto_the_run_config(tmp_path: Path):
     ex.drain_once()
 
     assert seen["config"]["_record"] == {
-        "view": "simple", "speed": "cut-thinking", "fps": 30
+        "view": "simple", "speed": "cut-thinking", "fps": 30, **NO_SHOW
     }
 
 

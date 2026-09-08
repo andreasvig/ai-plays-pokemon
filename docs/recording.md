@@ -63,6 +63,19 @@ rather than letting you discover a missing encoder 200 turns later.
 | Resolution | 1080×1080 | 1920×1080 |
 | Good for | Posting unedited — square crops to Shorts / Reels / a LinkedIn card | Showing how the harness works |
 
+### The simple view's header strip (`--record-show`)
+
+By default the simple frame is bare: screen + turn box. `--record-show
+model,elapsed,cost` (any subset; the dialog has the same three checkboxes under
+"Show in frame") prints a strip above the screen with the model name on the left
+and the run's total time and total cost on the right, in the box's own
+typography. The recorder passes the choice to its headless page as
+`&show=model,cost` on the pinned URL, so the file shows exactly what was chosen at
+enqueue time; a human watching the same run has their own copy of the toggles
+behind the ⚙ next to the ✕ (mouse-move to reveal), stored in the browser, and
+the two never affect each other. `detailed` ignores the flag — its stats row
+already shows all of it.
+
 The simple view's stage is `min(100vw, 100vh)`, so a **square** viewport makes it
 fill the frame exactly — the video *is* the 1:1 view, with no cropping step and
 no letterbox bars. It also sidesteps the box-geometry drift the view has on a
@@ -171,6 +184,7 @@ both WebSockets, compositor and ffmpeg without a model call.
 | `--record` | `simple`, `detailed` | off |
 | `--record-speed` | `realtime`, `cut-thinking` | `realtime` |
 | `--record-fps` | 1–60 | `30` |
+| `--record-show` | any of `model,elapsed,cost` | off |
 
 **The UI defaults differ on purpose.** Ticking "Record this run to MP4" in the
 Add-run dialog gives you **simple + cut-thinking** — the pairing you'd actually
@@ -178,10 +192,13 @@ post, rather than a ten-minute file of a model thinking. The CLI keeps
 `realtime`, because there the caller is scripting and silently editing their
 footage is the surprising outcome. Both are one control away from the other.
 
-The same three ride on the queue API as a `record` object:
+The same ride on the queue API as a `record` object; the overlay is three
+booleans there:
 
 ```json
-{"kind": "casual", "model": "...", "record": {"view": "simple", "speed": "cut-thinking", "fps": 30}}
+{"kind": "casual", "model": "...",
+ "record": {"view": "simple", "speed": "cut-thinking", "fps": 30,
+            "show_model": true, "show_elapsed": false, "show_cost": true}}
 ```
 
 They are persisted on the queue item, so a run queued now and started in an hour

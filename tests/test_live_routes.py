@@ -195,6 +195,41 @@ def test_events_socket_never_ships_a_whole_conversation_trace(probe):
     assert "turn_trace" not in seen
 
 
+def test_events_socket_marks_the_end_of_the_backlog(probe):
+    """One `caught_up` frame follows the replayed backlog, so the simple view can
+    seed the latest turn instead of animating every past one on a reload."""
+    bridge = EventBridge()
+    bridge.on_event({"type": "turn_start", "turn": 1})
+    bridge.on_event({"type": "llm_output", "turn": 1, "args": {}})
+    probe("live-ws-caught-up", {"task": {"goal": "x"}}, bridge)
+
+    with TestClient(app).websocket_connect("/runs/live-ws-caught-up/ws/events") as ws:
+        frames = []
+        for _ in range(8):
+            msg = json.loads(ws.receive_text())
+            frames.append(msg)
+            if msg["type"] == "caught_up":
+                break
+    types = [f["type"] for f in frames]
+    assert types[-1] == "caught_up", types
+    assert frames[-1]["data"] == {"events": 2}
+    # Every backlog event precedes the marker; nothing live can sneak ahead of it.
+    assert [f["data"]["type"] for f in frames if f["type"] == "event"] == ["turn_start", "llm_output"]
+
+
+def test_events_socket_marks_an_empty_backlog_too(probe):
+    """A run with nothing logged yet still tells the client it is live."""
+    probe("live-ws-empty", {"task": {"goal": "x"}}, EventBridge())
+    with TestClient(app).websocket_connect("/runs/live-ws-empty/ws/events") as ws:
+        types = []
+        for _ in range(4):
+            msg = json.loads(ws.receive_text())
+            types.append(msg["type"])
+            if msg["type"] == "caught_up":
+                break
+    assert types[-1] == "caught_up", types
+
+
 # ───────────────────────────── /api/queue active turn ───────────────────────
 
 

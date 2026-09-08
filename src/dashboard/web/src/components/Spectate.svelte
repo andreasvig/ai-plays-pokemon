@@ -22,6 +22,7 @@
   import SimpleView from './SimpleView.svelte'
   import Icon from './Icon.svelte'
   import * as api from '../lib/api.js'
+  import { SHOW_NONE } from '../lib/record.js'
 
   // Live feed windowing: render only the last MAX_LIVE_TASKS tasks (or, for
   // casual/no-TaskMaster runs, the last FALLBACK_LIVE_TURNS turns) — see feed.js.
@@ -35,7 +36,7 @@
   // headless browser lands on the right presentation with no human input.
   let {
     run = null, activeRunId = null, muted = true, ontogglemute, onnew, onback,
-    recording = false, forcedSimple = null,
+    recording = false, forcedSimple = null, forcedShow = null,
   } = $props()
 
   // ── live state, populated by the event/screen sockets ──
@@ -100,6 +101,23 @@
   // page never receives a non-null forcedSimple at all.
   // svelte-ignore state_referenced_locally
   let simple = $state(forcedSimple ?? readSimple())
+  // The simple view's header overlay: {model, elapsed, cost}. Same ownership
+  // split as `simple` itself — a human's tab persists it here, a recorder page
+  // is pinned to the record spec's `show=` param and never touches storage.
+  const SHOW_KEY = 'spectate.simple.show'
+  function readShow() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(SHOW_KEY) || 'null')
+      return raw && typeof raw === 'object' ? { ...SHOW_NONE, ...raw } : { ...SHOW_NONE }
+    } catch { return { ...SHOW_NONE } }
+  }
+  // svelte-ignore state_referenced_locally
+  let simpleShow = $state(forcedShow ?? readShow())
+  function setShow(next) {
+    if (recording) return
+    simpleShow = { ...SHOW_NONE, ...next }
+    try { localStorage.setItem(SHOW_KEY, JSON.stringify(simpleShow)) } catch { /* private mode */ }
+  }
   // {seq, data} handed to SimpleView. See setSimple/ingestEvent for the
   // one-write-per-task contract that makes it work.
   let lastEvent = $state(null)
@@ -112,6 +130,38 @@
   // 1 while a mounted SimpleView had already reached 300 would silently swallow
   // every event of the new run.
   let evtSeq = 0
+  // Backlog gate for SimpleView. The events WS replays the whole run on every
+  // (re)connect, one frame per event, and SimpleView animates each one it is
+  // handed (~2s per turn) — so a reload at turn 34 used to sit through 34
+  // promotes before showing the present. Events are still ingested into the
+  // trace accumulators during the replay, but `lastEvent` is only written once
+  // the server's `caught_up` frame has arrived; at that point the latest turn
+  // is rendered once via `seed`, and only the model's CURRENT think (a trailing
+  // turn_start / compaction_start) is replayed so the pending strip shows.
+  // The timer is a fallback for a server that never sends the marker (an app
+  // process older than 2026-09-08): a backlog of hundreds of frames drains in
+  // well under a second, so two quiet seconds mean it is over.
+  let caughtUp = false
+  let lastBacklogEvent = null
+  let caughtUpTimer = null
+  function onCaughtUp() {
+    if (caughtUp) return
+    caughtUp = true
+    clearTimeout(caughtUpTimer)
+    caughtUpTimer = null
+    seed = buildSeed()
+    const tail = lastBacklogEvent
+    lastBacklogEvent = null
+    if (tail && (tail.type === 'turn_start' || tail.type === 'compaction_start')) {
+      // After the seed has been applied (own flush), so beginThinking lands on
+      // top of the seeded box rather than being cleared by applySeed.
+      setTimeout(() => { if (caughtUp) lastEvent = { seq: ++evtSeq, data: tail } }, 0)
+    }
+  }
+  function armCaughtUpFallback() {
+    clearTimeout(caughtUpTimer)
+    caughtUpTimer = setTimeout(onCaughtUp, 2000)
+  }
 
   function setSimple(on) {
     if (recording) return   // a recorder page's view is fixed for the whole file
@@ -324,8 +374,9 @@
     // for-loop-over-a-backlog path in this component; if one is ever added it
     // must yield between iterations or SimpleView will miss phases.
     // Written unconditionally, not gated on `simple`: the counter has to stay
-    // continuous across a toggle.
-    lastEvent = { seq: ++evtSeq, data: evt }
+    // continuous across a toggle. Gated on the backlog instead — see caughtUp.
+    if (caughtUp) lastEvent = { seq: ++evtSeq, data: evt }
+    else lastBacklogEvent = evt
     const t = evt.type
 
     if (t === 'turn_start') {
@@ -443,6 +494,10 @@
     // survive into the next run. `evtSeq` is deliberately NOT reset (see above).
     seed = null
     lastEvent = null
+    caughtUp = false
+    lastBacklogEvent = null
+    clearTimeout(caughtUpTimer)
+    caughtUpTimer = null
     // cancel any in-flight rebuild so it doesn't fire against the reset state
     if (rebuildRaf != null && typeof cancelAnimationFrame !== 'undefined') cancelAnimationFrame(rebuildRaf)
     rebuildPending = false
@@ -476,6 +531,8 @@
     // first so a reconnect rebuilds cleanly instead of double-appending.
     evtSock = api.openEventSocket(id, (msg) => {
       eventsConnected = true
+      if (msg.type === 'caught_up') { onCaughtUp(); return }
+      if (!caughtUp && !caughtUpTimer) armCaughtUpFallback()
       if (msg.type === 'event') ingestEvent(msg.data)
       else if (msg.type === 'state_update') memory = msg.data || {}
       else if (msg.type === 'stats') stats = { ...stats, ...msg.data }
@@ -560,7 +617,9 @@
          ✕ (visible only while the mouse moves), which calls onexit. The sockets
          above are untouched: they belong to an $effect keyed on activeRunId, and
          nothing here re-runs it. -->
-    <SimpleView frame={screenUrl} {lastEvent} {seed} onexit={() => setSimple(false)} />
+    <SimpleView frame={screenUrl} {lastEvent} {seed} onexit={() => setSimple(false)}
+      model={run?.model ?? activeRunId} {elapsedS} cost={stats.cost}
+      show={simpleShow} onshow={setShow} locked={recording} />
   {:else}
     <div class="bar">
       <button class="btn ghost" onclick={() => onback()}><Icon name="back" size={13} /> Leaderboard</button>

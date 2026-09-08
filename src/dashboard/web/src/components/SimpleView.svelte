@@ -13,6 +13,8 @@
   import { onDestroy, tick, untrack } from 'svelte'
   import Action, { actionTokens } from './Action.svelte'
   import { splitParas, paraWords, streamStep, streamSlice } from '../lib/prose.js'
+  import { usd, dur } from '../lib/format.js'
+  import { SHOW_NONE } from '../lib/record.js'
 
   let {
     // Current screen image src (blob URL from Spectate's screen socket).
@@ -33,6 +35,20 @@
     // event.
     seed = null,
     onexit = () => {},
+    // ── header overlay (2026-09-08, reverses plan §10's "no cost readouts":
+    // still off by default, so the bare frame is unchanged unless asked for) ──
+    // Run facts for the strip above the game screen. `show` says which of them
+    // print: {model, elapsed, cost} booleans. The parent owns persistence
+    // (localStorage on a human's tab, the record spec's `show=` URL param on a
+    // recorder page) and receives edits through `onshow`.
+    model = null,
+    elapsedS = 0,
+    cost = null,
+    show = SHOW_NONE,
+    onshow = () => {},
+    // A recorder page: no ✕, no gear, no settings — its frame is fixed for the
+    // life of the file and there is no mouse to reveal them anyway.
+    locked = false,
   } = $props()
 
   // ── timings, from the mock (plan §5.2). All tuned by eye with Andreas. ────
@@ -85,6 +101,7 @@
   let fitPx = $state(null)
   let clipped = $state(false)
   let chrome = $state(false) // exit affordance visible (mouse moved recently)
+  let settingsOpen = $state(false) // the gear's panel; keeps the chrome shown
 
   let ratchetPx = null // plain let: fitPx is the reactive mirror
   let slotSeq = 0
@@ -94,6 +111,7 @@
   let dead = false
 
   let stageEl, boxEl, pendingEl
+  let shotEl = $state(null) // inside an {#if}, so reactive like morphEl/sayEl
   // These two live inside {#if}/{#key} blocks, so their bindings are torn down
   // and rebuilt per turn — they must be reactive or Svelte warns (and a stale
   // reference would make the fit measure a dead element).
@@ -446,6 +464,7 @@
       }
       ratchetPx = null
       refit()
+      measureShot()
     })
     ro.observe(stageEl)
     return () => ro.disconnect()
@@ -468,13 +487,15 @@
           : { ...morph, left: from.left, w: from.w, top: from.top, h: from.h }
       }
     }
-    // Chrome: the exit ✕ (and nothing else) appears while the mouse moves and
-    // is gone 2s later, so the recording frame stays clean.
+    // Chrome: the exit ✕ and the gear appear while the mouse moves and are
+    // gone 2s later, so the recording frame stays clean. An open settings
+    // panel pins them: hiding the panel under the reader's cursor would make
+    // the toggles unclickable.
     const poke = () => {
       chrome = true
       clearTimeout(chromeTimer)
       chromeTimer = setTimeout(() => {
-        chrome = false
+        if (!settingsOpen) chrome = false
       }, 2000)
     }
     addEventListener('resize', onResize)
@@ -491,6 +512,32 @@
   // image is actually decoded rather than trusting the pre-load layout.
   function onShot() {
     refit()
+    measureShot()
+  }
+
+  // The header card is as wide as the PICTURE, not the image element. The
+  // element is 100% wide and `object-fit: contain` letterboxes the frame inside
+  // it, so the visible edges sit inside the element's by a margin that depends
+  // on how much height the shot area has AND on the frame's own aspect (mGBA
+  // pads its window capture with black bars that vary with its window size).
+  // No CSS width can follow that; measure the rendered picture instead and
+  // hand it to the card, the turn box and the pending strip as --shotw. Written
+  // only on a real change so a steady stream of same-size frames does not churn
+  // style. The morph clone reads the live rects, so it follows for free; the
+  // text fit is re-run because a narrower box holds fewer characters per line.
+  let shotW = null
+  function measureShot() {
+    const el = shotEl
+    if (!el || !stageEl || !el.naturalWidth || !el.naturalHeight) return
+    const r = el.getBoundingClientRect()
+    if (!r.width || !r.height) return
+    const scale = Math.min(r.width / el.naturalWidth, r.height / el.naturalHeight)
+    const w = Math.round(el.naturalWidth * scale)
+    if (shotW != null && Math.abs(w - shotW) <= 1) return
+    shotW = w
+    stageEl.style.setProperty('--shotw', w + 'px')
+    ratchetPx = null
+    refit()
   }
 
   onDestroy(() => {
@@ -502,6 +549,23 @@
 
   const fitAttr = $derived(fitPx == null ? '' : fitPx.toFixed(2))
   const shown = $derived(measuring ? fullParas : visibleParas)
+
+  // Which overlay items print, in strip order. Empty → no strip at all, so a
+  // run with everything off renders the exact frame the view shipped with.
+  const shownMeta = $derived(['model', 'elapsed', 'cost'].filter((k) => show?.[k]))
+  const SHOW_LABELS = { model: 'Model name', elapsed: 'Total time', cost: 'Total cost' }
+
+  function toggleShow(key) {
+    onshow({ ...SHOW_NONE, ...show, [key]: !show?.[key] })
+  }
+  function closeSettings() {
+    settingsOpen = false
+    // Start the hide timer again: the panel had been pinning the chrome.
+    clearTimeout(chromeTimer)
+    chromeTimer = setTimeout(() => {
+      chrome = false
+    }, 2000)
+  }
 </script>
 
 <div class="stagewrap">
@@ -515,18 +579,72 @@
     data-clipped={String(clipped)}
     data-turn={card ? String(card.turn) : ''}
     data-pending={pendingVisible ? 'visible' : 'hidden'}
+    data-show={shownMeta.join(',')}
+    data-settings={settingsOpen ? 'open' : 'closed'}
   >
-    <button
-      class="exit"
-      class:show={chrome}
-      title="Exit simple view"
-      aria-label="Exit simple view"
-      onclick={() => onexit()}>✕</button
-    >
+    {#if !locked}
+      <button
+        class="exit"
+        class:show={chrome}
+        title="Exit simple view"
+        aria-label="Exit simple view"
+        onclick={() => onexit()}>✕</button
+      >
+      <!-- Same reveal rule as the ✕: only while the mouse moves. -->
+      <button
+        class="gear"
+        class:show={chrome}
+        class:active={settingsOpen}
+        title="Simple view settings"
+        aria-label="Simple view settings"
+        aria-expanded={settingsOpen}
+        onclick={() => (settingsOpen ? closeSettings() : (settingsOpen = true))}
+      >
+        <svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden="true">
+          <path
+            d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm8.6 2.2-1.9-.4a6.9 6.9 0 0 0-.7-1.7l1.1-1.6a.8.8 0 0 0-.1-1l-1-1a.8.8 0 0 0-1-.1l-1.6 1.1a6.9 6.9 0 0 0-1.7-.7l-.4-1.9a.8.8 0 0 0-.8-.6h-1.4a.8.8 0 0 0-.8.6l-.4 1.9a6.9 6.9 0 0 0-1.7.7L6.6 4.9a.8.8 0 0 0-1 .1l-1 1a.8.8 0 0 0-.1 1l1.1 1.6a6.9 6.9 0 0 0-.7 1.7l-1.9.4a.8.8 0 0 0-.6.8v1.4c0 .4.3.7.6.8l1.9.4c.2.6.4 1.2.7 1.7l-1.1 1.6a.8.8 0 0 0 .1 1l1 1c.3.3.7.3 1 .1l1.6-1.1c.5.3 1.1.5 1.7.7l.4 1.9c.1.4.4.6.8.6h1.4c.4 0 .7-.3.8-.6l.4-1.9c.6-.2 1.2-.4 1.7-.7l1.6 1.1c.3.2.7.2 1-.1l1-1c.3-.3.3-.7.1-1l-1.1-1.6c.3-.5.5-1.1.7-1.7l1.9-.4c.4-.1.6-.4.6-.8v-1.4a.8.8 0 0 0-.6-.8Z"
+            fill="currentColor"
+          />
+        </svg>
+      </button>
+      {#if settingsOpen}
+        <div class="settings" role="dialog" aria-label="Simple view settings">
+          <div class="shead">
+            <span>Show in frame</span>
+            <button class="sclose" aria-label="Close settings" onclick={closeSettings}>✕</button>
+          </div>
+          {#each Object.keys(SHOW_LABELS) as key (key)}
+            <label class="sopt">
+              <input type="checkbox" checked={!!show?.[key]} onchange={() => toggleShow(key)} />
+              <span>{SHOW_LABELS[key]}</span>
+            </label>
+          {/each}
+          <p class="shint">Also available per recording, under “Record this run to MP4”.</p>
+        </div>
+      {/if}
+    {/if}
+
+    {#if shownMeta.length || !locked}
+      <!-- Header card: the opted-in run facts in a paper box like the turn box,
+           sitting just above the screen and sharing its edges (both are 100% of
+           the stage's content width). Same trick as `.pending` below: on a
+           human's tab it is ALWAYS in the flow, at opacity 0 when nothing is
+           shown, so toggling an item never resizes the game screen (it did
+           when the row came and went — Andreas 2026-09-08). A recorder page
+           has no toggles, so there it exists only when something is shown and
+           the bare frame keeps its original geometry. -->
+      <div class="meta" class:idle={!shownMeta.length} aria-hidden={!shownMeta.length}>
+        {#if show.model}<span class="mmodel">{model ?? '—'}</span>{/if}
+        <span class="mright">
+          {#if show.elapsed}<span class="mitem"><span class="ml">Time</span> <b>{dur(elapsedS)}</b></span>{/if}
+          {#if show.cost}<span class="mitem"><span class="ml">Cost</span> <b>{usd(cost)}</b></span>{/if}
+        </span>
+      </div>
+    {/if}
 
     <div class="shotwrap">
       {#if frame}
-        <img class="screen" src={frame} alt="" onload={onShot} />
+        <img class="screen" src={frame} alt="" onload={onShot} bind:this={shotEl} />
       {/if}
     </div>
 
@@ -614,17 +732,22 @@
     padding: 3.4%;
     overflow: hidden;
     --boxh: 24%;
-    --striph: 7%;
+    /* 7% in the mock; trimmed 2026-09-08 when the header card entered the
+       column, so the screen gives up less height. One 0.86em line + 1em top
+       padding still fits with room. */
+    --striph: 5.5%;
   }
 
-  /* exit: top-left, only while the mouse moves. Never in the recording. */
+  /* exit: bottom-left, only while the mouse moves. Never in the recording.
+     Lives in the stage's bottom padding band: the top band belongs to the
+     header strip, and a button over the model name looked broken. */
   .exit {
     position: absolute;
-    top: 1.6%;
+    bottom: 0.5%;
     left: 1.6%;
     z-index: 30;
-    width: 2.1em;
-    height: 2.1em;
+    width: 1.75em;
+    height: 1.75em;
     font-size: clamp(11px, 1.5vh, 19px);
     display: grid;
     place-items: center;
@@ -645,6 +768,156 @@
   }
   .exit:hover {
     background: var(--card);
+  }
+
+  /* gear: sits right of the ✕, same size, same reveal. */
+  .gear {
+    position: absolute;
+    bottom: 0.5%;
+    left: calc(1.6% + 1.75em + 0.4em);
+    z-index: 30;
+    width: 1.75em;
+    height: 1.75em;
+    font-size: clamp(11px, 1.5vh, 19px);
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    cursor: pointer;
+    padding: 0;
+    background: rgba(251, 249, 245, 0.78);
+    border: 1px solid var(--rule);
+    color: var(--ink);
+    line-height: 1;
+    opacity: 0;
+    transition: opacity 0.22s;
+    backdrop-filter: blur(3px);
+  }
+  .gear.show,
+  .gear.active {
+    opacity: 1;
+  }
+  .gear:hover,
+  .gear.active {
+    background: var(--card);
+  }
+
+  /* settings panel: opens upward from the buttons, paper on paper, mono. */
+  .settings {
+    position: absolute;
+    bottom: calc(0.5% + 1.75em + 0.6em);
+    left: 1.6%;
+    z-index: 31;
+    font-size: clamp(11px, 1.5vh, 19px);
+    min-width: 13em;
+    padding: 0.8em 1em 0.9em;
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    box-shadow: 0 6px 24px rgba(31, 28, 23, 0.14);
+    display: flex;
+    flex-direction: column;
+    gap: 0.55em;
+    color: var(--ink);
+  }
+  .shead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1em;
+    font-size: 0.78em;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+  .sclose {
+    background: none;
+    border: 0;
+    padding: 0 0.1em;
+    cursor: pointer;
+    color: var(--faint);
+    font-family: var(--mono);
+    font-size: 1em;
+    line-height: 1;
+  }
+  .sclose:hover {
+    color: var(--ink);
+  }
+  .sopt {
+    display: flex;
+    align-items: center;
+    gap: 0.6em;
+    font-size: 0.86em;
+    cursor: pointer;
+    color: var(--body);
+  }
+  .sopt input {
+    margin: 0;
+    width: 1em;
+    height: 1em;
+    accent-color: var(--ink);
+  }
+  .shint {
+    margin: 0.2em 0 0;
+    font-size: 0.7em;
+    line-height: 1.4;
+    color: var(--faint);
+  }
+
+  /* ── header strip ─────────────────────────────────────────────────────── */
+  .meta {
+    /* Picture width when measured (see measureShot), full width before the
+       first frame lands. */
+    width: var(--shotw, 100%);
+    max-width: 100%;
+    flex: none;
+    display: flex;
+    justify-content: space-between;
+    gap: 1.5em;
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    /* Horizontal padding equals the turn box's 1.3em AT THE BOX'S FONT, so the
+       model name starts on the same x as "TURN n" below. */
+    padding: 0 calc(clamp(10px, 1.5vh, 19px) * 1.3);
+    /* Fixed height, content centred: an empty (idle) card and a full one are
+       the same size, so the game screen keeps its rect when items toggle. */
+    height: 2.1em;
+    align-items: center;
+    /* 1.2× the box's font: one step up from the TURN label so it reads at a
+       glance in a posted clip. */
+    font-size: calc(clamp(10px, 1.5vh, 19px) * 1.2);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--faint);
+    line-height: 1.2;
+    overflow: hidden;
+    transition: opacity 0.3s;
+  }
+  .meta.idle {
+    opacity: 0;
+  }
+  .mmodel {
+    color: var(--ink);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .mright {
+    margin-left: auto;
+    display: flex;
+    gap: 1.4em;
+    white-space: nowrap;
+  }
+  .meta b {
+    color: var(--ink);
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    font-variant-numeric: tabular-nums;
+    text-transform: none;
   }
 
   .shotwrap {
@@ -683,7 +956,10 @@
 
   /* ── main box ─────────────────────────────────────────────────────────── */
   .box {
-    width: 100%;
+    /* Same measured picture width as the header card (see measureShot), so all
+       three paper elements share the screen's edges. */
+    width: var(--shotw, 100%);
+    max-width: 100%;
     height: var(--boxh);
     flex: none;
     background: var(--card);
@@ -774,7 +1050,8 @@
         landed. Harmonised toward the settled size — that is what is on screen
         almost all the time. `.morph` must carry the identical value. */
   .pending {
-    width: 100%;
+    width: var(--shotw, 100%);
+    max-width: 100%;
     height: var(--striph);
     flex: none;
     border: 1px dashed var(--rule);
@@ -870,7 +1147,8 @@
     .caret {
       animation: none;
     }
-    .exit {
+    .exit,
+    .gear {
       transition-duration: 1ms;
     }
     .pending {

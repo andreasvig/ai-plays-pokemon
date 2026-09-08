@@ -395,6 +395,13 @@ async def ws_events(websocket: WebSocket, run_id: str):
     except Exception:
         return
 
+    # The first poll drains the whole backlog (cursor 0); everything after it is
+    # live. The client cannot tell the two apart by looking at the frames, and
+    # the simple view animates every event it is handed, so a reload mid-run
+    # used to replay the entire run turn by turn (~2s each). One marker frame
+    # after the backlog lets the client render the latest state once and only
+    # animate what happens from here on.
+    backlog = True
     try:
         while True:
             if _REGISTRY.get(run_id) is None:
@@ -415,6 +422,10 @@ async def ws_events(websocket: WebSocket, run_id: str):
                         "type": "stats",
                         "data": session.bridge.get_stats(),
                     }))
+
+            if backlog:
+                backlog = False
+                await websocket.send_text(json.dumps({"type": "caught_up", "data": {"events": cursor}}))
 
             if not events:
                 await asyncio.sleep(0.05)

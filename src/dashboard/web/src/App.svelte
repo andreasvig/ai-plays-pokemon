@@ -8,7 +8,7 @@
   import Report from './components/Report.svelte'
   import AddRunDialog from './components/AddRunDialog.svelte'
   import { router } from './lib/router.svelte.js'
-  import { recording, recordRun, forcedSimple } from './lib/record.js'
+  import { recording, recordRun, forcedSimple, forcedShow } from './lib/record.js'
   import * as api from './lib/api.js'
 
   // route -> view + param
@@ -296,7 +296,7 @@
     <History {runs} oninspect={inspect} oncontinue={openContinue} ondelete={removeRun} />
   {:else if view === 'spectate'}
     <Spectate run={active} {activeRunId} muted={emulator.muted} ontogglemute={toggleMute} onnew={openNew} onback={() => go('/')}
-      {recording} {forcedSimple} />
+      {recording} {forcedSimple} {forcedShow} />
   {:else if view === 'report'}
     <Report run={selectedRun} onback={() => go('/history')} oncontinue={openContinue} />
   {:else if view === 'about'}

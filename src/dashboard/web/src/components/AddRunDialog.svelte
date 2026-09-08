@@ -117,6 +117,10 @@
   let record = $state(false)
   let recordView = $state('simple')          // the 1:1 recording view
   let recordSpeed = $state('cut-thinking')   // execution windows only
+  // Header overlay of the simple view; all off keeps the bare frame. Sent as
+  // show_model / show_elapsed / show_cost on the record spec (RecordSpec).
+  let recordShow = $state({ model: false, elapsed: false, cost: false })
+  const RECORD_SHOW_LABELS = { model: 'Model name', elapsed: 'Total time', cost: 'Total cost' }
   let modelQuery = $state('')       // searchable model-picker filter text
   // Casual-continue TaskMaster override. '' = keep the source run's TaskMaster
   // (the backend reuses it); otherwise a "model(level)" alias to switch to.
@@ -433,7 +437,12 @@
       taskMasterModel: casualContinue && taskMasterChoice ? taskMasterChoice : null,
       // Opt-in MP4 capture. null (not false) when off, because the backend
       // treats an absent spec as "don't record" and validates a present one.
-      record: record ? { view: recordView, speed: recordSpeed } : null,
+      record: record
+        ? {
+            view: recordView, speed: recordSpeed,
+            show_model: recordShow.model, show_elapsed: recordShow.elapsed, show_cost: recordShow.cost,
+          }
+        : null,
     })
   }
 </script>
@@ -752,6 +761,19 @@
                 <option value="cut-thinking">Cut thinking · execution only</option>
               </select>
             </label>
+            {#if recordView === 'simple'}
+              <div class="field">
+                <span class="flabel">Show in frame</span>
+                <div class="showrow">
+                  {#each Object.keys(RECORD_SHOW_LABELS) as key (key)}
+                    <label class="check showopt">
+                      <input type="checkbox" bind:checked={recordShow[key]} />
+                      <span>{RECORD_SHOW_LABELS[key]}</span>
+                    </label>
+                  {/each}
+                </div>
+              </div>
+            {/if}
             <p class="rechint faint">
               {#if recordSpeed === 'cut-thinking'}
                 Records each turn from the moment it starts executing until the screen settles — the model's response time is left out.
@@ -837,6 +859,8 @@
   .recopts { display: flex; flex-direction: column; gap: 10px;
     border-left: 2px solid var(--border-2); padding-left: 12px; margin-left: 3px; }
   .rechint { font-size: 11.5px; line-height: 1.5; margin: 0; }
+  .showrow { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+  .showopt { margin-top: 0; font-weight: 500; }
 
   .field { display: flex; flex-direction: column; gap: 6px; }
   .flabel { font-size: 11.5px; font-weight: 650; color: var(--muted); display: flex; align-items: center; gap: 8px; }

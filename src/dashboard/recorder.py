@@ -215,18 +215,41 @@ def normalize_spec(raw: Any) -> Optional[dict]:
         raise ValueError(f"record fps must be a whole number, got {raw.get('fps')!r}")
     if not 1 <= fps <= 60:
         raise ValueError(f"record fps must be 1..60, got {fps}")
-    return {"view": view, "speed": speed, "fps": fps}
+    out = {"view": view, "speed": speed, "fps": fps}
+    # Overlay flags are booleans, not truthy strings: "false" from a query
+    # string or a CLI would otherwise switch an overlay ON.
+    for key in SHOW_KEYS:
+        value = raw.get(key)
+        if value is None:
+            out[key] = False
+        elif isinstance(value, bool):
+            out[key] = value
+        else:
+            raise ValueError(f"record {key} must be true or false, got {value!r}")
+    return out
 
 
-def record_url(port: int, run_id: str, view: str) -> str:
+# Overlay flags on a record spec, in the order the simple view prints them.
+# `show_model` → "model" in the URL's `show=` list, and so on.
+SHOW_KEYS = ("show_model", "show_elapsed", "show_cost")
+
+
+def record_url(port: int, run_id: str, view: str, spec: Optional[dict] = None) -> str:
     """The pinned, chrome-free URL the recorder's browser loads.
 
     ``run`` pins the run id rather than reading it from ``/api/emulator/status``:
     that field goes null the moment the run ends, which would drop the recorder
     out of the view for the final seconds. ``record=1`` suppresses the exit
-    affordance and the localStorage round-trip.
+    affordance and the localStorage round-trip. ``show=model,elapsed,cost`` (any
+    subset, omitted when empty) turns on the simple view's header overlay; the
+    recorder page reads it instead of the human's stored toggles, so the file
+    shows exactly what was asked for at enqueue time.
     """
-    return f"http://127.0.0.1:{port}/spectate?record=1&view={view}&run={run_id}"
+    url = f"http://127.0.0.1:{port}/spectate?record=1&view={view}&run={run_id}"
+    shown = [k[len("show_"):] for k in SHOW_KEYS if spec and spec.get(k)]
+    if shown:
+        url += "&show=" + ",".join(shown)
+    return url
 
 
 # ───────────────────────────── the gate ─────────────────────────────
@@ -781,7 +804,7 @@ class RunRecorder:
         try:
             self.out_path.parent.mkdir(parents=True, exist_ok=True)
             self._cdp = _CDPSession(
-                record_url(self.port, self.run_id, self.view),
+                record_url(self.port, self.run_id, self.view, self.spec),
                 self.width,
                 self.height,
                 self.chrome or "",

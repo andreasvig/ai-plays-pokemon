@@ -301,6 +301,12 @@ The checklist in §9. Must run against a live run, not fixtures.
 readouts, restore the success pill, or add aspect presets. All were considered
 and cut.
 
+> **Partly superseded 2026-09-08.** A header strip with the model name, total
+> time and total cost is back as an **opt-in**: off by default (the bare frame
+> is unchanged), toggled per tab behind a ⚙ next to the ✕, and per recording via
+> `RecordSpec.show_*` / `--record-show`. Tokens and memory stay cut. See
+> `docs/recording.md` "The simple view's header strip".
+
 ---
 
 ## 11. Known risk

@@ -79,6 +79,14 @@ class RecordSpec(BaseModel):
     view: RecordView = RecordView.simple
     speed: RecordSpeed = RecordSpeed.realtime
     fps: int = 30
+    # Simple-view frame overlay: which run facts to print in the recording's
+    # header strip. All off by default so a recording stays the bare "screen +
+    # turn box" frame the view was designed as; a human's own tab has the same
+    # three toggles behind the gear button, stored in localStorage instead.
+    # Ignored by the detailed view, which shows all of them in its stats row.
+    show_model: bool = False
+    show_elapsed: bool = False
+    show_cost: bool = False
 
 
 # The config family the leaderboard ranks. Module-level (not a class attribute)
