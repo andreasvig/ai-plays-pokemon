@@ -75,9 +75,12 @@ export function toRun(s) {
     // Derived server-side from the run dir on every request, so it flips off by
     // itself if the mp4 is deleted to reclaim space.
     hasRecording: !!s.has_recording,
+    // The 1:1 simple-view file a `both` recording writes beside recording.mp4.
+    hasSimpleRecording: !!s.has_simple_recording,
     // Set only on a PUBLISHED row (pokemon publish): the recording's R2 URL.
     // Locally the player streams /api/runs/{id}/recording.mp4 instead.
     videoUrl: s.video_url ?? null,
+    videoView: s.video_view ?? null,
     publishedAt: s.published_at ?? null,
   }
   r.slug = runSlug(r)

@@ -50,11 +50,16 @@ class RecordView(str, Enum):
     """Which presentation the recorder captures.
 
     ``simple`` = the 1:1 recording view (game screen + turn box) at a square
-    viewport. ``detailed`` = the whole wide spectate instrument panel.
+    viewport. ``detailed`` = the whole wide spectate instrument panel. ``both``
+    = two recorders at once: detailed → ``recording.mp4`` (the file every
+    consumer already reads, and what ``pokemon publish`` uploads), simple →
+    ``recording-simple.mp4`` (Andreas, 2026-09-08: the full view is the
+    standard upload).
     """
 
     simple = "simple"
     detailed = "detailed"
+    both = "both"
 
 
 class RecordSpeed(str, Enum):

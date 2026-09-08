@@ -23,10 +23,15 @@
   // the connection — leaving the element mounted and merely hidden keeps the
   // audio-less stream downloading in the background.
   let watchTarget = $state(null)
-  function watch(run) { watchTarget = run }
+  // 'full' = recording.mp4 (the run's recording; the wide panel when it recorded
+  // both views), 'simple' = the 1:1 recording-simple.mp4 a `both` run also has.
+  let watchVariant = $state('full')
+  function watch(run, variant = 'full') { watchTarget = run; watchVariant = variant }
   function closeWatch() { watchTarget = null }
   // A published row carries the R2 URL of its recording; a local row streams from the app.
-  const recordingUrl = (run) => run.videoUrl ?? `/api/runs/${encodeURIComponent(run.runId)}/recording.mp4`
+  const recordingUrl = (run, variant = 'full') => variant === 'simple'
+    ? `/api/runs/${encodeURIComponent(run.runId)}/recording-simple.mp4`
+    : (run.videoUrl ?? `/api/runs/${encodeURIComponent(run.runId)}/recording.mp4`)
 
   function askDelete(run) { confirmTarget = run; confirmText = ''; deleteError = ''; deleting = false }
   function cancelDelete() { confirmTarget = null; confirmText = ''; deleteError = ''; deleting = false }
@@ -123,7 +128,11 @@
         <span class="c-act">
           {#if r.hasRecording}
             <button class="mini play" onclick={(e) => { e.stopPropagation(); watch(r) }}
-                    title="Watch the recording"><Icon name="play" size={18} /></button>
+                    title={r.hasSimpleRecording ? 'Watch the recording (full panel)' : 'Watch the recording'}><Icon name="play" size={18} /></button>
+          {/if}
+          {#if r.hasSimpleRecording}
+            <button class="mini play alt" onclick={(e) => { e.stopPropagation(); watch(r, 'simple') }}
+                    title="Watch the simple-view recording (1:1)"><Icon name="play" size={18} /><span class="vtag">1:1</span></button>
           {/if}
           <button class="mini" onclick={(e) => { e.stopPropagation(); oninspect(r) }} title="Inspect report"><Icon name="report" size={18} /></button>
           {#if !STATIC}
@@ -147,12 +156,12 @@
       <div class="vmodal" role="dialog" aria-modal="true" tabindex="-1" onclick={(e) => e.stopPropagation()}>
         <header class="vh">
           <span class="mono vname">{watchTarget.model}</span>
-          <span class="faint vmeta">{dateShort(watchTarget.startedAt)} · {watchTarget.turns} turns</span>
-          <a class="vdl" href={recordingUrl(watchTarget)} download title="Download the MP4"><Icon name="download" size={16} /></a>
+          <span class="faint vmeta">{dateShort(watchTarget.startedAt)} · {watchTarget.turns} turns{#if watchTarget.hasSimpleRecording} · {watchVariant === 'simple' ? 'simple view' : 'full panel'}{/if}</span>
+          <a class="vdl" href={recordingUrl(watchTarget, watchVariant)} download title="Download the MP4"><Icon name="download" size={16} /></a>
           <button class="x" onclick={closeWatch} aria-label="Close"><Icon name="close" size={16} /></button>
         </header>
         <!-- svelte-ignore a11y_media_has_caption -->
-        <video class="vplayer" src={recordingUrl(watchTarget)} controls autoplay playsinline></video>
+        <video class="vplayer" src={recordingUrl(watchTarget, watchVariant)} controls autoplay playsinline></video>
       </div>
     </div>
   {/if}
@@ -258,6 +267,8 @@
   /* The video sizes itself to its own aspect within the viewport, so a 1:1
      simple-view capture and a 16:9 detailed one both fill their frame instead
      of one of them letterboxing inside a box shaped for the other. */
+  .mini.alt { position: relative; }
+  .vtag { position: absolute; right: -2px; bottom: -3px; font-size: 8px; font-weight: 800; letter-spacing: .02em; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 0 2px; line-height: 1.3; }
   .vplayer { display: block; background: var(--dark); max-width: 88vw; max-height: 78vh; }
 
   /* Typed-DELETE confirmation modal */

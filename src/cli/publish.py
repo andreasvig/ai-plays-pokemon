@@ -2,6 +2,7 @@
 
   pokemon publish <run_id>                 # result row + summary → gh-pages, video → R2
   pokemon publish <run_id> --no-video      # result only
+  pokemon publish <run_id> --video simple  # upload recording-simple.mp4 instead of the full-panel file
   pokemon publish <run_id> --with-trace    # ALSO the report trace + screenshots (off by default)
   pokemon publish <run_id> --dry-run       # audit + list what would go, touch nothing
   pokemon publish <run_id> --no-build      # skip the SPA rebuild (data-only push)
@@ -50,7 +51,9 @@ def _parser() -> argparse.ArgumentParser:
     )
     ap.add_argument("run_id", help="run-dir name under --runs-root, e.g. 2026-09-08_12-04-58_config-5.1__glm-5-3-flash-high")
     ap.add_argument("--runs-root", default=str(REPO_ROOT / "local" / "runs"), help="where run folders live (default local/runs)")
-    ap.add_argument("--no-video", action="store_true", help="do not upload recording.mp4 even if present")
+    ap.add_argument("--no-video", action="store_true", help="do not upload a recording even if present")
+    ap.add_argument("--video", choices=["full", "simple"], default="full",
+                    help="which file to upload when the run recorded both views: full = recording.mp4 (default), simple = recording-simple.mp4")
     ap.add_argument("--with-trace", action="store_true", help="also publish the report trace and its screenshots (default: result + video only)")
     ap.add_argument("--no-build", action="store_true", help="do not rebuild the static SPA; push data only")
     ap.add_argument("--skip-verify", action="store_true", help="do not fetch the public URLs afterwards")
@@ -88,6 +91,7 @@ def main() -> None:
         result = pub.publish_run(
             run_dir, store=store, pages=pages, secrets=secrets, benchmarks=pub.public_benchmarks(benchmarks_payload()),
             include_video=not args.no_video, include_trace=args.with_trace,
+            video_file="recording-simple.mp4" if args.video == "simple" else "recording.mp4",
             build_site=build, verify=verify, pages_url=pages_url, log=log,
         )
     except pub.PublishError as exc:
@@ -116,7 +120,7 @@ def _dry_run(run_dir: Path, store: pub.R2Store, secrets: list[str], args) -> Non
         trace, shots = pub.rewrite_trace(cached_run_trace(run_dir), store.url(f"runs/{run_dir.name}/screenshots"))
         files["trace.json"] = json.dumps(trace, indent=2, ensure_ascii=False)
     hits = pub.audit_files(files, secrets)
-    video = run_dir / "recording.mp4"
+    video = run_dir / ("recording-simple.mp4" if args.video == "simple" else "recording.mp4")
     print(f"dry run for {run_dir.name} (status {projected.status.value})")
     print(f"  video        {'yes, %.1f MB' % (video.stat().st_size / 1e6) if video.is_file() and not args.no_video else 'no'}")
     print(f"  trace        {'yes, %d screenshots' % len(shots) if args.with_trace else 'no (result + video only)'}")

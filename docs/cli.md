@@ -375,6 +375,7 @@ list. Design and data layout: `artifacts/online-leaderboard/plan.md`.
 pokemon publish <run_id>                 # result row + summary → gh-pages, video → R2, rebuild + push
 pokemon publish <run_id> --dry-run       # run the leak audit and list what would go; touch nothing
 pokemon publish <run_id> --no-video      # result only
+pokemon publish <run_id> --video simple  # upload recording-simple.mp4 (a `--record both` run) instead of the full panel
 pokemon publish <run_id> --with-trace    # ALSO the report trace + its screenshots (opt-in)
 pokemon publish <run_id> --no-build      # data-only push; keep the bundle already on gh-pages
 pokemon unpublish <run_id>               # delete the R2 objects, drop the row + JSON, push
@@ -391,7 +392,9 @@ What happens, in order — and the order is the point:
    blocks) and home/temp paths (`/Users/<x>/`, `/private/tmp/`, `/home/<x>/`).
    Any hit aborts, naming file and line with the match masked. Nothing has been
    uploaded at this point.
-3. **Upload to R2**: `runs/<run_id>/recording.mp4` (if present) — and with
+3. **Upload to R2**: `runs/<run_id>/recording.mp4` (if present; for a `--record
+   both` run that is the full-panel file, the standard upload — `--video simple`
+   sends the 1:1 file under the same key) — and with
    `--with-trace` the screenshots the trace references — typed and
    immutable-cached. Re-publishing overwrites the same keys.
 4. **Write the `gh-pages` branch**: `data/runs/<run_id>/summary.json` (plus

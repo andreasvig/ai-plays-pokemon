@@ -435,3 +435,16 @@ def test_endpoint_404s_for_a_run_without_a_recording(client):
     tc, runs_root = client
     d = _run_folder(runs_root)
     assert tc.get(f"/api/runs/{d.name}/recording.mp4").status_code == 404
+
+
+def test_view_override_names_the_simple_file_of_a_both_recording(tmp_path):
+    """A `both` run has two files; each downloads under its OWN view, not `both`."""
+    d = _run_folder(tmp_path)
+    cfg = d / "config.json"
+    data = json.loads(cfg.read_text())
+    data["_record"] = {"view": "both", "speed": "realtime"}
+    cfg.write_text(json.dumps(data))
+    # the view segment is the last one here (no outcome recorded), so match up to the suffix
+    assert recording_filename(d).endswith("_both-realtime.mp4")
+    assert recording_filename(d, view="simple").endswith("_simple-realtime.mp4")
+    assert recording_filename(d, view="detailed").endswith("_detailed-realtime.mp4")

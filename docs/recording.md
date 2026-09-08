@@ -63,6 +63,24 @@ rather than letting you discover a missing encoder 200 turns later.
 | Resolution | 1080×1080 | 1920×1080 |
 | Good for | Posting unedited — square crops to Shorts / Reels / a LinkedIn card | Showing how the harness works |
 
+### `--record both` — two files from one run
+
+`both` starts two recorders side by side, one per view, sharing speed, fps and
+the header-strip flags. It costs a second headless Chrome and a second encoder
+for the length of the run; the emulator and the agent are unaffected.
+
+| File | View | Who reads it |
+|---|---|---|
+| `recording.mp4` | detailed (the full panel) | everything that already read a run's recording: History's ▶, `has_recording`, the download name, **`pokemon publish`** |
+| `recording-simple.mp4` | simple (1:1) | History's second ▶ (tagged `1:1`), `/api/runs/{id}/recording-simple.mp4`, `pokemon publish --video simple` |
+
+The full view keeping the canonical name is the point: the full panel is the
+standard upload to the online leaderboard (Andreas, 2026-09-08), and a `both`
+run needs no special handling anywhere downstream. If one view fails to boot the
+other still records. Note that a run recorded with `--record simple` alone also
+writes `recording.mp4` — the filename never says which view; the run's
+`config.json["_record"]["view"]` does.
+
 ### The simple view's header strip (`--record-show`)
 
 By default the simple frame is bare: screen + turn box. `--record-show
@@ -215,7 +233,8 @@ A 1080×1080 30fps recording runs roughly 3–8 MB per minute of *kept* video.
 
 In the UI, any **History** row whose run has a video gets a **▶** button that
 opens it in a player over the list (Esc or the backdrop closes it; **↓** saves
-the file). Rows without one show no button.
+the file). A run recorded with `--record both` gets a second **▶** tagged `1:1`
+for `recording-simple.mp4`. Rows without a video show no button.
 
 ### The name it saves under
 

@@ -1211,12 +1211,13 @@ model you can actually start — `pokemon ls models` for the full list):
         help="pkill any existing mGBA before launching.",
     )
     parser.add_argument(
-        "--record", choices=["simple", "detailed"], default=None,
+        "--record", choices=["simple", "detailed", "both"], default=None,
         help="Record the run to <run_dir>/recording.mp4. `simple` captures the "
              "1:1 simple view (game screen + turn box) at 1080x1080; `detailed` "
-             "captures the full wide spectate panel at 1920x1080. Rendered in the "
-             "recorder's OWN headless browser, so it is unaffected by what you "
-             "have on screen. Applies to every pair in a sequential run.",
+             "captures the full wide spectate panel at 1920x1080; `both` runs two "
+             "recorders (detailed → recording.mp4, simple → recording-simple.mp4). "
+             "Rendered in the recorder's OWN headless browser, so it is unaffected "
+             "by what you have on screen. Applies to every pair in a sequential run.",
     )
     parser.add_argument(
         "--record-speed", dest="record_speed",

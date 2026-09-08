@@ -435,11 +435,12 @@ base profile.
     )
     p_add.add_argument("--repeat", type=int, default=1, help="Enqueue each model N times (default 1).")
     p_add.add_argument(
-        "--record", choices=["simple", "detailed"], default=None,
+        "--record", choices=["simple", "detailed", "both"], default=None,
         help="Record the run to <run_dir>/recording.mp4. `simple` = the 1:1 "
              "recording view (game screen + turn box) at 1080x1080; `detailed` = "
-             "the whole wide spectate panel at 1920x1080. Rendered headlessly "
-             "server-side, so it does not depend on any open browser.",
+             "the whole wide spectate panel at 1920x1080; `both` = two recorders, "
+             "detailed → recording.mp4 and simple → recording-simple.mp4. Rendered "
+             "headlessly server-side, so it does not depend on any open browser.",
     )
     p_add.add_argument(
         "--record-speed", dest="record_speed",

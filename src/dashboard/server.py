@@ -189,12 +189,17 @@ async def index_page():
     )
 
 
-def _recording_path(run_id: str) -> Optional[Path]:
-    """``<run_dir>/recording.mp4`` if this run has a usable video, else None."""
+def _recording_path(run_id: str, filename: str = "recording.mp4") -> Optional[Path]:
+    """``<run_dir>/<filename>`` if this run has a usable video there, else None.
+
+    ``recording.mp4`` is the run's recording (the full panel when it recorded
+    both views); ``recording-simple.mp4`` is the 1:1 simple view a ``both``
+    recording writes alongside it.
+    """
     executor = _CONTROL.get("executor")
     if executor is None or not run_id:
         return None
-    p = Path(executor.runs_root) / run_id / "recording.mp4"
+    p = Path(executor.runs_root) / run_id / filename
     try:
         return p if p.is_file() and p.stat().st_size > 0 else None
     except OSError:
@@ -211,6 +216,7 @@ def _with_recording(row: dict) -> dict:
     is far cheaper than an index migration that can still go stale.
     """
     row["has_recording"] = _recording_path(row.get("run_id") or "") is not None
+    row["has_simple_recording"] = _recording_path(row.get("run_id") or "", "recording-simple.mp4") is not None
     return row
 
 
@@ -1774,10 +1780,29 @@ async def api_run_recording(run_id: str):
     path = _recording_path(run_id)
     if path is None:
         raise HTTPException(status_code=404, detail=f"no recording for run: {run_id}")
+    # A `both` run's canonical file is the detailed view; say so in the download
+    # name instead of `both`, which names the spec rather than this file.
+    view = "detailed" if _recording_path(run_id, "recording-simple.mp4") else None
     return FileResponse(
         str(path),
         media_type="video/mp4",
-        filename=recording_filename(path.parent, run_id=run_id),
+        filename=recording_filename(path.parent, run_id=run_id, view=view),
+        content_disposition_type="inline",
+    )
+
+
+@app.get("/api/runs/{run_id}/recording-simple.mp4")
+async def api_run_recording_simple(run_id: str):
+    """The 1:1 simple-view file a ``view: both`` recording writes next to
+    ``recording.mp4``. Same serving rules; the download name says ``simple``."""
+    _require_control()
+    path = _recording_path(run_id, "recording-simple.mp4")
+    if path is None:
+        raise HTTPException(status_code=404, detail=f"no simple-view recording for run: {run_id}")
+    return FileResponse(
+        str(path),
+        media_type="video/mp4",
+        filename=recording_filename(path.parent, run_id=run_id, view="simple"),
         content_disposition_type="inline",
     )
 

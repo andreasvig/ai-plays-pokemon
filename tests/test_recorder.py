@@ -669,3 +669,80 @@ def test_maybe_start_declines_a_bad_spec_instead_of_raising(tmp_path: Path, caps
 
     assert recorder.maybe_start({"_record": {"view": "nope"}}, tmp_path, "run-x") is None
     assert "recording disabled" in capsys.readouterr().out
+
+
+# ─────────────────── 5. `view: both` — two recorders, two files ───────────────────
+#
+# Andreas 2026-09-08: record both views at once, and the FULL view is what gets
+# uploaded. So `both` maps detailed → recording.mp4 (the name every consumer
+# already reads) and simple → recording-simple.mp4.
+
+
+def test_normalize_accepts_both():
+    assert normalize_spec("both")["view"] == "both"
+    assert normalize_spec({"view": "both", "speed": "cut-thinking"})["speed"] == "cut-thinking"
+
+
+def test_recorder_plan_maps_both_to_two_files_detailed_first():
+    from src.dashboard.recorder import recorder_plan
+
+    assert recorder_plan(normalize_spec("both")) == [("detailed", "recording.mp4"), ("simple", "recording-simple.mp4")]
+    assert recorder_plan(normalize_spec("simple")) == [("simple", "recording.mp4")]
+    assert recorder_plan(normalize_spec("detailed")) == [("detailed", "recording.mp4")]
+
+
+def test_run_recorder_refuses_the_abstract_both_view(tmp_path: Path):
+    """`both` is a plan, not a viewport: a RunRecorder must be given one view."""
+    with pytest.raises(ValueError, match="one concrete view"):
+        RunRecorder(run_id="r", run_dir=tmp_path, port=1, spec=normalize_spec("both"), chrome="x")
+
+
+def test_maybe_start_both_starts_two_recorders_with_their_own_files(tmp_path: Path, monkeypatch, capsys):
+    """Wiring: one `_record` spec → two RunRecorders, each on its own view and
+    file, sharing speed/fps/show flags; one that fails to boot does not stop
+    the other; finish() reports both and returns the canonical path."""
+    from src.dashboard import recorder, server
+
+    monkeypatch.setattr(server, "get_server_port", lambda: 3420)
+    monkeypatch.setattr(server, "get_registry", lambda: {}.__class__())  # .get(run_id) → None
+    built: list[RunRecorder] = []
+
+    def fake_start(self):
+        built.append(self)
+        if self.view == "simple":
+            self.error = "chrome exploded"
+            return False
+        return True
+
+    monkeypatch.setattr(RunRecorder, "start", fake_start)
+    group = recorder.maybe_start(
+        {"_record": {"view": "both", "speed": "cut-thinking", "fps": 24, "show_cost": True}}, tmp_path, "run-x"
+    )
+    assert [(r.view, r.out_path.name) for r in built] == [("detailed", "recording.mp4"), ("simple", "recording-simple.mp4")]
+    assert all(r.speed == "cut-thinking" and r.fps == 24 and r.spec["show_cost"] is True for r in built)
+    assert (built[0].width, built[0].height) == (1920, 1080) and (built[1].width, built[1].height) == (1080, 1080)
+    assert group is not None and [r.view for r in group.recorders] == ["detailed"], "the failed view is dropped, the other kept"
+    out = capsys.readouterr().out
+    assert "recording detailed view" in out and "recording (simple) disabled: chrome exploded" in out
+
+    # finish(): stop() each member; the canonical file is what comes back
+    detailed = group.recorders[0]
+    (tmp_path / "recording.mp4").write_bytes(b"x" * 10)
+    monkeypatch.setattr(RunRecorder, "stop", lambda self, timeout=60.0: tmp_path / "recording.mp4")
+    detailed.frames_written = 48
+    assert recorder.finish(group) == tmp_path / "recording.mp4"
+    assert "recording (detailed):" in capsys.readouterr().out
+
+
+def test_finish_returns_the_canonical_file_when_both_were_written(tmp_path: Path, monkeypatch):
+    from src.dashboard import recorder
+
+    specs = [({**normalize_spec("both"), "view": v}, f) for v, f in recorder.recorder_plan(normalize_spec("both"))]
+    recs = [RunRecorder(run_id="r", run_dir=tmp_path, port=1, spec=s, out_path=tmp_path / f, chrome="x") for s, f in specs]
+    for r in recs:
+        r.out_path.write_bytes(b"x")
+    monkeypatch.setattr(RunRecorder, "stop", lambda self, timeout=60.0: self.out_path)
+    assert recorder.finish(recorder.RecorderGroup(recs)) == tmp_path / "recording.mp4"
+    # simple alone → recording.mp4 is still the (only) canonical file
+    solo = RunRecorder(run_id="r", run_dir=tmp_path, port=1, spec=normalize_spec("simple"), chrome="x")
+    assert recorder.finish(recorder.RecorderGroup([solo])) == tmp_path / "recording.mp4"

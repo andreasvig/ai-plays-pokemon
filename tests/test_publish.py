@@ -490,3 +490,28 @@ def test_verify_public_url_sends_a_named_user_agent(monkeypatch):
     assert seen["ua"] == pub.USER_AGENT and "Python-urllib" not in seen["ua"]
     with pytest.raises(pub.PublishError, match="Content-Type"):
         pub.verify_public_url("https://x/y.mp4", expect_type="image/png")
+
+
+def test_publish_uploads_the_full_view_by_default_and_the_simple_file_on_request(world, tmp_path):
+    """A `both` recording: recording.mp4 IS the full panel (the upload default);
+    --video simple picks recording-simple.mp4. Either way the R2 key is
+    recording.mp4 and the row says which view it shows."""
+    run = world["run"]
+    (run / "config.json").write_text(json.dumps({"_record": {"view": "both", "speed": "realtime"}}))
+    (run / "recording-simple.mp4").write_bytes(b"simple" * 50)
+    res = pub.publish_run(run, store=world["store"], pages=world["pages"], secrets=[])
+    key = f"runs/{run.name}/recording.mp4"
+    assert res.row["video_view"] == "detailed" and res.video_url.endswith("/recording.mp4")
+    assert world["s3"].objects[key]["size"] == (run / "recording.mp4").stat().st_size
+    res2 = pub.publish_run(run, store=world["store"], pages=world["pages"], secrets=[], video_file="recording-simple.mp4")
+    assert res2.row["video_view"] == "simple" and res2.video_url.endswith("/recording.mp4")
+    assert world["s3"].objects[key]["size"] == (run / "recording-simple.mp4").stat().st_size, "same key, other file"
+    # asking for the simple file when there is none is a refusal, not a silent fallback
+    (run / "recording-simple.mp4").unlink()
+    with pytest.raises(pub.PublishError, match="recording-simple.mp4"):
+        pub.publish_run(run, store=world["store"], pages=world["pages"], secrets=[], video_file="recording-simple.mp4")
+    # a single-view recording reports its own view; no config → unknown
+    (run / "config.json").write_text(json.dumps({"_record": {"view": "simple"}}))
+    assert pub.recorded_view(run) == "simple"
+    (run / "config.json").unlink()
+    assert pub.recorded_view(run) is None

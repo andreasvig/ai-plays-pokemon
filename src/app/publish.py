@@ -575,6 +575,23 @@ class PublishResult:
 SUMMARY_PRIVATE_KEYS = ("turns",)
 
 
+def recorded_view(run_dir: Path, video_file: str = "recording.mp4") -> str | None:
+    """Which view a recording file shows: ``detailed`` / ``simple`` / None (unknown).
+
+    Read from the run's ``config.json["_record"]["view"]``, the spec the
+    recorder ran with. ``both`` means recording.mp4 is the detailed file and
+    recording-simple.mp4 the simple one.
+    """
+    try:
+        record = (json.loads((Path(run_dir) / "config.json").read_text()).get("_record") or {})
+    except Exception:
+        return None
+    view = record.get("view")
+    if view == "both":
+        return "simple" if video_file == "recording-simple.mp4" else "detailed"
+    return view if view in ("simple", "detailed") else None
+
+
 def public_summary_text(summary_path: Path) -> str:
     """``run_summary.json`` minus its per-turn list — the result, not the reasoning."""
     data = json.loads(Path(summary_path).read_text())
@@ -600,6 +617,7 @@ def publish_run(
     secrets: Iterable[str],
     benchmarks: list[dict] | None = None,
     include_video: bool = True,
+    video_file: str = "recording.mp4",
     include_trace: bool = False,
     build_site: Callable[[Path], Path] | None = None,
     verify: Callable[[str, str | None], Any] | None = None,
@@ -635,14 +653,22 @@ def publish_run(
         trace, shot_names = rewrite_trace(cached_run_trace(run_dir), screenshots_base)
         trace_text = json.dumps(trace, indent=2, ensure_ascii=False)
 
-    video_path = run_dir / "recording.mp4"
+    # `recording.mp4` is the run's recording — the full panel when the run
+    # recorded both views, which is why the full view is the default upload;
+    # `video_file="recording-simple.mp4"` picks the 1:1 file instead. The R2
+    # key is always recording.mp4, so a row has one video_url shape.
+    video_path = run_dir / video_file
+    if include_video and video_file != "recording.mp4" and not video_path.is_file():
+        raise PublishError(f"{run_id}: no {video_file} in the run dir")
     has_video = include_video and video_path.is_file()
     video_url = store.url(f"runs/{run_id}/recording.mp4") if has_video else None
+    video_view = recorded_view(run_dir, video_file) if has_video else None
 
     row = projected.model_dump(mode="json")
     row.update({
         "has_recording": has_video,
         "video_url": video_url,
+        "video_view": video_view,
         "screenshots_base_url": screenshots_base if shot_names else None,
         "trace_published": include_trace,
         "published_at": _now_iso(now),

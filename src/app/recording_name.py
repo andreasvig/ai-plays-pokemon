@@ -189,7 +189,8 @@ def _truncate(stem: str) -> str:
     return out.rstrip("_-")
 
 
-def recording_stem(run_dir: Path | str, *, run_id: Optional[str] = None) -> str:
+def recording_stem(run_dir: Path | str, *, run_id: Optional[str] = None,
+                   view: Optional[str] = None) -> str:
     """The settings-bearing filename stem for this run's recording (no suffix).
 
     Falls back to the run id (the folder name) when the folder carries nothing
@@ -242,9 +243,12 @@ def recording_stem(run_dir: Path | str, *, run_id: Optional[str] = None) -> str:
     if stop_at:
         parts.append(f"stop-{_slug(stop_at)}")
 
+    # `view` names WHICH file is being named when a run recorded both: the
+    # spec says `both`, the file is one view. Absent → the spec's own view.
     record = config.get("_record") or {}
-    if record.get("view") or record.get("speed"):
-        parts.append(_slug(f"{record.get('view', '')}-{record.get('speed', '')}"))
+    view_name = view or record.get("view", "")
+    if view_name or record.get("speed"):
+        parts.append(_slug(f"{view_name}-{record.get('speed', '')}"))
 
     parts.append(_outcome_segment(summary))
 
@@ -252,6 +256,7 @@ def recording_stem(run_dir: Path | str, *, run_id: Optional[str] = None) -> str:
     return _truncate(stem) if stem else fallback
 
 
-def recording_filename(run_dir: Path | str, *, run_id: Optional[str] = None) -> str:
+def recording_filename(run_dir: Path | str, *, run_id: Optional[str] = None,
+                       view: Optional[str] = None) -> str:
     """:func:`recording_stem` with the ``.mp4`` suffix."""
-    return f"{recording_stem(run_dir, run_id=run_id)}.mp4"
+    return f"{recording_stem(run_dir, run_id=run_id, view=view)}.mp4"

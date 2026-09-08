@@ -752,6 +752,7 @@
               <select bind:value={recordView}>
                 <option value="simple">Simple view · 1:1 · screen + turn box</option>
                 <option value="detailed">Detailed view · 1920×1080 · full panel</option>
+                <option value="both">Both · two files: full panel (recording.mp4) + simple view</option>
               </select>
             </label>
             <label class="field">
@@ -761,7 +762,7 @@
                 <option value="cut-thinking">Cut thinking · execution only</option>
               </select>
             </label>
-            {#if recordView === 'simple'}
+            {#if recordView !== 'detailed'}
               <div class="field">
                 <span class="flabel">Show in frame</span>
                 <div class="showrow">

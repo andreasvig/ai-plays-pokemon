@@ -82,6 +82,22 @@ VIEWPORTS = {
     "detailed": (1920, 1080),
 }
 
+# `view: both` = one recorder per view, two files. The detailed view keeps the
+# canonical name so everything that reads a run's recording — the History
+# player, `has_recording`, the download name, `pokemon publish` — sees the full
+# panel without learning anything new; the simple view is the extra file.
+BOTH_VIEW = "both"
+RECORDING_FILE = "recording.mp4"
+SIMPLE_RECORDING_FILE = "recording-simple.mp4"
+BOTH_VIEW_FILES = (("detailed", RECORDING_FILE), ("simple", SIMPLE_RECORDING_FILE))
+
+
+def recorder_plan(spec: dict) -> list[tuple[str, str]]:
+    """``[(view, filename), …]`` a normalised spec asks for. One entry, or two for ``both``."""
+    if spec["view"] == BOTH_VIEW:
+        return list(BOTH_VIEW_FILES)
+    return [(spec["view"], RECORDING_FILE)]
+
 # Seconds of recording kept after `screen_settled` in cut-thinking mode.
 #
 # 0.0 as of 2026-08-03. The tail used to be 0.9s, to hold the settled screen as
@@ -205,8 +221,8 @@ def normalize_spec(raw: Any) -> Optional[dict]:
     # valid-looking one. Absent means absent; 0 means 0 and is rejected below.
     view = str(raw["view"]) if raw.get("view") is not None else "simple"
     speed = str(raw["speed"]) if raw.get("speed") is not None else "realtime"
-    if view not in VIEWPORTS:
-        raise ValueError(f"unknown record view {view!r} (expected: {', '.join(VIEWPORTS)})")
+    if view not in VIEWPORTS and view != BOTH_VIEW:
+        raise ValueError(f"unknown record view {view!r} (expected: {', '.join(VIEWPORTS)}, {BOTH_VIEW})")
     if speed not in ("realtime", "cut-thinking"):
         raise ValueError(f"unknown record speed {speed!r} (expected: realtime, cut-thinking)")
     try:
@@ -760,10 +776,12 @@ class RunRecorder:
         self.port = port
         self.spec = spec
         self.view = spec["view"]
+        if self.view not in VIEWPORTS:
+            raise ValueError(f"RunRecorder needs one concrete view, got {self.view!r}; see recorder_plan()")
         self.speed = spec["speed"]
         self.fps = spec["fps"]
         self.width, self.height = VIEWPORTS[self.view]
-        self.out_path = Path(out_path) if out_path else self.run_dir / "recording.mp4"
+        self.out_path = Path(out_path) if out_path else self.run_dir / RECORDING_FILE
         self.chrome = chrome or find_chrome()
         self._screen_source = screen_source
 
@@ -1202,8 +1220,29 @@ class RunRecorder:
 # ───────────────────── integration helper (one call site) ─────────────────
 
 
-def maybe_start(config: dict, run_dir: Path, run_id: str) -> Optional[RunRecorder]:
-    """Start a recorder if ``config['_record']`` asks for one.
+class RecorderGroup:
+    """The recorders one run started — one, or two for ``view: both``.
+
+    Exists so the single call site (``runner.run_single_loop``) keeps handling
+    one object. ``stop()`` finishes every member and returns the paths written.
+    """
+
+    def __init__(self, recorders: list[RunRecorder]) -> None:
+        self.recorders = list(recorders)
+
+    def stop(self, timeout: float = 60.0) -> list[tuple[RunRecorder, Optional[Path]]]:
+        out: list[tuple[RunRecorder, Optional[Path]]] = []
+        for rec in self.recorders:
+            try:
+                out.append((rec, rec.stop(timeout=timeout)))
+            except Exception as e:  # noqa: BLE001
+                print(f"  ⚠ recording ({rec.view}) failed to finalise: {type(e).__name__}: {e}")
+                out.append((rec, None))
+        return out
+
+
+def maybe_start(config: dict, run_dir: Path, run_id: str) -> Optional[RecorderGroup]:
+    """Start the recorder(s) ``config['_record']`` asks for; None if none / none could.
 
     The spec rides on the config under a private ``_record`` key — the same
     convention ``_llm_alias`` / ``_config_path`` already use — so it reaches
@@ -1227,36 +1266,45 @@ def maybe_start(config: dict, run_dir: Path, run_id: str) -> Optional[RunRecorde
         return None
 
     session = get_registry().get(run_id)
-    rec = RunRecorder(
-        run_id=run_id,
-        run_dir=Path(run_dir),
-        port=port,
-        spec=spec,
-        screen_source=session.streamer if session is not None else None,
-    )
-    if rec.start():
-        print(
-            f"  ⏺ recording {spec['view']} view ({spec['speed']}, {spec['fps']}fps) "
-            f"→ {rec.out_path}"
+    started: list[RunRecorder] = []
+    for view, filename in recorder_plan(spec):
+        rec = RunRecorder(
+            run_id=run_id,
+            run_dir=Path(run_dir),
+            port=port,
+            spec={**spec, "view": view},
+            out_path=Path(run_dir) / filename,
+            screen_source=session.streamer if session is not None else None,
         )
-        return rec
-    print(f"  ⚠ recording disabled: {rec.error}")
-    return None
+        if rec.start():
+            print(
+                f"  ⏺ recording {view} view ({spec['speed']}, {spec['fps']}fps) "
+                f"→ {rec.out_path}"
+            )
+            started.append(rec)
+        else:
+            # One view failing to boot must not take the other down with it.
+            print(f"  ⚠ recording ({view}) disabled: {rec.error}")
+    return RecorderGroup(started) if started else None
 
 
-def finish(rec: Optional[RunRecorder]) -> Optional[Path]:
-    """Stop a recorder started by :func:`maybe_start` and report the result."""
-    if rec is None:
+def finish(group: Optional[RecorderGroup]) -> Optional[Path]:
+    """Stop what :func:`maybe_start` started and report each file.
+
+    Returns the canonical ``recording.mp4`` path when one was written (the
+    detailed file for ``both``), else None — the shape the call site has always
+    had.
+    """
+    if group is None:
         return None
-    try:
-        out = rec.stop()
-    except Exception as e:  # noqa: BLE001
-        print(f"  ⚠ recording failed to finalise: {type(e).__name__}: {e}")
-        return None
-    if out is None:
-        print(f"  ⚠ no recording written: {rec.error}")
-        return None
-    size_mb = out.stat().st_size / 1e6
-    secs = rec.frames_written / max(rec.fps, 1)
-    print(f"  ⏹ recording: {out}  ({secs:.0f}s, {size_mb:.1f} MB)")
-    return out
+    primary: Optional[Path] = None
+    for rec, out in group.stop():
+        if out is None:
+            print(f"  ⚠ no {rec.view} recording written: {rec.error}")
+            continue
+        size_mb = out.stat().st_size / 1e6
+        secs = rec.frames_written / max(rec.fps, 1)
+        print(f"  ⏹ recording ({rec.view}): {out}  ({secs:.0f}s, {size_mb:.1f} MB)")
+        if out.name == RECORDING_FILE:
+            primary = out
+    return primary
