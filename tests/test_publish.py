@@ -217,6 +217,11 @@ def test_read_env_file(tmp_path):
     assert pub.read_env_file(tmp_path / "missing") == {}
 
 
+def test_public_benchmarks_is_first_badge_only():
+    rows = [{"id": "pokebench-easy"}, {"id": "pokebench-first-badge", "name": "x"}, {"id": "pokebench-full"}]
+    assert pub.public_benchmarks(rows) == [{"id": "pokebench-first-badge", "name": "x"}]
+
+
 # ───────────────────────────── trace rewrite ─────────────────────────────
 
 

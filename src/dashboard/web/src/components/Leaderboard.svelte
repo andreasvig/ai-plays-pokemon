@@ -1,5 +1,6 @@
 <script>
   import { usd, dur, perTurn } from '../lib/format.js'
+  import { STATIC } from '../lib/static.js'
   let {
     rows = [], stats = {}, oninspect,
     benchmarks = [], benchmark = '', onbench = () => {},
@@ -17,17 +18,27 @@
 </script>
 
 <section class="hero">
-  <h1>PokeBench</h1>
-  <!-- "Same harness, same config" is now a load-bearing claim rather than a
-       boast: the board is partitioned to config-5.x official runs, so it is
-       literally true of every row. Legacy config-3.13 runs keep their badge and
-       their scorecard in History — they are not ranked here because `turns`
-       (the tiebreak) counts game turns PLUS TaskMaster invocations on that
-       harness and game turns only on this one. -->
-  <p class="tagline">Can a language model play Pokémon FireRed <em>at pace</em>? A deterministic
-    referee reads game memory out-of-band and stamps story gates; a progressive deadline ladder
-    ends runs that fall behind. Every run here is the same frozen append-and-compact harness
-    (config-5.x), the same first-badge ladder and the same ROM — the model is the only variable.</p>
+  {#if STATIC}
+    <!-- The public site (pokemon publish → GitHub Pages) is ONE benchmark, the
+         first-badge ladder, and this is Andreas's description of it
+         (2026-09-08). The local text below is the operator's view. -->
+    <h1>PokeBench v1</h1>
+    <p class="tagline">A minimal, vision-only harness: the model sees the screen and presses buttons,
+      nothing else. It is graded on the <em>fewest agent turns to defeat the first badge</em>, with
+      progressive milestones an agent has to meet before certain turn numbers to be allowed to continue.</p>
+  {:else}
+    <h1>PokeBench</h1>
+    <!-- "Same harness, same config" is now a load-bearing claim rather than a
+         boast: the board is partitioned to config-5.x official runs, so it is
+         literally true of every row. Legacy config-3.13 runs keep their badge and
+         their scorecard in History — they are not ranked here because `turns`
+         (the tiebreak) counts game turns PLUS TaskMaster invocations on that
+         harness and game turns only on this one. -->
+    <p class="tagline">Can a language model play Pokémon FireRed <em>at pace</em>? A deterministic
+      referee reads game memory out-of-band and stamps story gates; a progressive deadline ladder
+      ends runs that fall behind. Every run here is the same frozen append-and-compact harness
+      (config-5.x), the same first-badge ladder and the same ROM — the model is the only variable.</p>
+  {/if}
   <div class="chips">
     <span class="chip"><b>{stats.completers}</b> models at 100%</span>
     <span class="chip"><b>{stats.modelsRanked}</b> ranked</span>
@@ -36,7 +47,8 @@
 </section>
 
 <section class="board">
-  {#if benchmarks.length}
+  <!-- No picker on the public site: it publishes a single benchmark. -->
+  {#if benchmarks.length && !STATIC}
     <div class="bench-pick">
       <div class="bench-tabs" role="tablist" aria-label="Benchmark">
         {#each benchmarks as b (b.id)}

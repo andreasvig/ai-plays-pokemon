@@ -86,7 +86,7 @@ def main() -> None:
 
         verify = None if args.skip_verify else (lambda url, ctype: pub.verify_public_url(url, expect_type=ctype))
         result = pub.publish_run(
-            run_dir, store=store, pages=pages, secrets=secrets, benchmarks=benchmarks_payload(),
+            run_dir, store=store, pages=pages, secrets=secrets, benchmarks=pub.public_benchmarks(benchmarks_payload()),
             include_video=not args.no_video, include_trace=args.with_trace,
             build_site=build, verify=verify, pages_url=pages_url, log=log,
         )

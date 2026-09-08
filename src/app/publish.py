@@ -60,6 +60,11 @@ NEVER_PUBLISHED = (
     "events.jsonl", "conversation/", "ocr/", "savepoints/", "state.json", "terminal.log",
 )
 
+# The public site is ONE benchmark — PokeBench v1 is the first-badge ladder
+# (Andreas, 2026-09-08). Only this registry entry is published, so the static
+# board scopes itself to it and shows no benchmark picker.
+PUBLIC_BENCHMARKS = ("pokebench-first-badge",)
+
 BRANCH = "gh-pages"
 WORKTREE_DIRNAME = "gh-pages"            # under local/
 SITE_DIST_DIRNAME = "dist-static"        # under src/dashboard/web/
@@ -576,6 +581,11 @@ def public_summary_text(summary_path: Path) -> str:
     for k in SUMMARY_PRIVATE_KEYS:
         data.pop(k, None)
     return json.dumps(data, indent=2, ensure_ascii=False)
+
+
+def public_benchmarks(payload: list[dict]) -> list[dict]:
+    """The registry rows the public site gets — see ``PUBLIC_BENCHMARKS``."""
+    return [b for b in payload if b.get("id") in PUBLIC_BENCHMARKS]
 
 
 def _now_iso(now: datetime | None = None) -> str:
