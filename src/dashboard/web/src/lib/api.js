@@ -71,7 +71,10 @@ export function toRun(s) {
     completion,
     terminationReason: s.termination_reason ?? null,
     continuedFrom: s.continued_from ?? null,
-    maxTurns: s.max_turns ?? null,
+    // An official run's turn cap is the executor's "no cap in practice"
+    // sentinel (10,000,000); showing "50 / 10000000" says nothing, so any cap
+    // that large reads as no cap. Same floor recording_name.py uses.
+    maxTurns: s.max_turns != null && s.max_turns < 1_000_000 ? s.max_turns : null,
     // Derived server-side from the run dir on every request, so it flips off by
     // itself if the mp4 is deleted to reclaim space.
     hasRecording: !!s.has_recording,
