@@ -1639,6 +1639,16 @@ class TurnManager:
     async def _run_loop_async(self, max_turns: Optional[int] = None) -> None:
         """Run the turn loop."""
         self._run_start_time = time.time()
+        # Record the STARTING position before any button is pressed, so the
+        # first leg of the between-gate progress is measured from the canonical
+        # start tile. The referee otherwise first polls after turn 1's action,
+        # and turn 1 already moves the player: in one run it walked away from
+        # the stairs (leg length 10), in another onto them (leg length 1) — two
+        # different yardsticks for the same leg (2026-09-09). Fresh runs only:
+        # a continue restored its positions with the savepoint. At total turn 0
+        # nothing can stamp and no deadline is due, so this is a pure read.
+        if self.referee is not None and self.turn_number == 0 and self.task_master_turns == 0:
+            self._referee_should_break()
         limit = max_turns or self.max_turns
         # Remember the cap the run actually ran under. It arrives as a call
         # argument, not a config key, so without this it is unrecoverable from

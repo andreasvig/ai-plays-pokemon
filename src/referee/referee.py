@@ -40,6 +40,10 @@ from pathlib import Path
 from typing import Any, Optional
 
 from src.referee.checkpoints import Checkpoint, MultiGate, Node
+from src.referee.progress import ProgressTracker
+from src.referee.walkgraph import DEFAULT_GRAPH_PATH, WalkGraph
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # --- Verified address constants (FireRed BPRE-US v1.0 == v1.1) -----------------
 GSAVEBLOCK1_PTR = 0x03005008
@@ -71,6 +75,20 @@ EWRAM_BROAD_HI = 0x02040000
 _SB1_READ_LEN = SB1_VARS + 256 * 2  # 0x1200
 
 
+def _load_default_graph(path: Optional[Any] = None) -> Optional[WalkGraph]:
+    """Best-effort load of the committed walk graph; None on any failure.
+
+    The graph only adds between-gate granularity — a missing or broken file
+    must never stop a run, so every error collapses to "no graph" and the
+    tracker degrades to positions-only.
+    """
+    try:
+        target = Path(path) if path is not None else REPO_ROOT / DEFAULT_GRAPH_PATH
+        return WalkGraph.load(target)
+    except Exception:
+        return None
+
+
 class Referee:
     """Observe-only checkpoint latch driven by out-of-band memory reads.
 
@@ -88,6 +106,8 @@ class Referee:
         run_dir: Any,
         enforce: bool = False,
         stop_at: Optional[str] = None,
+        walkgraph: Optional[WalkGraph] = None,
+        graph_path: Optional[Any] = None,
     ) -> None:
         # ``nodes`` is the ladder as authored: an ordered mix of single
         # Checkpoint rungs and MultiGate (any-order) rungs. A plain list of
@@ -105,6 +125,15 @@ class Referee:
             else:
                 self.checkpoints.append(node)
         self._by_id: dict[str, Checkpoint] = {cp.id: cp for cp in self.checkpoints}
+
+        # Between-gate progress (plan §3A). ``walkgraph`` injects a graph (tests
+        # hand-build a tiny one); None loads the committed file from
+        # ``graph_path`` or the repo default. Loading never raises: no graph →
+        # positions are still recorded, distances are None, progress is None.
+        self.walkgraph: Optional[WalkGraph] = (
+            walkgraph if walkgraph is not None else _load_default_graph(graph_path)
+        )
+        self.progress = ProgressTracker(self.walkgraph, self.nodes)
         self.emulator = emulator
         self.logger = logger
         self.run_dir = Path(run_dir)
@@ -158,10 +187,16 @@ class Referee:
             for cp_id in data.get("autofilled", []):
                 if cp_id in self.stamps:
                     self.autofilled.add(cp_id)
+            # Positions ride in the same file; the tracker recomputes every
+            # leg from them + the stamps (nothing derived is persisted).
+            self.progress.load_state(data)
+            self.progress.observe_stamps(self.stamps)
         except Exception:
             # Corrupt/partial state must never crash the run — start fresh.
             self.stamps = {}
             self.autofilled = set()
+            self.progress.load_state({})
+            self.progress.observe_stamps({})
 
     def export_state(self) -> dict:
         """The referee latch as a plain dict — the unit a savepoint bundle stores.
@@ -170,7 +205,14 @@ class Referee:
         (live ``referee_state.json``) and the savepoint bundle (P1) serialize
         this, so the two can never drift.
         """
-        return {"stamps": dict(self.stamps), "autofilled": sorted(self.autofilled)}
+        return {
+            "stamps": dict(self.stamps),
+            "autofilled": sorted(self.autofilled),
+            # Polled positions ``[turn, map_group, map_num, x, y]`` — the raw
+            # input of the progress tracker; capped to the savepoint turn on
+            # --continue exactly like the stamps (runner._restore_referee_state).
+            "positions": self.progress.export_state()["positions"],
+        }
 
     def stamped_events(self) -> list[dict]:
         """Replayable ``referee_checkpoint`` payloads for every stamped gate.
@@ -269,13 +311,32 @@ class Referee:
             # near a deadline doesn't un-stick a missed gate.
             return self.should_terminate()
 
-        newly_stamped = False
+        # Position telemetry (plan §3A / P0): fold this poll's tile into the
+        # progress tracker and announce it. Emitted EVERY poll, before any
+        # stamping, so a leg that closes this turn still sees its final tile.
+        # Payload keys must not be "id"/"type" (RunLogger envelope; see _stamp).
+        pos = self.progress.record(
+            turn_number, snap.map_group, snap.map_num, snap.player_x, snap.player_y
+        )
+        self.logger.log_event(
+            "referee_position",
+            {
+                "turn": turn_number,
+                "map_group": snap.map_group,
+                "map_num": snap.map_num,
+                "x": snap.player_x,
+                "y": snap.player_y,
+                "on_graph": pos["on_graph"],
+                "distance": pos["distance"],
+                "next_gate": pos["next_gate"],
+            },
+        )
+
         for cp in self.checkpoints:
             if cp.id in self.stamps:
                 continue  # latched — never re-evaluate, never un-stamp
             if self._satisfied(cp, snap):
                 self._stamp(cp, turn_number)
-                newly_stamped = True
 
         # Safety net: gates are ordered milestones, so reaching a later gate
         # proves the earlier ones were passed. A per-turn poll can miss a
@@ -285,11 +346,13 @@ class Referee:
         # within its deadline (turn <= its limit, or it has no limit). An earlier
         # gate whose deadline already passed stays unstamped: a later gate
         # reached too late doesn't retroactively rescue a missed pace gate.
-        if self._backfill_skipped(turn_number):
-            newly_stamped = True
+        self._backfill_skipped(turn_number)
 
-        if newly_stamped:
-            self._persist_state()
+        # Let the tracker close/open legs on whatever latched this poll (a
+        # cheap no-op when nothing did). Persist every poll: the position list
+        # grew even when no gate did.
+        self.progress.observe_stamps(self.stamps)
+        self._persist_state()
 
         # Deadline check (Phase 5). Runs AFTER this poll's stamping so a gate met
         # exactly on its deadline turn counts as satisfied and never terminates.
@@ -619,6 +682,10 @@ class Referee:
             "first_unmet": first_unmet,
             "autofilled": sorted(self.autofilled),
             "termination_reason": self.terminated_reason,
+            # Between-gate progress: ``progress`` float (complete rungs + the
+            # fraction of the current leg), per-leg stats, graph provenance.
+            # Whole ProgressTracker.summary() dict — see src/referee/progress.py.
+            "progress": self.progress.summary(),
         }
 
 

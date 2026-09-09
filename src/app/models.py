@@ -138,6 +138,19 @@ class RunSummary(BaseModel):
     furthest_gate_turn: int | None = None
     gates_reached: int = 0
     total_gates: int = 0
+    # Between-gate progress (2026-09-09, artifacts/granular-progress/plan.md):
+    # ``gates_reached`` plus the fraction of the CURRENT leg walked, where the
+    # fraction is 1 - d_min/D on the FireRed walk graph (d_min = steps from the
+    # closest position ever polled in this leg to the next gate's tiles, D =
+    # steps when the leg opened). None when the run recorded no positions —
+    # every run before the tracker shipped — and ``rank_score`` then falls back
+    # to ``gates_reached``, so old rows keep their integer standing. The leg_*
+    # fields describe the current leg for display ("3 gates · 62% to Viridian").
+    progress: float | None = None
+    leg_gate: str | None = None
+    leg_fraction: float | None = None
+    leg_distance_min: int | None = None
+    leg_distance_open: int | None = None
     termination_reason: str | None = None
     continued_from: str | None = None
     resumed: bool = False
@@ -171,6 +184,11 @@ class RunSummary(BaseModel):
     # absent from this row — while ``api.js``'s ``toRun`` already read
     # ``s.max_turns``. None on an official run: pace is its only bound.
     max_turns: int | None = None
+
+    @property
+    def rank_score(self) -> float:
+        """The primary ranking key: progress when measured, else the gate count."""
+        return self.progress if self.progress is not None else float(self.gates_reached)
 
     @property
     def leaderboard_eligible(self) -> bool:

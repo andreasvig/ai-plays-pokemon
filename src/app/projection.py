@@ -38,6 +38,15 @@ _CLEARED_STATUSES = ("done", "auto")
 _ladder_node_count_cache: dict[str, int] = {}
 
 
+def _num(v) -> float | None:
+    """A JSON number as float, else None (bools are not numbers here)."""
+    return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+
+
+def _int(v) -> int | None:
+    return int(v) if isinstance(v, int) and not isinstance(v, bool) else None
+
+
 def _ladder_node_count(ladder_path: Path | None) -> int:
     """Number of ladder *nodes* for ``ladder_path`` (falls back to the default).
 
@@ -191,6 +200,22 @@ def project_run_dir(run_dir: Path) -> RunSummary | None:
                     furthest_gate_turn = g.get("turn")
                     break
 
+    # Between-gate progress — ``referee.progress`` is the ProgressTracker's
+    # summary (src/referee/progress.py). Absent on every run before 2026-09-09
+    # and on runs without a walk graph; then ``progress`` stays None and the
+    # row ranks on gates_reached (RunSummary.rank_score).
+    progress = None
+    leg_gate = leg_fraction = leg_dmin = leg_dopen = None
+    prog = referee.get("progress") if has_gates else None
+    if isinstance(prog, dict):
+        progress = _num(prog.get("progress"))
+        leg = prog.get("current_leg")
+        if isinstance(leg, dict):
+            leg_gate = leg.get("node_id") if isinstance(leg.get("node_id"), str) else None
+            leg_fraction = _num(leg.get("fraction"))
+            leg_dmin = _int(leg.get("d_min"))
+            leg_dopen = _int(leg.get("d_open"))
+
     return RunSummary(
         run_id=run_id,
         label=summary.get("label"),
@@ -212,6 +237,11 @@ def project_run_dir(run_dir: Path) -> RunSummary | None:
         furthest_gate_turn=furthest_gate_turn,
         gates_reached=gates_reached,
         total_gates=total_gates,
+        progress=progress,
+        leg_gate=leg_gate,
+        leg_fraction=leg_fraction,
+        leg_distance_min=leg_dmin,
+        leg_distance_open=leg_dopen,
         termination_reason=termination_reason,
         continued_from=summary.get("continued_from"),
         # WHICH HARNESS ran. ``run_summary.json["agent_type"]`` is stamped only

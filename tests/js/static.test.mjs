@@ -38,6 +38,15 @@ test('rankBoard: best per model (gates desc, turns asc), sorted the same way, sc
     row({ model: 'd', run_id: 'd1', gates_reached: 9, turns: 10, benchmark: 'pokebench-full' }),
   ]
   assert.deepEqual(rankBoard(rows, 'pokebench-first-badge').map((r) => r.run_id), ['b1', 'a2'])
+  // between-gate progress: same gates + same turns (both died on the same deadline) → the leg fraction decides;
+  // a row without `progress` ranks on its gate count
+  const tied = [
+    row({ model: 'p', run_id: 'p1', gates_reached: 3, turns: 100, progress: 3.2 }),
+    row({ model: 'q', run_id: 'q1', gates_reached: 3, turns: 100, progress: 3.6 }),
+    row({ model: 'r', run_id: 'r1', gates_reached: 3, turns: 100 }),
+    row({ model: 'q', run_id: 'q0', gates_reached: 3, turns: 100, progress: 3.1 }),   // q's worse run
+  ]
+  assert.deepEqual(rankBoard(tied).map((r) => r.run_id), ['q1', 'p1', 'r1'])
   assert.deepEqual(rankBoard(rows).map((r) => r.run_id), ['d1', 'b1', 'a2'])
   assert.deepEqual(rankBoard([]), [])
 })

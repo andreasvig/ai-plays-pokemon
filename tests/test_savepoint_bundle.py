@@ -52,7 +52,7 @@ def test_export_state_matches_persisted_shape(tmp_path):
     on_disk = json.loads((tmp_path / "referee_state.json").read_text())
     assert ref.export_state() == on_disk
     assert on_disk == {"stamps": {"left_bedroom": 3, "left_house": 7},
-                       "autofilled": ["left_house"]}
+                       "autofilled": ["left_house"], "positions": []}
 
 
 def test_savepoint_bundle_includes_referee_state(tmp_path):
@@ -69,7 +69,7 @@ def test_savepoint_bundle_includes_referee_state(tmp_path):
     assert (target / "emulator.state").read_bytes() == b"EMUSTATE"
     bundle = json.loads((target / "referee_state.json").read_text())
     assert bundle == {"stamps": {"left_bedroom": 3, "left_house": 7},
-                      "autofilled": ["left_house"]}
+                      "autofilled": ["left_house"], "positions": []}
 
 
 def test_savepoint_without_referee_writes_no_referee_file(tmp_path):

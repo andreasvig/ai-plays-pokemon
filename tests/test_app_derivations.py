@@ -199,3 +199,37 @@ def test_history_sort_completion_and_duration():
 
 def test_history_no_filters_returns_all():
     assert len(history(_mixed())) == 3
+
+
+# --- between-gate progress (2026-09-09) --------------------------------------
+
+def _prog(run_id, model, *, gates, progress, turns=100):
+    r = _run(run_id, model, gates=gates, turns=turns, status=RunStatus.terminated)
+    return r.model_copy(update={"progress": progress})
+
+
+def test_progress_separates_runs_terminated_at_the_same_gate():
+    """Two runs killed on the same deadline carry the same turn count, so turns
+    cannot split them; the leg fraction can. 3.6 > 3.2 even though both have
+    gates=3 and turns=100."""
+    rows = [_prog("a", "model-a", gates=3, progress=3.2), _prog("b", "model-b", gates=3, progress=3.6)]
+    assert [r.run_id for r in leaderboard(rows)] == ["b", "a"]
+    # more gates still beats a bigger fraction of an earlier leg
+    rows.append(_prog("c", "model-c", gates=4, progress=4.05, turns=150))
+    assert [r.run_id for r in leaderboard(rows)] == ["c", "b", "a"]
+
+
+def test_progress_none_falls_back_to_gates_and_mixes_with_measured_rows():
+    old = _run("old", "model-old", gates=3, turns=100, status=RunStatus.terminated)   # progress None → 3.0
+    assert old.rank_score == 3.0
+    new = _prog("new", "model-new", gates=3, progress=3.4)
+    assert [r.run_id for r in leaderboard([old, new])] == ["new", "old"]
+    # a measured run that made NO headway on its leg ties the old row and loses on turns
+    flat = _prog("flat", "model-flat", gates=3, progress=3.0, turns=90)
+    assert [r.run_id for r in leaderboard([old, flat])] == ["flat", "old"]
+
+
+def test_best_per_model_uses_progress():
+    rows = [_prog("a1", "model-a", gates=3, progress=3.2, turns=100), _prog("a2", "model-a", gates=3, progress=3.7, turns=100)]
+    assert [r.run_id for r in leaderboard(rows)] == ["a2"]
+    assert [r.run_id for r in history(rows, sort="completion")] == ["a2", "a1"]

@@ -65,6 +65,18 @@ export function statusClass(status) {
   return _INCOMPLETE.has(status) ? 'incomplete' : status
 }
 // "100%" for a full clear, else "86% · Cascade Badge" with the furthest gate.
+/** 'Reached Route 1' → 'Route 1'; gate names are sentences, the row wants the place. */
+export function gateShort(name) {
+  return (name || '').replace(/ \(.*\)$/, '').replace(/^(Reached|Entered|Defeated|Cleared|Stepped outside in|Chose a|Received the|Delivered|Boarded the|Left the) /, '')
+}
+
+/** The sub-line under a completion %: how far along the current leg, or the last gate. */
+export function legLabel(r) {
+  if (r.completion >= 100) return ''
+  if (r.legGate && r.legFraction != null) return `${Math.round(r.legFraction * 100)}% to ${gateShort(r.legGateName)}`
+  return gateShort(r.furthestGateName)
+}
+
 export function completionLabel(r) {
   if (r.completion >= 100) return '100%'
   const short = (r.furthestGateName || '').replace(/ \(.*\)$/, '').replace(/^(Reached|Entered|Defeated|Cleared|Stepped outside in|Chose a|Received the|Delivered|Boarded the) /, '')

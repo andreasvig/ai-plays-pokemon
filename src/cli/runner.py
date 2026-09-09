@@ -1048,9 +1048,24 @@ def _restore_referee_state(savepoint_dir, new_run_dir: Path, up_to_turn: int) ->
         if isinstance(t, (int, float)) and int(t) <= up_to_turn
     }
     autofilled = [c for c in data.get("autofilled", []) if c in kept]
+    # Progress telemetry rides in the same bundle: ``positions`` is a list of
+    # ``[turn, map_group, map_num, x, y]``. Same cap, same reason — a tile
+    # polled after the savepoint turn belongs to game state the resumed run
+    # has not reached, so it must not lower any leg's d_min.
+    positions = data.get("positions", []) if isinstance(data, dict) else []
+    kept_positions = [
+        [int(v) for v in p]
+        for p in (positions if isinstance(positions, list) else [])
+        if isinstance(p, (list, tuple)) and len(p) == 5
+        and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in p)
+        and int(p[0]) <= up_to_turn
+    ]
     try:
         (Path(new_run_dir) / "referee_state.json").write_text(
-            json.dumps({"stamps": kept, "autofilled": autofilled}, indent=2)
+            json.dumps(
+                {"stamps": kept, "autofilled": autofilled, "positions": kept_positions},
+                indent=2,
+            )
         )
     except OSError:
         pass

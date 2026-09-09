@@ -1,5 +1,5 @@
 <script>
-  import { usd, dur, perTurn } from '../lib/format.js'
+  import { usd, dur, perTurn, gateShort } from '../lib/format.js'
   // points: [{label, x, y, openSource, completed, slug, completion, furthestGateName, turns, avgCostPerTurn, avgSPerTurn}]
   let { points = [], xLabel = '', xFormat = (v) => v, xLog = false, onpick } = $props()
 
@@ -182,7 +182,8 @@
     <div class="tip" style={`left:${xs(hovered.x) / W * 100}%; top:${ys(hovered.y) / H * 100}%`}>
       <div class="tip-m mono">{hovered.label}</div>
       <div class="tip-row"><span>completion</span><b class:full={hovered.completion >= 100}>{hovered.completion}%</b></div>
-      {#if hovered.completion < 100}<div class="tip-row"><span>last gate</span><b>{hovered.furthestGateName?.replace(/ \(.*\)$/, '')}</b></div>{/if}
+      {#if hovered.completion < 100}<div class="tip-row"><span>last gate</span><b>{gateShort(hovered.furthestGateName)}</b></div>{/if}
+      {#if hovered.completion < 100 && hovered.legGateName && hovered.legFraction != null}<div class="tip-row"><span>next gate</span><b>{Math.round(hovered.legFraction * 100)}% to {gateShort(hovered.legGateName)}</b></div>{/if}
       <div class="tip-row"><span>turns</span><b class="tnum">{hovered.turns}</b></div>
       <div class="tip-row"><span>cost / turn</span><b class="tnum">{usd(hovered.avgCostPerTurn)}</b></div>
       <div class="tip-row"><span>sec / turn</span><b class="tnum">{perTurn(hovered.avgSPerTurn)}</b></div>

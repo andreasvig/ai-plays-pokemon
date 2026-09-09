@@ -221,19 +221,42 @@ number. Stamps persist to `referee_state.json`, so they survive a `--continue`.
 
 A run's score is **"farthest, fastest"**:
 
-- **primary:** `gates_reached` (count of stamped gates) — higher is better
+- **primary:** `progress` = `gates_reached` + the fraction of the **current leg**
+  walked — higher is better. The fraction is `1 − d_min / D` where `D` is the
+  number of walking steps from where the leg opened (the tile the previous
+  gate was stamped on) to the next gate's tiles, and `d_min` is the steps from
+  the *closest* position the run ever polled during that leg. Steps are path
+  distance on the FireRed walk graph (`data/firered-walkgraph.json`, built from
+  pret's collision, ledge, warp and connection data by
+  `scripts/build_walkgraph.py`), so trees, water and the Viridian Forest maze
+  count as the detours they are, ledges are one-way, and doors join maps.
+  Only positions polled *after* the previous gate stamped count; a lab visit at
+  turn 30 earns nothing on the Pokédex leg that opens at turn 110. The first
+  leg opens on a read taken *before* turn 1's action, so its length is the
+  walk from the canonical start tile, the same for every run.
 - **tiebreak:** `turns` (total game turns) — fewer is better
+
+Why the fraction exists: two official runs terminated at the same gate carry
+the *same* turn count (that gate's deadline), so before 2026-09-09 they could
+not be told apart. A run that recorded no positions (every run before the
+tracker shipped, or one without a walk graph) has `progress = null` and ranks
+on its gate count (`RunSummary.rank_score`).
 
 The leaderboard (`src/app/derivations.py`) keeps **only leaderboard-eligible runs**
 (official, status completed or terminated), takes the **best run per model**
-(max gates, then min turns), and sorts winners by gates descending, then turns
-ascending. So reaching gate 12 in 500 turns beats reaching gate 12 in 600, and
-both beat reaching gate 10.
+(max progress, then min turns), and sorts winners by progress descending, then
+turns ascending. So reaching gate 12 in 500 turns beats reaching gate 12 in
+600; both beat reaching gate 10; and dying 60% of the way from gate 3 to gate 4
+beats dying 20% of the way there.
 
 Each run's flat index row (`RunSummary`) carries `furthest_gate`,
-`furthest_gate_turn`, `gates_reached`, `total_gates`, `turns`, `duration_s`,
+`furthest_gate_turn`, `gates_reached`, `total_gates`, `progress`, `leg_gate`,
+`leg_fraction`, `leg_distance_min`, `leg_distance_open`, `turns`, `duration_s`,
 `total_cost_usd`, and `termination_reason` — the fields the History and Report
-views render.
+views render. The referee's per-leg detail (steps walked as a lower bound,
+efficiency = optimal ÷ walked, distinct tiles seen) lives in
+`run_summary.json["referee"]["progress"]` and on the report page. The agent
+never sees any of it — the referee stays out-of-band.
 
 ---
 

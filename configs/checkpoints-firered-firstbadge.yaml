@@ -58,12 +58,14 @@ checkpoints:
     signature: {flag_id: 0x828}                   # FLAG_SYS_POKEMON_GET
     cross_check: {type: party, min_count: 1}
     deadline_turn: 50
+    locus: {map_group: 4, map_num: 3, near: [[8,4],[9,4],[10,4]]}  # the three starter Pokéballs in Oak's Lab (ITEM_BALL object_events; pret map.json, 2026-09-09)
 
   - id: rival1_done
     name: "First rival battle done"               # scene-complete, win or lose (no victory flag exists)
     type: flag
     signature: {flag_id: 0x258}                   # FLAG_BEAT_RIVAL_IN_OAKS_LAB
     deadline_turn: 65
+    locus: {map_group: 4, map_num: 3, tiles: [[5,8],[6,8],[7,8]]}  # rival battle trigger row in Oak's Lab (coord_events RivalBattleTrigger{Left,Mid,Right}; pret map.json, 2026-09-09)
 
   - id: route1_reached
     name: "Reached Route 1"
@@ -82,6 +84,7 @@ checkpoints:
     type: var
     signature: {var_id: 0x4057, min_value: 1}     # Mart pickup scene; 2 is after the Pokédex scene
     deadline_turn: 120
+    locus: {map_group: 5, map_num: 3, near: [[2,3]]}  # Viridian Mart clerk (CLERK object_event; pret map.json, 2026-09-09)
 
   - id: pokedex_received
     name: "Received the Pokédex"
@@ -89,6 +92,7 @@ checkpoints:
     signature: {flag_id: 0x829}                   # FLAG_SYS_POKEDEX_GET
     cross_check: {type: var, var_id: 0x4055, min_value: 6}
     deadline_turn: 150                            # backtrack Viridian -> Pallet lab
+    locus: {map_group: 4, map_num: 3, near: [[6,3]]}  # Prof. Oak in his lab (PROF_OAK object_event; pret map.json, 2026-09-09)
 
   - id: viridian_forest_reached
     name: "Entered Viridian Forest"
@@ -108,3 +112,4 @@ checkpoints:
     signature: {flag_id: 0x820}                   # FLAG_BADGE01_GET
     cross_check: {type: flag, flag_id: 0x4B0}     # DEFEATED_BROCK (speedrun autosplitter's choice)
     deadline_turn: 400
+    locus: {map_group: 6, map_num: 2, near: [[6,5]]}  # Brock in Pewter Gym (BROCK object_event; pret map.json, 2026-09-09)

@@ -48,6 +48,12 @@
   const reachedN = $derived(gates.filter((g) => clearedStatuses.has(g.status)).length)
   const totalN = $derived(gates.length || GATES.length)
   const termination = $derived(summary?.referee?.termination_reason ?? null)
+  // Between-gate progress from the referee's ProgressTracker (referee.progress):
+  // one row per leg the run opened, plus the leg it was on when it stopped.
+  const progress = $derived(summary?.referee?.progress ?? null)
+  const legs = $derived(Array.isArray(progress?.legs) ? progress.legs : [])
+  const currentLeg = $derived(progress?.current_leg ?? null)
+  const pctOf = (x) => (x == null ? '—' : `${Math.round(x * 100)}%`)
 
   // Was anything actually GATED on the ladder? Casual and calibration runs run
   // the referee observe-only (`referee.enforce: false`) — the ladder is still
@@ -375,6 +381,32 @@
             </div>
           {/each}
         </div>
+        {#if legs.length || currentLeg}
+          <!-- Between-gate progress: where the run walked on each leg. `walked` is
+               a lower bound (position is sampled once per turn); efficiency =
+               shortest path ÷ walked, so 100% means no wasted step. -->
+          <div class="legs">
+            <div class="legs-head">
+              <span>Between gates</span>
+              {#if currentLeg?.fraction != null}<span class="faint">stopped {pctOf(currentLeg.fraction)} of the way to {currentLeg.name}{#if currentLeg.d_min != null}&nbsp;· {currentLeg.d_min} steps short{/if}</span>{/if}
+              {#if progress?.graph && !progress.graph.loaded}<span class="faint">no walk graph — positions recorded, not scored</span>{/if}
+            </div>
+            <div class="ltable">
+              <div class="lrow lhead"><span>leg to</span><span class="r">opened</span><span class="r">closed</span><span class="r">path</span><span class="r">walked ≥</span><span class="r">efficiency</span><span class="r">tiles</span></div>
+              {#each legs as l (l.node_id)}
+                <div class="lrow" class:open={l.closed_turn == null}>
+                  <span class="lname">{l.name}</span>
+                  <span class="r tnum">{l.opened_turn != null ? 'T' + l.opened_turn : '—'}</span>
+                  <span class="r tnum">{l.closed_turn != null ? 'T' + l.closed_turn : (l.fraction != null ? pctOf(l.fraction) + ' there' : '—')}</span>
+                  <span class="r tnum">{l.d_open ?? '—'}</span>
+                  <span class="r tnum">{l.steps_walked ?? '—'}</span>
+                  <span class="r tnum">{l.closed_turn != null ? pctOf(l.efficiency) : '—'}</span>
+                  <span class="r tnum">{l.tiles_seen ?? '—'}</span>
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
       </section>
     {/if}
 
@@ -791,6 +823,15 @@
   .kv { font-size: 16px; font-weight: 700; }
   .kv.full { color: var(--green); }
   .kv.dash { cursor: help; }
+  /* Between-gate progress (legs) under the gate table. */
+  .legs { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px; }
+  .legs-head { display: flex; gap: 12px; align-items: baseline; font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+  .legs-head .faint { font-weight: 500; }
+  .ltable { display: flex; flex-direction: column; gap: 2px; }
+  .lrow { display: grid; grid-template-columns: minmax(160px, 1.6fr) 64px 84px 56px 72px 80px 56px; gap: 8px; font-size: 12px; padding: 3px 0; }
+  .lrow.lhead { font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); font-weight: 700; }
+  .lrow.open .lname { font-style: italic; }
+  .lrow .r { text-align: right; }
   /* Replaces the scorecard on an observe-only run (same slot, same margin). */
   .observed { margin: 16px 2px 0; font-size: 12.5px; }
 

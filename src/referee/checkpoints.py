@@ -45,6 +45,13 @@ class Checkpoint:
     :class:`MultiGate` (its pacing comes from the group's ``deadline_turns``,
     not a per-gate limit). ``cross_check`` is an optional second signature
     logged for diagnostics; it never decides anything.
+
+    ``locus`` is the gate's spatial target for the between-gate progress
+    tracker (``src/referee/progress.py``): ``{map_group, map_num, tiles?,
+    near?}`` where ``tiles`` are stand tiles and ``near`` are object/NPC tiles
+    whose passable neighbours are the stand tiles. ``map``-type gates need none
+    (the walk graph derives the map's entry tiles); a non-map gate without one
+    simply has an unscored leg. It never decides a stamp.
     """
 
     id: str
@@ -53,6 +60,7 @@ class Checkpoint:
     signature: dict[str, Any]
     deadline_turn: Optional[int]
     cross_check: Optional[dict[str, Any]] = None
+    locus: Optional[dict[str, Any]] = None
 
 
 @dataclass
@@ -150,6 +158,51 @@ def _validate_signature(
     return normalised
 
 
+_LOCUS_KEYS = frozenset({"map_group", "map_num", "tiles", "near"})
+
+
+def _validate_locus(raw: Any, *, ctx: str) -> dict[str, Any]:
+    """Validate a gate ``locus`` block; returns a normalised copy.
+
+    Shape: ``{map_group: int, map_num: int, tiles?: [[x, y], ...],
+    near?: [[x, y], ...]}`` — ints only, pairs only, at least one non-empty
+    tile list. Unknown keys are rejected so a typo ("tile") cannot silently
+    leave a leg unscored.
+    """
+    if not isinstance(raw, dict):
+        raise ValueError(f"{ctx}: locus must be a dict, got {type(raw).__name__}")
+    unknown = sorted(set(raw) - _LOCUS_KEYS)
+    if unknown:
+        raise ValueError(f"{ctx}: locus has unknown key(s) {unknown} (allowed: {sorted(_LOCUS_KEYS)})")
+
+    def _int(value: Any, name: str) -> int:
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(f"{ctx}: locus {name} must be an int, got {value!r}")
+        return value
+
+    out: dict[str, Any] = {
+        "map_group": _int(raw.get("map_group"), "map_group"),
+        "map_num": _int(raw.get("map_num"), "map_num"),
+    }
+    any_tiles = False
+    for key in ("tiles", "near"):
+        if key not in raw:
+            continue
+        pairs = raw[key]
+        if not isinstance(pairs, list):
+            raise ValueError(f"{ctx}: locus {key} must be a list of [x, y] pairs")
+        norm: list[list[int]] = []
+        for pair in pairs:
+            if not isinstance(pair, (list, tuple)) or len(pair) != 2:
+                raise ValueError(f"{ctx}: locus {key} entry {pair!r} is not an [x, y] pair")
+            norm.append([_int(pair[0], f"{key} x"), _int(pair[1], f"{key} y")])
+        out[key] = norm
+        any_tiles = any_tiles or bool(norm)
+    if not any_tiles:
+        raise ValueError(f"{ctx}: locus needs at least one of 'tiles' / 'near' with a tile in it")
+    return out
+
+
 def _parse_checkpoint(raw: Any, *, index: int) -> Checkpoint:
     if not isinstance(raw, dict):
         raise ValueError(
@@ -203,6 +256,10 @@ def _parse_checkpoint(raw: Any, *, index: int) -> Checkpoint:
         )
         cross_check = validated
 
+    locus = raw.get("locus")
+    if locus is not None:
+        locus = _validate_locus(locus, ctx=ctx)
+
     return Checkpoint(
         id=cp_id,
         name=name,
@@ -210,6 +267,7 @@ def _parse_checkpoint(raw: Any, *, index: int) -> Checkpoint:
         signature=signature,
         deadline_turn=deadline_turn,
         cross_check=cross_check,
+        locus=locus,
     )
 
 

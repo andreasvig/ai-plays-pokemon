@@ -1,5 +1,5 @@
 <script>
-  import { usd, dur, perTurn } from '../lib/format.js'
+  import { usd, dur, perTurn, legLabel } from '../lib/format.js'
   import { STATIC } from '../lib/static.js'
   let {
     rows = [], stats = {}, oninspect,
@@ -25,7 +25,8 @@
     <h1>PokeBench v1</h1>
     <p class="tagline">A minimal, vision-only harness for Pokémon FireRed: the model sees the screen and presses buttons,
       nothing else. It is graded on the <em>fewest agent turns to defeat the first badge</em>, with
-      progressive milestones an agent has to meet before certain turn numbers to be allowed to continue.</p>
+      progressive milestones an agent has to meet before certain turn numbers to be allowed to continue.
+      Runs that stop at the same milestone are separated by how close they walked to the next one.</p>
   {:else}
     <h1>PokeBench</h1>
     <!-- "Same harness, same config" is now a load-bearing claim rather than a
@@ -107,7 +108,7 @@
         </span>
         <span class="c-comp">
           <span class="pct" class:full={r.completion >= 100}>{r.completion}%</span>
-          {#if r.completion < 100}<span class="gate faint">{r.furthestGateName?.replace(/ \(.*\)$/, '')}</span>{/if}
+          {#if r.completion < 100}<span class="gate faint" title={r.legGate ? `${r.gatesReached} gates, then ${Math.round((r.legFraction ?? 0) * 100)}% of the way to: ${r.legGateName}` : r.furthestGateName}>{legLabel(r)}</span>{/if}
         </span>
         <span class="c-turns tnum r"><b>{r.turns}</b></span>
         <span class="c-time tnum r"><b>{dur(r.durationS)}</b><span class="sub">{perTurn(r.avgSPerTurn)}/turn</span></span>

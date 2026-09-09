@@ -8,7 +8,7 @@
 
   const pts = (xKey) => rows.map((r) => ({
     label: r.model, x: r[xKey], y: r.perfScore, openSource: r.openSource, completed: r.completion >= 100,
-    slug: r.slug, completion: r.completion, furthestGateName: r.furthestGateName,
+    slug: r.slug, completion: r.completion, furthestGateName: r.furthestGateName, legGateName: r.legGateName, legFraction: r.legFraction,
     turns: r.turns, avgCostPerTurn: r.avgCostPerTurn, avgSPerTurn: r.avgSPerTurn,
   }))
   const filt = (points, mode) =>

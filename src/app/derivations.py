@@ -2,7 +2,11 @@
 
 No I/O, no state — just functions the API layer (P4) calls over the index's
 entries. The ranking metric is locked decision #3: "plays farthest, fastest" —
-furthest gate first, fewest turns as the tiebreak.
+furthest first, fewest turns as the tiebreak. Since 2026-09-09 "farthest" is
+``RunSummary.rank_score``: gates reached PLUS the fraction of the current leg
+walked (path distance on the walk graph), so two runs terminated at the same
+gate — which carry the same turn count, the gate's deadline — separate on how
+close to the next gate they got. Runs without position data rank on gates.
 """
 
 from __future__ import annotations
@@ -21,9 +25,9 @@ def leaderboard(
       2. when ``benchmark`` is given, keep only runs of THAT benchmark — each
          benchmark (easy / first-badge / full) has its own ranking, since their
          gate ladders differ and gate counts aren't comparable across them;
-      3. group by ``model`` and pick the BEST = highest ``gates_reached``,
-         tiebreak FEWEST ``turns``;
-      4. sort the winners by (``gates_reached`` desc, ``turns`` asc).
+      3. group by ``model`` and pick the BEST = highest ``rank_score``
+         (gates + leg fraction), tiebreak FEWEST ``turns``;
+      4. sort the winners by (``rank_score`` desc, ``turns`` asc).
     """
     eligible = [s for s in summaries if s.leaderboard_eligible]
     if benchmark is not None:
@@ -36,20 +40,20 @@ def leaderboard(
             best_by_model[s.model] = s
 
     winners = list(best_by_model.values())
-    winners.sort(key=lambda s: (-s.gates_reached, s.turns))
+    winners.sort(key=lambda s: (-s.rank_score, s.turns))
     return winners
 
 
 def _better(candidate: RunSummary, incumbent: RunSummary) -> bool:
-    """True if ``candidate`` beats ``incumbent``: more gates, or same gates + fewer turns."""
-    if candidate.gates_reached != incumbent.gates_reached:
-        return candidate.gates_reached > incumbent.gates_reached
+    """True if ``candidate`` beats ``incumbent``: farther (gates + leg fraction), or as far + fewer turns."""
+    if candidate.rank_score != incumbent.rank_score:
+        return candidate.rank_score > incumbent.rank_score
     return candidate.turns < incumbent.turns
 
 
 _SORT_KEYS = {
     "recent": lambda s: (s.started_at or ""),
-    "completion": lambda s: s.gates_reached,
+    "completion": lambda s: s.rank_score,
     "cost": lambda s: s.total_cost_usd,
     "duration": lambda s: s.duration_s,
 }
@@ -70,7 +74,7 @@ def history(
     Filters: ``kind`` (RunKind), ``status`` (RunStatus), ``benchmark`` (id —
     keeps only runs of that benchmark), and ``q`` (case-insensitive substring
     matched against ``model`` and ``run_id``). Sort keys: ``recent``
-    (started_at), ``completion`` (gates_reached), ``cost`` (total_cost_usd),
+    (started_at), ``completion`` (rank_score), ``cost`` (total_cost_usd),
     ``duration`` (duration_s); ``order`` is "asc"/"desc".
     """
     rows = list(summaries)

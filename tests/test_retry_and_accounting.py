@@ -236,9 +236,11 @@ def test_deadline_on_handoff_turn_terminates_that_turn_not_next(tmp_path):
     mgr.run_loop()
 
     assert ref.termination_reason == "missed_gate:test_gate"
-    # Polled in total-turn units: turn 1 at 2, the handoff turn at 4 — and
-    # stopped there (never the third player turn, which would poll at 5).
-    assert ref.polled_turns == [2, 4], ref.polled_turns
+    # Polled in total-turn units: the start-of-run read at 0 (records the
+    # opening position for between-gate progress, 2026-09-09), turn 1 at 2,
+    # the handoff turn at 4 — and stopped there (never the third player turn,
+    # which would poll at 5).
+    assert ref.polled_turns == [0, 2, 4], ref.polled_turns
     summary = _read_summary(logger.run_dir)
     assert summary["session"]["player_turns"] == 2
 

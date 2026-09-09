@@ -41,8 +41,16 @@ async function send(method, path, body) {
 export function toRun(s) {
   const total = s.total_gates || 0
   const reached = s.gates_reached || 0
-  const completion = total > 0 ? Math.round((reached / total) * 100) : 0
+  // Between-gate progress (2026-09-09): `progress` = gates + the fraction of
+  // the current leg walked (path distance on the walk graph); null on runs
+  // that recorded no positions, which then score on their gate count — the
+  // same fallback as RunSummary.rank_score. Completion % is derived from it,
+  // so a run that died 62% of the way to gate 4 reads 30%, not 25%.
+  const progress = typeof s.progress === 'number' ? s.progress : null
+  const score = progress ?? reached
+  const completion = total > 0 ? Math.round((score / total) * 100) : 0
   const furthestGate = s.furthest_gate ?? null
+  const legGate = s.leg_gate ?? null
   const r = {
     runId: s.run_id,
     kind: s.kind,
@@ -69,6 +77,13 @@ export function toRun(s) {
     gatesReached: reached,
     totalGates: total,
     completion,
+    progress,
+    // the current leg: which gate it leads to, how much of it was walked
+    legGate,
+    legGateName: legGate && GATE_INDEX[legGate] != null ? gate(legGate).name : legGate,
+    legFraction: typeof s.leg_fraction === 'number' ? s.leg_fraction : null,
+    legDistanceMin: s.leg_distance_min ?? null,
+    legDistanceOpen: s.leg_distance_open ?? null,
     terminationReason: s.termination_reason ?? null,
     continuedFrom: s.continued_from ?? null,
     // An official run's turn cap is the executor's "no cap in practice"

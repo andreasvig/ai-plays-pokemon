@@ -76,7 +76,9 @@ src/
 │   └── ocr.py               # Background Tesseract + LLM cleanup
 ├── referee/
 │   ├── referee.py           # Out-of-band memory reads; latches checkpoints (agent never sees this)
-│   └── checkpoints.py       # Loads + validates the gate ladder
+│   ├── checkpoints.py       # Loads + validates the gate ladder (+ optional per-gate locus)
+│   ├── progress.py          # Between-gate progress: steps to the next gate on the walk graph
+│   └── walkgraph.py         # The FireRed tile graph (data/firered-walkgraph.json, built by scripts/build_walkgraph.py)
 ├── app/
 │   ├── executor.py          # Serial run dispatcher (queue → run → finalise)
 │   ├── queue_manager.py     # queue.json, single-active invariant

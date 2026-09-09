@@ -27,8 +27,12 @@ const ENV = typeof import.meta.env === 'undefined' ? {} : import.meta.env
 export const BASE = (ENV.BASE_URL || '/').replace(/\/?$/, '/')
 
 /** Best official run per model, farthest then fastest — `derivations.leaderboard`
- *  in JS, so the static board ranks exactly as the local one does. */
+ *  in JS, so the static board ranks exactly as the local one does. "Farthest" is
+ *  `progress` (gates + the fraction of the current leg walked on the walk graph)
+ *  when the run recorded positions, else `gates_reached` — `RunSummary.rank_score`. */
 export const LEADERBOARD_CONFIG_PREFIX = 'config-5.'
+
+export const rankScore = (row) => (typeof row.progress === 'number' ? row.progress : (row.gates_reached ?? 0))
 
 export function eligible(row) {
   return row.kind === 'official'
@@ -43,11 +47,11 @@ export function rankBoard(rows, benchmark = null) {
     if (benchmark != null && r.benchmark !== benchmark) continue
     const cur = best.get(r.model)
     const better = !cur
-      || (r.gates_reached ?? 0) > (cur.gates_reached ?? 0)
-      || ((r.gates_reached ?? 0) === (cur.gates_reached ?? 0) && (r.turns ?? 0) < (cur.turns ?? 0))
+      || rankScore(r) > rankScore(cur)
+      || (rankScore(r) === rankScore(cur) && (r.turns ?? 0) < (cur.turns ?? 0))
     if (better) best.set(r.model, r)
   }
-  return [...best.values()].sort((a, b) => (b.gates_reached ?? 0) - (a.gates_reached ?? 0) || (a.turns ?? 0) - (b.turns ?? 0))
+  return [...best.values()].sort((a, b) => rankScore(b) - rankScore(a) || (a.turns ?? 0) - (b.turns ?? 0))
 }
 
 // ── the data files ──────────────────────────────────────────────────────────

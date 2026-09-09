@@ -1,5 +1,5 @@
 <script>
-  import { usd, dur, perTurn, ago, dateShort, statusLabel, statusClass } from '../lib/format.js'
+  import { usd, dur, perTurn, ago, dateShort, statusLabel, statusClass, legLabel } from '../lib/format.js'
   import Icon from './Icon.svelte'
   import { STATIC } from '../lib/static.js'
   let { runs = [], oninspect, oncontinue, ondelete } = $props()
@@ -121,7 +121,7 @@
         <span class="c-comp">
           {#if r.kind === 'official'}
             <span class="pct" class:full={r.completion >= 100}>{r.completion}%</span>
-            {#if r.completion < 100}<span class="gate faint">{r.furthestGateName?.replace(/ \(.*\)$/, '')}</span>{/if}
+            {#if r.completion < 100}<span class="gate faint">{legLabel(r)}</span>{/if}
           {:else}
             <span class="pct dash faint">—</span>
           {/if}

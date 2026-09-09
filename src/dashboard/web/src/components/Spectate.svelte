@@ -57,6 +57,9 @@
   // Defaults to true so the panel never flickers away while the config loads.
   let hasTaskMaster = $state(true)
   let ladder = $state([])              // [{id, name, deadline_turn, group?}]
+  // steps from the player to the next gate's tiles, from the latest referee_position
+  // event (null until one arrives, or when the position is off the walk graph)
+  let gateDistance = $state(null)
   let enforce = $state(false)
   // Spend ceiling for THIS run, from /api/config (`max_spend_usd`), or null when
   // the run is unbounded. Without it the Cost stat is a number with no scale:
@@ -437,6 +440,10 @@
       }
       return
     }
+    if (t === 'referee_position') {
+      gateDistance = typeof evt.distance === 'number' ? evt.distance : null
+      return
+    }
     if (t === 'referee_gate_missed' || t === 'referee_terminate') {
       // surfaced via the HUD tone; nothing to add to the feed
       return
@@ -480,6 +487,7 @@
     spendCap = null        // ditto — a run with no ceiling must not inherit one
     compactionHint = null
     ladder = []            // gate HUD hides again until the new run's ladder lands
+    gateDistance = null
     enforce = false
     stamps = {}
     currentTurn = 0
@@ -655,7 +663,7 @@
               <span class="sl">Gates</span>
               <span class="sv tnum">{reached}/{totalGates || '—'}</span>
               {#if nextGate}
-                <span class="gnext">next gate to complete{#if deadline != null}&nbsp;before turn {deadline}{/if}: {nextGate.name}{#if turnsLeft != null}&nbsp;· {turnsLeft} turns left{/if}</span>
+                <span class="gnext">next gate to complete{#if deadline != null}&nbsp;before turn {deadline}{/if}: {nextGate.name}{#if turnsLeft != null}&nbsp;· {turnsLeft} turns left{/if}{#if gateDistance != null}&nbsp;· {gateDistance} steps away{/if}</span>
               {:else}
                 <span class="gnext">all gates reached</span>
               {/if}
