@@ -19,7 +19,7 @@ watches and scores.
 
 | | **Official (a benchmark)** | **Casual** |
 |---|---|---|
-| Config | `config-5.0.yaml` (frozen) | you choose (`config-5.0` by default) |
+| Config | `config-5.1.yaml` (frozen; was `config-5.0` until 2026-09-09) | you choose (`config-5.1` by default) |
 | Benchmark | you choose (easy / **first-badge**, the default / full) | n/a |
 | Goal | the benchmark's goal (overrides the config's) | the config's |
 | Model | you choose | you choose |
@@ -103,7 +103,7 @@ edited independently. Reaching a benchmark's *final* rung **wins** the run
 **Goal override.** When an official run is queued, the executor loads the chosen
 benchmark and (a) injects its ladder as the run's enforced `referee` block, and
 (b) overwrites the frozen config's `task.goal` with the benchmark's `goal` — so
-the same frozen `config-5.0` plays toward a different objective per benchmark. The
+the same frozen official config (`config-5.1`) plays toward a different objective per benchmark. The
 benchmark id is stamped onto the run and drives the **per-benchmark leaderboard**
 (rankings aren't comparable across benchmarks, since the ladders differ).
 
@@ -278,7 +278,7 @@ never sees any of it — the referee stays out-of-band.
 
 ## The agent
 
-Official runs use **config-5.0, the append-and-compact single agent** — one
+Official runs use **config-5.1, the append-and-compact single agent** (config-5.0 until 2026-09-09; 5.1 drops the forced previous-turn verdict from the gameplay output) — one
 self-directed agent on one append-only conversation, with periodic self-written
 handovers instead of a sliding window. See
 [Append-and-compact agent](append-agent.md) for how it works, what it records,

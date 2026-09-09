@@ -1,5 +1,6 @@
 # ============================================================================
-# Config 5.1 — append-and-compact, plain gameplay output. The casual DEFAULT.
+# Config 5.1 — append-and-compact, plain gameplay output. The OFFICIAL config
+# (promoted 2026-09-09, FROZEN — prompt work goes to a 5.2) and casual default.
 # ============================================================================
 # Same harness as config-5.0 (one append-only conversation, compaction every
 # `compaction.every_n_turns` turns or at the token cap, provider profiles from
@@ -16,8 +17,10 @@
 #   carries the last action and its prediction and no longer lists grades.
 #
 # Being the highest `config-X.Y`, this is what a bare `pokemon run` and an
-# unspecified casual queue item load. The OFFICIAL benchmark config is still
-# config-5.0 (src/app/executor.py's OFFICIAL_CONFIG) until it is moved here
+# unspecified casual queue item load. Since 2026-09-09 it is ALSO the official
+# benchmark config (src/app/executor.py's OFFICIAL_CONFIG); the board keeps the
+# config-5.0 rows beside it, each row showing its stem. It was the casual-only
+# default from 2026-09-08 until then
 # deliberately. Both are config-5.x, so both appear on the leaderboard
 # (`RunSummary.leaderboard_eligible`).
 #

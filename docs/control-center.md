@@ -155,7 +155,7 @@ Two kinds (see [the benchmark doc](benchmark.md) for the full distinction):
 
 - **Benchmark** (official) — you pick the **model** + **which benchmark**
   (`pokebench-easy` / `first-badge` / `full`). The benchmark selects the gate
-  ladder and the goal; the config (frozen `config-5.0`, shown in the dialog from
+  ladder and the goal; the config (frozen `config-5.1` since 2026-09-09, shown in the dialog from
   `/api/benchmarks` rather than as UI text) and the start save are locked.
   Counts on that benchmark's leaderboard.
 - **Casual** — you pick **game + model + config + max-turns**, and optionally a

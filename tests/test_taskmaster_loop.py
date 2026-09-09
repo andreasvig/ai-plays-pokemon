@@ -585,9 +585,10 @@ def test_handoff_takes_a_savepoint(monkeypatch):
 
 def test_official_config_savepoint_cadence_is_tight():
     """P4: the frozen official config checkpoints every 10 turns (hard-kill bound)."""
+    from src.app.executor import OFFICIAL_CONFIG
     from src.config import load_config
 
-    cfg = load_config("configs/config-3.13.yaml")
+    cfg = load_config(OFFICIAL_CONFIG)
     sp = cfg["savepoints"]
     assert sp["every_n_turns"] == 10
     assert sp["on_crash"] is True and sp["at_end"] is True

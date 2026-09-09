@@ -176,7 +176,7 @@ def test_benchmarks_endpoint_carries_the_official_config_stem(seeded):
 
     rows = seeded["tc"].get("/api/benchmarks").json()
     stem = _Path(OFFICIAL_CONFIG).stem
-    assert stem == "config-5.0"
+    assert stem == "config-5.1"  # promoted from 5.0 on 2026-09-09
     assert rows and all(r["official_config"] == stem for r in rows)
 
 

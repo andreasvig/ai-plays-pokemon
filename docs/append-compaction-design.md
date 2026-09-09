@@ -1,6 +1,6 @@
 # Append-and-compact agent: design draft
 
-Status: implemented 2026-09-05 as an experimental mode; promoted to THE STANDARD harness on 2026-09-07 as frozen `configs/config-5.0.yaml` (casual default and official benchmark config). See [usage and validation](append-agent.md) for the actual config surface, defaults, live evidence, and remaining provider limitations. The sections below preserve the design decisions as they were argued; illustrative option names are superseded by `configs/config-5.0.yaml`.
+Status: implemented 2026-09-05 as an experimental mode; promoted to THE STANDARD harness on 2026-09-07 as frozen `configs/config-5.0.yaml` (casual default and official benchmark config). On 2026-09-09 the official config moved to `configs/config-5.1.yaml` (same harness, plain gameplay output without the forced previous-turn verdict); 5.0 rows stay on the board beside 5.1 ones. See [usage and validation](append-agent.md) for the actual config surface, defaults, live evidence, and remaining provider limitations. The sections below preserve the design decisions as they were argued; illustrative option names are superseded by `configs/config-5.0.yaml`.
 
 ## Purpose
 

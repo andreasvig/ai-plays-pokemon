@@ -18,6 +18,10 @@ export const CHANGELOG = [
     title: 'More room at every checkpoint, partial credit between them, and a cap per leg',
     items: [
       {
+        head: 'Official harness moved to config-5.1.',
+        body: 'Official runs now play on config-5.1: the same append-and-compact agent as 5.0, with a plainer gameplay output — the model returns its inputs and its reasoning, and is no longer forced to grade its previous turn with a true/false verdict. The prediction discipline lives in the reasoning instead (compare the screen with last turn\'s prediction, end with a concrete one). Rows show which config they ran on; config-5.0 rows stay ranked beside 5.1 ones.',
+      },
+      {
         head: 'A turn cap on every leg.',
         body: 'Besides the cumulative deadline, each leg between two checkpoints now has its own cap, counted from the previous checkpoint: 30 / 20 / 20 / 20 / 30 / 20 / 60 / 30 / 60 / 100 / 200 / 100 turns. Whichever bound is hit first ends the run. Cumulative deadlines let a fast opening bank slack that one section — the Viridian Forest maze — could then burn for 300+ turns without progress; the cap ends such a run within that leg\'s budget. The caps sum to 690 against a 600-turn ladder, so a run pacing normally only ever meets the deadline. Runs ended this way read "leg cap" on their report.',
       },

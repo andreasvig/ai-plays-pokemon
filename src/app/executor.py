@@ -43,13 +43,18 @@ from src.app.trace_build import build_and_cache_trace
 # 2026-09-07: promoted from config-3.13 (TaskMaster-enabled, sliding window) to
 # config-5.0, the append-and-compact harness — it was faster on all three models
 # in the 25-turn comparison and cheaper wherever whole-prefix caching exists
-# (artifacts/system-comparison/findings.md). config-5.0 is FROZEN for exactly
-# this reason; a 5.1 becomes the casual default on its own but is promoted here
-# only by editing this line. The leaderboard is partitioned on the config stem
-# (``RunSummary.leaderboard_eligible`` keeps only config-5.x), so the config-3.13
-# runs that used to hold the board stay in History with their badge instead of
-# being ranked against a different harness's turn units.
-OFFICIAL_CONFIG = "configs/config-5.0.yaml"
+# (artifacts/system-comparison/findings.md). A newer config becomes the casual
+# default on its own but is promoted here only by editing this line.
+# 2026-09-09: promoted to config-5.1 (Andreas: "promote 5.1 to be official") —
+# the same harness with the plain gameplay output (inputs + reasoning, no forced
+# previous-turn verdict; decision 2026-09-08). config-5.1 is FROZEN from here on;
+# prompt work continues on a 5.2. The leaderboard is partitioned on the config
+# stem (``RunSummary.leaderboard_eligible`` keeps every config-5.x), so the
+# config-5.0 rows already on the board stay ranked beside 5.1 ones — each row
+# shows its stem — while the config-3.13 runs that used to hold the board stay in
+# History with their badge instead of being ranked against another harness's
+# turn units.
+OFFICIAL_CONFIG = "configs/config-5.1.yaml"
 OFFICIAL_LADDER = "configs/checkpoints-firered-v1.yaml"
 # The season marker stamped on every finished official run. v1 → v1.1 on
 # 2026-09-09: deadlines raised across the first-badge ladder and between-gate
@@ -203,7 +208,8 @@ class RunExecutor:
     def build_run_config(self, item: QueuedRun) -> tuple[dict, str | None, int]:
         """Build (config, snapshot_dir, turns) for a queued item.
 
-        - Official (locked #4/#7): FROZEN ``config-5.0`` (append-and-compact) + the
+        - Official (locked #4/#7): the FROZEN official config (``OFFICIAL_CONFIG``,
+          config-5.1 since 2026-09-09; append-and-compact) + the
           chosen benchmark's gate ladder injected with ``enforce: true``, the
           benchmark's overall goal overriding the config's ``task.goal``, NO
           max-turns (a large sentinel turn cap that the gate ladder bounds in

@@ -973,7 +973,7 @@ def test_short_turn_cap_warns_that_the_run_will_never_compact(config, capsys):
     assert legacy_logger.events == []
 
 
-def test_official_config_is_config_5_0_and_the_casual_default_is_a_5_x_sibling():
+def test_official_config_is_config_5_1_and_the_casual_default_matches():
     """One constant for official, one rule for casual — and since 2026-09-08 they
     deliberately name DIFFERENT files: official stays on the frozen config-5.0
     while casual runs default to config-5.1, which Andreas is prompt-engineering.
@@ -988,7 +988,7 @@ def test_official_config_is_config_5_0_and_the_casual_default_is_a_5_x_sibling()
     from src.app.executor import OFFICIAL_CONFIG
 
     stem = _Path(OFFICIAL_CONFIG).stem
-    assert stem == "config-5.0"
+    assert stem == "config-5.1"  # promoted from 5.0 on 2026-09-09 (Andreas: "promote 5.1 to be official")
     assert default_config_stem() == list_configs()[-1] == "config-5.1"
     assert _re.fullmatch(r"config-5\.\d+", stem) and _re.fullmatch(r"config-5\.\d+", default_config_stem())
     official = load_config(str(ROOT / OFFICIAL_CONFIG), llm_alias="gpt-6-astra(medium)")
