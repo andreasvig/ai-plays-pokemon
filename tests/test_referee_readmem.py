@@ -77,14 +77,19 @@ def test_read_memory_raises_on_error_response():
         client.read_memory(0x03005008, 4)
 
 
-def test_read_memory_raises_on_unexpected_prefix():
+def test_read_memory_skips_one_stray_reply_then_gives_up_on_a_stuck_stream():
+    # Since 2026-09-09 a reply that is not ours is a stale leftover from an
+    # earlier desync: the client skips it and keeps reading (bounded). A wire
+    # that only ever says PONG is therefore "stream desynchronised", not
+    # "unexpected response" — and read_memory keeps its own error wrapper.
     fake = _FakeWire("PONG")
     client = _make_client()
     client._send = fake.send
     client._recv_line = fake.recv_line
 
-    with pytest.raises(RuntimeError, match="Unexpected read_memory response"):
+    with pytest.raises(RuntimeError, match="read_memory failed: stream desynchronised"):
         client.read_memory(0x03005008, 4)
+    assert client.stale_replies_skipped == client._MAX_STALE_SKIP + 1
 
 
 def test_read_memory_raises_on_malformed_hex():
