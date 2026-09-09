@@ -182,8 +182,17 @@ def _backfill_index_on_boot(run_index) -> int:
 
     Returns the number of runs backfilled (0 if the index was already non-empty).
     """
-    if run_index.all():
+    from src.app.projection import PROJECTION_VERSION
+
+    existing = run_index.all()
+    if existing and all(e.projection_version >= PROJECTION_VERSION for e in existing):
         return 0
+    if existing:
+        # Stale shape, not a missing index: the projection learned a field the
+        # stored rows predate (2026-09-09: `error`/`crash` on crashed runs).
+        # The index is a cache of run_summary.json, so re-derive it.
+        stale = sum(1 for e in existing if e.projection_version < PROJECTION_VERSION)
+        print(f"  runs index: {stale} row(s) from an older projection — re-projecting {len(existing)} run(s) from disk")
     entries = run_index.rebuild_from_scan()
     return len(entries)
 

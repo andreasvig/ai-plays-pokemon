@@ -30,6 +30,12 @@ _LEGACY_OFFICIAL_BENCHMARK = "pokebench-full"
 # recorded one no longer exists. Read at runtime — never hardcode the count.
 _DEFAULT_LADDER = Path("configs/checkpoints-firered-v1.yaml")
 
+# Bump when project_run_dir() starts reading a new field out of run_summary.json.
+# app boot re-projects every stored row whose projection_version is older, so a
+# field added here reaches History without anyone deleting runs_index.json.
+#   1 — 2026-09-09: error / crash (why a crashed run ended).
+PROJECTION_VERSION = 1
+
 # Status values the report treats as "cleared" for a gate (mirror report.py).
 _CLEARED_STATUSES = ("done", "auto")
 
@@ -245,6 +251,7 @@ def project_run_dir(run_dir: Path) -> RunSummary | None:
         termination_reason=termination_reason,
         error=summary.get("error") if isinstance(summary.get("error"), str) else None,
         crash=summary.get("crash") if isinstance(summary.get("crash"), dict) else None,
+        projection_version=PROJECTION_VERSION,
         continued_from=summary.get("continued_from"),
         # WHICH HARNESS ran. ``run_summary.json["agent_type"]`` is stamped only
         # when an AppendAgent was active (turn.py:2844), so its ABSENCE is the

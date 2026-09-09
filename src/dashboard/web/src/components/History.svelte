@@ -120,7 +120,9 @@
           {#if r.benchmarkVersion && r.benchmarkVersion !== BENCH_VERSION}<span class="oldver mono" title="Ran under {r.benchmarkVersion} — see the changelog">{r.benchmarkVersion.replace('pokebench-', '')}</span>{/if}
           <span class="meta faint">{dateShort(r.startedAt)} <span class="rel">({ago(r.startedAt)})</span> · <span class="mono">{r.config}</span>{#if r.continuedFrom} · ↪ continued{/if}</span>
           {#if r.status === 'crashed' && (r.error || r.crash)}
-            <span class="crash-line" title={r.error ?? r.crash?.message}>✗ {r.crash?.turn != null ? `T${r.crash.turn} · ` : ''}{errorShort(r.error ?? r.crash?.message, 88)}</span>
+            <!-- The CAUSE is the useful half ("Unexpected screenshot response: SEQUENCE_DONE"),
+                 not the wrapper ("Action outcome uncertain…"); the full line is the tooltip. -->
+            <span class="crash-line" title={r.error ?? r.crash?.message}>✗ {r.crash?.turn != null ? `T${r.crash.turn} · ` : ''}{errorShort(String(r.crash?.cause ?? r.error ?? r.crash?.message ?? '').replace(/^\w+(Error|Exception): /, ''), 88)}</span>
           {/if}
         </span>
         <span class="c-comp">
@@ -237,7 +239,7 @@
   .row:hover { border-color: var(--faint); background: var(--surface-2); }
 
   .c-model { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-  .oldver { font-size: 9px; font-weight: 700; letter-spacing: .03em; color: var(--faint); background: var(--wash); padding: 2px 5px; border-radius: var(--radius-sm); flex: none; }
+  .oldver { font-size: 9px; font-weight: 700; letter-spacing: .03em; color: var(--faint); background: var(--wash); padding: 2px 5px; border-radius: var(--radius-sm); flex: none; align-self: flex-start; }
   .mname { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .meta { font-size: 11px; }
   .crash-line { display: block; font-size: 11px; color: var(--red); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }

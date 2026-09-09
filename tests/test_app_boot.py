@@ -197,3 +197,34 @@ def test_spa_freshness_missing_stale_ok(tmp_path, monkeypatch):
     os.utime(index, (old, old))
     (src / "App.svelte").write_text("y")  # rewrite → mtime now
     assert server.spa_freshness() == "stale"
+
+
+def test_backfill_reprojects_rows_from_an_older_projection(tmp_path: Path):
+    """A stored row that predates the current projection is re-derived on boot.
+
+    2026-09-09: the crashed runs' rows had no `error`/`crash` because they were
+    projected before those fields existed, and a non-empty index is never
+    rebuilt. `projection_version` on each row is what lets boot tell a stale
+    cache from a current one.
+    """
+    from src.app.projection import PROJECTION_VERSION
+
+    runs_root = tmp_path / "runs"
+    runs_root.mkdir()
+    for i in range(2):
+        _write_min_run(runs_root, f"2026-06-10_1{i}-00-00_config__model-{i}")
+    index_path = tmp_path / "app" / "runs_index.json"
+    seed = RunIndex(index_path, runs_root)
+    rows = [e.model_dump(mode="json") for e in seed.rebuild_from_scan()]
+    assert all(r["projection_version"] == PROJECTION_VERSION for r in rows)
+    rows[0]["projection_version"] = 0          # one row written by an older projection
+    rows[0]["error"] = "stale text that a re-projection must drop"
+    index_path.write_text(json.dumps(rows))
+
+    run_index = RunIndex(index_path, runs_root)
+    run_index.load()
+    assert run_index.all()[0].error == "stale text that a re-projection must drop"
+    n = _backfill_index_on_boot(run_index)
+    assert n == 2
+    assert all(e.projection_version == PROJECTION_VERSION for e in run_index.all())
+    assert all(e.error is None for e in run_index.all()), "rows come from run_summary.json again, not from the stale cache"

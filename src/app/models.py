@@ -160,6 +160,13 @@ class RunSummary(BaseModel):
     # None on every run that ended cleanly. Never published (SUMMARY_PRIVATE_KEYS).
     error: str | None = None
     crash: dict | None = None
+    # Which projection wrote this row. The persisted runs_index.json is a cache
+    # of project_run_dir(); when the projection learns a new field the stored
+    # rows do not have it. Boot compares this with projection.PROJECTION_VERSION
+    # and rebuilds from disk when any row is older (2026-09-09: the crashed runs'
+    # rows had no `error` because they were projected before the field existed).
+    # Default 0 = "projected before versioning began".
+    projection_version: int = 0
     continued_from: str | None = None
     resumed: bool = False
     # WHICH HARNESS ran this run — the ``agent_type`` the config selected:
