@@ -314,7 +314,8 @@
         same starting save — the model is the only variable.</p>
       <p>A <b>deterministic referee</b> reads the game's memory out-of-band (the playing agent never
         sees it) and stamps story checkpoints. A <b>progressive gate ladder</b> attaches a turn
-        deadline to each checkpoint; a run that falls behind pace is terminated. A model is scored
+        deadline to each checkpoint, and each leg between checkpoints has its own turn cap; a run
+        that falls behind pace, or spends a whole leg's budget on one section, is terminated. A model is scored
         first on how much of the ladder it clears, then — among full clears — on how few turns it took.</p>
       <p class="faint">{BENCH_VERSION} · see the <button class="link" onclick={() => go('/changelog')}>changelog</button> for what changed between versions.</p>
     </section>

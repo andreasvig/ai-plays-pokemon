@@ -40,6 +40,16 @@ rom_sha1:
 #   party: {min_count}                     stamped when party count first reaches min_count
 # deadline_turn: int = enforced gate (terminate if unstamped when this turn ends)
 #                null = observed-only (stamped + scored, never terminates)
+# leg_cap_turns: int = the most turns the run may spend on the leg INTO this gate,
+#                counted from the previous gate's stamp (v1.1, 2026-09-09). A second,
+#                independent bound — whichever of deadline/leg cap fires first ends
+#                the run. Cumulative deadlines let a fast opening bank headroom that
+#                one section (the Forest maze) then burns for hundreds of turns; the
+#                cap ends that grind within one leg's budget. Caps sum to 690 against
+#                a 600-turn ladder, so a normally paced run only ever meets the
+#                deadline. Calibration: gemini-3.8-flash(medium)'s full clear spent
+#                1/3/2/3/8/3/13/14/17/39/112/22 per leg; gemini-3.8-flash(minimal)
+#                6/3/6/12/14/3/31/6/35/41 before the Forest.
 # cross_check: optional second signature logged for diagnostics, never decides
 
 checkpoints:
@@ -48,12 +58,14 @@ checkpoints:
     type: map
     signature: {map_group: 4, map_num: 0}        # Player's House 1F
     deadline_turn: 30                             # v1.1: was 20
+    leg_cap_turns: 30
 
   - id: left_house
     name: "Stepped outside in Pallet Town"
     type: map
     signature: {map_group: 3, map_num: 0}
     deadline_turn: 40                             # v1.1: was 30
+    leg_cap_turns: 20
 
   - id: oaks_lab_entered
     name: "Entered Oak's Lab"
@@ -61,6 +73,7 @@ checkpoints:
     signature: {map_group: 4, map_num: 3}
     cross_check: {type: flag, flag_id: 0x2CF}     # FLAG_VISITED_OAKS_LAB
     deadline_turn: 50                             # v1.1: was 40
+    leg_cap_turns: 20
     # Where the story actually happens: Prof. Oak stops you on Pallet Town's north
     # edge (coord_events at (12,1)/(13,1), VAR_MAP_SCENE_PALLET_TOWN_OAK == 0, pret
     # map.json) and the cutscene walks you into the lab. Without this an explicit
@@ -74,6 +87,7 @@ checkpoints:
     signature: {flag_id: 0x828}                   # FLAG_SYS_POKEMON_GET
     cross_check: {type: party, min_count: 1}
     deadline_turn: 65                             # v1.1: was 50
+    leg_cap_turns: 20
     locus: {map_group: 4, map_num: 3, near: [[8,4],[9,4],[10,4]]}  # the three starter Pokéballs in Oak's Lab (ITEM_BALL object_events; pret map.json, 2026-09-09)
 
   - id: rival1_done
@@ -81,6 +95,7 @@ checkpoints:
     type: flag
     signature: {flag_id: 0x258}                   # FLAG_BEAT_RIVAL_IN_OAKS_LAB
     deadline_turn: 85                             # v1.1: was 65
+    leg_cap_turns: 30
     locus: {map_group: 4, map_num: 3, tiles: [[5,8],[6,8],[7,8]]}  # rival battle trigger row in Oak's Lab (coord_events RivalBattleTrigger{Left,Mid,Right}; pret map.json, 2026-09-09)
 
   - id: route1_reached
@@ -88,18 +103,21 @@ checkpoints:
     type: map
     signature: {map_group: 3, map_num: 19}
     deadline_turn: 100                            # v1.1: was 75
+    leg_cap_turns: 20
 
   - id: viridian_reached
     name: "Reached Viridian City"
     type: map
     signature: {map_group: 3, map_num: 1}
     deadline_turn: 150                            # v1.1: was 100 — Route 1 traversal + encounters
+    leg_cap_turns: 60
 
   - id: parcel_delivered                       # legacy ID retained for saved-run compatibility
     name: "Received Oak's Parcel"
     type: var
     signature: {var_id: 0x4057, min_value: 1}     # Mart pickup scene; 2 is after the Pokédex scene
     deadline_turn: 180                            # v1.1: was 120
+    leg_cap_turns: 30
     locus: {map_group: 5, map_num: 3, near: [[2,3]]}  # Viridian Mart clerk (CLERK object_event; pret map.json, 2026-09-09)
 
   - id: pokedex_received
@@ -108,6 +126,7 @@ checkpoints:
     signature: {flag_id: 0x829}                   # FLAG_SYS_POKEDEX_GET
     cross_check: {type: var, var_id: 0x4055, min_value: 6}
     deadline_turn: 220                            # v1.1: was 150 — backtrack Viridian -> Pallet lab
+    leg_cap_turns: 60
     locus: {map_group: 4, map_num: 3, near: [[6,3]]}  # Prof. Oak in his lab (PROF_OAK object_event; pret map.json, 2026-09-09)
 
   - id: viridian_forest_reached
@@ -115,12 +134,14 @@ checkpoints:
     type: map
     signature: {map_group: 1, map_num: 0}
     deadline_turn: 300                            # v1.1: was 200 — north again: Viridian + Route 2
+    leg_cap_turns: 100
 
   - id: pewter_reached
     name: "Reached Pewter City"
     type: map
     signature: {map_group: 3, map_num: 2}
     deadline_turn: 500                            # v1.1: was 300 — the Forest maze is where turns go
+    leg_cap_turns: 200
 
   - id: brock_defeated
     name: "Defeated Brock (Boulder Badge)"
@@ -128,4 +149,5 @@ checkpoints:
     signature: {flag_id: 0x820}                   # FLAG_BADGE01_GET
     cross_check: {type: flag, flag_id: 0x4B0}     # DEFEATED_BROCK (speedrun autosplitter's choice)
     deadline_turn: 600                            # v1.1: was 400
+    leg_cap_turns: 100
     locus: {map_group: 6, map_num: 2, near: [[6,5]]}  # Brock in Pewter Gym (BROCK object_event; pret map.json, 2026-09-09)

@@ -263,3 +263,139 @@ def test_scorecard_terminated_and_non_terminated(tmp_path):
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# --- (e) per-leg turn caps (PokeBench v1.1, 2026-09-09) -----------------------
+#
+# Cumulative deadlines let a fast opening bank headroom that one section then
+# burns; `leg_cap_turns` bounds the turns spent walking INTO a gate, counted from
+# the previous rung's completion. Independent of the deadline: first to fire wins.
+
+
+def make_capped_ladder() -> list[Checkpoint]:
+    return [
+        Checkpoint("left_bedroom", "Left bedroom", "map", {"map_group": 4, "map_num": 0}, 30,
+                   leg_cap_turns=30),
+        # loose cumulative deadline (200) but a tight leg cap (10)
+        Checkpoint("left_house", "Left house", "map", {"map_group": 3, "map_num": 0}, 200,
+                   leg_cap_turns=10),
+        # tight deadline (40), loose cap (100): the deadline fires first here
+        Checkpoint("starter_chosen", "Chose starter", "flag", {"flag_id": 0x828}, 40,
+                   leg_cap_turns=100),
+    ]
+
+
+def leg_cap_events(logger):
+    return [d for t, d in logger.events if t == "referee_leg_cap_spent"]
+
+
+def test_leg_cap_counts_from_the_previous_gates_stamp(tmp_path):
+    logger = FakeLogger()
+    emu = FakeEmulator(FakeImage(block=build_sb1(map_group=4, map_num=0)))  # bedroom
+    ref = Referee(make_capped_ladder(), emu, logger, tmp_path, enforce=True)
+    assert ref.poll(12) is False            # left_bedroom stamped at 12; leg to left_house opens
+    emu.set_image(FakeImage(block=build_sb1(map_group=4, map_num=1)))   # wandering, not outside
+    assert ref.poll(21) is False            # 9 turns on the leg — inside the cap of 10
+    assert ref.poll(22) is True             # 10 turns — cap spent, deadline (200) far away
+    assert ref.termination_reason == "leg_cap:left_house"
+    (ev,) = leg_cap_events(logger)
+    assert ev["leg_start_turn"] == 12 and ev["leg_turns"] == 10 and ev["leg_cap_turns"] == 10
+    assert ev["deadline_turn"] == 200
+
+
+def test_leg_cap_does_not_start_before_the_previous_gate(tmp_path):
+    """The leg into left_house has not opened while left_bedroom is unstamped:
+    only left_bedroom's own bounds apply. (Otherwise every cap would count from
+    turn 0 and the whole ladder would collapse onto the first leg.)"""
+    logger = FakeLogger()
+    emu = FakeEmulator(FakeImage(block=build_sb1(map_group=4, map_num=1)))  # satisfies nothing
+    ref = Referee(make_capped_ladder(), emu, logger, tmp_path, enforce=True)
+    assert ref.poll(25) is False            # > left_house's cap of 10 since turn 0, yet nothing fires
+    assert ref.poll(30) is True
+    # cap 30 == deadline 30 on the first rung: the cumulative deadline is
+    # checked first on the same poll, so it is the one reported.
+    assert ref.termination_reason == "missed_gate:left_bedroom"
+    # The first rung's leg starts at turn 0: with a loose deadline its cap fires.
+    ladder = make_capped_ladder()
+    ladder[0] = Checkpoint("left_bedroom", "Left bedroom", "map", {"map_group": 4, "map_num": 0}, 100,
+                           leg_cap_turns=30)
+    ref2 = Referee(ladder, FakeEmulator(FakeImage(block=build_sb1(map_group=4, map_num=1))),
+                   FakeLogger(), tmp_path, enforce=True)
+    assert ref2.poll(29) is False
+    assert ref2.poll(30) is True and ref2.termination_reason == "leg_cap:left_bedroom"
+
+
+def test_deadline_still_wins_when_it_is_the_tighter_bound(tmp_path):
+    logger = FakeLogger()
+    emu = FakeEmulator(FakeImage(block=build_sb1(map_group=4, map_num=0)))
+    ref = Referee(make_capped_ladder(), emu, logger, tmp_path, enforce=True)
+    assert ref.poll(1) is False                                          # bedroom at 1
+    emu.set_image(FakeImage(block=build_sb1(map_group=3, map_num=0)))
+    assert ref.poll(5) is False                                          # outside at 5 (leg 4 ≤ 10)
+    emu.set_image(FakeImage(block=build_sb1(map_group=3, map_num=1)))    # no starter
+    assert ref.poll(39) is False                                         # leg 34 ≤ 100, T39 < 40
+    assert ref.poll(40) is True
+    assert ref.termination_reason == "missed_gate:starter_chosen"
+    assert leg_cap_events(logger) == []
+
+
+def test_leg_cap_is_not_enforced_when_the_referee_only_observes(tmp_path):
+    emu = FakeEmulator(FakeImage(block=build_sb1(map_group=4, map_num=0)))
+    ref = Referee(make_capped_ladder(), emu, FakeLogger(), tmp_path, enforce=False)
+    ref.poll(1)
+    emu.set_image(FakeImage(block=build_sb1(map_group=4, map_num=1)))
+    assert ref.poll(80) is False and ref.termination_reason is None
+
+
+def test_scorecard_reports_turns_per_leg_against_the_cap(tmp_path):
+    emu = FakeEmulator(FakeImage(block=build_sb1(map_group=4, map_num=0)))
+    ref = Referee(make_capped_ladder(), emu, FakeLogger(), tmp_path, enforce=True)
+    ref.poll(6)
+    emu.set_image(FakeImage(block=build_sb1(map_group=3, map_num=0)))
+    ref.poll(9)
+    gates = {g["id"]: g for g in ref.scorecard()["gates"]}
+    assert gates["left_bedroom"]["leg_turns"] == 6 and gates["left_bedroom"]["leg_cap_turns"] == 30
+    assert gates["left_house"]["leg_turns"] == 3 and gates["left_house"]["leg_cap_turns"] == 10
+    assert gates["starter_chosen"]["leg_turns"] is None            # not stamped yet
+    assert gates["starter_chosen"]["leg_cap_turns"] == 100
+
+
+def test_loader_validates_leg_cap_turns(tmp_path):
+    import yaml
+    from src.referee.checkpoints import load_ladder
+
+    def write(gate_extra, multigate=False):
+        gate = {"id": "a", "name": "A", "type": "map", "signature": {"map_group": 1, "map_num": 0},
+                "deadline_turn": 10, **gate_extra}
+        if multigate:
+            doc = {"benchmark_version": "test", "game": "firered", "rom_sha1": {"firered": "test"}, "checkpoints": [{"multigate": {"gates": [gate], "deadline_turns": [10]}}]}
+        else:
+            doc = {"benchmark_version": "test", "game": "firered", "rom_sha1": {"firered": "test"}, "checkpoints": [gate]}
+        p = tmp_path / "l.yaml"
+        p.write_text(yaml.safe_dump(doc))
+        return p
+
+    assert load_ladder(write({"leg_cap_turns": 25})).nodes[0].leg_cap_turns == 25
+    assert load_ladder(write({})).nodes[0].leg_cap_turns is None
+    for bad in (0, -5, "20", True):
+        with pytest.raises(ValueError, match="leg_cap_turns"):
+            load_ladder(write({"leg_cap_turns": bad}))
+    gate = {"id": "a", "name": "A", "type": "map", "signature": {"map_group": 1, "map_num": 0},
+            "leg_cap_turns": 5}
+    p = tmp_path / "m.yaml"
+    p.write_text(yaml.safe_dump({"benchmark_version": "test", "game": "firered", "rom_sha1": {"firered": "test"}, "checkpoints": [{"multigate": {"gates": [gate], "deadline_turns": [10]}}]}))
+    with pytest.raises(ValueError, match="leg_cap_turns"):
+        load_ladder(p)
+
+
+def test_first_badge_ladder_caps_every_enforced_leg():
+    """Structural, not numeric (the values are Andreas's calibration): every
+    deadline gate carries a cap, and the caps sum past the final deadline so a
+    normally paced run is only ever bounded by the cumulative ladder."""
+    from src.referee.checkpoints import load_ladder
+
+    ladder = load_ladder("configs/checkpoints-firered-firstbadge.yaml")
+    singles = [n for n in ladder.nodes if isinstance(n, Checkpoint)]
+    enforced = [n for n in singles if n.deadline_turn is not None]
+    assert enforced and all(n.leg_cap_turns for n in enforced)
+    assert sum(n.leg_cap_turns for n in enforced) >= max(n.deadline_turn for n in enforced)

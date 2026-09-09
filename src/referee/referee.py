@@ -442,8 +442,24 @@ class Referee:
                 filled = True
         return filled
 
+    def _node_completion_turn(self, node: Node) -> Optional[int]:
+        """The turn a node became complete (last member for a group), else None."""
+        if isinstance(node, MultiGate):
+            if not self._node_complete(node):
+                return None
+            return max(self.stamps[g.id] for g in node.gates)
+        return self.stamps.get(node.id)
+
+    def _leg_start_turn(self, index: int) -> Optional[int]:
+        """When the leg INTO ``self.nodes[index]`` opened: the previous rung's
+        completion turn (0 for the first rung); None while the previous rung is
+        still incomplete — the leg has not started, so nothing can be spent on it."""
+        if index == 0:
+            return 0
+        return self._node_completion_turn(self.nodes[index - 1])
+
     def _check_deadlines(self, turn_number: int) -> None:
-        """Latch ``terminated_reason`` if a deadline gate is missed.
+        """Latch ``terminated_reason`` if a deadline gate is missed — or a leg cap spent.
 
         For a single gate: ``turn_number >= deadline_turn`` with the gate still
         unstamped after this poll's stamping. For a multigate: the *k*-th
@@ -451,10 +467,16 @@ class Referee:
         fewer than *k* members are stamped (any order). The FIRST (lowest
         ladder-order) missed gate wins. Idempotent: once latched, never
         re-evaluated.
+
+        A single gate may also carry ``leg_cap_turns`` (v1.1): the run is
+        terminated with ``"leg_cap:<id>"`` once ``turn_number - leg_start >=
+        leg_cap_turns`` while the gate is unstamped, where ``leg_start`` is the
+        previous rung's completion turn. The two bounds are independent; on the
+        same poll the cumulative deadline is reported first.
         """
         if self.terminated_reason is not None:
             return
-        for node in self.nodes:
+        for i, node in enumerate(self.nodes):
             if isinstance(node, MultiGate):
                 completed = self._node_completed_count(node)
                 for k, dl in enumerate(node.deadline_turns, start=1):
@@ -496,6 +518,24 @@ class Referee:
                     },
                 )
                 return  # first missed gate decides
+            if node.leg_cap_turns is not None:
+                leg_start = self._leg_start_turn(i)
+                if leg_start is not None and turn_number - leg_start >= node.leg_cap_turns:
+                    self.terminated_reason = f"leg_cap:{node.id}"
+                    self.logger.log_event(
+                        "referee_leg_cap_spent",
+                        {
+                            "checkpoint_id": node.id,
+                            "name": node.name,
+                            "checkpoint_type": node.type,
+                            "leg_cap_turns": node.leg_cap_turns,
+                            "leg_start_turn": leg_start,
+                            "leg_turns": turn_number - leg_start,
+                            "deadline_turn": node.deadline_turn,
+                            "turn": turn_number,
+                        },
+                    )
+                    return
 
     def should_terminate(self) -> bool:
         """True iff enforcement has latched a missed-gate termination."""
@@ -503,7 +543,8 @@ class Referee:
 
     @property
     def termination_reason(self) -> Optional[str]:
-        """``"missed_gate:<id>"`` once a gate is missed under enforcement, else None."""
+        """``"missed_gate:<id>"`` once a gate is missed under enforcement, or
+        ``"leg_cap:<id>"`` once a leg's turn cap is spent (v1.1), else None."""
         return self.terminated_reason
 
     # --- success exit (locked decision #8) ------------------------------------
@@ -663,6 +704,15 @@ class Referee:
                     status = "skipped"
                 else:
                     status = "pending"
+                # Turns spent on the leg into this gate (stamp minus the previous
+                # rung's completion), when both ends are known — what the leg cap
+                # is compared against, so the report can show N / cap.
+                leg_start = self._leg_start_turn(i)
+                leg_turns = (
+                    turn - leg_start
+                    if turn is not None and leg_start is not None and turn >= leg_start
+                    else None
+                )
                 gates.append(
                     {
                         "kind": "single",
@@ -670,6 +720,8 @@ class Referee:
                         "name": node.name,
                         "type": node.type,
                         "deadline_turn": node.deadline_turn,
+                        "leg_cap_turns": node.leg_cap_turns,
+                        "leg_turns": leg_turns,
                         "turn": turn,
                         "status": status,
                     }

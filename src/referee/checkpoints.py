@@ -3,8 +3,11 @@
 The ladder (e.g. ``configs/checkpoints-firered-v1.yaml``) is fully
 data-driven: each checkpoint declares an id, display name, detector ``type``
 (``map``/``flag``/``var``/``party``), a RAM ``signature``, an optional
-``cross_check`` second signature, and a ``deadline_turn`` (int = enforced gate,
-null = observed-only). Adding/renaming/re-limiting a gate is a config edit;
+``cross_check`` second signature, a ``deadline_turn`` (int = enforced gate,
+null = observed-only) and an optional ``leg_cap_turns`` (int = the most turns
+the run may spend on the leg INTO this gate, counted from the previous rung's
+completion — a second, independent bound; see ``Checkpoint``). Adding/renaming/
+re-limiting a gate is a config edit;
 the referee code never changes. A different ladder file = a different
 benchmark version.
 
@@ -52,6 +55,17 @@ class Checkpoint:
     whose passable neighbours are the stand tiles. ``map``-type gates need none
     (the walk graph derives the map's entry tiles); a non-map gate without one
     simply has an unscored leg. It never decides a stamp.
+
+    ``leg_cap_turns`` (PokeBench v1.1, 2026-09-09) bounds the LEG into this gate:
+    the run is terminated when ``turn - <previous rung's completion turn> >=
+    leg_cap_turns`` with the gate still unstamped. It is independent of
+    ``deadline_turn`` — whichever fires first ends the run — and exists because
+    cumulative deadlines let a fast opening bank headroom that one section (the
+    Viridian Forest maze) then burns for hundreds of turns with no progress
+    (Andreas: "an agent which has 320+ turns in Viridian Forest, but might
+    still be too stupid to figure it out"). The leg has not started while the
+    previous rung is incomplete, so a cap never fires on a rung the run has not
+    reached. None = no per-leg bound. Not allowed on multigate members.
     """
 
     id: str
@@ -61,6 +75,7 @@ class Checkpoint:
     deadline_turn: Optional[int]
     cross_check: Optional[dict[str, Any]] = None
     locus: Optional[dict[str, Any]] = None
+    leg_cap_turns: Optional[int] = None
 
 
 @dataclass
@@ -237,6 +252,16 @@ def _parse_checkpoint(raw: Any, *, index: int) -> Checkpoint:
             f"{ctx}: deadline_turn must be an int or null, got {deadline_turn!r}"
         )
 
+    leg_cap_turns = raw.get("leg_cap_turns")
+    if leg_cap_turns is not None and (
+        not isinstance(leg_cap_turns, int)
+        or isinstance(leg_cap_turns, bool)
+        or leg_cap_turns <= 0
+    ):
+        raise ValueError(
+            f"{ctx}: leg_cap_turns must be a positive int or null, got {leg_cap_turns!r}"
+        )
+
     cross_check = raw.get("cross_check")
     if cross_check is not None:
         if not isinstance(cross_check, dict):
@@ -268,6 +293,7 @@ def _parse_checkpoint(raw: Any, *, index: int) -> Checkpoint:
         deadline_turn=deadline_turn,
         cross_check=cross_check,
         locus=locus,
+        leg_cap_turns=leg_cap_turns,
     )
 
 
@@ -307,6 +333,12 @@ def _parse_multigate(raw: Any, *, index: int) -> MultiGate:
                 f"checkpoint #{index}: multigate member #{j} {g.get('id')!r} must "
                 "not set 'deadline_turn' — pacing comes from the group's "
                 "'deadline_turns'"
+            )
+        if isinstance(g, dict) and "leg_cap_turns" in g:
+            raise ValueError(
+                f"checkpoint #{index}: multigate member #{j} {g.get('id')!r} must "
+                "not set 'leg_cap_turns' — a leg cap bounds the walk into ONE rung, "
+                "and an any-order group has no single previous rung to count from"
             )
         gates.append(_parse_checkpoint(g, index=j))
 

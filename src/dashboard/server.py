@@ -330,7 +330,8 @@ def _referee_payload(config: dict) -> Optional[dict]:
                 )
         else:
             ladder.append(
-                {"id": node.id, "name": node.name, "deadline_turn": node.deadline_turn}
+                {"id": node.id, "name": node.name, "deadline_turn": node.deadline_turn,
+                 "leg_cap_turns": node.leg_cap_turns}
             )
 
     return {

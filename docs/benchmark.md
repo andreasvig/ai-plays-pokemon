@@ -163,6 +163,18 @@ stamped `pokebench-v1` stay on the board because a run that met the tighter
 deadlines meets the looser ones. The full benchmark above keeps its Boulder
 Badge deadline at T500.
 
+**Per-leg turn caps (v1.1, 2026-09-09).** Each first-badge gate also carries
+`leg_cap_turns`, the most turns a run may spend on the leg into that gate,
+counted from the previous gate's stamp: 30 / 20 / 20 / 20 / 30 / 20 / 60 / 30 /
+60 / 100 / 200 / 100. The cap and the cumulative deadline are independent and
+the first to fire ends the run (`termination_reason = "leg_cap:<id>"`). The
+motivation is the Viridian Forest maze: under cumulative deadlines a run that
+reached the Forest at turn 180 had 320 turns to reach Pewter, and a fast opening
+banked even more. The caps sum to 690 against the 600-turn ladder, so a run that
+is merely pacing normally only ever meets the deadline. Calibration: the first
+full clear (gemini-3.8-flash(medium)) spent 1/3/2/3/8/3/13/14/17/39/112/22 turns
+per leg. The scorecard's gate entries carry `leg_cap_turns` and `leg_turns`.
+
 The parcel checkpoint retains the legacy ID `parcel_delivered` for saved-run
 compatibility. Its detector now checks the Mart scene variable for ≥1 (pickup),
 rather than ≥2 (the end of Oak's Pokédex scene). Historical stamps were recorded

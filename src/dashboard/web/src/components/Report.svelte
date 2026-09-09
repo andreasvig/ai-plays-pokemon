@@ -95,6 +95,12 @@
         || gates.find((g) => g.id === termination.split(':')[1])
       return `✗ Failed at ${missed?.name ?? termination.split(':')[1]}${missed?.deadline_turn != null ? ` (limit T${missed.deadline_turn})` : ''}`
     }
+    // v1.1 leg cap: the run spent the whole per-leg budget walking toward this
+    // gate — the section it could not do, named as such.
+    if (termination && termination.startsWith('leg_cap:')) {
+      const capped = gates.find((g) => g.id === termination.split(':')[1])
+      return `✗ Stuck on the leg to ${capped?.name ?? termination.split(':')[1]}${capped?.leg_cap_turns != null ? ` (leg cap ${capped.leg_cap_turns} turns)` : ''}`
+    }
     const furthest = summary?.referee?.furthest
     const fg = gates.find((g) => g.id === furthest)
     return fg ? `Furthest: ${fg.name}` : `${reachedN}/${totalN} gates`  // gate names are sentences ("Reached Route 1"), so no "Reached" prefix
@@ -392,7 +398,7 @@ where: {crash.where.join(' ← ')}{/if}</pre>
         <div class="score-head">
           <h3>Benchmark gates</h3>
           <span class="cleared">{reachedN}/{totalN} cleared</span>
-          <span class="verdict" class:fail={termination && termination.startsWith('missed_gate:')} class:win={reachedN >= totalN && totalN > 0}>{verdict()}</span>
+          <span class="verdict" class:fail={termination && (termination.startsWith('missed_gate:') || termination.startsWith('leg_cap:'))} class:win={reachedN >= totalN && totalN > 0}>{verdict()}</span>
         </div>
         <div class="gtable">
           {#each gates as g (g.id)}
@@ -401,6 +407,8 @@ where: {crash.where.join(' ← ')}{/if}</pre>
               <span class="gname">{g.name}</span>
               <span class="gturn tnum">{g.turn != null ? 'T' + g.turn : '—'}</span>
               <span class="glim tnum faint">{g.deadline_turn != null ? 'T' + g.deadline_turn : '—'}</span>
+              <!-- leg: turns spent walking into this gate / its per-leg cap (v1.1) -->
+              <span class="gleg tnum faint" title="turns on this leg / leg cap">{g.leg_cap_turns != null ? `${g.leg_turns != null ? g.leg_turns : '·'} / ${g.leg_cap_turns}` : ''}</span>
             </div>
           {/each}
         </div>
@@ -896,7 +904,7 @@ waited {Math.round(e.wait_s ?? 0)}s{/if}</pre>
   .verdict.fail { color: var(--red); }
   .verdict.win { color: var(--green); }
   .gtable { display: flex; flex-direction: column; }
-  .grow { display: grid; grid-template-columns: 22px 1fr 60px 50px; gap: 10px; align-items: center; padding: 6px 8px; border-radius: var(--radius-sm); font-size: 12.5px; }
+  .grow { display: grid; grid-template-columns: 22px 1fr 60px 50px 64px; gap: 10px; align-items: center; padding: 6px 8px; border-radius: var(--radius-sm); font-size: 12.5px; }
   .grow.grp { padding-left: 18px; }
   .grow.done { background: var(--green-soft); }
   .grow.missed, .grow.failed { background: var(--red-soft); }
@@ -905,6 +913,7 @@ waited {Math.round(e.wait_s ?? 0)}s{/if}</pre>
   .gname { font-weight: 550; }
   .gturn { text-align: right; font-weight: 650; }
   .glim { text-align: right; font-size: 11.5px; }
+  .gleg { text-align: right; font-size: 11.5px; }
 
   .trace { margin-top: 24px; }
   .trace h3 .faint { font-weight: 500; font-size: 12px; }

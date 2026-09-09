@@ -38,7 +38,7 @@
          harness and game turns only on this one. -->
     <p class="tagline">Can a language model play Pokémon FireRed <em>at pace</em>? A deterministic
       referee reads game memory out-of-band and stamps story gates; a progressive deadline ladder
-      ends runs that fall behind. Every run here is the same frozen append-and-compact harness
+      plus a per-leg turn cap ends runs that fall behind or get stuck on one section. Every run here is the same frozen append-and-compact harness
       (config-5.x), the same first-badge ladder and the same ROM — the model is the only variable.</p>
   {/if}
   <div class="chips">
