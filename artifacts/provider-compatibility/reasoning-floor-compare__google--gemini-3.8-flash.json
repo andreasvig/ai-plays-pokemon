@@ -1,0 +1,149 @@
+{
+  "model": "google/gemini-3.8-flash",
+  "endpoint": "google-ai-studio",
+  "probed": "2026-09-09",
+  "prompt": "hard",
+  "efforts": {
+    "minimal": [
+      {
+        "status": 200,
+        "latency_s": 10.4,
+        "reasoning_sent": {
+          "effort": "minimal"
+        },
+        "provider": "Google AI Studio",
+        "finish": "stop",
+        "reasoning_tokens": 1477,
+        "out_tokens": 2494,
+        "cost_usd": 0.010251,
+        "has_reasoning_field": true,
+        "coherent": true,
+        "reply_head": "To determine the shortest path from **(0,0)** to **(6,6)** given the grid constraints:  ### Analysis of the Ro"
+      },
+      {
+        "status": 200,
+        "latency_s": 14.5,
+        "reasoning_sent": {
+          "effort": "minimal"
+        },
+        "provider": "Google AI Studio",
+        "finish": "stop",
+        "reasoning_tokens": 1521,
+        "out_tokens": 3508,
+        "cost_usd": 0.0140535,
+        "has_reasoning_field": true,
+        "coherent": true,
+        "reply_head": "To determine the shortest route from **(0,0)** to **(6,6)** on the $7 \\times 7$ grid:  ### Analysis of Constra"
+      },
+      {
+        "status": 200,
+        "latency_s": 34.1,
+        "reasoning_sent": {
+          "effort": "minimal"
+        },
+        "provider": "Google AI Studio",
+        "finish": "stop",
+        "reasoning_tokens": 8467,
+        "out_tokens": 8855,
+        "cost_usd": 0.03410475,
+        "has_reasoning_field": true,
+        "coherent": true,
+        "reply_head": "Based on the rules and constraints of the grid, **no valid route exists** to reach the goal at $(6,6)$.   ### "
+      }
+    ],
+    "low": [
+      {
+        "status": 200,
+        "latency_s": 38.3,
+        "reasoning_sent": {
+          "effort": "low"
+        },
+        "provider": "Google AI Studio",
+        "finish": "stop",
+        "reasoning_tokens": 10477,
+        "out_tokens": 10871,
+        "cost_usd": 0.04166475,
+        "has_reasoning_field": true,
+        "coherent": true,
+        "reply_head": "**No route exists to reach the goal $(6,6)$.** The goal is completely blocked and unreachable.   ### Why the g"
+      },
+      {
+        "status": 200,
+        "latency_s": 43.5,
+        "reasoning_sent": {
+          "effort": "low"
+        },
+        "provider": "Google AI Studio",
+        "finish": "stop",
+        "reasoning_tokens": 11565,
+        "out_tokens": 12042,
+        "cost_usd": 0.046056,
+        "has_reasoning_field": true,
+        "coherent": true,
+        "reply_head": "Based on the rules and layout provided, **no valid route exists** to reach the goal at **(6,6)**.   ### Analys"
+      },
+      {
+        "status": 200,
+        "latency_s": 59.4,
+        "reasoning_sent": {
+          "effort": "low"
+        },
+        "provider": "Google AI Studio",
+        "finish": "stop",
+        "reasoning_tokens": 15359,
+        "out_tokens": 15918,
+        "cost_usd": 0.060591,
+        "has_reasoning_field": true,
+        "coherent": true,
+        "reply_head": "To determine the shortest route from **(0,0)** to **(6,6)** on the 7\u00d77 grid (with coordinates formatted as $(x"
+      }
+    ],
+    "high": [
+      {
+        "status": 200,
+        "latency_s": 59.4,
+        "reasoning_sent": {
+          "effort": "high"
+        },
+        "provider": "Google AI Studio",
+        "finish": "length",
+        "reasoning_tokens": 15358,
+        "out_tokens": 15996,
+        "cost_usd": 0.0608835,
+        "has_reasoning_field": true,
+        "coherent": true,
+        "reply_head": "To find the shortest path from **(0,0)** to **(6,6)**, let us represent the 7\u00d77 grid using standard Cartesian "
+      },
+      {
+        "status": 200,
+        "latency_s": 53.0,
+        "reasoning_sent": {
+          "effort": "high"
+        },
+        "provider": "Google AI Studio",
+        "finish": "length",
+        "reasoning_tokens": 15360,
+        "out_tokens": 15996,
+        "cost_usd": 0.0608835,
+        "has_reasoning_field": true,
+        "coherent": true,
+        "reply_head": "! So (2,4) IS A WALL! Wait... IS (2,4) a wall?! \"every tile of row 4 except (1,4)\" -> YES, every tile of row 4"
+      },
+      {
+        "status": 200,
+        "latency_s": 57.5,
+        "reasoning_sent": {
+          "effort": "high"
+        },
+        "provider": "Google AI Studio",
+        "finish": "length",
+        "reasoning_tokens": 15356,
+        "out_tokens": 15996,
+        "cost_usd": 0.0608835,
+        "has_reasoning_field": true,
+        "coherent": true,
+        "reply_head": "To solve the puzzle, we first establish the coordinate system and grid layout:  ### 1. Grid & Coordinates * Co"
+      }
+    ]
+  }
+}

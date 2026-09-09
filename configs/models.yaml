@@ -247,7 +247,7 @@ gpt-6-astra:
       sample_turns: 0
     low:
       sample_turns: 0
-# Google Gemini 3.8 Flash — effort-tiered (high/medium/low, mirrors configs/provider-profiles.yaml), multimodal, 1M ctx. Pinned to `google-ai-studio`, the tag the append-agent profile uses. Ten-turn sample 2026-09-06 on the append agent: reached "Chose a starter" in 10 turns, $0.127; implicit caching never hit through OpenRouter (the profile marks the system block explicitly — the legacy transport sends no marker, so expect 0% cache here).
+# Google Gemini 3.8 Flash — effort-tiered (high/medium/low/minimal, mirrors configs/provider-profiles.yaml; minimal measured 2026-09-09, thinking cannot be disabled), multimodal, 1M ctx. Pinned to `google-ai-studio`, the tag the append-agent profile uses. Ten-turn sample 2026-09-06 on the append agent: reached "Chose a starter" in 10 turns, $0.127; implicit caching never hit through OpenRouter (the profile marks the system block explicitly — the legacy transport sends no marker, so expect 0% cache here).
 # GPT-5.6 Sol — flagship tier (complex reasoning/coding/agentic, strong at command-line + multi-step coding). $5.00/$30.00 per M (same rate card as gpt-5.5). Effort tiers UNVERIFIED for this slug (same series/params as luna, probed 2026-07-10 — first run confirms).
 gpt-5.6-sol:
   openrouter_id: openai/gpt-5.6-sol
@@ -326,7 +326,7 @@ gpt-5.6-terra:
     none:
       sample_turns: 0
 # GPT-5.6 Terra Pro — SAME underlying model as gpt-5.6-terra + `reasoning.mode: pro` (separate slug); same $2.50/$15.00 rate card. Effort tiers UNVERIFIED for this slug (luna-pro probed 2026-07-10 accepted the full ladder + pro doesn't pin effort — smoke confirms).
-# Google Gemini 3.8 Flash — effort-tiered (high/medium/low, mirrors configs/provider-profiles.yaml), multimodal, 1M ctx. Pinned to `google-ai-studio`, the tag the append-agent profile uses. Ten-turn sample 2026-09-06 on the append agent: reached "Chose a starter" in 10 turns, $0.127; implicit caching never hit through OpenRouter (the profile marks the system block explicitly — the legacy transport sends no marker, so expect 0% cache here).
+# Google Gemini 3.8 Flash — effort-tiered (high/medium/low/minimal, mirrors configs/provider-profiles.yaml; minimal measured 2026-09-09, thinking cannot be disabled), multimodal, 1M ctx. Pinned to `google-ai-studio`, the tag the append-agent profile uses. Ten-turn sample 2026-09-06 on the append agent: reached "Chose a starter" in 10 turns, $0.127; implicit caching never hit through OpenRouter (the profile marks the system block explicitly — the legacy transport sends no marker, so expect 0% cache here).
 gemini-3.8-flash:
   openrouter_id: google/gemini-3.8-flash
   reasoning_type: effort
@@ -334,6 +334,7 @@ gemini-3.8-flash:
   - high
   - medium
   - low
+  - minimal   # measured rung, not catalogued — see the profile note (2026-09-09)
   # `provider: {only: [google-ai-studio], allow_fallbacks: false}` removed
   # 2026-09-07 (decision D3): the provider profile pins the same tag and owns the
   # endpoint on the append path. The pin existed to endpoint-match the LEGACY arm
@@ -346,7 +347,9 @@ gemini-3.8-flash:
       sample_turns: 0
     low:
       sample_turns: 0
-# Z.AI GLM 5.3 Flash — effort-tiered (max/high/low), multimodal, 1M ctx. Pinned to `z-ai/fp8`, the tag the append-agent profile uses (tools supported on the direct endpoint). Ten-turn sample 2026-09-06 on the append agent: left the bedroom in 10 turns, $0.007, 67% cached input.
+    minimal:
+      sample_turns: 0
+# Z.AI GLM 5.3 Flash — effort-tiered (max/high/low), multimodal, 1M ctx. `minimal` is accepted by z-ai/fp8 but is a NO-OP (2026-09-09 probe: minimal 11.1k/2.9k/6.6k reasoning tokens vs low 4.3k/1.1k/16k — indistinguishable), and thinking off is refused (400 mandatory), so the ladder stays as catalogued. Pinned to `z-ai/fp8`, the tag the append-agent profile uses (tools supported on the direct endpoint). Ten-turn sample 2026-09-06 on the append agent: left the bedroom in 10 turns, $0.007, 67% cached input.
 # Google Gemini 3.5 Flash Lite (released 2026-07-21) — the cheap/fast end of the 3.5 line: $0.30/$2.50 per M, multimodal, 1M ctx, effort-tiered. Default tool output mode. Probed 2026-07-30: 200, read the screenshot, solved the spatial task; high/medium/low/minimal accepted, `minimal` → 0 reasoning tokens at both probe budgets (thinking off). FASTEST and CHEAPEST entry in this sweep by a wide margin — 1.0-1.5s at the low tiers and $0.00084-0.0010/call, roughly 25x cheaper per call than opus-5 — which makes it the natural high-turn-count / long-run candidate where cost usually forces short runs. Ladder capped at high for the same clamp reason as gemini-3.6-flash.
 gemini-3.5-flash-lite:
   openrouter_id: google/gemini-3.5-flash-lite
@@ -452,7 +455,7 @@ qwen3.7-plus:
     non-thinking:
       sample_turns: 0
 # MiniMax M3 (added 2026-06-17) — binary thinking, multimodal (text+image+video, OpenRouter API 2026-06-17). Providers support tool_choice + structured_outputs → default tool mode. Latency unknown — mark slow:true if a first run shows a slow tail. Floating slug (pinned: minimax/minimax-m3-20260531).
-# Z.AI GLM 5.3 Flash — effort-tiered (max/high/low), multimodal, 1M ctx. Pinned to `z-ai/fp8`, the tag the append-agent profile uses (tools supported on the direct endpoint). Ten-turn sample 2026-09-06 on the append agent: left the bedroom in 10 turns, $0.007, 67% cached input.
+# Z.AI GLM 5.3 Flash — effort-tiered (max/high/low), multimodal, 1M ctx. `minimal` is accepted by z-ai/fp8 but is a NO-OP (2026-09-09 probe: minimal 11.1k/2.9k/6.6k reasoning tokens vs low 4.3k/1.1k/16k — indistinguishable), and thinking off is refused (400 mandatory), so the ladder stays as catalogued. Pinned to `z-ai/fp8`, the tag the append-agent profile uses (tools supported on the direct endpoint). Ten-turn sample 2026-09-06 on the append agent: left the bedroom in 10 turns, $0.007, 67% cached input.
 glm-5.3-flash:
   openrouter_id: z-ai/glm-5.3-flash
   reasoning_type: effort

@@ -1,0 +1,149 @@
+{
+  "model": "z-ai/glm-5.3-flash",
+  "endpoint": "z-ai/fp8",
+  "probed": "2026-09-09",
+  "prompt": "hard",
+  "efforts": {
+    "minimal": [
+      {
+        "status": 200,
+        "latency_s": 162.1,
+        "reasoning_sent": {
+          "effort": "minimal"
+        },
+        "provider": "Z.AI",
+        "finish": "stop",
+        "reasoning_tokens": 11130,
+        "out_tokens": 11618,
+        "cost_usd": 0.0030506,
+        "has_reasoning_field": true,
+        "coherent": true,
+        "reply_head": "## Checking the route  Working through the constraints (standard orientation: start (0,0) top\u2011left, goal (6,6)"
+      },
+      {
+        "status": 200,
+        "latency_s": 50.6,
+        "reasoning_sent": {
+          "effort": "minimal"
+        },
+        "provider": "Z.AI",
+        "finish": "stop",
+        "reasoning_tokens": 2891,
+        "out_tokens": 3382,
+        "cost_usd": 0.0008764,
+        "has_reasoning_field": true,
+        "coherent": true,
+        "reply_head": "**Shortest route (15 presses):**  **Presses:** Right, Right, Right, Down, Down, Ledge-hop Down, Left, Left, Do"
+      },
+      {
+        "status": 200,
+        "latency_s": 106.5,
+        "reasoning_sent": {
+          "effort": "minimal"
+        },
+        "provider": "Z.AI",
+        "finish": "stop",
+        "reasoning_tokens": 6559,
+        "out_tokens": 6735,
+        "cost_usd": 0.00171465,
+        "has_reasoning_field": true,
+        "coherent": true,
+        "reply_head": "Assuming coordinates are \\((x,y)\\) with \\(y\\) as the row, **there is no valid route to \\((6,6)\\)**.  Why: afte"
+      }
+    ],
+    "low": [
+      {
+        "status": 200,
+        "latency_s": 66.1,
+        "reasoning_sent": {
+          "effort": "low"
+        },
+        "provider": "Z.AI",
+        "finish": "stop",
+        "reasoning_tokens": 4274,
+        "out_tokens": 4702,
+        "cost_usd": 0.0012064,
+        "has_reasoning_field": true,
+        "coherent": true,
+        "reply_head": "## Checking reachability first  The two wall rows force any route through narrow gates: - **Row 2** is only pa"
+      },
+      {
+        "status": 200,
+        "latency_s": 24.0,
+        "reasoning_sent": {
+          "effort": "low"
+        },
+        "provider": "Z.AI",
+        "finish": "stop",
+        "reasoning_tokens": 1112,
+        "out_tokens": 1832,
+        "cost_usd": 0.0004889,
+        "has_reasoning_field": true,
+        "coherent": true,
+        "reply_head": "## Shortest route (20 presses)  **Presses:** Right \u00d75, Down \u00d73, Left \u00d74, Down \u00d72, Right \u00d74, Down, Right  **Til"
+      },
+      {
+        "status": 200,
+        "latency_s": 218.6,
+        "reasoning_sent": {
+          "effort": "low"
+        },
+        "provider": "Z.AI",
+        "finish": "length",
+        "reasoning_tokens": 15997,
+        "out_tokens": 16000,
+        "cost_usd": 0.0040309,
+        "has_reasoning_field": true,
+        "coherent": false,
+        "reply_head": ""
+      }
+    ],
+    "max": [
+      {
+        "status": 200,
+        "latency_s": 162.8,
+        "reasoning_sent": {
+          "effort": "max"
+        },
+        "provider": "Z.AI",
+        "finish": "stop",
+        "reasoning_tokens": 12195,
+        "out_tokens": 12886,
+        "cost_usd": 0.0033676,
+        "has_reasoning_field": true,
+        "coherent": true,
+        "reply_head": "## Setting up the map  With (x, y) = (column, row), row 0 at top, the walkable map looks like this (`#` = wall"
+      },
+      {
+        "status": 200,
+        "latency_s": 207.5,
+        "reasoning_sent": {
+          "effort": "max"
+        },
+        "provider": "Z.AI",
+        "finish": "length",
+        "reasoning_tokens": 15998,
+        "out_tokens": 16000,
+        "cost_usd": 0.0040309,
+        "has_reasoning_field": true,
+        "coherent": false,
+        "reply_head": ""
+      },
+      {
+        "status": 200,
+        "latency_s": 203.5,
+        "reasoning_sent": {
+          "effort": "max"
+        },
+        "provider": "Z.AI",
+        "finish": "stop",
+        "reasoning_tokens": 14971,
+        "out_tokens": 15773,
+        "cost_usd": 0.00397415,
+        "has_reasoning_field": true,
+        "coherent": true,
+        "reply_head": "## Short answer: there is no valid route \u2014 the goal is unreachable.  Before listing any moves, here is the map"
+      }
+    ]
+  }
+}

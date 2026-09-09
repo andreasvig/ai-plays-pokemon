@@ -219,7 +219,14 @@ profiles:
     context_length: 1048576
     max_completion_tokens: 65536
     reasoning_mandatory: true
-    reasoning_efforts: [high, medium, low]
+    # `minimal` is NOT in the catalog's supported_efforts for this model but was
+    # MEASURED to be a real rung (2026-09-09, scripts/probe_reasoning_floor.py,
+    # google-ai-studio tag, require_parameters true, hard prompt x3, 16k ceiling):
+    # minimal 1.5k/1.5k/8.5k reasoning tokens vs low 10.5k/11.6k/15.4k vs high
+    # 15.4k x3 (hit the ceiling). Thinking OFF is refused: {effort: none} and
+    # {enabled: false} both 400 "Reasoning is mandatory for this endpoint".
+    # Evidence: artifacts/provider-compatibility/reasoning-floor-compare__google--gemini-3.8-flash.json
+    reasoning_efforts: [high, medium, low, minimal]
     reasoning_default: {effort: medium}
     cache_mode: implicit
     final_turn_text_only: false
