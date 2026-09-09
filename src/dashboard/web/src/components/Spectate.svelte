@@ -242,7 +242,26 @@
   // urgency colour as that gate's deadline nears (red <25 turns left, amber <60).
   const nextGate = $derived(ladder.find((g) => !(g.id in stamps)) || null)
   const deadline = $derived(nextGate?.deadline_turn ?? null)
-  const turnsLeft = $derived(deadline != null ? deadline - currentTurn : null)
+  const deadlineLeft = $derived(deadline != null ? deadline - currentTurn : null)
+  // Per-leg cap (v1.1): turns left on the leg INTO the next gate, counted from the
+  // previous gate's stamp (0 for the first rung). Andreas (2026-09-09): "didn't we
+  // make it max per leg, not total?" — the HUD leads with the leg budget, and
+  // falls back to the cumulative deadline only when that is the tighter bound.
+  const legCap = $derived(nextGate?.leg_cap_turns ?? null)
+  const legStart = $derived(() => {
+    if (!nextGate) return null
+    const i = ladder.indexOf(nextGate)
+    if (i <= 0) return 0
+    const prev = stamps[ladder[i - 1].id]
+    return typeof prev === 'number' ? prev : null
+  })
+  const legSpent = $derived(legStart() != null ? currentTurn - legStart() : null)
+  const legLeft = $derived(legCap != null && legSpent != null ? legCap - legSpent : null)
+  // The bound that ends the run first drives the countdown and its colour.
+  const turnsLeft = $derived(
+    legLeft != null && deadlineLeft != null ? Math.min(legLeft, deadlineLeft) : (legLeft ?? deadlineLeft)
+  )
+  const legIsBinding = $derived(legLeft != null && (deadlineLeft == null || legLeft <= deadlineLeft))
   const tone = $derived(
     turnsLeft == null ? 'ok' : turnsLeft < 25 ? 'red' : turnsLeft < 60 ? 'amber' : 'ok'
   )
@@ -663,7 +682,7 @@
               <span class="sl">Gates</span>
               <span class="sv tnum">{reached}/{totalGates || '—'}</span>
               {#if nextGate}
-                <span class="gnext">next gate to complete{#if deadline != null}&nbsp;before turn {deadline}{/if}: {nextGate.name}{#if turnsLeft != null}&nbsp;· {turnsLeft} turns left{/if}{#if gateDistance != null}&nbsp;· {gateDistance} steps away{/if}</span>
+                <span class="gnext">next gate: {nextGate.name}{#if legIsBinding}&nbsp;· {legLeft} of {legCap} leg turns left{:else if turnsLeft != null}&nbsp;· {turnsLeft} turns left (deadline T{deadline}){/if}{#if gateDistance != null}&nbsp;· {gateDistance} steps away{/if}</span>
               {:else}
                 <span class="gnext">all gates reached</span>
               {/if}
