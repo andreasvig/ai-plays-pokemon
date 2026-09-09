@@ -6,6 +6,6 @@
     "ladder": "configs/checkpoints-firered-firstbadge.yaml",
     "default": true,
     "game": "firered-us",
-    "official_config": "config-5.0"
+    "official_config": "config-5.1"
   }
 ]
