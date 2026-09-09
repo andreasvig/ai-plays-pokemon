@@ -46,7 +46,7 @@
     "model_resolved": "google/gemini-3.8-flash",
     "config_stem": "config-5.0",
     "benchmark": "pokebench-first-badge",
-    "benchmark_version": "pokebench-v1",
+    "benchmark_version": "pokebench-v1.1",
     "status": "completed",
     "started_at": "2026-09-09T08:55:52",
     "ended_at": "2026-09-09T10:59:41",
@@ -65,6 +65,7 @@
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": null,
+    "projection_version": 2,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -74,6 +75,6 @@
     "video_view": "detailed",
     "screenshots_base_url": null,
     "trace_published": false,
-    "published_at": "2026-09-09T10:51:04+00:00"
+    "published_at": "2026-09-09T16:40:26+00:00"
   }
 ]
