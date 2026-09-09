@@ -463,7 +463,9 @@ def test_leak_audit_control_refuses_before_any_upload(world):
     world["s3"].objects.clear()
     summary = world["run"] / "run_summary.json"
     data = json.loads(summary.read_text())
-    data["error"] = "debug: Authorization sk-or-v1-PLANTEDPLANTEDPLANTEDPLANTED0000"
+    # Planted in a field that IS published (`error` became private on 2026-09-09):
+    # the goal text rides on summary.json and the leaderboard row.
+    data["session"]["task"] = "debug: Authorization sk-or-v1-PLANTEDPLANTEDPLANTEDPLANTED0000"
     summary.write_text(json.dumps(data, indent=1))
     with pytest.raises(pub.PublishError) as exc:
         _publish(world)
@@ -472,7 +474,7 @@ def test_leak_audit_control_refuses_before_any_upload(world):
     assert "PLANTEDPLANTEDPLANTED" not in msg, "the refusal must not echo the secret"
     assert world["s3"].objects == {}, "refused before the first upload"
     # the exact .env value is caught too, even when it matches no key shape
-    data["error"] = "the value was quietsecretvalue42"
+    data["session"]["task"] = "the value was quietsecretvalue42"
     summary.write_text(json.dumps(data))
     with pytest.raises(pub.PublishError, match="value from .env"):
         _publish(world, secrets=["quietsecretvalue42"])

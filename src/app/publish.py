@@ -572,7 +572,12 @@ class PublishResult:
 # Per-turn content of run_summary.json that the public page does not show. The
 # turn list carries every reasoning string; everything else in the file is a
 # result (session, cost, referee scorecard, status).
-SUMMARY_PRIVATE_KEYS = ("turns",)
+# `error`/`crash` carry provider error bodies (org ids, remedy URLs); a crashed
+# run is never publishable anyway, but the keys stay private regardless.
+SUMMARY_PRIVATE_KEYS = ("turns", "error", "crash")
+# The flat leaderboard row carries the same two crash fields (RunSummary.error /
+# .crash); NOT `turns`, which on the row is the turn COUNT, not the turn list.
+ROW_PRIVATE_KEYS = ("error", "crash")
 
 
 def recorded_view(run_dir: Path, video_file: str = "recording.mp4") -> str | None:
@@ -672,6 +677,8 @@ def publish_run(
     video_view = recorded_view(run_dir, video_file) if has_video else None
 
     row = projected.model_dump(mode="json")
+    for k in ROW_PRIVATE_KEYS:
+        row.pop(k, None)
     row.update({
         "has_recording": has_video,
         "video_url": video_url,

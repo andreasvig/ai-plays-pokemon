@@ -10,7 +10,7 @@ import types
 from pathlib import Path
 
 from src.agent.turn import _emit_heartbeat
-from src.cli.runner import _print_crash_banner
+from src.cli.runner import _print_crash_banner, crash_error_line, crash_record
 
 
 def _turn_mgr():
@@ -96,3 +96,41 @@ def test_heartbeat_emits_then_stops_on_cancel(capsys):
 
     asyncio.run(immediate())
     assert "x …" not in capsys.readouterr().out
+
+
+
+def _raise_wrapped():
+    try:
+        raise RuntimeError("Unexpected screenshot response: SEQUENCE_DONE")
+    except RuntimeError as e:
+        raise RuntimeError("Action outcome uncertain; resume from the last complete savepoint") from e
+
+
+def test_crash_record_keeps_the_cause_phase_and_frames():
+    """The 'outcome uncertain' wrapper hides the real fault in __cause__; the record
+    surfaces it, names the phase, and points at the frames (2026-09-09)."""
+    try:
+        _raise_wrapped()
+    except RuntimeError as exc:
+        rec = crash_record(exc, _turn_mgr())
+    assert rec["turn"] == 42 and rec["last_settled_turn"] == 41
+    assert rec["error_type"] == "RuntimeError"
+    assert rec["message"].startswith("Action outcome uncertain")
+    assert rec["cause"] == "RuntimeError: Unexpected screenshot response: SEQUENCE_DONE"
+    assert rec["phase"] == "emulator"
+    assert rec["where"] and rec["where"][-1].startswith("test_crash_logging.py:") and "_raise_wrapped" in rec["where"][-1]
+    line = crash_error_line(rec)
+    assert line.startswith("RuntimeError: Action outcome uncertain") and "← RuntimeError: Unexpected screenshot response" in line
+
+
+def test_crash_record_phases():
+    def rec(msg):
+        try:
+            raise ValueError(msg)
+        except ValueError as exc:
+            return crash_record(exc, _turn_mgr())
+    assert rec("Provider HTTP 429: rate-limited")["phase"] == "llm"
+    assert rec("Incomplete model output: length")["phase"] == "llm"
+    assert rec("stream desynchronised: 17 unexpected replies")["phase"] == "emulator"
+    assert rec("something else entirely")["phase"] == "harness"
+    assert rec("x")["cause"] is None

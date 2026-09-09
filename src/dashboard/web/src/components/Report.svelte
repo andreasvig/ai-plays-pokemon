@@ -6,7 +6,7 @@
   // player handback. (Round 9 E.) This IS the run report; the old standalone
   // HTML report (src/cli/report.py) was retired in favour of this view.
   import { GATES } from '../lib/gates.js'
-  import { usd, dur, perTurn, dateShort, coerceHandback } from '../lib/format.js'
+  import { usd, dur, perTurn, dateShort, coerceHandback, errorShort, errorLabel } from '../lib/format.js'
   import { mdToHtml } from '../lib/md.js'
   import * as api from '../lib/api.js'
   import { STATIC } from '../lib/static.js'
@@ -334,6 +334,29 @@
         {#if run.benchmark}· benchmark <span class="mono">{run.benchmark}</span>{/if}
         {#if run.continuedFrom}· continued from <span class="mono">{run.continuedFrom}</span>{/if}
       </div>
+      {#if run.status === 'crashed' || run.error || trace?.crash}
+        {@const crash = trace?.crash ?? run.crash ?? {}}
+        {@const err = run.error ?? trace?.error ?? crash.message ?? 'no error recorded — see terminal.log'}
+        <!-- Why the run crashed, right where you land (2026-09-09). The one line
+             is the summary's `error`; the details are the structured `crash`
+             record: phase, cause (the "outcome uncertain" wrapper hides the real
+             fault in its cause), and the last frames. -->
+        <div class="crash">
+          <div class="crash-head">
+            <span class="crash-tag">✗ Crashed</span>
+            {#if crash.turn != null}<span class="mono">turn {crash.turn}</span>{/if}
+            {#if crash.phase}<span class="crash-phase">{crash.phase}</span>{/if}
+            <span class="crash-msg">{errorShort(err, 160)}</span>
+          </div>
+          <details class="crash-details">
+            <summary class="faint">details</summary>
+            <pre>{err}{#if crash.cause}
+cause: {crash.cause}{/if}{#if crash.last_settled_turn != null}
+last settled turn: {crash.last_settled_turn} (a continue resumes here){/if}{#if crash.where?.length}
+where: {crash.where.join(' ← ')}{/if}</pre>
+          </details>
+        </div>
+      {/if}
       <div class="kpis">
         <!-- Completion is a BENCHMARK score. It shows only when the referee
              enforced the ladder; an observe-only run gets History's dash. -->
@@ -672,10 +695,24 @@
                       <span class="tact">{turnActionDisplay(t)}</span>
                     {/if}
                     <span class="tsum faint">{t.reasoning}</span>
+                    {#if t.errors?.length}<span class="terr" title={t.errors.map((e) => errorLabel(e) + ': ' + errorShort(e.message, 120)).join('\n')}>✗ {t.errors.length}</span>{/if}
                     <span class="tuse faint mono">{turnUsage(t)}</span>
                   </button>
                   {#if tOpen}
                     <div class="tbody">
+                      {#if t.errors?.length}
+                        <!-- What went wrong or was retried in this turn, in order,
+                             ABOVE the trace: the retry precedes the answer it led to. -->
+                        <div class="turn-errors">
+                          {#each t.errors as e}
+                            <div class="trace-step trace-error" class:soft={e.type === 'llm_backoff' && e.kind !== 'exhausted' || e.type === 'output_retry' || e.type === 'agent_retry'}>
+                              <span class="step-label">{errorLabel(e)}</span>
+                              <pre>{e.message}{#if e.type === 'llm_backoff' && e.kind !== 'exhausted'}
+waited {Math.round(e.wait_s ?? 0)}s{/if}</pre>
+                            </div>
+                          {/each}
+                        </div>
+                      {/if}
                       <!-- input → trace → output(decision)/screenshot at the BOTTOM (chronological) -->
                       {#if ptr}
                         <div class="trace-section">
@@ -842,6 +879,20 @@
   h3 { font-size: 15px; font-weight: 750; margin: 0; }
   .cleared { font-size: 12px; font-weight: 650; color: var(--muted); }
   .verdict { margin-left: auto; font-size: 12.5px; font-weight: 700; color: var(--muted); }
+  .crash { margin-top: 14px; padding: 10px 12px; border: 1px solid var(--red-rule); background: var(--red-soft); border-radius: var(--radius-sm); font-size: 13px; }
+  .crash-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .crash-tag { font-weight: 800; color: var(--red); }
+  .crash-phase { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--red); border: 1px solid var(--red-rule); padding: 1px 6px; border-radius: var(--radius-sm); }
+  .crash-msg { color: var(--text); }
+  .crash-details { margin-top: 6px; }
+  .crash-details summary { cursor: pointer; font-size: 12px; }
+  .crash-details pre { margin: 6px 0 0; white-space: pre-wrap; word-break: break-word; font-size: 11.5px; line-height: 1.5; color: var(--muted); }
+  .terr { font-size: 10.5px; font-weight: 800; color: var(--red); background: var(--red-soft); border: 1px solid var(--red-rule); padding: 1px 6px; border-radius: var(--radius-sm); flex: none; }
+  .turn-errors { margin: 0 0 10px; display: grid; gap: 6px; }
+  .trace-error { padding: 7px 10px; border-left: 3px solid var(--red); background: var(--red-soft); }
+  .trace-error.soft { border-left-color: var(--red-rule); background: var(--wash); }
+  .trace-error .step-label { color: var(--red); }
+  .trace-error pre { margin: 4px 0 0; white-space: pre-wrap; word-break: break-word; font-size: 11.5px; line-height: 1.45; }
   .verdict.fail { color: var(--red); }
   .verdict.win { color: var(--green); }
   .gtable { display: flex; flex-direction: column; }

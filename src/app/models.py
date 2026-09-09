@@ -155,6 +155,11 @@ class RunSummary(BaseModel):
     leg_distance_min: int | None = None
     leg_distance_open: int | None = None
     termination_reason: str | None = None
+    # Why a CRASHED run ended (2026-09-09): one line, plus the structured record
+    # {turn, last_settled_turn, phase, error_type, message, cause, where}.
+    # None on every run that ended cleanly. Never published (SUMMARY_PRIVATE_KEYS).
+    error: str | None = None
+    crash: dict | None = None
     continued_from: str | None = None
     resumed: bool = False
     # WHICH HARNESS ran this run — the ``agent_type`` the config selected:

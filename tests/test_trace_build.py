@@ -69,6 +69,39 @@ TRACE_SHAPES = {
             "previous_memory",
         },
     },
+    # 8 (2026-09-09): each turn carries `errors` — its agent_error / action_error /
+    # agent_retry / output_retry / llm_backoff events, compacted — and the trace
+    # carries the run_summary's `error` line + `crash` record, so a crashed run's
+    # report says what killed it without a trip to events.jsonl.
+    8: {
+        "trace": {
+            "trace_version", "run_id", "error", "crash", "has_tasks", "task_count", "turn_count",
+            "compaction_count", "harness", "referee_enforced",
+            "cleared_gate_statuses", "tasks", "cache", "cache_breakdown",
+            "segment_costs",
+        },
+        "task": {
+            "task_index", "title", "description", "success_criteria", "rating",
+            "player_self_assessment", "player_task_summary", "master_model",
+            "master_cost", "master_input_images", "master_trace", "turns",
+            "timeline",
+        },
+        "turn": {
+            "kind", "turn", "task_index", "action", "reasoning",
+            "screenshot", "cost_usd", "request_tokens",
+            "response_tokens", "trace", "diagnostics", "errors", "fresh",
+        },
+        "turn_optional": {"last_turn_succeeded"},
+        "turn_trace": {"system_prompt", "user_input", "steps", "conversation", "segment_context"},
+        "compaction": {
+            "kind", "number", "after_turn", "complete", "trace", "diagnostics",
+            "cost_usd", "request_tokens", "response_tokens",
+        },
+        "compaction_trace": {
+            "system_prompt", "user_input", "steps", "user_messages", "output",
+            "previous_memory",
+        },
+    },
 }
 
 
@@ -654,3 +687,44 @@ def test_verdict_key_is_projected_only_when_the_run_graded(tmp_path: Path):
     _write_events(plain, 1)
     turn = next(e for e in build_run_trace(plain)["tasks"][0]["timeline"] if e["kind"] == "turn")
     assert "last_turn_succeeded" not in turn
+
+
+# ───────────────── v8: a crashed run explains itself in the trace ─────────────────
+
+
+def test_turn_errors_and_the_crash_record_ride_on_the_trace(tmp_path: Path):
+    """The gemini-3.8-flash(minimal) T44 shape (2026-09-09): a 429 backoff on turn 43,
+    an execution error on turn 44, and the runner's crash record in run_summary."""
+    run_dir = tmp_path / "2026-09-09_14-30-46_config-5.0__gemini-3-8-flash-minimal"
+    _write_events(run_dir, 2)
+    with (run_dir / "events.jsonl").open("a") as f:
+        f.write(json.dumps({"type": "llm_backoff", "turn": 2, "kind": "waiting", "transient_failures": 1,
+                            "transient_retries": 12, "wait_s": 4.2, "waited_s": 0.0, "http_status": 429,
+                            "reason": "HTTP 429 — rate-limited upstream"}) + "\n")
+        f.write(json.dumps({"type": "action_error", "turn": 2,
+                            "error": "Unexpected screenshot response: SEQUENCE_DONE"}) + "\n")
+        f.write(json.dumps({"type": "run_end"}) + "\n")
+    (run_dir / "run_summary.json").write_text(json.dumps({
+        "status": "crashed",
+        "error": "RuntimeError: Action outcome uncertain; resume from the last complete savepoint ← RuntimeError: Unexpected screenshot response: SEQUENCE_DONE",
+        "crash": {"turn": 2, "last_settled_turn": 1, "phase": "emulator", "error_type": "RuntimeError",
+                  "message": "Action outcome uncertain; resume from the last complete savepoint",
+                  "cause": "RuntimeError: Unexpected screenshot response: SEQUENCE_DONE",
+                  "where": ["turn.py:1820 _run_turn", "emulator.py:349 _recv_expected"]},
+    }))
+    data = build_run_trace(run_dir)
+    assert data["error"].startswith("RuntimeError: Action outcome uncertain")
+    assert data["crash"]["turn"] == 2 and data["crash"]["phase"] == "emulator"
+    t1, t2 = data["tasks"][0]["turns"]
+    assert t1["errors"] == []
+    assert [e["type"] for e in t2["errors"]] == ["llm_backoff", "action_error"]
+    backoff, fault = t2["errors"]
+    assert backoff["kind"] == "waiting" and backoff["attempt"] == 1 and backoff["max_attempts"] == 12 and backoff["http_status"] == 429
+    assert backoff["message"] == "HTTP 429 — rate-limited upstream"
+    assert fault["message"] == "Unexpected screenshot response: SEQUENCE_DONE"
+
+
+def test_a_clean_run_has_no_error_and_empty_errors(run_dir: Path):
+    data = build_run_trace(run_dir)
+    assert data["error"] is None and data["crash"] is None
+    assert all(t["errors"] == [] for t in data["tasks"][0]["turns"])

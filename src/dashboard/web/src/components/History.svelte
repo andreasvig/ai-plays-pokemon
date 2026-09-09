@@ -1,5 +1,5 @@
 <script>
-  import { usd, dur, perTurn, ago, dateShort, statusLabel, statusClass, legLabel } from '../lib/format.js'
+  import { usd, dur, perTurn, ago, dateShort, statusLabel, statusClass, legLabel, errorShort } from '../lib/format.js'
   import Icon from './Icon.svelte'
   import { STATIC } from '../lib/static.js'
   import { BENCH_VERSION } from '../lib/version.js'
@@ -119,6 +119,9 @@
           <span class="mname mono">{r.model}</span>
           {#if r.benchmarkVersion && r.benchmarkVersion !== BENCH_VERSION}<span class="oldver mono" title="Ran under {r.benchmarkVersion} — see the changelog">{r.benchmarkVersion.replace('pokebench-', '')}</span>{/if}
           <span class="meta faint">{dateShort(r.startedAt)} <span class="rel">({ago(r.startedAt)})</span> · <span class="mono">{r.config}</span>{#if r.continuedFrom} · ↪ continued{/if}</span>
+          {#if r.status === 'crashed' && (r.error || r.crash)}
+            <span class="crash-line" title={r.error ?? r.crash?.message}>✗ {r.crash?.turn != null ? `T${r.crash.turn} · ` : ''}{errorShort(r.error ?? r.crash?.message, 88)}</span>
+          {/if}
         </span>
         <span class="c-comp">
           {#if r.kind === 'official'}
@@ -237,6 +240,7 @@
   .oldver { font-size: 9px; font-weight: 700; letter-spacing: .03em; color: var(--faint); background: var(--wash); padding: 2px 5px; border-radius: var(--radius-sm); flex: none; }
   .mname { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .meta { font-size: 11px; }
+  .crash-line { display: block; font-size: 11px; color: var(--red); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
   .meta .rel { color: var(--faint); }
   .pct.dash { color: var(--faint); font-weight: 600; }
   .c-comp { display: flex; flex-direction: column; gap: 0; min-width: 0; }

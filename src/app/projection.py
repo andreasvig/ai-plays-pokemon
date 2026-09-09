@@ -243,6 +243,8 @@ def project_run_dir(run_dir: Path) -> RunSummary | None:
         leg_distance_min=leg_dmin,
         leg_distance_open=leg_dopen,
         termination_reason=termination_reason,
+        error=summary.get("error") if isinstance(summary.get("error"), str) else None,
+        crash=summary.get("crash") if isinstance(summary.get("crash"), dict) else None,
         continued_from=summary.get("continued_from"),
         # WHICH HARNESS ran. ``run_summary.json["agent_type"]`` is stamped only
         # when an AppendAgent was active (turn.py:2844), so its ABSENCE is the

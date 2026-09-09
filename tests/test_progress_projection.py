@@ -50,3 +50,25 @@ def test_projection_tolerates_a_malformed_progress_block(tmp_path):
     s = project_run_dir(_run_dir(tmp_path, {"gates": _GATES, "furthest": "left_house",
                                              "progress": {"progress": "lots", "current_leg": {"node_id": 7, "fraction": None, "d_min": True}}}))
     assert s.progress is None and s.leg_gate is None and s.leg_distance_min is None and s.rank_score == 2.0
+
+
+def test_projection_carries_the_crash_error_and_record(tmp_path):
+    run = tmp_path / "2026-09-09_14-30-46_config-5.0__gemini-3-8-flash-minimal"
+    run.mkdir()
+    crash = {"turn": 44, "last_settled_turn": 43, "phase": "emulator", "error_type": "RuntimeError",
+             "message": "Action outcome uncertain; resume from the last complete savepoint",
+             "cause": "RuntimeError: Unexpected screenshot response: SEQUENCE_DONE", "where": []}
+    (run / "run_summary.json").write_text(json.dumps({
+        "run_id": run.name, "kind": "official", "status": "crashed",
+        "error": "RuntimeError: Action outcome uncertain ← RuntimeError: Unexpected screenshot response: SEQUENCE_DONE",
+        "crash": crash,
+        "session": {"llm_alias": "gemini-3.8-flash(minimal)", "total_turns": 43, "duration_seconds": 10.0, "started_at": "2026-09-09T14:30:46"},
+        "cost": {"total_usd": 0.1}, "referee": {"gates": _GATES, "furthest": "left_house"},
+    }))
+    s = project_run_dir(run)
+    assert s.status.value == "crashed"
+    assert s.error.startswith("RuntimeError: Action outcome uncertain")
+    assert s.crash == crash
+    # a clean run has neither
+    clean = project_run_dir(_run_dir(tmp_path, {"gates": _GATES, "furthest": "left_house", "termination_reason": None}))
+    assert clean.error is None and clean.crash is None

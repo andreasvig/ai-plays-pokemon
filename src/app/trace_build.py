@@ -31,7 +31,7 @@ from pathlib import Path
 # split-turn fold (5b8ab07) both landed under it, which left 13 append runs
 # serving a pre-fe1e7a7 projection whose Cache overview read "No pricing
 # snapshot" for runs whose ``endpoint-pricing.json`` was on disk.
-TRACE_VERSION = 7  # 7: last_turn_succeeded is projected only when the run graded (config-5.0); absent for 5.1+
+TRACE_VERSION = 8  # 8: per-turn `errors` (retries, backoff, faults) + top-level `crash`/`error` from run_summary (2026-09-09)
 
 
 def _screenshot_ref(file_path: str | None) -> str | None:
@@ -64,6 +64,36 @@ def _trace_steps(messages: list[dict]) -> dict:
 def _is_turn_ack(message: dict) -> bool:
     from src.agent.append_agent import TURN_ACK
     return message.get("role") == "assistant" and message.get("content") == TURN_ACK and not message.get("tool_calls")
+
+
+# Events that say something went wrong (or was retried) inside a turn. Shown by
+# the report as red steps so a crashed or stalling turn explains itself.
+# llm_request_error stays in `diagnostics` (the request panel marks it Failed).
+_ERROR_EVENT_TYPES = ("agent_error", "action_error", "agent_retry", "output_retry", "llm_backoff")
+
+
+def _project_error(event: dict) -> dict:
+    """Compact, display-ready view of one error/retry event."""
+    kind = event.get("type")
+    message = event.get("error") or event.get("content") or event.get("reason") or ""
+    out = {"type": kind, "message": str(message)[:2000]}
+    if kind == "llm_backoff":
+        out.update(kind=event.get("kind"), wait_s=event.get("wait_s"), waited_s=event.get("waited_s"),
+                   attempt=event.get("transient_failures"), max_attempts=event.get("transient_retries"),
+                   http_status=event.get("http_status"))
+    elif kind == "agent_retry":
+        out.update(attempt=event.get("attempt"), max_attempts=event.get("max_attempts"),
+                   retryable=event.get("retryable"), error_type=event.get("error_type"))
+    return out
+
+
+def _run_summary(run_dir: Path) -> dict:
+    try:
+        with open(Path(run_dir) / "run_summary.json") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
 
 
 def _project_turn(turn: dict) -> dict:
@@ -122,6 +152,7 @@ def _project_turn(turn: dict) -> dict:
         "response_tokens": usage.get("response_tokens"),
         "trace": trace,
         "diagnostics": diagnostics,
+        "errors": [_project_error(e) for e in turn.get("events", []) if e.get("type") in _ERROR_EVENT_TYPES],
     }
 
 
@@ -405,9 +436,14 @@ def build_run_trace(run_dir: Path) -> dict:
     for event in measurements:
         key = f"{event.get('phase', 'unknown')} / {event.get('provider') or 'unknown'} / segment {event.get('segment', '?')}"
         breakdown.setdefault(key, []).append(event)
+    summary = _run_summary(run_dir)
     return {
         "trace_version": TRACE_VERSION,
         "run_id": run_dir.name,
+        # Why a crashed run ended (run_summary.json, 2026-09-09): the one-line
+        # error and the structured record. None on a run that ended cleanly.
+        "error": summary.get("error") if isinstance(summary.get("error"), str) else None,
+        "crash": summary.get("crash") if isinstance(summary.get("crash"), dict) else None,
         "has_tasks": has_tasks,
         "task_count": len(tasks_out),
         "turn_count": len(turns),

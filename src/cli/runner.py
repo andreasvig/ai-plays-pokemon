@@ -58,6 +58,51 @@ def _print_mgba_log_tail(log_path: str, n: int = 30) -> None:
         print(f"    {ln}")
 
 
+def crash_record(exc: BaseException, turn_mgr) -> dict:
+    """What a crashed run should say about itself, for run_summary.json["crash"].
+
+    Turn, the last settled turn (where a continue resumes), a coarse phase
+    (``action`` = the button sequence / screen settle, ``llm`` = the provider or
+    the model's output, ``emulator`` = the mGBA socket, ``harness`` = anything
+    else), the exception type and message, the chained cause (the "outcome
+    uncertain" wrapper hides the real fault in ``__cause__``), and the last three
+    stack frames as ``file:line fn``. Strings and ints only, so it survives JSON
+    and the flat projection.
+    """
+    import traceback as _tb
+
+    cause = exc.__cause__ or exc.__context__
+    msg = str(exc)
+    cause_msg = f"{type(cause).__name__}: {cause}" if cause is not None else None
+    text = f"{msg} {cause_msg or ''}".lower()
+    if "provider" in text or "http " in text or "model output" in text or "rate-limit" in text:
+        phase = "llm"
+    elif "screenshot response" in text or "desynchronised" in text or "mgba" in text or "emulator" in text:
+        phase = "emulator"
+    elif "outcome uncertain" in text or "execution error" in text:
+        phase = "action"
+    else:
+        phase = "harness"
+    frames = _tb.extract_tb(exc.__traceback__)[-3:] if exc.__traceback__ else []
+    return {
+        "turn": getattr(turn_mgr, "turn_number", None),
+        "last_settled_turn": getattr(turn_mgr, "_last_settled_turn", None),
+        "phase": phase,
+        "error_type": type(exc).__name__,
+        "message": msg[:2000],
+        "cause": cause_msg[:2000] if cause_msg else None,
+        "where": [f"{Path(f.filename).name}:{f.lineno} {f.name}" for f in frames],
+    }
+
+
+def crash_error_line(record: dict) -> str:
+    """The one-line ``run_summary.json["error"]`` for a crash record."""
+    line = f"{record.get('error_type') or 'Error'}: {record.get('message') or ''}".strip()
+    if record.get("cause"):
+        line += f" ← {record['cause']}"
+    return line
+
+
 def _print_crash_banner(exc: BaseException, turn_mgr, config: dict, run_dir, handle: dict) -> None:
     """Loud, scannable crash summary printed AFTER the traceback.
 
@@ -908,8 +953,11 @@ def run_single_loop(
         # A mid-run fault (e.g. a model erroring out — the Gemma run, 2026-06-17).
         # Record the run as `crashed` so it lands in History as INCOMPLETE with
         # its report intact and never posts to the leaderboard, instead of
-        # defaulting to `completed` and masquerading as a real result.
-        turn_mgr.finalize_run_summary(status="crashed")
+        # defaulting to `completed` and masquerading as a real result. Since
+        # 2026-09-09 the summary also says WHY (error + crash record), so the
+        # report can show it without a trip to events.jsonl or terminal.log.
+        record = crash_record(e, turn_mgr)
+        turn_mgr.finalize_run_summary(status="crashed", error=crash_error_line(record), crash=record)
     finally:
         if ocr_runner:
             ocr_runner.stop()

@@ -85,6 +85,9 @@ export function toRun(s) {
     legDistanceMin: s.leg_distance_min ?? null,
     legDistanceOpen: s.leg_distance_open ?? null,
     terminationReason: s.termination_reason ?? null,
+    // Why a crashed run ended (2026-09-09): one line + {turn, phase, error_type, message, cause, where}.
+    error: s.error ?? null,
+    crash: s.crash ?? null,
     continuedFrom: s.continued_from ?? null,
     // An official run's turn cap is the executor's "no cap in practice"
     // sentinel (10,000,000); showing "50 / 10000000" says nothing, so any cap

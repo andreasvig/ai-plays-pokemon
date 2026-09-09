@@ -57,6 +57,20 @@ export function coerceHandback(r) {
 // UI (Andreas 2026-06-17): voided from the leaderboard but kept in history with a
 // readable report. completed / terminated / running keep their own labels.
 const _INCOMPLETE = new Set(['cancelled', 'crashed'])
+/** First line of an error, trimmed to `n` chars — the row/tag version of a crash message. */
+export function errorShort(err, n = 96) {
+  const line = String(err ?? '').split('\n')[0].trim()
+  return line.length > n ? line.slice(0, n - 1) + '…' : line
+}
+/** Human label for a per-turn error/retry event type (trace `errors[]`). */
+export function errorLabel(e) {
+  if (!e) return 'Error'
+  if (e.type === 'llm_backoff') return e.kind === 'exhausted' ? 'Gave up' : `Backoff${e.attempt ? ` ${e.attempt}/${e.max_attempts}` : ''}`
+  if (e.type === 'agent_retry') return `Retry${e.attempt ? ` ${e.attempt}/${e.max_attempts}` : ''}`
+  if (e.type === 'output_retry') return 'Output retry'
+  if (e.type === 'action_error') return 'Execution error'
+  return 'Error'
+}
 export function statusLabel(status) {
   if (status === 'running') return '● running'
   return _INCOMPLETE.has(status) ? 'incomplete' : status

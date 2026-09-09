@@ -1813,7 +1813,7 @@ class TurnManager:
                     self._append_action_uncertain = False
             except Exception as e:
                 print(f"  [Turn {self.turn_number}] Execution error: {e}")
-                self.logger.log_custom("action_error", {"error": str(e)})
+                self.logger.log_custom("action_error", {"turn": self.turn_number, "error": str(e)})
                 # Reset facing — we don't know where the player ended up
                 self.emulator.facing = None
                 if self.append_agent is not None:
@@ -2727,7 +2727,7 @@ class TurnManager:
             return str(action)
         return "?"
 
-    def finalize_run_summary(self, status: Optional[str] = None) -> None:
+    def finalize_run_summary(self, status: Optional[str] = None, *, error: Optional[str] = None, crash: Optional[dict] = None) -> None:
         """Write run_summary.json + restore stdout. Idempotent end-of-run hook.
 
         Called once on a clean loop exit, and also by run_single_loop's crash/stop
@@ -2743,7 +2743,7 @@ class TurnManager:
         if self._summary_finalized:
             return
         self._summary_finalized = True
-        self._write_run_summary(status=status)
+        self._write_run_summary(status=status, error=error, crash=crash)
         if self._orig_stdout is not None:
             sys.stdout = self._orig_stdout
         if self._terminal_log is not None:
@@ -2761,8 +2761,16 @@ class TurnManager:
         status: str | None = None,
         continued_from: str | None = None,
         ended_at: str | None = None,
+        error: str | None = None,
+        crash: dict | None = None,
     ) -> None:
         """Write a structured run_summary.json to the run folder.
+
+        ``error`` / ``crash`` (2026-09-09): why a crashed run ended, as ONE line
+        and as a structured record (turn, phase, error_type, message, cause,
+        where) — the runner's except-block passes them for a mid-run fault; the
+        no-valid-output abort fills them in itself. History and the report read
+        them so a crash is legible without opening events.jsonl.
 
         The optional keyword args let a caller (the control-center executor, P3)
         stamp control-plane fields as TOP-LEVEL keys alongside the nested
@@ -2866,10 +2874,18 @@ class TurnManager:
         # no-valid-output abort, so a normal summary keeps its exact old shape.
         # This is the one line that distinguishes "the model played and lost"
         # from "the model never answered" without reading events.jsonl.
-        if self._aborted_no_output:
+        if error:
+            summary["error"] = error
+        elif self._aborted_no_output:
             summary["error"] = (
                 self._abort_error or "no valid model output (retries + fallbacks exhausted)"
             )
+        crash_record = crash
+        if crash_record is None and self._aborted_no_output:
+            crash_record = {"turn": self.turn_number, "last_settled_turn": getattr(self, "_last_settled_turn", None),
+                            "phase": "llm", "error_type": None, "message": summary["error"], "cause": None, "where": []}
+        if crash_record:
+            summary["crash"] = crash_record
 
         # The bounds this run was given, recorded whether or not they fired. A
         # cap that never fired still describes the run — "1500 turns, no budget"
