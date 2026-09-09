@@ -136,3 +136,19 @@ def test_projection_surfaces_resumed(tmp_path):
     (d3 / "run_summary.json").write_text(json.dumps(
         {"session": {}, "cost": {}, "kind": "casual"}))
     assert project_run_dir(d3).resumed is False
+
+
+def test_segment_continued_from_is_a_run_id_even_when_config_holds_a_path(tmp_path):
+    """The runner stamps `_continued_from` as an ABSOLUTE run-dir path; the
+    published summary must carry only the run id. The leak audit refused the
+    first continued official run (2026-09-09) over the home directory here."""
+    m = _manager(tmp_path)
+    m.config["_continued_from"] = "/Users/someone/Desktop/repo/local/runs/2026-09-09_14-30-46_config-5.0__gemini"
+    m.config["_continued_from_turn"] = 40
+    m.restore_run_accounting({"session": {"duration_seconds": 1.0}, "cost": {}})
+    m.turn_number = 41
+    m._write_run_summary(status=None)
+    text = (Path(tmp_path) / "run_summary.json").read_text()
+    seg = json.loads(text)["session"]["segment"]
+    assert seg["continued_from"] == "2026-09-09_14-30-46_config-5.0__gemini"
+    assert "/Users/" not in text

@@ -2807,7 +2807,14 @@ class TurnManager:
                 "duration_seconds": round(duration, 1),
                 "resumed": bool(continued_from_cfg),
                 "segment": {
-                    "continued_from": continued_from_cfg,
+                    # The source RUN ID, never the path config carries in
+                    # `_continued_from`: run_summary.json is published, and the
+                    # leak audit refused the first continued official run
+                    # (2026-09-09) over the home directory in this field.
+                    "continued_from": (
+                        str(continued_from_cfg).rstrip("/").rsplit("/", 1)[-1]
+                        if continued_from_cfg else None
+                    ),
                     "resumed_at_turn": resumed_at_turn,
                     "prior_duration_s": round(self._prior_duration_s, 1),
                     "segment_duration_s": round(this_session_s, 1),
