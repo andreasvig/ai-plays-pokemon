@@ -25,12 +25,12 @@
     "resumed": false,
     "harness": "append_compact",
     "max_turns": 10000000,
-    "has_recording": false,
-    "video_url": null,
-    "video_view": null,
+    "has_recording": true,
+    "video_url": "https://pub-c54bf882c85d4fad83024b5791b99424.r2.dev/runs/2026-09-08_21-12-53_config-5.0__glm-5-3-flash-max/recording.mp4",
+    "video_view": "detailed",
     "screenshots_base_url": null,
     "trace_published": false,
-    "published_at": "2026-09-09T06:52:43+00:00"
+    "published_at": "2026-09-09T06:53:07+00:00"
   },
   {
     "run_id": "2026-09-08_20-22-08_config-5.0__glm-5-3-flash-high",
