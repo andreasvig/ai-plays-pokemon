@@ -75,10 +75,13 @@ class RecordSpeed(str, Enum):
 
 
 class RecordSpec(BaseModel):
-    """Opt-in MP4 recording settings for one run.
+    """MP4 recording settings for one run.
 
-    Absent (``None``) on a queued run means "don't record" — recording is never
-    the default; it costs a headless browser and an encoder for the whole run.
+    Absent (``None``) on a queued run means "don't record" at the API. The
+    human entry points — the Add-run dialog, ``pokemon queue add`` and
+    ``pokemon run`` — all send a spec unless told ``--no-record`` (default ON
+    since 2026-09-09: an official run went online without a video because the
+    box was unticked). Programmatic callers that want a recording say so.
     """
 
     # ``None`` = "not chosen": the executor picks by run kind — detailed for an

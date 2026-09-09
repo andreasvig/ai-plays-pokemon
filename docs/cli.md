@@ -60,7 +60,9 @@ wrong value is rejected with the valid ones named — never accepted and dropped
 later.
 
 Casual defaults: the latest config (`config-5.0`), the default ROM, that ROM's
-default opening, no early stop, no recording. Official runs ignore `--config` /
+default opening, no early stop, recording ON (`--no-record` to skip; since
+2026-09-09 every entry point records unless told not to, after an official run
+went online without a video). Official runs ignore `--config` /
 `--max-turns` / `--stop-at` / `--rom` / `--start` — a benchmark is frozen (also
 `config-5.0`), takes its ROM from its own ladder, and always begins at the
 canonical savepoint so two scores stay comparable.
@@ -216,8 +218,8 @@ Aliases come from `configs/models.yaml`. Raw `"provider/model"` OpenRouter ids a
 | `--connect-timeout S` | `300.0`                          | Seconds to wait for the initial Lua connect.  |
 | `--kill-existing`     | off                              | `pkill -f mgba` before launching.             |
 | `--continue PATH`     | off                              | Resume from the source run's latest savepoint. Single-run only. Mutex with `--config` / `--model`. |
-| `--record VIEW`       | off                              | Record to `<run_dir>/recording.mp4`. `simple` = the 1:1 view (1080×1080); `detailed` = the full wide panel (1920×1080). See [recording.md](recording.md). |
-| `--record-speed S`    | `realtime`                       | `realtime` keeps every pause; `cut-thinking` records only each turn's execution window, cutting the model's response time. |
+| `--record VIEW`       | on, `simple`                     | Record to `<run_dir>/recording.mp4`. `simple` = the 1:1 view (1080×1080); `detailed` = the full wide panel (1920×1080). Naming a view makes it required; the default degrades to a warning without ffmpeg/Chrome. `--no-record` turns it off. See [recording.md](recording.md). |
+| `--record-speed S`    | `cut-thinking`                   | `cut-thinking` records only each turn's execution window, cutting the model's response time (the shape every published clip has); `realtime` keeps every pause. |
 | `--provider-profile N`| base profile                     | Named provider-profile **variant** for the append harness (`config-5.x`), e.g. `gemma-replay`. Names come from the `variants:` block of [`configs/provider-profiles.yaml`](../configs/provider-profiles.yaml) and must apply to the chosen `--model`. Appended to the run name and label. The queue equivalent is `pokemon queue add --profile`. |
 | `--record-fps N`      | `30`                             | Recording frame rate, 1–60.                   |
 
@@ -284,8 +286,8 @@ pokemon queue add "gemma-4-31b(thinking)" --kind casual --profile gemma-replay
 | `--gameplay exploration\|speed` | casual | Which steering block the agent gets. `exploration` (default) wanders and roleplays; `speed` races the top goal. Official runs always race. |
 | `--profile NAME` | casual | Named **provider-profile variant** from the `variants:` block of [`configs/provider-profiles.yaml`](../configs/provider-profiles.yaml) — e.g. `gemma-replay`. Omit for the model's **base** profile, which is what every run has always used and the only thing an official run may use. Requires a **profile-aware config** (`agent_type: append_compact`, i.e. `config-5.x`): named on `config-4.0` it is a 400. The name is appended to the run name and label, so two arms of an A/B are distinguishable on disk and on the queue card. |
 | `--repeat N` | both | Enqueue each model N times. |
-| `--record simple\|detailed` | both | MP4 to `<run_dir>/recording.mp4`, rendered server-side. |
-| `--record-speed realtime\|cut-thinking` | both | `cut-thinking` drops the model's response time from the video. |
+| `--record auto\|simple\|detailed\|both` | both | MP4 to `<run_dir>/recording.mp4`, rendered server-side. ON by default as `auto` (view follows the kind); `--no-record` turns it off. |
+| `--record-speed realtime\|cut-thinking` | both | Default `cut-thinking` drops the model's response time from the video. |
 
 Enqueue is where every value is checked. An unknown model, config, ROM, start,
 stop event, benchmark or profile variant is a 400 naming the valid ones — as is

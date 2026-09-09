@@ -1227,21 +1227,25 @@ model you can actually start — `pokemon ls models` for the full list):
     )
     parser.add_argument(
         "--record", nargs="?", const="simple", choices=["simple", "detailed", "both"], default=None,
-        help="Record the run to <run_dir>/recording.mp4. Bare `--record` = `simple` "
-             "(a `pokemon run` is a casual run). `simple` captures the "
+        help="Record the run to <run_dir>/recording.mp4. ON by default as `simple` "
+             "(a `pokemon run` is a casual run); `--no-record` turns it off. "
+             "Naming a view makes recording REQUIRED (the run refuses to start "
+             "without ffmpeg/Chrome); the default degrades to a warning. `simple` captures the "
              "1:1 simple view (game screen + turn box) at 1080x1080; `detailed` "
              "captures the full wide spectate panel at 1920x1080; `both` runs two "
              "recorders (detailed → recording.mp4, simple → recording-simple.mp4). "
              "Rendered in the recorder's OWN headless browser, so it is unaffected "
              "by what you have on screen. Applies to every pair in a sequential run.",
     )
+    parser.add_argument("--no-record", dest="no_record", action="store_true",
+                        help="Do not record this run (recording is on by default).")
     parser.add_argument(
         "--record-speed", dest="record_speed",
-        choices=["realtime", "cut-thinking"], default="realtime",
-        help="`realtime` keeps every pause at its true length. `cut-thinking` "
-             "records only from the moment a turn starts executing until the "
-             "screen has settled, so the model's response time is cut out. "
-             "Default: realtime.",
+        choices=["realtime", "cut-thinking"], default="cut-thinking",
+        help="`cut-thinking` (default) records only from the moment a turn starts "
+             "executing until the screen has settled, so the model's response time "
+             "is cut out — the shape every published clip has. `realtime` keeps "
+             "every pause at its true length.",
     )
     parser.add_argument(
         "--record-fps", dest="record_fps", type=int, default=30,
@@ -1314,24 +1318,31 @@ model you can actually start — `pokemon ls models` for the full list):
     # convention as `_llm_alias` / `_config_path`), so it reaches run_single_loop
     # without a new parameter on the run function that the executor and every
     # test fake would also have to carry.
-    if args.record:
+    # Recording is ON by default (2026-09-09). An explicit `--record VIEW` is a
+    # requirement — fail before mGBA launches rather than 40 turns in with no
+    # video — while the default degrades to a warning when the recorder's
+    # ffmpeg/Chrome are missing, so a machine without them can still play.
+    record_view = None if args.no_record else (args.record or "simple")
+    if record_view:
         from src.dashboard.recorder import normalize_spec, recorder_preflight
 
         try:
             from src.cli.queue import record_show_flags
 
             record_spec = normalize_spec(
-                {"view": args.record, "speed": args.record_speed, "fps": args.record_fps,
+                {"view": record_view, "speed": args.record_speed, "fps": args.record_fps,
                  **record_show_flags(args.record_show)}
             )
         except ValueError as e:
             sys.exit(f"ERROR: {e}")
         blocked = recorder_preflight()
-        if blocked:
-            # Fail before mGBA launches rather than 40 turns in with no video.
+        if blocked and args.record:
             sys.exit(f"ERROR: --record is not available: {blocked}")
-        for c in prepared:
-            c["_record"] = record_spec
+        if blocked:
+            print(f"  ⚠ not recording (default on, but unavailable: {blocked}); pass --no-record to silence")
+        else:
+            for c in prepared:
+                c["_record"] = record_spec
 
     if args.kill_existing:
         subprocess.run(["pkill", "-f", "mgba"], capture_output=True)

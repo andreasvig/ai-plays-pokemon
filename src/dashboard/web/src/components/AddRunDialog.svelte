@@ -108,13 +108,13 @@
   // variant belongs to exactly one model and one harness.
   let providerProfile = $state('')
 
-  // ── recording (opt-in; off by default — it costs a headless browser + an
-  // encoder for the whole run, so it is never something you get by accident) ──
-  // Defaults are simple + cut-thinking: the pairing you'd actually post. Ticking
-  // the box should give you a postable clip, not a ten-minute file of a model
-  // thinking. The CLI still defaults to realtime, where the caller is scripting
-  // and an unasked-for edit is the surprising outcome.
-  let record = $state(false)
+  // ── recording (ON by default since 2026-09-09 — Andreas: "make local recording
+  // the default so we don't forget"; the glm-5.3-flash(low) official run went
+  // online with no video because the box was unticked). Untick to skip the
+  // headless browser + encoder for a throwaway run. View follows the kind
+  // (detailed for a benchmark, simple for casual); speed is cut-thinking, the
+  // pairing that gets posted — the CLI now defaults the same way. ──
+  let record = $state(true)
   let recordView = $state('detailed')        // follows the kind below until changed
   let recordSpeed = $state('cut-thinking')   // execution windows only
   // Header overlay of the simple view; all off keeps the bare frame. Sent as

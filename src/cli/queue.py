@@ -193,11 +193,12 @@ def _cmd_add(args) -> int:
                 # on a legacy config), so a typo rejects the batch instead of
                 # enqueuing runs that would die at dispatch.
                 spec["provider_profile"] = args.profile
-        if args.record:
-            # Validated server-side (400 on a bad view/speed or a missing
-            # ffmpeg/Chrome), so a batch that can't actually be recorded is
-            # rejected whole rather than half-enqueued. A bare `--record` picks
-            # the view by kind: the full panel for a benchmark, simple for casual.
+        if args.record and not args.no_record:
+            # Recording is the DEFAULT (2026-09-09): `--record` is `auto` unless
+            # `--no-record`. Validated server-side (400 on a bad view/speed or a
+            # missing ffmpeg/Chrome), so a batch that can't actually be recorded is
+            # rejected whole rather than half-enqueued. `auto` picks the view by
+            # kind: the full panel for a benchmark, simple for casual.
             view = args.record
             if view == "auto":
                 view = "detailed" if args.kind == "official" else "simple"
@@ -445,21 +446,24 @@ base profile.
     )
     p_add.add_argument("--repeat", type=int, default=1, help="Enqueue each model N times (default 1).")
     p_add.add_argument(
-        "--record", nargs="?", const="auto", choices=["auto", "simple", "detailed", "both"], default=None,
-        help="Record the run to <run_dir>/recording.mp4. Bare `--record` picks the "
-             "view by kind: `detailed` for an official run, `simple` for casual. "
+        "--record", nargs="?", const="auto", choices=["auto", "simple", "detailed", "both"], default="auto",
+        help="Record the run to <run_dir>/recording.mp4. ON by default (`auto`): "
+             "the view follows the kind — `detailed` for an official run, `simple` "
+             "for casual. `--no-record` turns it off. "
              "`simple` = the 1:1 recording view (game screen + turn box) at "
              "1080x1080; `detailed` = the whole wide spectate panel at 1920x1080; "
              "`both` = two recorders, detailed → recording.mp4 and simple → "
              "recording-simple.mp4. Rendered headlessly server-side, so it does "
              "not depend on any open browser.",
     )
+    p_add.add_argument("--no-record", dest="no_record", action="store_true",
+                       help="Do not record this run (recording is on by default).")
     p_add.add_argument(
         "--record-speed", dest="record_speed",
-        choices=["realtime", "cut-thinking"], default="realtime",
-        help="`realtime` keeps every pause. `cut-thinking` records only each "
-             "turn's execution window (llm_output → screen settled), cutting the "
-             "model's response time. Default: realtime.",
+        choices=["realtime", "cut-thinking"], default="cut-thinking",
+        help="`cut-thinking` (default) records only each turn's execution window "
+             "(llm_output → screen settled), cutting the model's response time — "
+             "the shape every published clip has. `realtime` keeps every pause.",
     )
     p_add.add_argument(
         "--record-fps", dest="record_fps", type=int, default=30,
