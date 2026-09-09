@@ -1,0 +1,190 @@
+{
+  "session": {
+    "llm_alias": "glm-5.3-flash(max)",
+    "llm_model": "z-ai/glm-5.3-flash",
+    "thinking": {
+      "effort": "max"
+    },
+    "fallback_models": [],
+    "task": "Your goal is to earn the Boulder Badge by defeating Brock, the Pewter City Gym Leader, in as few turns as possible — you're measured on fewest player turns.",
+    "total_turns": 100,
+    "player_turns": 100,
+    "task_master_turns": 0,
+    "duration_seconds": 8760.5,
+    "resumed": false,
+    "segment": {
+      "continued_from": null,
+      "resumed_at_turn": null,
+      "prior_duration_s": 0.0,
+      "segment_duration_s": 8760.5,
+      "segment_player_turns": 100
+    },
+    "started_at": "2026-09-08T21:12:54"
+  },
+  "cost": {
+    "total_usd": 0.221956,
+    "llm_usd": 0.18508,
+    "ocr_usd": 0.036877,
+    "task_master_usd": 0.0,
+    "total_input_tokens": 5533418,
+    "total_output_tokens": 276023,
+    "per_turn": []
+  },
+  "agent_type": "append_compact",
+  "conversation": {
+    "segment": 5,
+    "completed_game_turns": 100,
+    "compactions": 4,
+    "cache": {
+      "attempts": 104,
+      "measured_attempts": 104,
+      "cached_tokens": 4982208,
+      "measured_input_tokens": 5533418,
+      "input_read_fraction": 0.9003852591653115,
+      "request_hit_fraction": 0.8653846153846154,
+      "economics": {
+        "verdict": "unknown",
+        "saved_usd": null,
+        "discount_fraction": null
+      }
+    }
+  },
+  "max_turns": 10000000,
+  "referee": {
+    "checkpoints": {
+      "left_bedroom": 6,
+      "left_house": 9,
+      "oaks_lab_entered": 12,
+      "starter_chosen": 18,
+      "rival1_done": 41,
+      "route1_reached": 51,
+      "viridian_reached": null,
+      "parcel_delivered": null,
+      "pokedex_received": null,
+      "viridian_forest_reached": null,
+      "pewter_reached": null,
+      "brock_defeated": null
+    },
+    "gates": [
+      {
+        "kind": "single",
+        "id": "left_bedroom",
+        "name": "Left the bedroom",
+        "type": "map",
+        "deadline_turn": 20,
+        "turn": 6,
+        "status": "done"
+      },
+      {
+        "kind": "single",
+        "id": "left_house",
+        "name": "Stepped outside in Pallet Town",
+        "type": "map",
+        "deadline_turn": 30,
+        "turn": 9,
+        "status": "done"
+      },
+      {
+        "kind": "single",
+        "id": "oaks_lab_entered",
+        "name": "Entered Oak's Lab",
+        "type": "map",
+        "deadline_turn": 40,
+        "turn": 12,
+        "status": "done"
+      },
+      {
+        "kind": "single",
+        "id": "starter_chosen",
+        "name": "Chose a starter",
+        "type": "flag",
+        "deadline_turn": 50,
+        "turn": 18,
+        "status": "done"
+      },
+      {
+        "kind": "single",
+        "id": "rival1_done",
+        "name": "First rival battle done",
+        "type": "flag",
+        "deadline_turn": 65,
+        "turn": 41,
+        "status": "done"
+      },
+      {
+        "kind": "single",
+        "id": "route1_reached",
+        "name": "Reached Route 1",
+        "type": "map",
+        "deadline_turn": 75,
+        "turn": 51,
+        "status": "done"
+      },
+      {
+        "kind": "single",
+        "id": "viridian_reached",
+        "name": "Reached Viridian City",
+        "type": "map",
+        "deadline_turn": 100,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "parcel_delivered",
+        "name": "Received Oak's Parcel",
+        "type": "var",
+        "deadline_turn": 120,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "pokedex_received",
+        "name": "Received the Pokédex",
+        "type": "flag",
+        "deadline_turn": 150,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "viridian_forest_reached",
+        "name": "Entered Viridian Forest",
+        "type": "map",
+        "deadline_turn": 200,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "pewter_reached",
+        "name": "Reached Pewter City",
+        "type": "map",
+        "deadline_turn": 300,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "brock_defeated",
+        "name": "Defeated Brock (Boulder Badge)",
+        "type": "flag",
+        "deadline_turn": 400,
+        "turn": null,
+        "status": "pending"
+      }
+    ],
+    "furthest": "route1_reached",
+    "first_unmet": "viridian_reached",
+    "autofilled": [],
+    "termination_reason": "missed_gate:viridian_reached"
+  },
+  "status": "terminated",
+  "run_id": "2026-09-08_21-12-53_config-5.0__glm-5-3-flash-max",
+  "kind": "official",
+  "continued_from": null,
+  "benchmark": "pokebench-first-badge",
+  "benchmark_version": "pokebench-v1",
+  "ended_at": "2026-09-08T23:38:55"
+}
