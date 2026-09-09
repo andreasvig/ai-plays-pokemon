@@ -1,12 +1,37 @@
-"""Python server that mGBA's Lua script connects to."""
+"""Python server that mGBA's Lua script connects to.
+
+Wire protocol (lua/socketserver-1.lua): one TCP connection, newline-delimited
+text, NO request ids. Every command gets exactly one reply — except ``SEQ``,
+which is acknowledged at once (``QUEUED:<n>``) and followed later, when the
+input queue empties, by an unsolicited ``SEQUENCE_DONE``. Two facts follow and
+this client is built around them (2026-09-09, after six runs died on
+"Unexpected screenshot response: SEQUENCE_DONE / QUEUED:4 / OK:State saved"):
+
+1. Replies are FIFO, so a send-and-read pair must be atomic across threads —
+   the OCR poller sends ``CAP`` every 0.4 s from its own thread while the turn
+   loop presses buttons and reads memory. ``_lock`` serialises every pair.
+2. ``QUEUED:``/``SEQUENCE_DONE`` are notifications, not answers to whatever the
+   reader happened to ask; any reader skips them. A reply that is neither the
+   expected one nor a notification is a leftover from an earlier desync and is
+   skipped too (bounded), because our own reply is always behind it.
+
+``resync()`` — drain + PING/PONG — runs before every state load so a stale line
+from a previous run on the control center's long-lived connection can never
+turn into "Load state failed: SCREENSHOT:/tmp/…" on the next dispatch.
+"""
 
 import socket
+import threading
 import time
 from pathlib import Path
 from typing import Any, Optional
 
 import numpy as np
 from PIL import Image
+
+
+class ProtocolError(RuntimeError):
+    """Lua answered ERROR:, or the reply stream could not be realigned."""
 
 
 class EmulatorClient:
@@ -52,6 +77,13 @@ class EmulatorClient:
         self._server: Optional[socket.socket] = None
         self._socket: Optional[socket.socket] = None
         self._buffer = ""
+        # One request/reply pair at a time, across threads (turn loop, OCR
+        # poller, referee). Re-entrant so a public method may call another.
+        self._lock = threading.RLock()
+        # Protocol bookkeeping — read by tests and the resync log line.
+        self.notifications_skipped = 0   # QUEUED:/SEQUENCE_DONE consumed off-path
+        self.stale_replies_skipped = 0   # leftovers from an earlier desync
+        self.resyncs = 0
 
     def connect(self, timeout: float = 60.0) -> None:
         """Start TCP server and wait for mGBA Lua script to connect."""
@@ -116,20 +148,27 @@ class EmulatorClient:
     def ping(self) -> bool:
         """Check if the connection is alive."""
         try:
-            self._send("PING")
-            response = self._recv_line()
-            return response == "PONG"
+            self._request("PING", "PONG", timeout=10.0)
+            return True
         except Exception:
             return False
 
+    def resync(self, timeout: float = 10.0) -> None:
+        """Discard anything unread on the socket, then prove the stream is aligned.
+
+        Drains pending bytes, sends PING and reads until PONG (skipping whatever
+        else was queued). Idempotent and cheap; ``load_state`` calls it so a
+        control-center dispatch never inherits a stale reply from the previous
+        run. Raises if no PONG arrives — the connection is dead, not misaligned.
+        """
+        with self._lock:
+            self._drain_buffer()
+            self._request("PING", "PONG", timeout=timeout)
+            self.resyncs += 1
+
     def capture_screenshot(self, preprocess: bool = True) -> Image.Image:
         """Capture a screenshot from the emulator."""
-        self._send("CAP")
-        response = self._recv_line()
-
-        if not response.startswith("SCREENSHOT:"):
-            raise RuntimeError(f"Unexpected screenshot response: {response}")
-
+        response = self._request("CAP", "SCREENSHOT:")
         filepath = response[len("SCREENSHOT:"):]
         time.sleep(0.05)
         img = Image.open(filepath)
@@ -148,13 +187,10 @@ class EmulatorClient:
         Lua bridge (hex-encoded raw bytes). Lua stays dumb — all decoding of the
         bytes into game state happens on the Python side (the referee layer).
         """
-        self._send(f"READMEM:{addr}:{length}")
-        response = self._recv_line()
-
-        if response.startswith("ERROR:"):
-            raise RuntimeError(f"read_memory failed: {response}")
-        if not response.startswith("MEM:"):
-            raise RuntimeError(f"Unexpected read_memory response: {response}")
+        try:
+            response = self._request(f"READMEM:{addr}:{length}", "MEM:")
+        except ProtocolError as exc:
+            raise RuntimeError(f"read_memory failed: {exc}") from exc
 
         hex_str = response[len("MEM:"):]
         try:
@@ -177,10 +213,10 @@ class EmulatorClient:
             raise ValueError(
                 f"Invalid button: {button}. Valid: {self.valid_inputs}"
             )
-        self._send(f"PRESS:{button}")
-        response = self._recv_line()
-        if response != "OK":
-            raise RuntimeError(f"Button press failed: {response}")
+        try:
+            self._request(f"PRESS:{button}", "OK")
+        except ProtocolError as exc:
+            raise RuntimeError(f"Button press failed: {exc}") from exc
 
     def press_sequence(self, buttons: str) -> None:
         """Press a sequence of buttons (e.g., 'RRRRAAA' or 'R;R;R;A;A').
@@ -190,44 +226,50 @@ class EmulatorClient:
         """
         parsed = self._parse_sequence(buttons)
         seq_str = ";".join(parsed)
-        self._send(f"SEQ:{seq_str}")
         n = len(parsed)
         frames_per_button = self.hold_frames + self.gap_frames
         expected_seconds = (n * frames_per_button) / 60.0
         seq_timeout = expected_seconds * 3 + 15.0
-        self._recv_expected("QUEUED:", timeout=seq_timeout)
-        self._recv_expected("SEQUENCE_DONE", timeout=seq_timeout)
+        # Blocking variant: hold the lock for the whole sequence so the
+        # SEQUENCE_DONE we wait for is ours (nobody else can interleave a CAP).
+        with self._lock:
+            self._request(f"SEQ:{seq_str}", "QUEUED:", timeout=seq_timeout)
+            self._recv_expected("SEQUENCE_DONE", timeout=seq_timeout, notifications=False)
 
     def save_state(self, filepath: str) -> None:
         """Save emulator state to a file."""
-        self._send(f"SAVE:{filepath}")
-        response = self._recv_line()
-        if not response.startswith("OK:"):
-            raise RuntimeError(f"Save state failed: {response}")
+        try:
+            self._request(f"SAVE:{filepath}", "OK:", timeout=30.0)
+        except ProtocolError as exc:
+            raise RuntimeError(f"Save state failed: {exc}") from exc
 
     def load_state(self, filepath: str) -> None:
         """Load emulator state from a file."""
         path = Path(filepath)
         if not path.exists():
             raise FileNotFoundError(f"State file not found: {filepath}")
-        self._send(f"LOAD:{filepath}")
-        response = self._recv_line()
-        if not response.startswith("OK:"):
-            raise RuntimeError(f"Load state failed: {response}")
+        with self._lock:
+            # A load opens a run (or a continue) on a connection that may have
+            # served an earlier run: prove the stream is aligned first.
+            self.resync()
+            try:
+                self._request(f"LOAD:{filepath}", "OK:", timeout=30.0)
+            except ProtocolError as exc:
+                raise RuntimeError(f"Load state failed: {exc}") from exc
 
     def pause(self) -> None:
         """Pause emulation."""
-        self._send("PAUSE")
-        response = self._recv_line()
-        if not response.startswith("OK:"):
-            raise RuntimeError(f"Pause failed: {response}")
+        try:
+            self._request("PAUSE", "OK:")
+        except ProtocolError as exc:
+            raise RuntimeError(f"Pause failed: {exc}") from exc
 
     def unpause(self) -> None:
         """Unpause emulation."""
-        self._send("UNPAUSE")
-        response = self._recv_line()
-        if not response.startswith("OK:"):
-            raise RuntimeError(f"Unpause failed: {response}")
+        try:
+            self._request("UNPAUSE", "OK:")
+        except ProtocolError as exc:
+            raise RuntimeError(f"Unpause failed: {exc}") from exc
 
     # --- Internal methods ---
 
@@ -257,46 +299,85 @@ class EmulatorClient:
         line, self._buffer = self._buffer.split("\n", 1)
         return line.strip()
 
-    def _recv_expected(self, expected_prefix: str, timeout: float = 60.0) -> str:
-        """Receive lines until one matches the expected prefix, skipping others.
+    # Lines Lua emits that are not the answer to whatever the reader asked.
+    # QUEUED:<n> is the immediate ack of a SEQ; SEQUENCE_DONE follows when the
+    # input queue empties — for a fire-and-forget SEQ both are read off-path.
+    _NOTIFICATION_PREFIXES = ("QUEUED:", "SEQUENCE_DONE")
+    # How many non-matching, non-notification lines a single request will skip
+    # before declaring the stream hopeless. Leftovers come one or two at a time.
+    _MAX_STALE_SKIP = 16
 
-        This handles the socket timing issue where SCREENSHOT responses from
-        stability checks can arrive during sequence waits.
+    @staticmethod
+    def _is_notification(line: str) -> bool:
+        return line == "SEQUENCE_DONE" or line.startswith("QUEUED:")
+
+    def _request(self, command: str, expected_prefix: str, *, timeout: float = 10.0) -> str:
+        """Send one command and return its reply — atomically, across threads.
+
+        Under ``_lock`` so no other thread's send can land between ours and our
+        reply. Reads until a line matches ``expected_prefix``: notifications are
+        consumed silently, anything else is a leftover from an earlier desync
+        and is skipped (bounded). ``ERROR:`` raises :class:`ProtocolError`.
+        """
+        with self._lock:
+            self._send(command)
+            return self._recv_expected(expected_prefix, timeout=timeout)
+
+    def _recv_expected(self, expected_prefix: str, timeout: float = 60.0, *, notifications: bool = True) -> str:
+        """Receive lines until one matches ``expected_prefix``.
+
+        ``notifications=False`` makes SEQUENCE_DONE/QUEUED count as ordinary
+        lines (used only by the blocking ``press_sequence``, which waits for
+        SEQUENCE_DONE itself). Must be called with ``_lock`` held.
         """
         deadline = time.time() + timeout
-        skipped = 0
+        stale = 0
         while True:
             remaining = deadline - time.time()
             if remaining <= 0:
                 raise TimeoutError(
                     f"Timed out waiting for {expected_prefix} "
-                    f"(timeout={timeout:.1f}s, skipped {skipped} lines)"
+                    f"(timeout={timeout:.1f}s, skipped {stale} stale line(s))"
                 )
             line = self._recv_line(timeout=remaining)
             if line.startswith(expected_prefix) or line == expected_prefix:
                 return line
-            # Skip unexpected responses (e.g., SCREENSHOT: from stability checks)
-            skipped += 1
+            if notifications and self._is_notification(line):
+                self.notifications_skipped += 1
+                continue
+            if line.startswith("ERROR:"):
+                raise ProtocolError(line)
+            stale += 1
+            self.stale_replies_skipped += 1
+            print(f"  ⚠ emulator: skipped stale reply {line[:60]!r} while waiting for {expected_prefix}", flush=True)
+            if stale > self._MAX_STALE_SKIP:
+                raise ProtocolError(
+                    f"stream desynchronised: {stale} unexpected replies while waiting for {expected_prefix} "
+                    f"(last: {line[:80]!r})"
+                )
 
-    def _drain_buffer(self) -> None:
-        """Read and discard any pending data in the socket buffer.
+    def _drain_buffer(self) -> int:
+        """Read and discard whatever is pending on the socket; return the byte count.
 
-        Called after fire-and-forget sequences to clear QUEUED/SEQUENCE_DONE
-        responses so they don't interfere with subsequent recv calls.
+        Only ``resync`` uses it now. It is NOT how notifications are handled —
+        a timing-based drain was the original bug (a SEQUENCE_DONE landing 0.1 s
+        after the window was read by the next CAP as its reply).
         """
         if not self._socket:
-            return
-        # Read any data already in our string buffer
-        self._buffer = ""
-        # Non-blocking read of any pending socket data
-        self._socket.settimeout(0.1)
-        try:
-            while True:
-                data = self._socket.recv(4096)
-                if not data:
-                    break
-        except (socket.timeout, BlockingIOError, OSError):
-            pass  # No more data available
+            return 0
+        with self._lock:
+            dropped = len(self._buffer)
+            self._buffer = ""
+            self._socket.settimeout(0.1)
+            try:
+                while True:
+                    data = self._socket.recv(4096)
+                    if not data:
+                        break
+                    dropped += len(data)
+            except (socket.timeout, BlockingIOError, OSError):
+                pass  # No more data available
+            return dropped
 
     def normalize_button_list(self, buttons: list[str]) -> list[str]:
         """Normalize a list of button names to emulator short codes.
@@ -339,7 +420,11 @@ class EmulatorClient:
         def _flush() -> None:
             if not pending:
                 return
-            self._send("SEQ:" + ";".join(pending))
+            # Send + read the QUEUED ack atomically, then release the lock and
+            # sleep: the OCR poller keeps capturing dialogue while the buttons
+            # play. The SEQUENCE_DONE that follows is a notification — whichever
+            # request reads it next skips it, so no timing-based drain is needed.
+            self._request("SEQ:" + ";".join(pending), "QUEUED:", timeout=15.0)
             total_frames = 0
             for btn in pending:
                 is_ab = btn in ab_buttons
@@ -347,9 +432,6 @@ class EmulatorClient:
                 gap = self.ab_gap_frames if is_ab else self.gap_frames
                 total_frames += hold + gap
             time.sleep(total_frames / 60.0 + 0.5)  # 0.5s buffer
-            # Drain pending responses (QUEUED, SEQUENCE_DONE) so they don't
-            # interfere with the next recv call (e.g. screenshot).
-            self._drain_buffer()
             pending.clear()
 
         for btn in normalized:
@@ -493,10 +575,7 @@ class EmulatorClient:
 
     def _capture_raw_frame(self) -> np.ndarray:
         """Capture a frame for stability comparison."""
-        self._send("CAP")
-        response = self._recv_line()
-        if not response.startswith("SCREENSHOT:"):
-            raise RuntimeError(f"Unexpected screenshot response: {response}")
+        response = self._request("CAP", "SCREENSHOT:")
         filepath = response[len("SCREENSHOT:"):]
         time.sleep(0.02)
         img = Image.open(filepath)

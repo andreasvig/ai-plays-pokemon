@@ -2,7 +2,8 @@
 
 WAIT presses nothing — it splits the sequence and pauses for wait_seconds so
 the game can run (battle animations/dialogue) without input. No live emulator:
-_send / _drain_buffer are stubbed and time.sleep is monkeypatched.
+_send is stubbed, the QUEUED ack the fire-and-forget path reads since 2026-09-09
+is faked, and time.sleep is monkeypatched.
 """
 
 import sys
@@ -30,7 +31,8 @@ def _make_emu():
     emu = EmulatorClient(config)
     emu._sends = []
     emu._send = lambda msg: emu._sends.append(msg)
-    emu._drain_buffer = lambda: None
+    # Each SEQ is acknowledged with QUEUED:<n> before the sleep (2026-09-09).
+    emu._recv_expected = lambda prefix, timeout=60.0, notifications=True: prefix + "1"
     return emu
 
 
