@@ -1312,3 +1312,202 @@ def finish(group: Optional[RecorderGroup]) -> Optional[Path]:
         if out.name == RECORDING_FILE:
             primary = out
     return primary
+
+
+# ── continuing a run continues its video ─────────────────────────────────────
+# A continue is a fresh run dir with its own recorder, so on its own it produces
+# a clip that starts mid-game. Andreas (2026-09-09): "when you continue a run
+# which has stopped, either through the CLI or the interface, I would like it to
+# also automatically continue the video, or at least start a new recording and
+# splice with the old". The recorder cannot append to a finished mp4 (the moov
+# atom is written once, at stop), so the second half of that sentence is the
+# mechanism: the segment is recorded as usual, then spliced onto the source
+# run's file of the same name. Because the source's ``recording.mp4`` is itself
+# the spliced chain when the source was a continue, one splice per segment
+# yields the whole lineage in the newest run's file — which is the file the
+# History player, ``has_recording`` and ``pokemon publish`` already read.
+#
+# The splice is a stream copy (ffmpeg's concat demuxer, no re-encode): every
+# segment comes out of the same encoder settings, so as long as the two files
+# agree on codec, size, pixel format and frame rate, the join costs seconds
+# and loses nothing. A mismatch — the continue was recorded in another view —
+# is reported and left alone rather than re-encoded into something misleading;
+# the segment then stands as its own video, exactly as before this existed.
+
+# The segment-only file the splice leaves beside the chain, per recording file.
+SEGMENT_FILES = {
+    RECORDING_FILE: "recording-segment.mp4",
+    SIMPLE_RECORDING_FILE: "recording-simple-segment.mp4",
+}
+
+
+def source_record_spec(source_run_dir: Path | str) -> Optional[dict]:
+    """The record spec a finished run was recorded with, normalised; None if it
+    recorded nothing (or its config is unreadable / predates ``_record``).
+
+    Read off ``config.json["_record"]`` — the key ``maybe_start`` consumed — so a
+    continue can default to the same presentation and stay spliceable.
+    """
+    try:
+        with open(Path(source_run_dir) / "config.json") as f:
+            cfg = json.load(f)
+        return normalize_spec(cfg.get("_record")) if isinstance(cfg, dict) else None
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def probe_video(path: Path) -> Optional[dict]:
+    """``{codec, width, height, pix_fmt, fps, duration_s}`` of the first video
+    stream, via ffprobe; None when the file can't be read as a video."""
+    if shutil.which("ffprobe") is None:
+        return None
+    try:
+        out = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "stream=codec_name,width,height,pix_fmt,r_frame_rate",
+             "-show_entries", "format=duration", "-of", "json", str(path)],
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+        data = json.loads(out.stdout or "{}")
+        stream = (data.get("streams") or [None])[0]
+        if not stream:
+            return None
+        num, _, den = str(stream.get("r_frame_rate", "0/1")).partition("/")
+        fps = float(num) / float(den or 1) if den else float(num or 0)
+        duration = float((data.get("format") or {}).get("duration") or 0.0)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+    return {
+        "codec": stream.get("codec_name"), "width": stream.get("width"),
+        "height": stream.get("height"), "pix_fmt": stream.get("pix_fmt"),
+        "fps": round(fps, 3), "duration_s": duration,
+    }
+
+
+def _stream_mismatch(a: dict, b: dict) -> Optional[str]:
+    """Name the first property that stops two files being stream-copied together."""
+    for key in ("codec", "width", "height", "pix_fmt", "fps"):
+        if a.get(key) != b.get(key):
+            return f"{key} {a.get(key)!r} vs {b.get(key)!r}"
+    return None
+
+
+def _concat_copy(parts: list[Path], out: Path) -> Optional[str]:
+    """Join ``parts`` into ``out`` without re-encoding. Returns an error line or None."""
+    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as lst:
+        for p in parts:
+            # concat-demuxer escaping: single quotes inside a path become '\''.
+            lst.write("file '" + str(p.resolve()).replace("'", r"'\''") + "'\n")
+        list_path = lst.name
+    try:
+        proc = subprocess.run(
+            ["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0",
+             "-i", list_path, "-c", "copy", "-movflags", "+faststart", str(out)],
+            capture_output=True, text=True, timeout=600, check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return f"ffmpeg concat failed to run: {exc}"
+    finally:
+        try:
+            Path(list_path).unlink()
+        except OSError:
+            pass
+    if proc.returncode != 0 or not out.exists() or out.stat().st_size == 0:
+        return (proc.stderr or "").strip() or f"ffmpeg concat exited {proc.returncode}"
+    return None
+
+
+def splice_continued(config: dict, run_dir: Path | str) -> list[dict]:
+    """Prepend the source run's video to what this continued run just recorded.
+
+    For each recording file this run may have written (``recording.mp4`` and,
+    for ``both``, ``recording-simple.mp4``): when the source run under
+    ``config["_continued_from"]`` has the same-named file and the two streams
+    match, the segment is kept as ``recording-segment.mp4`` and the chain
+    (source + segment) takes the canonical name. Every other combination is
+    reported and left as it is. Returns one record per spliced file, the same
+    records ``run_summary.json["recording_splice"]`` carries.
+
+    Best-effort like everything in this module: nothing here can fail the run.
+    """
+    source = config.get("_continued_from")
+    if not source:
+        return []
+    run_dir = Path(run_dir)
+    source_dir = Path(str(source))
+    resumed_turn = config.get("_continued_from_turn")
+    spliced: list[dict] = []
+    for name, segment_name in SEGMENT_FILES.items():
+        seg = run_dir / name
+        src = source_dir / name
+        seg_ok = seg.is_file() and seg.stat().st_size > 0
+        src_ok = src.is_file() and src.stat().st_size > 0
+        if not seg_ok and not src_ok:
+            continue
+        if seg_ok and not src_ok:
+            print(f"  ⚠ {name}: the source run has no video to splice onto — this "
+                  f"file starts at turn {resumed_turn}")
+            continue
+        if src_ok and not seg_ok:
+            print(f"  ⚠ {name}: nothing was recorded for this segment, so the source's "
+                  f"video was left where it is ({src})")
+            continue
+        a, b = probe_video(src), probe_video(seg)
+        if a is None or b is None:
+            print(f"  ⚠ {name}: could not probe {'the source' if a is None else 'the segment'} "
+                  f"video (ffprobe) — not spliced")
+            continue
+        mismatch = _stream_mismatch(a, b)
+        if mismatch:
+            print(f"  ⚠ {name}: not spliced onto the source video — the streams differ "
+                  f"({mismatch}); record the continue in the source's view to splice")
+            continue
+        segment_path = run_dir / segment_name
+        tmp = run_dir / (name + ".splice.tmp.mp4")
+        try:
+            seg.rename(segment_path)
+            error = _concat_copy([src, segment_path], tmp)
+            if error:
+                raise RuntimeError(error)
+            tmp.replace(seg)
+        except Exception as exc:  # noqa: BLE001 — a failed splice must leave the segment usable
+            print(f"  ⚠ {name}: splice failed ({exc}) — keeping the segment on its own")
+            try:
+                if tmp.exists():
+                    tmp.unlink()
+                if segment_path.exists() and not seg.exists():
+                    segment_path.rename(seg)
+            except OSError:
+                pass
+            continue
+        joined = probe_video(seg) or {}
+        record = {
+            "file": name,
+            "segment_file": segment_name,
+            "source_run": source_dir.name,
+            "resumed_at_turn": resumed_turn,
+            "source_s": round(a["duration_s"], 2),
+            "segment_s": round(b["duration_s"], 2),
+            "total_s": round(joined.get("duration_s", a["duration_s"] + b["duration_s"]), 2),
+        }
+        spliced.append(record)
+        print(f"  ⏹ spliced {name}: source {record['source_s']:.0f}s + segment "
+              f"{record['segment_s']:.0f}s → {record['total_s']:.0f}s  ({seg})")
+    if spliced:
+        _stamp_splice(run_dir / "run_summary.json", spliced)
+    return spliced
+
+
+def _stamp_splice(summary_path: Path, spliced: list[dict]) -> None:
+    """Note the splice on the finished run's summary so the lineage of the
+    video is readable without ffprobe. Silent on a missing/corrupt summary."""
+    try:
+        with open(summary_path) as f:
+            summary = json.load(f)
+        if not isinstance(summary, dict):
+            return
+        summary["recording_splice"] = spliced
+        with open(summary_path, "w") as f:
+            json.dump(summary, f, indent=2)
+    except (OSError, ValueError):
+        pass

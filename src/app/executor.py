@@ -629,13 +629,25 @@ class RunExecutor:
             # already reads private `_`-prefixed keys off the config. Keeping the
             # run_fn signature fixed also means every injected test fake keeps
             # working unchanged. See dashboard/recorder.py.
+            # A continue's config arrives carrying the SOURCE run's `_record`
+            # (continue_from_run loads its config.json verbatim). The item's own
+            # spec wins; with none, nothing is recorded — the continue endpoint
+            # owns the "record like the source" default (server.api_run_continue),
+            # so a queued `record: null` means what it says on every kind of run.
+            source_record = config.get("_record") if item.continue_from else None
             if item.record is not None:
                 record = item.record.model_dump(mode="json")
-                # No view chosen → by kind: the full panel for a benchmark run,
-                # the simple frame for a casual one.
+                # No view chosen → the source's view on a continue (so the new
+                # footage splices onto its video), else by kind: the full panel
+                # for a benchmark run, the simple frame for a casual one.
                 if record.get("view") is None:
-                    record["view"] = default_record_view(item.kind).value
+                    record["view"] = (
+                        (source_record or {}).get("view")
+                        or default_record_view(item.kind).value
+                    )
                 config["_record"] = record
+            else:
+                config.pop("_record", None)
             run_fn = self._resolve_run_fn()
             # Publish (and capture) the active run dir the instant the run starts
             # (not after it returns) so the control plane exposes it DURING the run

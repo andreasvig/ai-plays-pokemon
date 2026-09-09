@@ -966,6 +966,10 @@ def run_single_loop(
         # event + screen sockets, which blanks the recorder's page. Stopping first
         # keeps the final settled screen as the last frame instead of a dead view.
         _recorder.finish(_rec)
+        # A continue's footage is spliced onto the source run's video so the
+        # newest run dir holds the whole lineage (recorder.splice_continued);
+        # a fresh run has no `_continued_from` and this is a no-op.
+        _recorder.splice_continued(config, run_dir)
         unregister_run(session.run_id)
 
         print(f"Run log: {run_dir}")
@@ -1176,6 +1180,67 @@ def _resolve_pairs(
     )
 
 
+def apply_cli_record(args, prepared: list[dict], *, continuing: bool) -> None:
+    """Stamp the CLI's recording choice onto every prepared config as ``_record``.
+
+    Recording rides on the config under ``_record`` (the same private-key
+    convention as ``_llm_alias`` / ``_config_path``), so it reaches
+    ``run_single_loop`` without a new parameter on the run function that the
+    executor and every test fake would also have to carry.
+
+    Recording is ON by default (2026-09-09). An explicit ``--record VIEW`` is a
+    requirement — fail before mGBA launches rather than 40 turns in with no
+    video — while the default degrades to a warning when the recorder's
+    ffmpeg/Chrome are missing, so a machine without them can still play.
+
+    A CONTINUE (``continuing``) defaults to the SOURCE run's spec instead: its
+    config.json carried ``_record`` into ``prepared[0]``, and recording the new
+    segment in the same view is what lets ``recorder.splice_continued`` join it
+    onto the source's video afterwards. ``--record`` overrides that (the segment
+    then stands alone if the streams no longer match); ``--no-record`` drops the
+    inherited spec too — before 2026-09-09 it was silently ignored on a continue.
+    """
+    from src.dashboard.recorder import normalize_spec, recorder_preflight
+
+    if args.no_record:
+        for c in prepared:
+            c.pop("_record", None)
+        return
+
+    inherited = None
+    if continuing and not args.record and prepared and prepared[0].get("_record") is not None:
+        try:
+            inherited = normalize_spec(prepared[0]["_record"])
+        except ValueError as e:
+            print(f"  ⚠ the source run's record spec is unreadable ({e}); recording the default view")
+    if inherited is not None:
+        record_spec = inherited
+    else:
+        try:
+            from src.cli.queue import record_show_flags
+
+            record_spec = normalize_spec(
+                {"view": args.record or "simple", "speed": args.record_speed, "fps": args.record_fps,
+                 **record_show_flags(args.record_show)}
+            )
+        except ValueError as e:
+            sys.exit(f"ERROR: {e}")
+
+    blocked = recorder_preflight()
+    if blocked and args.record:
+        sys.exit(f"ERROR: --record is not available: {blocked}")
+    if blocked:
+        print(f"  ⚠ not recording (default on, but unavailable: {blocked}); pass --no-record to silence")
+        for c in prepared:
+            c.pop("_record", None)
+        return
+    for c in prepared:
+        c["_record"] = record_spec
+    if inherited is not None:
+        print(f"  ⏺ recording like the source run ({record_spec['view']}, {record_spec['speed']}) "
+              f"so the new footage splices onto its video")
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="pokemon run",
@@ -1362,35 +1427,7 @@ model you can actually start — `pokemon ls models` for the full list):
         for c in prepared:
             c["max_spend_usd"] = float(args.max_spend)
 
-    # Recording rides on the config under `_record` (the same private-key
-    # convention as `_llm_alias` / `_config_path`), so it reaches run_single_loop
-    # without a new parameter on the run function that the executor and every
-    # test fake would also have to carry.
-    # Recording is ON by default (2026-09-09). An explicit `--record VIEW` is a
-    # requirement — fail before mGBA launches rather than 40 turns in with no
-    # video — while the default degrades to a warning when the recorder's
-    # ffmpeg/Chrome are missing, so a machine without them can still play.
-    record_view = None if args.no_record else (args.record or "simple")
-    if record_view:
-        from src.dashboard.recorder import normalize_spec, recorder_preflight
-
-        try:
-            from src.cli.queue import record_show_flags
-
-            record_spec = normalize_spec(
-                {"view": record_view, "speed": args.record_speed, "fps": args.record_fps,
-                 **record_show_flags(args.record_show)}
-            )
-        except ValueError as e:
-            sys.exit(f"ERROR: {e}")
-        blocked = recorder_preflight()
-        if blocked and args.record:
-            sys.exit(f"ERROR: --record is not available: {blocked}")
-        if blocked:
-            print(f"  ⚠ not recording (default on, but unavailable: {blocked}); pass --no-record to silence")
-        else:
-            for c in prepared:
-                c["_record"] = record_spec
+    apply_cli_record(args, prepared, continuing=bool(args.continue_from))
 
     if args.kill_existing:
         subprocess.run(["pkill", "-f", "mgba"], capture_output=True)

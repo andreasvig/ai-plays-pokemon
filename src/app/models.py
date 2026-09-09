@@ -160,6 +160,12 @@ class RunSummary(BaseModel):
     # None on every run that ended cleanly. Never published (SUMMARY_PRIVATE_KEYS).
     error: str | None = None
     crash: dict | None = None
+    # How the run was recorded — config.json["_record"] normalised ({view, speed,
+    # fps, show_*}); None when it recorded nothing. Lets the Continue dialog seed
+    # its recording fields from the source so the new footage splices onto the
+    # source's video (2026-09-09). Not the same as has_recording, which is
+    # derived from the mp4 on disk per request.
+    record: dict | None = None
     # Which projection wrote this row. The persisted runs_index.json is a cache
     # of project_run_dir(); when the projection learns a new field the stored
     # rows do not have it. Boot compares this with projection.PROJECTION_VERSION

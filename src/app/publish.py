@@ -577,7 +577,7 @@ class PublishResult:
 SUMMARY_PRIVATE_KEYS = ("turns", "error", "crash")
 # The flat leaderboard row carries the same two crash fields (RunSummary.error /
 # .crash); NOT `turns`, which on the row is the turn COUNT, not the turn list.
-ROW_PRIVATE_KEYS = ("error", "crash")
+ROW_PRIVATE_KEYS = ("error", "crash", "record")
 
 
 def recorded_view(run_dir: Path, video_file: str = "recording.mp4") -> str | None:

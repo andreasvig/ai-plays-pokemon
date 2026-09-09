@@ -123,8 +123,10 @@
   let recordShow = $state({ model: true, elapsed: true, cost: true })
   // The view follows the kind: the full panel for a benchmark run, the 1:1
   // frame for a casual one. Re-applied whenever the kind changes, so a pick
-  // made for one kind does not silently carry to the other.
-  $effect(() => { recordView = kind === 'official' ? 'detailed' : 'simple' })
+  // made for one kind does not silently carry to the other. A continue of a
+  // RECORDED run is the exception: its view is seeded from the source below,
+  // and the kind write here would clobber that seed.
+  $effect(() => { if (!continueFrom?.record) recordView = kind === 'official' ? 'detailed' : 'simple' })
   const RECORD_SHOW_LABELS = { model: 'Model name', elapsed: 'Total time', cost: 'Total cost' }
   let modelQuery = $state('')       // searchable model-picker filter text
   // Casual-continue TaskMaster override. '' = keep the source run's TaskMaster
@@ -155,6 +157,20 @@
           kind = continueFrom.kind === 'official' ? 'official' : 'casual'
           benchmark = continueFrom.benchmark ?? defaultBenchmark
           taskMasterChoice = ''  // default: keep the source TaskMaster
+          // Recording: match the SOURCE run's capture so the new footage
+          // splices onto its video when this segment ends (the server joins
+          // the two files; different views cannot be joined). An unrecorded
+          // source gets the kind default, like a fresh run.
+          record = true
+          if (continueFrom.record) {
+            recordView = continueFrom.record.view
+            recordSpeed = continueFrom.record.speed
+            recordShow = {
+              model: !!continueFrom.record.show_model,
+              elapsed: !!continueFrom.record.show_elapsed,
+              cost: !!continueFrom.record.show_cost,
+            }
+          }
           if (continueFrom.kind === 'official') {
             // Official continue is model-LOCKED — reuse the source identity
             // verbatim, no picker (it must stay leaderboard-comparable).
@@ -440,14 +456,15 @@
       // TaskMaster: '' = keep the source's. Both null for fresh/official.
       playerModel: casualContinue ? model : null,
       taskMasterModel: casualContinue && taskMasterChoice ? taskMasterChoice : null,
-      // Opt-in MP4 capture. null (not false) when off, because the backend
-      // treats an absent spec as "don't record" and validates a present one.
+      // MP4 capture. Off is null on a fresh run (the backend treats an absent
+      // spec as "don't record") but an explicit false on a continue, where an
+      // absent key means "record like the source and splice onto its video".
       record: record
         ? {
             view: recordView, speed: recordSpeed,
             show_model: recordShow.model, show_elapsed: recordShow.elapsed, show_cost: recordShow.cost,
           }
-        : null,
+        : (isContinue ? false : null),
     })
   }
 </script>
@@ -748,8 +765,19 @@
              living on the run spec rather than in a screen-recorder. -->
         <label class="check">
           <input type="checkbox" bind:checked={record} />
-          <span>Record this run to MP4</span>
+          <span>{isContinue ? 'Record this segment to MP4' : 'Record this run to MP4'}</span>
         </label>
+        {#if isContinue && record}
+          <p class="rechint faint splice-hint">
+            {#if continueFrom.hasRecording}
+              When this segment ends its footage is spliced onto the source run's video, so the continued run's
+              <span class="mono">recording.mp4</span> plays the whole game from turn 1. Keep the capture as
+              <span class="mono">{continueFrom.record?.view ?? 'detailed'}</span> — a different view records a standalone clip instead.
+            {:else}
+              The source run has no video, so this recording starts at the resumed turn.
+            {/if}
+          </p>
+        {/if}
         {#if record}
           <div class="recopts">
             <label class="field">

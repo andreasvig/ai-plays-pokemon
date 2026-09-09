@@ -102,6 +102,10 @@ export function toRun(s) {
     // Locally the player streams /api/runs/{id}/recording.mp4 instead.
     videoUrl: s.video_url ?? null,
     videoView: s.video_view ?? null,
+    // How the run was recorded ({view, speed, fps, show_*}), null if it wasn't.
+    // The Continue dialog seeds its recording fields from this so the new
+    // footage records in the same view and splices onto the source's video.
+    record: s.record ?? null,
     publishedAt: s.published_at ?? null,
   }
   r.slug = runSlug(r)
@@ -502,9 +506,11 @@ export function continueRun(runId, { maxTurns = null, stopAt = null, maxSpend = 
   if (gameplay && gameplay !== 'exploration') body.gameplay = gameplay
   if (playerModel != null) body.player_model = playerModel
   if (taskMasterModel != null) body.task_master_model = taskMasterModel
-  // A continue is a fresh run dir, so recording is chosen per-continue and is
-  // never inherited from the source run.
-  if (record) body.record = record
+  // Recording on a continue: the server's default (key absent) is to record the
+  // way the SOURCE run did and splice the new footage onto its video. A spec
+  // overrides that; an explicit `false` is the only way to say "no video".
+  if (record === false) body.record = false
+  else if (record) body.record = record
   return send('POST', `/api/runs/${encodeURIComponent(runId)}/continue`, Object.keys(body).length ? body : undefined)
 }
 

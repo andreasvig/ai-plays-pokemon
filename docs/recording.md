@@ -242,6 +242,39 @@ opens it in a player over the list (Esc or the backdrop closes it; **↓** saves
 the file). A run recorded with `--record both` gets a second **▶** tagged `1:1`
 for `recording-simple.mp4`. Rows without a video show no button.
 
+### Continuing a run continues its video
+
+A continue is a new run dir with its own recorder, so on its own it would give
+you a clip that starts mid-game. Instead (2026-09-09) the continue records its
+segment and, when it ends, **splices it onto the source run's video**: the
+continued run's `recording.mp4` then plays the whole game from turn 1, and the
+segment alone is kept beside it as `recording-segment.mp4` (`both` does the
+same for `recording-simple.mp4` → `recording-simple-segment.mp4`). The source
+run's files are never touched. Because the source's file is itself the spliced
+chain when the source was a continue, a chain of continues always ends in one
+complete video in the newest run dir — the file the History player, the ▶
+flag and `pokemon publish` already read. `run_summary.json["recording_splice"]`
+records what was joined (source run id, resumed turn, seconds per part).
+
+The join is a stream copy (ffmpeg concat, no re-encode), which needs both files
+to agree on view (frame size), codec and fps. That is why **a continue records
+the way its source did by default**, at every entry point:
+
+- **UI** — the Continue dialog opens with the recording fields seeded from the
+  source (view, speed, overlay) and a note saying the footage will be spliced.
+- **`pokemon runs continue <run_id>`** — inherits the source's spec; pass
+  `--no-record` for no video.
+- **`pokemon run --continue <dir>`** — inherits it too (the source's
+  `config.json` carries it); `--record VIEW` overrides, `--no-record` drops it.
+- **API** `POST /api/runs/{id}/continue` — `record` absent = inherit (or the
+  kind default when the source recorded nothing); `record: false` = no video;
+  a spec = that spec.
+
+If you override the view so the streams no longer match, the run still records
+but the segment stands on its own, with a `⚠ … not spliced` line in
+`terminal.log` naming the mismatch. A source with no video gets a plain
+segment recording (the line says which turn it starts at).
+
 ### The name it saves under
 
 On disk every clip is `recording.mp4` — unambiguous next to its own

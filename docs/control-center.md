@@ -313,7 +313,11 @@ savepoint. A continue is **seamless** — indistinguishable from never stopping:
 reuses the source run's model, resumes from the highest `savepoints/turn_<N>/`,
 and carries everything forward — the turn counter, the Player's turn history, the
 TaskMaster task tree, the gate latch, and the cumulative cost / tokens / active
-time (none of these reset). The continue **inherits the source run's kind**: an
+time (none of these reset). The continue **records like the source run** (same view and speed) and, when it
+ends, splices its footage onto the source's video — the new run's
+`recording.mp4` is the whole game from turn 1 (see
+[recording.md](recording.md#continuing-a-run-continues-its-video)). The
+continue **inherits the source run's kind**: an
 **official** run continues official on the **same benchmark** (so a run stopped
 overnight can be finished + scored), a casual run continues casual. See
 [Pausing & resuming an official run](benchmark.md) for the validity details.

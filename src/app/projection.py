@@ -34,7 +34,8 @@ _DEFAULT_LADDER = Path("configs/checkpoints-firered-v1.yaml")
 # app boot re-projects every stored row whose projection_version is older, so a
 # field added here reaches History without anyone deleting runs_index.json.
 #   1 — 2026-09-09: error / crash (why a crashed run ended).
-PROJECTION_VERSION = 1
+#   2 — 2026-09-09: record (the spec the run was recorded with, for continues).
+PROJECTION_VERSION = 2
 
 # Status values the report treats as "cleared" for a gate (mirror report.py).
 _CLEARED_STATUSES = ("done", "auto")
@@ -108,6 +109,19 @@ def _infer_config_stem(run_dir_name: str) -> str | None:
         stem = "_".join(parts[2:])
         return stem or None
     return None
+
+
+def _record_spec(config: dict) -> dict | None:
+    """``config.json["_record"]`` normalised, or None (unrecorded / unreadable)."""
+    raw = config.get("_record") if isinstance(config, dict) else None
+    if raw is None:
+        return None
+    try:
+        from src.dashboard.recorder import normalize_spec
+
+        return normalize_spec(raw)
+    except (ValueError, TypeError, KeyError):
+        return None
 
 
 def project_run_dir(run_dir: Path) -> RunSummary | None:
@@ -251,6 +265,7 @@ def project_run_dir(run_dir: Path) -> RunSummary | None:
         termination_reason=termination_reason,
         error=summary.get("error") if isinstance(summary.get("error"), str) else None,
         crash=summary.get("crash") if isinstance(summary.get("crash"), dict) else None,
+        record=_record_spec(config),
         projection_version=PROJECTION_VERSION,
         continued_from=summary.get("continued_from"),
         # WHICH HARNESS ran. ``run_summary.json["agent_type"]`` is stamped only

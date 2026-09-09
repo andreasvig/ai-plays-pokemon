@@ -1290,6 +1290,43 @@ def _validate_record(raw: Any) -> dict | None:
     return spec
 
 
+def _continue_record(body: dict, source_dir: Path, kind) -> dict | None:
+    """The record spec a continue runs with.
+
+    A continue's footage is spliced onto the source run's video when it finishes
+    (``recorder.splice_continued``), so the default is to record the way the
+    source did — same view, speed and overlay — which is what keeps the two
+    files joinable. Three body shapes:
+
+    - ``record`` absent → the source run's own spec; if the source recorded
+      nothing, the kind default (full panel for official, simple for casual),
+      so a continue of an unrecorded run still comes out with a video
+      (Andreas, 2026-09-09: recording is the default everywhere).
+    - ``record: false`` / ``null`` → no recording (``pokemon runs continue
+      --no-record``, or the dialog's box unticked).
+    - a spec → that spec, validated like any other; the segment stands on its
+      own if its view no longer matches the source's video.
+
+    Recorder unavailability is a 400 only when the caller asked for a spec (the
+    same rule ``_validate_record`` applies); an inherited default degrades to
+    "no recording" with the reason in the server log, matching the CLI's
+    default-on-but-unavailable behaviour.
+    """
+    from src.app.models import default_record_view
+    from src.dashboard.recorder import recorder_preflight, source_record_spec
+
+    if "record" in body:
+        return _validate_record(body.get("record"))
+    blocked = recorder_preflight()
+    if blocked:
+        print(f"  ⚠ continue not recorded (default on, but unavailable: {blocked})")
+        return None
+    inherited = source_record_spec(source_dir)
+    if inherited is not None:
+        return inherited
+    return _validate_record({"view": default_record_view(kind).value})
+
+
 @app.post("/api/queue")
 async def api_queue_post(spec: dict):
     """Enqueue a single QueuedRun spec (validation per :func:`_enqueue_kwargs`)."""
@@ -1422,8 +1459,17 @@ async def api_run_continue(run_id: str, body: dict | None = None):
     # config rename. A source missing from the index falls through — the 400
     # belongs to "you asked for a swap we cannot do", not to "we cannot find it"
     # (``build_continue_spec`` below owns that 400).
+    # The dialog's casual continue always sends the picker's Player model, seeded
+    # to the source alias — so "same model as the source" must count as no
+    # swap, or no append run could ever be continued from the UI (found
+    # 2026-09-09 when the first config-5.x continue was submitted from it).
     source = index.get(run_id)
-    if player_model and source is not None and source.harness == "append_compact":
+    if (
+        player_model
+        and source is not None
+        and source.harness == "append_compact"
+        and player_model != source.model
+    ):
         raise HTTPException(
             status_code=400,
             detail="cannot change the player model on a continue of an "
@@ -1464,10 +1510,7 @@ async def api_run_continue(run_id: str, body: dict | None = None):
         gameplay=_validate_gameplay(body.get("gameplay")),
         continue_from=spec["continue_from"],
         task_master_model=spec.get("task_master_model"),
-        # A continue is a fresh run with its own run dir, so it gets its own
-        # video — the source run's recording setting is NOT inherited (you may
-        # well be continuing precisely because you now want it recorded).
-        record=_validate_record(body.get("record")),
+        record=_continue_record(body, executor.runs_root / run_id, spec["kind"]),
     )
     notify_control()
     return JSONResponse(item.model_dump(mode="json"), status_code=201)

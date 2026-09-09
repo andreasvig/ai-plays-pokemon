@@ -246,6 +246,11 @@ def test_model_swap_continue_of_an_append_run_is_400(client):
     r = tc.post(f"/api/runs/{source_id}/continue", json={"max_turns": 10})
     assert r.status_code == 201
     assert r.json()["continue_from"] == source_id
+    # The dialog sends the picker's model even when it is the source's own: the
+    # same alias is a reuse, not a swap (2026-09-09).
+    r = tc.post(f"/api/runs/{source_id}/continue", json={"player_model": "gpt-6-astra(medium)"})
+    assert r.status_code == 201
+    assert r.json()["model"] == "gpt-6-astra(medium)"
 
 
 def test_model_swap_continue_of_a_legacy_run_is_still_allowed(client):
@@ -486,3 +491,74 @@ def test_queue_get_exposes_last_error(client):
     body = tc.get("/api/queue").json()
     assert body["last_error"]["queue_id"] == item.queue_id
     assert body["last_error"]["error"] == "ValueError: boom"
+
+
+# ── continue: recording follows the source (2026-09-09) ─────────────────────
+
+
+def _recorded_source(runs_root, index, run_id, record):
+    source_dir = runs_root / run_id
+    (source_dir / "savepoints" / "turn_50").mkdir(parents=True)
+    (source_dir / "run_summary.json").write_text(json.dumps({"session": {"llm_alias": "claude"}}))
+    cfg = {"llm_model": "anthropic/claude"}
+    if record is not None:
+        cfg["_record"] = record
+    (source_dir / "config.json").write_text(json.dumps(cfg))
+    index.rebuild_from_scan()
+    return source_dir
+
+
+@pytest.fixture
+def recorder_available(monkeypatch):
+    from src.dashboard import recorder
+
+    monkeypatch.setattr(recorder, "recorder_preflight", lambda: None)
+
+
+def test_continue_records_like_the_source_by_default(client, recorder_available):
+    """No `record` key → the source's own spec, so the segment splices onto its video."""
+    tc, runs_root, index = client["tc"], client["runs_root"], client["index"]
+    source = {"view": "detailed", "speed": "cut-thinking", "fps": 30,
+              "show_model": False, "show_elapsed": False, "show_cost": False}
+    _recorded_source(runs_root, index, "2026-09-08_src_config-5.0__claude", source)
+    r = tc.post("/api/runs/2026-09-08_src_config-5.0__claude/continue", json={"max_turns": 5})
+    assert r.status_code == 201
+    assert r.json()["record"] == source
+
+
+def test_continue_of_an_unrecorded_source_records_the_kind_default(client, recorder_available):
+    tc, runs_root, index = client["tc"], client["runs_root"], client["index"]
+    _recorded_source(runs_root, index, "2026-09-08_bare_config-5.0__claude", None)
+    r = tc.post("/api/runs/2026-09-08_bare_config-5.0__claude/continue", json={})
+    assert r.status_code == 201
+    assert r.json()["record"]["view"] == "simple"  # casual continue → simple frame
+
+
+def test_continue_record_false_means_no_video(client, recorder_available):
+    tc, runs_root, index = client["tc"], client["runs_root"], client["index"]
+    source = {"view": "detailed", "speed": "cut-thinking"}
+    _recorded_source(runs_root, index, "2026-09-08_src2_config-5.0__claude", source)
+    r = tc.post("/api/runs/2026-09-08_src2_config-5.0__claude/continue", json={"record": False})
+    assert r.status_code == 201
+    assert r.json()["record"] is None
+
+
+def test_continue_explicit_spec_wins_over_the_source(client, recorder_available):
+    tc, runs_root, index = client["tc"], client["runs_root"], client["index"]
+    _recorded_source(runs_root, index, "2026-09-08_src3_config-5.0__claude", {"view": "detailed"})
+    r = tc.post("/api/runs/2026-09-08_src3_config-5.0__claude/continue", json={"record": {"view": "simple"}})
+    assert r.status_code == 201
+    assert r.json()["record"]["view"] == "simple"
+
+
+def test_continue_default_degrades_without_a_recorder(client, monkeypatch):
+    from src.dashboard import recorder
+
+    monkeypatch.setattr(recorder, "recorder_preflight", lambda: "ffmpeg not on PATH")
+    tc, runs_root, index = client["tc"], client["runs_root"], client["index"]
+    _recorded_source(runs_root, index, "2026-09-08_src4_config-5.0__claude", {"view": "detailed"})
+    r = tc.post("/api/runs/2026-09-08_src4_config-5.0__claude/continue", json={})
+    assert r.status_code == 201 and r.json()["record"] is None
+    # …but an explicit ask is still refused up front, like a fresh enqueue
+    r = tc.post("/api/runs/2026-09-08_src4_config-5.0__claude/continue", json={"record": {"view": "simple"}})
+    assert r.status_code == 400

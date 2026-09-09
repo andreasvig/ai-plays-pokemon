@@ -237,7 +237,7 @@ savepoints:
   on_crash: true     # best-effort save on KeyboardInterrupt or exception
 ```
 
-`pokemon run --continue <run_dir>` finds the highest `turn_<N>/` in that run's `savepoints/`, copies events.jsonl + screenshots + ocr + terminal.log into a new `<ts>_<run_name>_continued_from_turn_<N>/` run dir, then **resumes exactly where it left off**: the emulator state and TaskMaster task tree restore from the savepoint, and the Player's turn history, turn counter, historic-image buffer, and in-progress-task evidence are rebuilt from the copied events.jsonl (so the agent's "## Previous Turns" context and turn numbering carry over, not just `state.json`). Only the cost counters reset — the new run reports only its own spend; for a cumulative view, read both run dirs' `run_summary.json`.
+`pokemon run --continue <run_dir>` finds the highest `turn_<N>/` in that run's `savepoints/`, copies events.jsonl + screenshots + ocr + terminal.log into a new `<ts>_<run_name>_continued_from_turn_<N>/` run dir, then **resumes exactly where it left off**: the emulator state and TaskMaster task tree restore from the savepoint, and the Player's turn history, turn counter, historic-image buffer, and in-progress-task evidence are rebuilt from the copied events.jsonl (so the agent's "## Previous Turns" context and turn numbering carry over, not just `state.json`). Only the cost counters reset — the new run reports only its own spend; for a cumulative view, read both run dirs' `run_summary.json`. Recording follows the source: the continue records in the source run's view/speed by default and, when it ends, splices its footage onto the source's video so the new run dir's `recording.mp4` is the whole game (see [recording.md](recording.md#continuing-a-run-continues-its-video)); `--record VIEW` overrides, `--no-record` turns it off.
 
 The control center serves the UI at <http://localhost:3420/>: live runs at `/spectate`, finished runs under `/history/<run_id>`. (`pokemon app` opens it at boot.)
 
@@ -341,7 +341,8 @@ pokemon runs list                        # newest first
 pokemon runs list --status terminated    # the ones a gate killed
 pokemon runs list --model "gpt-5.6-sol(medium)" --limit 20
 pokemon runs board --benchmark pokebench-easy
-pokemon runs continue <run_id>           # enqueue a casual continue from its savepoint
+pokemon runs continue <run_id>           # continue from its savepoint (records like the source, splices the video)
+pokemon runs continue <run_id> --no-record
 pokemon runs stop                        # stop the active run
 pokemon runs delete <run_id> --yes       # folder → Trash, and de-index
 ```
