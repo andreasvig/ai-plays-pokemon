@@ -378,13 +378,16 @@ pokemon publish <run_id> --no-video      # result only
 pokemon publish <run_id> --video simple  # upload recording-simple.mp4 (a `--record both` run) instead of the full panel
 pokemon publish <run_id> --with-trace    # ALSO the report trace + its screenshots (opt-in)
 pokemon publish <run_id> --no-build      # data-only push; keep the bundle already on gh-pages
+pokemon publish --site-only              # rebuild + push the SPA bundle after a UI change; no run touched
 pokemon unpublish <run_id>               # delete the R2 objects, drop the row + JSON, push
 ```
 
 What happens, in order — and the order is the point:
 
-1. **Refuse** unless the run dir has a `run_summary.json` and its status is not
-   `running`/`queued`.
+1. **Refuse** unless the run dir has a `run_summary.json`, the run is
+   `official`, and its status is `completed` or `terminated`. Casual, crashed
+   and cancelled runs never go online — which is why the public History shows
+   no kind badge and no status column.
 2. **Leak audit** on the exact JSON about to leave the machine (the row, the
    summary, and with `--with-trace` the rewritten trace): every non-trivial value in `.env` (the bucket
    name and public URL excepted — they are public by design), key shapes

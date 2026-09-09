@@ -23,7 +23,7 @@
          first-badge ladder, and this is Andreas's description of it
          (2026-09-08). The local text below is the operator's view. -->
     <h1>PokeBench v1</h1>
-    <p class="tagline">A minimal, vision-only harness: the model sees the screen and presses buttons,
+    <p class="tagline">A minimal, vision-only harness for Pokémon FireRed: the model sees the screen and presses buttons,
       nothing else. It is graded on the <em>fewest agent turns to defeat the first badge</em>, with
       progressive milestones an agent has to meet before certain turn numbers to be allowed to continue.</p>
   {:else}
@@ -83,7 +83,9 @@
       </div>
     </div>
   </div>
-  <p class="rule-note faint">Ranked by gate completion, then fewest turns. 100%-clears compared head-to-head on turns. Best official run per model, config-5.x only — earlier harnesses stay in History.</p>
+  {#if !STATIC}
+    <p class="rule-note faint">Ranked by gate completion, then fewest turns. 100%-clears compared head-to-head on turns. Best official run per model, config-5.x only — earlier harnesses stay in History.</p>
+  {/if}
 
   <div class="lhead">
     <span class="c-rank">#</span>

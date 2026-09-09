@@ -73,18 +73,23 @@
 
   <div class="controls">
     <input class="search" placeholder="Filter by model…" bind:value={query} />
-    <div class="segs">
-      {#each ['all', 'official', 'casual'] as k}
-        <button class:on={kindFilter === k} onclick={() => kindFilter = k}>{k}</button>
-      {/each}
-    </div>
-    <select bind:value={statusFilter} class="sel">
-      <option value="all">any status</option>
-      <option value="completed">completed</option>
-      <option value="terminated">terminated</option>
-      <option value="incomplete">incomplete</option>
-      <option value="running">running</option>
-    </select>
+    <!-- The public site publishes official completed/terminated runs only
+         (publish_run refuses the rest), so a kind or status control would
+         partition a set of one. -->
+    {#if !STATIC}
+      <div class="segs">
+        {#each ['all', 'official', 'casual'] as k}
+          <button class:on={kindFilter === k} onclick={() => kindFilter = k}>{k}</button>
+        {/each}
+      </div>
+      <select bind:value={statusFilter} class="sel">
+        <option value="all">any status</option>
+        <option value="completed">completed</option>
+        <option value="terminated">terminated</option>
+        <option value="incomplete">incomplete</option>
+        <option value="running">running</option>
+      </select>
+    {/if}
     <select bind:value={sort} class="sel">
       <option value="recent">sort: recent</option>
       <option value="completion">sort: completion</option>
@@ -93,22 +98,22 @@
     </select>
   </div>
 
-  <div class="lhead">
-    <span></span>
+  <div class="lhead" class:static={STATIC}>
+    {#if !STATIC}<span></span>{/if}
     <span>Model</span>
     <span>Completion</span>
     <span class="r">Turns</span>
     <span class="r">Time</span>
     <span class="r">Cost</span>
-    <span class="r">Status</span>
+    {#if !STATIC}<span class="r">Status</span>{/if}
     <span></span>
   </div>
 
   <ul class="rows">
     {#each filtered as r (r.runId)}
       <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
-      <li class="row" onclick={() => oninspect(r)} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); oninspect(r) } }} role="button" tabindex="0">
-        <span class="c-kind"><span class="badge {r.kind}">{r.kind === 'official' ? 'OFF' : 'CAS'}</span></span>
+      <li class="row" onclick={() => oninspect(r)} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); oninspect(r) } }} role="button" tabindex="0" class:static={STATIC}>
+        {#if !STATIC}<span class="c-kind"><span class="badge {r.kind}">{r.kind === 'official' ? 'OFF' : 'CAS'}</span></span>{/if}
         <span class="c-model">
           <span class="mname mono">{r.model}</span>
           <span class="meta faint">{dateShort(r.startedAt)} <span class="rel">({ago(r.startedAt)})</span> · <span class="mono">{r.config}</span>{#if r.continuedFrom} · ↪ continued{/if}</span>
@@ -124,7 +129,7 @@
         <span class="c-turns tnum r"><b>{r.turns}</b>{#if r.maxTurns}<span class="sub">/{r.maxTurns}</span>{/if}</span>
         <span class="c-time tnum r"><b>{dur(r.durationS)}</b><span class="sub">{perTurn(r.avgSPerTurn)}/t</span></span>
         <span class="c-cost tnum r"><b>{usd(r.totalCostUsd)}</b><span class="sub">{usd(r.avgCostPerTurn)}/t</span></span>
-        <span class="c-status r"><span class="status {statusClass(r.status)}">{statusLabel(r.status)}</span></span>
+        {#if !STATIC}<span class="c-status r"><span class="status {statusClass(r.status)}">{statusLabel(r.status)}</span></span>{/if}
         <span class="c-act">
           {#if r.hasRecording}
             <button class="mini play" onclick={(e) => { e.stopPropagation(); watch(r) }}
@@ -215,6 +220,8 @@
     grid-template-columns: 44px minmax(180px, 1.4fr) minmax(120px, 1fr) 78px 92px 96px 96px 100px;
     align-items: center; gap: 12px;
   }
+  /* Public site: no kind badge, no status column. */
+  .lhead.static, .row.static { grid-template-columns: minmax(180px, 1.4fr) minmax(120px, 1fr) 78px 92px 96px 100px; }
   .lhead { padding: 0 14px 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); font-weight: 700; }
   .lhead .r { text-align: right; }
   .rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }

@@ -49,7 +49,9 @@ def _parser() -> argparse.ArgumentParser:
         description="Publish a finished run to the online leaderboard (Cloudflare R2 + GitHub Pages).",
         epilog=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    ap.add_argument("run_id", help="run-dir name under --runs-root, e.g. 2026-09-08_12-04-58_config-5.1__glm-5-3-flash-high")
+    ap.add_argument("run_id", nargs="?", help="run-dir name under --runs-root, e.g. 2026-09-08_12-04-58_config-5.1__glm-5-3-flash-high")
+    ap.add_argument("--site-only", action="store_true",
+                    help="rebuild and push the SPA bundle only — no run_id, nothing uploaded, no row changed (after a UI change)")
     ap.add_argument("--runs-root", default=str(REPO_ROOT / "local" / "runs"), help="where run folders live (default local/runs)")
     ap.add_argument("--no-video", action="store_true", help="do not upload a recording even if present")
     ap.add_argument("--video", choices=["full", "simple"], default="full",
@@ -65,6 +67,13 @@ def main() -> None:
     args = _parser().parse_args()
     load_dotenv(REPO_ROOT / ".env")
     log = lambda msg: print(msg, file=sys.stderr)  # noqa: E731
+    if args.site_only:
+        if args.run_id:
+            sys.exit("ERROR: --site-only takes no run_id; it rebuilds the bundle and touches no run")
+        _site_only(log)
+        return
+    if not args.run_id:
+        sys.exit("ERROR: a run_id is required (or --site-only to push the bundle alone)")
     run_dir = Path(args.runs_root) / args.run_id
     if not run_dir.is_dir():
         sys.exit(f"ERROR: no run dir at {run_dir}")
@@ -102,7 +111,23 @@ def main() -> None:
     print(f"  video  {result.video_url or '(none)'}")
     print(f"  shots  {len(result.screenshots)}")
     if result.committed:
-        print("  Pages picks up the push within ~1 minute (first time: enable Pages on gh-pages / root in the repo settings).")
+        print("  Pages picks up the push within ~1 minute.")
+
+
+def _site_only(log) -> None:
+    """`pokemon publish --site-only`: rebuild the SPA, push gh-pages, change no row."""
+    from src.app.benchmarks import benchmarks_payload
+
+    try:
+        pages = _pages(log)
+        pages_url = pub.pages_base_url(pages.remote_url(), __import__("os").environ.get("PAGES_BASE_URL"))
+        build = lambda _wt: pub.build_static_site(WEB_DIR, WEB_DIR / pub.SITE_DIST_DIRNAME, pub.base_path(pages_url), log=log)  # noqa: E731
+        committed = pub.publish_site(pages=pages, build_site=build, benchmarks=pub.public_benchmarks(benchmarks_payload()), log=log)
+    except pub.PublishError as exc:
+        sys.exit(f"ERROR: {exc}")
+    print(f"site {'rebuilt and pushed' if committed else 'unchanged'}  {pages_url}")
+    if committed:
+        print("  Pages picks up the push within ~1 minute.")
 
 
 def _dry_run(run_dir: Path, store: pub.R2Store, secrets: list[str], args) -> None:

@@ -79,14 +79,14 @@ def repo(tmp_path):
 
 
 def make_run(root: Path, run_id: str = "2026-09-08_12-00-00_config-5.1__test-model-high", *,
-             status: str = "completed", video: bool = True, shots: int = 3) -> Path:
+             status: str = "completed", kind: str = "official", video: bool = True, shots: int = 3) -> Path:
     run = root / run_id
     (run / "screenshots").mkdir(parents=True)
     names = [f"{i:05d}_turn_{i}.png" for i in range(1, shots + 1)]
     for n in names:
         (run / "screenshots" / n).write_bytes(b"\x89PNG fake " + n.encode())
     summary = {
-        "run_id": run_id, "kind": "casual", "status": status,
+        "run_id": run_id, "kind": kind, "status": status,
         "session": {"llm_alias": "test-model(high)", "llm_model": "test/model", "total_turns": shots,
                     "duration_seconds": 12.5, "started_at": "2026-09-08T12:00:00"},
         "cost": {"total_usd": 0.01},
@@ -401,14 +401,53 @@ def test_with_trace_then_default_drops_the_stale_trace(world):
     assert not (world["pages"].run_dir(world["run"].name) / "trace.json").exists()
 
 
+def test_publish_site_pushes_the_bundle_and_leaves_every_row_alone(world, tmp_path):
+    before = _publish(world, include_trace=False).row
+    calls = []
+
+    def build(worktree):
+        calls.append(worktree)
+        dist = tmp_path / "dist2"
+        (dist / "assets").mkdir(parents=True, exist_ok=True)
+        (dist / "index.html").write_text("<html>v2</html>")
+        (dist / "assets" / "app-v2.js").write_text("v2")
+        return dist
+
+    uploads = dict(world["s3"].objects)
+    assert pub.publish_site(pages=world["pages"], build_site=build, benchmarks=[{"id": "pokebench-first-badge"}], log=world["log"].append)
+    assert calls == [world["pages"].worktree]
+    files = _clone_board(world["repo"], tmp_path)
+    assert files["index.html"].read_text() == "<html>v2</html>"
+    assert files["404.html"].read_text() == "<html>v2</html>"
+    assert "assets/app-v2.js" in files
+    board = json.loads(files["data/leaderboard.json"].read_text())
+    assert board == [before], "the row survives untouched — this is the point of the verb"
+    assert world["s3"].objects == uploads, "nothing uploaded"
+    # a second rebuild with the same bundle pushes nothing
+    assert pub.publish_site(pages=world["pages"], build_site=build, log=world["log"].append) is False
+
+
 def test_publish_refuses_unfinished_or_missing_runs(world, tmp_path):
     running = make_run(tmp_path / "runs", "2026-09-08_14-00-00_config-5.1__live", status="running")
     with pytest.raises(pub.PublishError, match="status is running"):
         pub.publish_run(running, store=world["store"], pages=world["pages"], secrets=[])
+    # Only official completed/terminated runs go online — the History there has
+    # no kind badge and no status column, so nothing else may reach it.
+    casual = make_run(tmp_path / "runs", "2026-09-08_14-10-00_config-5.1__cas", kind="casual")
+    with pytest.raises(pub.PublishError, match="kind is casual"):
+        pub.publish_run(casual, store=world["store"], pages=world["pages"], secrets=[])
+    for status in ("crashed", "cancelled"):
+        broken = make_run(tmp_path / "runs", f"2026-09-08_14-20-00_config-5.1__{status}", status=status)
+        with pytest.raises(pub.PublishError, match=f"status is {status}"):
+            pub.publish_run(broken, store=world["store"], pages=world["pages"], secrets=[])
     (tmp_path / "runs" / "empty").mkdir()
     with pytest.raises(pub.PublishError, match="run_summary.json"):
         pub.publish_run(tmp_path / "runs" / "empty", store=world["store"], pages=world["pages"], secrets=[])
-    assert world["s3"].objects == {}
+    assert world["s3"].objects == {}, "every refusal happened before the first upload"
+    # and the other terminal status is accepted
+    terminated = make_run(tmp_path / "runs", "2026-09-08_14-30-00_config-5.1__term", status="terminated")
+    assert pub.publish_run(terminated, store=world["store"], pages=world["pages"], secrets=[],
+                           verify=None).run_id == terminated.name
 
 
 def test_publish_refuses_when_a_trace_screenshot_is_missing_on_disk(world):

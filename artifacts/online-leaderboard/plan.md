@@ -191,6 +191,10 @@ Built and verified the same day. Deviations from the text above, all additive:
   said "Leaderboard and Report only", but the board is partitioned to official
   config-5.x runs and none exists yet, so a published casual run would have been
   unreachable. History is the list of everything published.
+  **Revised 2026-09-09:** `publish` refuses anything but official
+  completed/terminated runs, so the public History drops the kind badge, the
+  status column and both filters; the hero says FireRed and loses the ranking
+  rule note.
 - **Trace size.** A published trace is 0.5 MB (12 turns) to 3.6 MB (94 turns)
   and 8.7 MB for the 170-turn gpt-5.6 run — bigger than "small JSON". Fine for
   tens of runs (gzip ≈ 10×); if the branch grows past a few hundred MB, move

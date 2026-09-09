@@ -40,7 +40,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
-from src.app.models import RunStatus
+from src.app.models import RunKind, RunStatus
 from src.app.projection import project_run_dir
 
 # The User-Agent every anonymous probe sends. Cloudflare answers 403 to
@@ -639,8 +639,15 @@ def publish_run(
     projected = project_run_dir(run_dir)
     if projected is None:
         raise PublishError(f"{run_id}: run_summary.json is unreadable")
-    if projected.status in (RunStatus.running, RunStatus.queued):
-        raise PublishError(f"{run_id}: status is {projected.status.value}; publish only finished runs")
+    # The public site is the benchmark: official runs that reached the end of
+    # their ladder (completed) or were ended by it (terminated). A casual run is
+    # not a result and a crashed/cancelled one is not a finished run — the
+    # online History shows neither a kind badge nor a status column because of
+    # this rule (Andreas, 2026-09-09).
+    if projected.kind != RunKind.official:
+        raise PublishError(f"{run_id}: kind is {projected.kind.value}; only official runs are published")
+    if projected.status not in (RunStatus.completed, RunStatus.terminated):
+        raise PublishError(f"{run_id}: status is {projected.status.value}; publish only completed or terminated runs")
 
     # -- assemble the outgoing files (in memory first: audit before any write)
     from src.app.trace_build import cached_run_trace
@@ -739,6 +746,31 @@ def publish_run(
     page = f"{pages_url}history/{run_id}" if pages_url else None
     return PublishResult(run_id=run_id, row=row, video_url=video_url, screenshots=shot_names,
                          page_url=page, committed=committed, r2_keys=keys)
+
+
+def publish_site(
+    *,
+    pages: PagesRepo,
+    build_site: Callable[[Path], Path],
+    benchmarks: list[dict] | None = None,
+    log: Callable[[str], None] = print,
+) -> bool:
+    """Rebuild and push the SPA bundle (and the benchmark registry) — no run touched.
+
+    `publish_run` is the only other thing that rebuilds the bundle, and using it
+    as a build trigger re-uploads a video and REPLACES that run's row (a
+    `--no-video` publish blanked a live video_url on 2026-09-08). A UI change
+    gets its own verb. Returns True when something was pushed.
+    """
+    pages.ensure()
+    if benchmarks is not None:
+        pages.write_benchmarks(benchmarks)
+    dist = build_site(pages.worktree)
+    if dist is not None:
+        pages.sync_site(Path(dist))
+    committed = pages.commit_and_push("rebuild site")
+    log("gh-pages: " + ("pushed" if committed else "nothing changed"))
+    return committed
 
 
 def unpublish_run(
