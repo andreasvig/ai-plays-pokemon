@@ -594,6 +594,17 @@ def _validate_append_config(config: dict[str, Any]) -> None:
         value = config[section].get("max_retries")
         if type(value) is not int or value < 0:
             raise ValueError(f"{section}.max_retries must be a non-negative integer")
+    # Transient-retry policy (src/agent/backoff.py). Optional — code defaults apply
+    # when absent — but when present each must be a sane number.
+    transport = config["transport"]
+    if "transient_retries" in transport and (type(transport["transient_retries"]) is not int or transport["transient_retries"] < 0):
+        raise ValueError("transport.transient_retries must be a non-negative integer")
+    for key in ("backoff_base_seconds", "backoff_cap_seconds", "retry_budget_seconds"):
+        if key in transport and (isinstance(transport[key], bool) or not isinstance(transport[key], (int, float)) or transport[key] <= 0):
+            raise ValueError(f"transport.{key} must be a positive number")
+    if "backoff_factor" in transport and (isinstance(transport["backoff_factor"], bool)
+                                          or not isinstance(transport["backoff_factor"], (int, float)) or transport["backoff_factor"] < 1):
+        raise ValueError("transport.backoff_factor must be a number >= 1")
     fraction = config["compaction"].get("context_limit_fraction")
     if isinstance(fraction, bool) or not isinstance(fraction, (int, float)) or not 0 < fraction < 1:
         raise ValueError("compaction.context_limit_fraction must be between 0 and 1")

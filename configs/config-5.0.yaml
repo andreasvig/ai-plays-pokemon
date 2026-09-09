@@ -206,7 +206,21 @@ player_agent:
   transport:
     stream: false
     timeout_seconds: 360
+    # max_retries = OUTPUT re-asks: the model answered in the wrong shape (bad
+    # JSON, schema miss, wrong tool). Immediate, few — waiting does not teach a
+    # model the schema.
     max_retries: 2
+    # Transient PROVIDER failures (429 / 5xx / network / timeout) are a separate
+    # budget with long equal-jitter exponential backoff (src/agent/backoff.py):
+    # waits of ~5, 10, 20, 40, 80, 160, 320, then 600 s, honouring Retry-After,
+    # up to `transient_retries` attempts or `retry_budget_seconds` of waiting,
+    # whichever first. Added 2026-09-09 after a qwen3.8-flash run crashed on
+    # upstream 429s that were retried three times five seconds apart.
+    transient_retries: 12
+    backoff_base_seconds: 5
+    backoff_factor: 2
+    backoff_cap_seconds: 600
+    retry_budget_seconds: 2700
     max_output_tokens: 8192
     prompted_output_prompt: 'Respond only with a JSON object matching this schema:
       {{schema}}. Put the current phase output in result. Do not use Markdown fences

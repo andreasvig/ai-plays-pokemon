@@ -28,6 +28,7 @@ from pydantic_ai.messages import (
 from pydantic_ai.models.openai import OpenAIModel
 
 from src.agent.agent import AgentDeps, GameAction, create_agent
+from src.agent.backoff import equal_jitter_wait
 from src.agent.task_master import (
     TaskMasterDeps,
     TaskMasterInput,
@@ -153,11 +154,7 @@ def _retry_backoff_s(attempt_idx: int) -> float:
     early attempts re-roll within seconds, but the later waits climb past two
     minutes — giving a flapping provider real time to recover.
     """
-    ceiling = min(
-        _RETRY_BACKOFF_CAP_S,
-        _RETRY_BACKOFF_BASE_S * (_RETRY_BACKOFF_FACTOR ** attempt_idx),
-    )
-    return ceiling / 2.0 + random.uniform(0.0, ceiling / 2.0)
+    return equal_jitter_wait(attempt_idx, _RETRY_BACKOFF_BASE_S, _RETRY_BACKOFF_FACTOR, _RETRY_BACKOFF_CAP_S)
 
 
 def _provider_routing_for_attempt(

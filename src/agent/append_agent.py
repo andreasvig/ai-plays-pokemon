@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from src.core.prompts import fill_prompt
 from src.agent.coerce import coerce_stringified_object
 from src.agent.provider_profiles import project_history, router_diagnostics, output_json_text
+from src.agent.backoff import RetryPolicy, classify, describe, parse_retry_after
 
 
 class PlayAction(BaseModel):
@@ -84,9 +85,12 @@ class ProviderTransportError(RuntimeError):
 
 
 class ProviderRequestError(RuntimeError):
-    def __init__(self, status, response_body):
+    def __init__(self, status, response_body, headers=None):
         self.status = status
         self.response_body = response_body
+        # Seconds the provider asked us to wait (Retry-After / X-RateLimit-Reset),
+        # None when it named none. The retry loop treats it as a floor.
+        self.retry_after_s = parse_retry_after(headers)
         super().__init__(f"Provider HTTP {status}: {json.dumps(response_body)[:2000]}")
 
 
@@ -429,7 +433,7 @@ class OpenRouterTransport:
                         error = json.loads(raw)
                     except ValueError:
                         error = {"error": raw.decode(errors="replace")}
-                    raise ProviderRequestError(response.status_code, error)
+                    raise ProviderRequestError(response.status_code, error, headers=dict(response.headers))
                 if not json.loads(body).get("stream"):
                     return json.loads(await response.aread())
                 assembly = StreamAssembly()
@@ -458,6 +462,9 @@ class AppendAgent:
         self.store = ReplayStore(self.run_dir / "conversation")
         self.emit = emit
         self.transport = transport or OpenRouterTransport()
+        # Injectable so tests can measure the backoff schedule without waiting it out.
+        self._sleep = asyncio.sleep
+        self.retry_policy = RetryPolicy.from_transport(config["transport"])
         self.on_usage = on_usage or (lambda usage: None)
         self.budget_exhausted = budget_exhausted or (lambda: False)
         self.model = config["llm_model"]
@@ -720,8 +727,18 @@ class AppendAgent:
     async def _request(self, phase, turn, messages):
         await self._snapshot_pricing()
         schema = self._play_schema() if phase == "gameplay" else Handover
-        count = self.options["max_retries"] + 1 if phase == "compaction" else self.config["transport"]["max_retries"] + 1
-        for attempt in range(1, count + 1):
+        # Two retry budgets (2026-09-09, see src/agent/backoff.py): OUTPUT defects —
+        # the model answered in the wrong shape — get `max_retries` immediate
+        # re-asks, as before. TRANSIENT provider failures (429 / 5xx / network /
+        # timeout) get `retry_policy.transient_retries` attempts with long
+        # exponential backoff inside a wall-clock budget, and never consume the
+        # output budget: a rate-limited provider is not a model defect.
+        output_budget = self.options["max_retries"] if phase == "compaction" else self.config["transport"]["max_retries"]
+        policy = self.retry_policy
+        output_failures = transient_failures = attempt = 0
+        retry_started = time.monotonic()
+        while True:
+            attempt += 1
             if self.budget_exhausted():
                 raise SpendLimitReached("Spend budget reached before model request")
             request_id = uuid.uuid4().hex
@@ -852,9 +869,41 @@ class AppendAgent:
                     self.state["attempts"].append({k: v for k, v in meta.items() if k not in ("continuity", "raw_usage")})
                 self.emit("llm_request_error", {**meta, "error": str(exc), "latency_s": time.monotonic() - start,
                     "messages": display_messages(outbound["messages"] + ([raw["choices"][0]["message"]] if raw and raw.get("choices") and raw["choices"][0].get("message") else []))})
-                if isinstance(exc, ContinuityError) or (isinstance(exc, ProviderRequestError) and exc.status in (400, 401, 403, 405, 422)) or attempt == count:
+                kind = classify(exc)
+                # A completion DID arrive and the failure is in reading it (bad JSON in
+                # the tool arguments, a schema miss, an unexpected finish_reason): that
+                # is the model's output, not the provider — unless the body itself
+                # carried a provider error, which classify() already recognises.
+                if kind == "transient" and raw is not None and not isinstance(exc, (ProviderRequestError, ProviderTransportError)) \
+                        and not raw.get("error"):
+                    kind = "output"
+                if kind == "fatal":
+                    raise
+                if kind == "transient":
+                    transient_failures += 1
+                    waited = time.monotonic() - retry_started
+                    wait = policy.wait_s(transient_failures - 1, getattr(exc, "retry_after_s", None))
+                    if transient_failures > policy.transient_retries or waited + wait > policy.budget_s:
+                        self.emit("llm_backoff", {"turn": turn, "phase": phase, "attempt": attempt, "kind": "exhausted",
+                            "transient_failures": transient_failures, "transient_retries": policy.transient_retries,
+                            "waited_s": round(waited, 1), "budget_s": policy.budget_s, "reason": describe(exc),
+                            "http_status": getattr(exc, "status", None)})
+                        print(f"  [Turn {turn}] Provider still failing after {transient_failures} transient failure(s) "
+                              f"and {waited / 60:.1f} min of waiting ({describe(exc)}) — giving up.", flush=True)
+                        raise
+                    self.emit("llm_backoff", {"turn": turn, "phase": phase, "attempt": attempt, "kind": "waiting",
+                        "transient_failures": transient_failures, "transient_retries": policy.transient_retries,
+                        "wait_s": round(wait, 1), "waited_s": round(waited, 1), "budget_s": policy.budget_s,
+                        "retry_after_s": getattr(exc, "retry_after_s", None), "reason": describe(exc),
+                        "http_status": getattr(exc, "status", None)})
+                    print(f"  [Turn {turn}] Provider failure ({describe(exc)}) — transient retry "
+                          f"{transient_failures}/{policy.transient_retries}, waiting {wait:.0f}s "
+                          f"({waited / 60:.1f} of {policy.budget_s / 60:.0f} min budget used)", flush=True)
+                    await self._sleep(wait)
+                    continue
+                output_failures += 1
+                if output_failures > output_budget:
                     raise
                 self.emit("output_retry", {"turn": turn, "phase": phase, "content": str(exc)})
                 # Failed requests are archived, not appended to accepted history.
                 # Retry identical context without switching models or stripping state.
-        raise RuntimeError("Unreachable retry exit")

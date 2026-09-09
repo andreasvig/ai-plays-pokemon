@@ -409,6 +409,22 @@ export class LiveTrace {
       return this._push(evt.turn, { k: 'retry', t: `Attempt ${n}/${max} ${why}${next}` })
     }
 
+    // Transient provider failure (429 / 5xx / network): the backend waits with
+    // exponential backoff before re-sending the SAME request. Show the wait so
+    // a rate-limited turn reads as "waiting", not as a hung model.
+    if (t === 'llm_backoff') {
+      const n = evt.transient_failures
+      const max = evt.transient_retries
+      const why = evt.reason || (evt.http_status ? `HTTP ${evt.http_status}` : 'provider failure')
+      if (evt.kind === 'exhausted') {
+        return this._push(evt.turn, { k: 'error', t: `Provider still failing after ${n} attempts and ${Math.round((evt.waited_s || 0) / 60)} min of waiting (${why}) — giving up.` })
+      }
+      const wait = Math.round(evt.wait_s || 0)
+      const used = Math.round((evt.waited_s || 0) / 60)
+      const budget = Math.round((evt.budget_s || 0) / 60)
+      return this._push(evt.turn, { k: 'retry', t: `Provider failure (${why}) — transient retry ${n}/${max}, waiting ${wait}s (${used} of ${budget} min budget used)` })
+    }
+
     if (t === 'output_retry') {
       return this._push(evt.turn, {
         k: 'retry',

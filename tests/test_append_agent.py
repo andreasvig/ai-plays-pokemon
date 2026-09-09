@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import shutil
 
+import httpx
 import pytest
 from pydantic import ValidationError
 
@@ -73,6 +74,11 @@ def engine(config, tmp_path, provider=None):
     events = []
     provider = provider or FakeProvider()
     agent = AppendAgent(config, tmp_path, lambda kind, data: events.append({"type": kind, **deepcopy(data)}), transport=provider)
+    # Transient retries back off for real seconds; record the schedule instead.
+    agent.sleeps = []
+    async def _record(seconds):
+        agent.sleeps.append(seconds)
+    agent._sleep = _record
     return agent, provider, events
 
 
@@ -577,7 +583,9 @@ def test_context_estimate_reserves_realistic_output_not_the_ceiling(config, tmp_
 
 
 def test_provider_side_failure_is_a_transport_error_and_retried(config, tmp_path):
-    config["transport"]["max_retries"] = 1
+    # max_retries is the OUTPUT budget; a provider-side failure is TRANSIENT and
+    # retried under its own budget even with max_retries at zero (2026-09-09).
+    config["transport"]["max_retries"] = 0
     class Flaky(FakeProvider):
         async def __call__(self, *args):
             response = await super().__call__(*args)
@@ -591,6 +599,9 @@ def test_provider_side_failure_is_a_transport_error_and_retried(config, tmp_path
     errors = [e for e in events if e["type"] == "llm_request_error"]
     assert [e["error"] for e in errors] == ["Provider returned no completion (network_error)"]
     assert len(provider.requests) == 2
+    assert len(agent.sleeps) == 1 and 2.5 <= agent.sleeps[0] <= 5  # first transient wait: ceiling 5 s
+    assert [e["kind"] for e in events if e["type"] == "llm_backoff"] == ["waiting"]
+    assert not [e for e in events if e["type"] == "output_retry"], "a provider failure is not an output retry"
 
 
 def test_budget_reached_by_compaction_prevents_gameplay(config, tmp_path):
@@ -624,6 +635,150 @@ def test_signature_rejection_is_archived_and_not_silently_retried(config, tmp_pa
     assert errors[0]["cached_tokens"] is None
     assert len(list((tmp_path / 'conversation').glob('*-response.json'))) == 1
 
+
+
+# ── transient backoff (2026-09-09: the qwen3.8-flash 429 crash) ──────────────
+
+def _rate_limited(times, status=429, headers=None):
+    """A provider that fails `times` requests with `status`, then answers normally."""
+    from src.agent.append_agent import ProviderRequestError
+    body = {"error": {"message": "Provider returned error", "code": status, "metadata": {
+        "raw": "qwen/qwen3.8-flash is temporarily rate-limited upstream. Please retry shortly"}}}
+    class Limited(FakeProvider):
+        async def __call__(self, *args):
+            if len(self.requests) < times:
+                self.requests.append(json.loads(args[0]))
+                raise ProviderRequestError(status, body, headers=headers)
+            return await super().__call__(*args)
+    return Limited()
+
+
+def test_rate_limits_back_off_exponentially_and_do_not_spend_the_output_budget(config, tmp_path):
+    config["transport"]["max_retries"] = 0            # zero OUTPUT re-asks…
+    config["transport"]["transient_retries"] = 5      # …but five transient ones
+    config["transport"]["backoff_base_seconds"] = 4
+    config["transport"]["backoff_factor"] = 2
+    agent, provider, events = engine(config, tmp_path, _rate_limited(3))
+    assert asyncio.run(agent.play(1, "", IMAGE)).inputs == ["a"]
+    assert len(provider.requests) == 4
+    # equal jitter on ceilings 4, 8, 16 → each wait in [ceiling/2, ceiling], strictly growing floors
+    assert len(agent.sleeps) == 3
+    for wait, ceiling in zip(agent.sleeps, (4, 8, 16)):
+        assert ceiling / 2 <= wait <= ceiling, (wait, ceiling)
+    backoffs = [e for e in events if e["type"] == "llm_backoff"]
+    assert [b["kind"] for b in backoffs] == ["waiting"] * 3
+    assert [b["transient_failures"] for b in backoffs] == [1, 2, 3]
+    assert backoffs[0]["transient_retries"] == 5 and backoffs[0]["http_status"] == 429
+    assert backoffs[0]["reason"].startswith("HTTP 429 — qwen/qwen3.8-flash is temporarily rate-limited")
+    assert not [e for e in events if e["type"] == "output_retry"]
+    errors = [e for e in events if e["type"] == "llm_request_error"]
+    assert len(errors) == 3 and all(e["http_status"] == 429 for e in errors)
+    # the successful attempt is numbered after the failures
+    assert [e["attempt"] for e in events if e["type"] == "llm_request_usage"] == [4]
+
+
+def test_retry_after_header_is_the_floor_of_the_wait(config, tmp_path):
+    config["transport"]["backoff_base_seconds"] = 4
+    config["transport"]["backoff_cap_seconds"] = 120
+    agent, provider, events = engine(config, tmp_path, _rate_limited(1, headers={"Retry-After": "37"}))
+    assert asyncio.run(agent.play(1, "", IMAGE)).inputs == ["a"]
+    assert agent.sleeps == [37.0]
+    assert [e["retry_after_s"] for e in events if e["type"] == "llm_backoff"] == [37.0]
+
+
+def test_transient_budget_exhaustion_raises_the_provider_error(config, tmp_path):
+    from src.agent.append_agent import ProviderRequestError
+    config["transport"]["transient_retries"] = 2
+    config["transport"]["backoff_base_seconds"] = 1
+    agent, provider, events = engine(config, tmp_path, _rate_limited(10))
+    with pytest.raises(ProviderRequestError) as exc:
+        asyncio.run(agent.play(1, "", IMAGE))
+    assert exc.value.status == 429
+    assert len(provider.requests) == 3            # 1 + 2 retries
+    assert len(agent.sleeps) == 2
+    kinds = [e["kind"] for e in events if e["type"] == "llm_backoff"]
+    assert kinds == ["waiting", "waiting", "exhausted"]
+
+
+def test_wall_clock_budget_caps_the_waiting(config, tmp_path):
+    from src.agent.append_agent import ProviderRequestError
+    config["transport"]["transient_retries"] = 50
+    config["transport"]["backoff_base_seconds"] = 100   # first wait ≥ 50 s…
+    config["transport"]["retry_budget_seconds"] = 40    # …which the budget cannot afford
+    agent, provider, events = engine(config, tmp_path, _rate_limited(10))
+    with pytest.raises(ProviderRequestError):
+        asyncio.run(agent.play(1, "", IMAGE))
+    assert len(provider.requests) == 1 and agent.sleeps == []
+    assert [e["kind"] for e in events if e["type"] == "llm_backoff"] == ["exhausted"]
+
+
+def test_five_hundreds_and_dropped_connections_are_transient_too(config, tmp_path):
+    class Flaky(FakeProvider):
+        async def __call__(self, *args):
+            self.requests.append(json.loads(args[0]))
+            n = len(self.requests)
+            if n == 1:
+                raise httpx.ConnectError("connection reset")
+            if n == 2:
+                from src.agent.append_agent import ProviderRequestError
+                raise ProviderRequestError(503, {"error": {"message": "Service Unavailable"}})
+            self.requests.pop()
+            return await super().__call__(*args)
+    agent, provider, events = engine(config, tmp_path, Flaky())
+    assert asyncio.run(agent.play(1, "", IMAGE)).inputs == ["a"]
+    assert len(agent.sleeps) == 2 and agent.sleeps[1] > agent.sleeps[0] / 2
+    assert [e["reason"] for e in events if e["type"] == "llm_backoff"] == ["ConnectError: connection reset", "HTTP 503 — Service Unavailable"]
+
+
+def test_insufficient_credits_is_fatal_not_retried(config, tmp_path):
+    from src.agent.append_agent import ProviderRequestError
+    config["transport"]["transient_retries"] = 5
+    agent, provider, events = engine(config, tmp_path, _rate_limited(3, status=402))
+    with pytest.raises(ProviderRequestError):
+        asyncio.run(agent.play(1, "", IMAGE))
+    assert len(provider.requests) == 1 and agent.sleeps == []
+
+
+def test_output_defects_still_use_max_retries_with_no_wait(config, tmp_path):
+    config["transport"]["max_retries"] = 1
+    class WrongShape(FakeProvider):
+        async def __call__(self, *args):
+            response = await super().__call__(*args)
+            if len(self.requests) == 1:
+                response["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"] = "{not json"
+            return response
+    agent, provider, events = engine(config, tmp_path, WrongShape())
+    assert asyncio.run(agent.play(1, "", IMAGE)).inputs == ["a"]
+    assert len(provider.requests) == 2 and agent.sleeps == []
+    assert len([e for e in events if e["type"] == "output_retry"]) == 1
+    assert not [e for e in events if e["type"] == "llm_backoff"]
+
+
+def test_output_budget_exhausted_raises_without_backoff(config, tmp_path):
+    config["transport"]["max_retries"] = 1
+    config["transport"]["transient_retries"] = 9
+    class AlwaysWrong(FakeProvider):
+        async def __call__(self, *args):
+            response = await super().__call__(*args)
+            response["choices"][0]["finish_reason"] = "length"
+            return response
+    agent, provider, events = engine(config, tmp_path, AlwaysWrong())
+    with pytest.raises(ValueError, match="Incomplete model output"):
+        asyncio.run(agent.play(1, "", IMAGE))
+    assert len(provider.requests) == 2 and agent.sleeps == []
+
+
+def test_config_5_0_ships_the_transient_policy_and_the_validator_checks_it():
+    from src.agent.backoff import RetryPolicy
+    cfg = load_config(str(ROOT / "configs/config-5.0.yaml"), llm_alias="openai/test-model")
+    policy = RetryPolicy.from_transport(cfg["transport"])
+    assert policy.transient_retries >= 8 and policy.cap_s >= 300 and policy.budget_s >= 1800, "long backoff means minutes, not seconds"
+    bad = deepcopy(cfg); bad["transport"]["backoff_factor"] = 0.5
+    with pytest.raises(ValueError, match="backoff_factor"):
+        _validate_config(bad)
+    bad = deepcopy(cfg); bad["transport"]["transient_retries"] = -1
+    with pytest.raises(ValueError, match="transient_retries"):
+        _validate_config(bad)
 
 GEMINI_TIERS = [{"name": f"Google AI Studio | tier {i}", "provider_name": "Google AI Studio",
                  "pricing": {"prompt": str(p), "input_cache_read": str(p / 10), "input_cache_write": "0.00000002"}}

@@ -1,0 +1,55 @@
+{
+  "model": "google/gemini-3.8-flash",
+  "endpoint": "google-ai-studio",
+  "probed": "2026-09-09",
+  "shapes": {
+    "low (reference)": {
+      "status": 200,
+      "latency_s": 2.4,
+      "reasoning_sent": {
+        "effort": "low"
+      },
+      "provider": "Google AI Studio",
+      "finish": "stop",
+      "reasoning_tokens": 0,
+      "out_tokens": 206,
+      "cost_usd": 0.0016395,
+      "has_reasoning_field": true,
+      "coherent": true,
+      "reply_head": "Based on the given coordinates and constraints:  - **Starting position:** `(0, 0)` - **Door position:** `(+3, "
+    },
+    "effort minimal": {
+      "status": 200,
+      "latency_s": 2.0,
+      "reasoning_sent": {
+        "effort": "minimal"
+      },
+      "provider": "Google AI Studio",
+      "finish": "stop",
+      "reasoning_tokens": 0,
+      "out_tokens": 193,
+      "cost_usd": 0.00159075,
+      "has_reasoning_field": true,
+      "coherent": true,
+      "reply_head": "Based on the coordinates provided in the description:  * **Start position:** $(0, 0)$ * **Target (door):** $(+"
+    },
+    "effort none": {
+      "status": 400,
+      "latency_s": 0.2,
+      "reasoning_sent": {
+        "effort": "none"
+      },
+      "error": "Reasoning is mandatory for this endpoint and cannot be disabled.",
+      "upstream": ""
+    },
+    "enabled false": {
+      "status": 400,
+      "latency_s": 0.2,
+      "reasoning_sent": {
+        "enabled": false
+      },
+      "error": "Reasoning is mandatory for this endpoint and cannot be disabled.",
+      "upstream": ""
+    }
+  }
+}
