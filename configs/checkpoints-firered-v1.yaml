@@ -43,6 +43,7 @@ checkpoints:
     signature: {map_group: 4, map_num: 3}
     cross_check: {type: flag, flag_id: 0x2CF}     # FLAG_VISITED_OAKS_LAB
     deadline_turn: 75                            # Andreas's original anchor (Oak encounter)
+    locus: {map_group: 3, map_num: 0, tiles: [[12,1],[13,1]]}  # Oak's trigger tiles on Pallet's north edge (see firstbadge.yaml)
 
   - id: starter_chosen
     name: "Chose a starter"

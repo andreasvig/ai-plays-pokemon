@@ -351,14 +351,17 @@ def test_load_state_tolerates_junk():
 
 # --- ladder loci -------------------------------------------------------------------
 
-def test_firstbadge_ladder_carries_the_five_loci():
+def test_firstbadge_ladder_carries_the_six_loci():
     ladder = load_ladder(REPO / "configs" / "checkpoints-firered-firstbadge.yaml")
     loci = {cp.id: cp.locus for cp in ladder.checkpoints if cp.locus}
-    assert set(loci) == {"starter_chosen", "rival1_done", "parcel_delivered", "pokedex_received", "brock_defeated"}
+    assert set(loci) == {"oaks_lab_entered", "starter_chosen", "rival1_done", "parcel_delivered", "pokedex_received", "brock_defeated"}
     assert loci["rival1_done"] == {"map_group": 4, "map_num": 3, "tiles": [[5, 8], [6, 8], [7, 8]]}
     assert loci["brock_defeated"] == {"map_group": 6, "map_num": 2, "near": [[6, 5]]}
-    # Map gates need none — the graph derives their entry tiles.
-    assert all(cp.locus is None for cp in ladder.checkpoints if cp.type == "map")
+    # The one map gate with a locus: Oak's trigger tiles on Pallet Town's north
+    # edge fire the cutscene that walks you into the lab (2026-09-09). Every other
+    # map gate derives its entry tiles from the graph.
+    assert loci["oaks_lab_entered"] == {"map_group": 3, "map_num": 0, "tiles": [[12, 1], [13, 1]]}
+    assert all(cp.locus is None for cp in ladder.checkpoints if cp.type == "map" and cp.id != "oaks_lab_entered")
 
 
 @pytest.mark.parametrize("bad", [

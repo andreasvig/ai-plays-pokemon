@@ -340,3 +340,16 @@ traces instead of intuition.
   live by `pokebench-static-site.mjs` (18 pass; the video assertions cannot run
   until a recorded run is published) and locally by `pokebench-progress-ui.mjs`
   (14/14).
+
+## 10. v1.1 recalibration — same afternoon (2026-09-09)
+
+Andreas, watching glm-5.3-flash(low) walk steadily and still die at T100: "I want
+to recalibrate the checkpoint turns." Ladder now 30 / 40 / 50 / 65 / 85 / 100 /
+150 / 180 / 220 / 300 / 500 / 600 (his numbers; ≥2× the first clear's leg on
+every leg but Pewter at 1.8×; his first target of 500 for Brock was infeasible
+with ≥2× everywhere because 2× gemini already sums to 474). `oaks_lab_entered`
+got a locus on Oak's trigger tiles (12,1)/(13,1) — `resolve_locus` now lets an
+explicit locus beat a map gate's entry tiles — so the lab leg is 14 steps north
+instead of 19 steps the wrong way. Season marker `pokebench-v1.1`; the two v1
+rows stay online with a `v1` tag; the site has a `/changelog` page. Brain:
+[[agent_brain/understanding/decisions/ai-plays-pokemon-ladder-v1-1-2026-09-09]].

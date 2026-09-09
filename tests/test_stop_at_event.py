@@ -403,7 +403,9 @@ def test_loop_stops_at_the_event_and_reports_completed(tmp_path):
     summary = json.loads((logger.run_dir / "run_summary.json").read_text())
     assert summary["session"]["player_turns"] == 2      # not 4
     assert summary["status"] == "completed"
-    assert mgr.referee.polled_turns == [1, 2]
+    # Turn 0 is the pre-action baseline poll (2026-09-09: the first leg's
+    # yardstick is measured from where the run starts, not where turn 1 ended).
+    assert mgr.referee.polled_turns == [0, 1, 2]
 
 
 def test_loop_without_an_event_uses_the_whole_budget(tmp_path):

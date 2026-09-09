@@ -2,6 +2,7 @@
   import { usd, dur, perTurn, ago, dateShort, statusLabel, statusClass, legLabel } from '../lib/format.js'
   import Icon from './Icon.svelte'
   import { STATIC } from '../lib/static.js'
+  import { BENCH_VERSION } from '../lib/version.js'
   let { runs = [], oninspect, oncontinue, ondelete } = $props()
 
   let kindFilter = $state('all')
@@ -116,6 +117,7 @@
         {#if !STATIC}<span class="c-kind"><span class="badge {r.kind}">{r.kind === 'official' ? 'OFF' : 'CAS'}</span></span>{/if}
         <span class="c-model">
           <span class="mname mono">{r.model}</span>
+          {#if r.benchmarkVersion && r.benchmarkVersion !== BENCH_VERSION}<span class="oldver mono" title="Ran under {r.benchmarkVersion} — see the changelog">{r.benchmarkVersion.replace('pokebench-', '')}</span>{/if}
           <span class="meta faint">{dateShort(r.startedAt)} <span class="rel">({ago(r.startedAt)})</span> · <span class="mono">{r.config}</span>{#if r.continuedFrom} · ↪ continued{/if}</span>
         </span>
         <span class="c-comp">
@@ -232,6 +234,7 @@
   .row:hover { border-color: var(--faint); background: var(--surface-2); }
 
   .c-model { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .oldver { font-size: 9px; font-weight: 700; letter-spacing: .03em; color: var(--faint); background: var(--wash); padding: 2px 5px; border-radius: var(--radius-sm); flex: none; }
   .mname { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .meta { font-size: 11px; }
   .meta .rel { color: var(--faint); }

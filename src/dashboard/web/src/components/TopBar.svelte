@@ -1,6 +1,7 @@
 <script>
   import Icon from './Icon.svelte'
   import { STATIC } from '../lib/static.js'
+  import { BENCH_VERSION } from '../lib/version.js'
   let { active = null, emulatorUp = false, queue = [], view = 'home', muted = true, ontogglemute,
         emulator = {}, onnav, onspectate } = $props()
   // green/live = a run is active AND the emulator is up; grey/idle otherwise.
@@ -12,7 +13,7 @@
     <button class="brand" onclick={() => onnav('/')}>
       <span class="logo"><Icon name="ball" size={20} title="PokeBench" /></span>
       <span class="name">PokeBench</span>
-      <span class="ver mono">pokebench-v1</span>
+      <span class="ver mono">{BENCH_VERSION}</span>
     </button>
   </div>
 
@@ -46,6 +47,7 @@
       </button>
     {/if}
     <button class="btn ghost" class:active={view === 'history'} onclick={() => onnav('/history')}>History</button>
+    <button class="btn ghost" class:active={view === 'changelog'} onclick={() => onnav('/changelog')}>Changelog</button>
     <button class="btn ghost" class:active={view === 'about'} onclick={() => onnav('/about')}>About</button>
   </nav>
 </header>

@@ -51,7 +51,11 @@ from src.app.trace_build import build_and_cache_trace
 # being ranked against a different harness's turn units.
 OFFICIAL_CONFIG = "configs/config-5.0.yaml"
 OFFICIAL_LADDER = "configs/checkpoints-firered-v1.yaml"
-OFFICIAL_BENCHMARK_VERSION = "pokebench-v1"
+# The season marker stamped on every finished official run. v1 → v1.1 on
+# 2026-09-09: deadlines raised across the first-badge ladder and between-gate
+# progress added. v1 rows stay on the board (see the ladder header). Mirrored by
+# BENCH_VERSION in src/dashboard/web/src/lib/version.js — a test pins the pair.
+OFFICIAL_BENCHMARK_VERSION = "pokebench-v1.1"
 
 # Canonical committed start save (locked #7) — official + casual-fresh load this.
 CANONICAL_SAVE = "configs/saves/pokebench-v1"

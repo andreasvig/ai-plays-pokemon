@@ -116,18 +116,21 @@ class WalkGraph:
     def resolve_locus(self, checkpoint) -> set[int]:
         """The target tile set for a ladder gate.
 
-        - ``map`` gates: the entry tiles of the signature map.
-        - anything else: the gate's ``locus`` ``{map_group, map_num, tiles?, near?}``
-          — ``tiles`` are stand tiles themselves, ``near`` are object/NPC tiles
-          whose passable neighbours are the stand tiles. Both may be given.
-        Returns an empty set when the gate has no spatial target (the leg is
-        then unscored, never wrong).
+        - an explicit ``locus`` ``{map_group, map_num, tiles?, near?}`` always
+          wins — ``tiles`` are stand tiles themselves, ``near`` are object/NPC
+          tiles whose passable neighbours are the stand tiles. Both may be given.
+          A map gate uses it when the story event that fires the gate happens
+          somewhere else (Oak's trigger on Pallet's north edge walks you into
+          the lab; the lab door is 19 steps the other way — 2026-09-09).
+        - ``map`` gates without one: the entry tiles of the signature map.
+        - anything else without one: no spatial target (the leg is then
+          unscored, never wrong) — an empty set.
         """
-        if getattr(checkpoint, "type", None) == "map":
-            sig = checkpoint.signature
-            return self.map_entry_nodes(int(sig["map_group"]), int(sig["map_num"]))
         locus = getattr(checkpoint, "locus", None)
         if not isinstance(locus, dict):
+            if getattr(checkpoint, "type", None) == "map":
+                sig = checkpoint.signature
+                return self.map_entry_nodes(int(sig["map_group"]), int(sig["map_num"]))
             return set()
         try:
             g, n = int(locus["map_group"]), int(locus["map_num"])

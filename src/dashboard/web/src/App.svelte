@@ -6,6 +6,8 @@
   import QueueBar from './components/QueueBar.svelte'
   import Spectate from './components/Spectate.svelte'
   import Report from './components/Report.svelte'
+  import Changelog from './components/Changelog.svelte'
+  import { BENCH_VERSION } from './lib/version.js'
   import AddRunDialog from './components/AddRunDialog.svelte'
   import { router } from './lib/router.svelte.js'
   import { recording, recordRun, forcedSimple, forcedShow } from './lib/record.js'
@@ -18,6 +20,7 @@
   const view = $derived(
     parts[0] === 'spectate' ? (STATIC ? 'home' : 'spectate')
     : parts[0] === 'about' ? 'about'
+    : parts[0] === 'changelog' ? 'changelog'
     : parts[0] === 'history' ? (parts[1] ? 'report' : 'history')
     : 'home'
   )
@@ -313,8 +316,10 @@
         sees it) and stamps story checkpoints. A <b>progressive gate ladder</b> attaches a turn
         deadline to each checkpoint; a run that falls behind pace is terminated. A model is scored
         first on how much of the ladder it clears, then — among full clears — on how few turns it took.</p>
-      <p class="faint">pokebench-v1 · gate ladder + config are WIP until launch.</p>
+      <p class="faint">{BENCH_VERSION} · see the <button class="link" onclick={() => go('/changelog')}>changelog</button> for what changed between versions.</p>
     </section>
+  {:else if view === 'changelog'}
+    <Changelog />
   {/if}
 </main>
 
@@ -329,4 +334,5 @@
   .about p { font-size: 15px; line-height: 1.65; color: var(--muted); }
   .about em { font-style: italic; color: var(--text); }
   .about b { color: var(--text); }
+  .about .link { border: none; background: none; padding: 0; color: var(--accent); font: inherit; text-decoration: underline; cursor: pointer; }
 </style>

@@ -18,6 +18,16 @@ rom_sha1:
   v1_1: dd5945db9b930750cb39d00c84da8571feebf417
 
 # PokeBench First Badge — bedroom → Boulder Badge (defeat Brock in Pewter City).
+#
+# v1.1 calibration (Andreas, 2026-09-09): every deadline raised — 30/40/50/65/85/
+# 100/150/180/220/300/500/600, was 20/30/40/50/65/75/100/120/150/200/300/400.
+# Reference: the first full clear (gemini-3.8-flash medium) stamped the gates at
+# T1/4/6/9/17/20/33/47/64/103/215/237. Each leg budget is ≥2× that run's leg
+# except Pewter (1.8× — its 112-turn Forest wander is the reference's outlier),
+# and the early rungs get absolute slack for menu fumbling rather than a multiple
+# (30 turns for the stairs). Runs stamped `pokebench-v1` stay on the board: a run
+# that survived tighter deadlines satisfies the looser ones, and ranking is on
+# progress + turns, not on the deadlines.
 # A self-contained PREFIX of the full FireRed ladder (checkpoints-firered-v1.yaml):
 # the same first 12 gates, ending on `brock_defeated`. Reaching the final rung
 # WINS the run (status: completed); a missed deadline terminates it. Edit these
@@ -37,53 +47,59 @@ checkpoints:
     name: "Left the bedroom"
     type: map
     signature: {map_group: 4, map_num: 0}        # Player's House 1F
-    deadline_turn: 20
+    deadline_turn: 30                             # v1.1: was 20
 
   - id: left_house
     name: "Stepped outside in Pallet Town"
     type: map
     signature: {map_group: 3, map_num: 0}
-    deadline_turn: 30                             # Andreas's original anchor
+    deadline_turn: 40                             # v1.1: was 30
 
   - id: oaks_lab_entered
     name: "Entered Oak's Lab"
     type: map
     signature: {map_group: 4, map_num: 3}
     cross_check: {type: flag, flag_id: 0x2CF}     # FLAG_VISITED_OAKS_LAB
-    deadline_turn: 40                            # Andreas's original anchor (Oak encounter)
+    deadline_turn: 50                             # v1.1: was 40
+    # Where the story actually happens: Prof. Oak stops you on Pallet Town's north
+    # edge (coord_events at (12,1)/(13,1), VAR_MAP_SCENE_PALLET_TOWN_OAK == 0, pret
+    # map.json) and the cutscene walks you into the lab. Without this an explicit
+    # locus, a map gate targets the lab's door tile — 19 steps the OTHER way from
+    # the house, so a model heading north correctly read as walking away (2026-09-09).
+    locus: {map_group: 3, map_num: 0, tiles: [[12,1],[13,1]]}
 
   - id: starter_chosen
     name: "Chose a starter"
     type: flag
     signature: {flag_id: 0x828}                   # FLAG_SYS_POKEMON_GET
     cross_check: {type: party, min_count: 1}
-    deadline_turn: 50
+    deadline_turn: 65                             # v1.1: was 50
     locus: {map_group: 4, map_num: 3, near: [[8,4],[9,4],[10,4]]}  # the three starter Pokéballs in Oak's Lab (ITEM_BALL object_events; pret map.json, 2026-09-09)
 
   - id: rival1_done
     name: "First rival battle done"               # scene-complete, win or lose (no victory flag exists)
     type: flag
     signature: {flag_id: 0x258}                   # FLAG_BEAT_RIVAL_IN_OAKS_LAB
-    deadline_turn: 65
+    deadline_turn: 85                             # v1.1: was 65
     locus: {map_group: 4, map_num: 3, tiles: [[5,8],[6,8],[7,8]]}  # rival battle trigger row in Oak's Lab (coord_events RivalBattleTrigger{Left,Mid,Right}; pret map.json, 2026-09-09)
 
   - id: route1_reached
     name: "Reached Route 1"
     type: map
     signature: {map_group: 3, map_num: 19}
-    deadline_turn: 75
+    deadline_turn: 100                            # v1.1: was 75
 
   - id: viridian_reached
     name: "Reached Viridian City"
     type: map
     signature: {map_group: 3, map_num: 1}
-    deadline_turn: 100                            # Route 1 traversal + encounters
+    deadline_turn: 150                            # v1.1: was 100 — Route 1 traversal + encounters
 
   - id: parcel_delivered                       # legacy ID retained for saved-run compatibility
     name: "Received Oak's Parcel"
     type: var
     signature: {var_id: 0x4057, min_value: 1}     # Mart pickup scene; 2 is after the Pokédex scene
-    deadline_turn: 120
+    deadline_turn: 180                            # v1.1: was 120
     locus: {map_group: 5, map_num: 3, near: [[2,3]]}  # Viridian Mart clerk (CLERK object_event; pret map.json, 2026-09-09)
 
   - id: pokedex_received
@@ -91,25 +107,25 @@ checkpoints:
     type: flag
     signature: {flag_id: 0x829}                   # FLAG_SYS_POKEDEX_GET
     cross_check: {type: var, var_id: 0x4055, min_value: 6}
-    deadline_turn: 150                            # backtrack Viridian -> Pallet lab
+    deadline_turn: 220                            # v1.1: was 150 — backtrack Viridian -> Pallet lab
     locus: {map_group: 4, map_num: 3, near: [[6,3]]}  # Prof. Oak in his lab (PROF_OAK object_event; pret map.json, 2026-09-09)
 
   - id: viridian_forest_reached
     name: "Entered Viridian Forest"
     type: map
     signature: {map_group: 1, map_num: 0}
-    deadline_turn: 200                            # north again: Viridian + Route 2
+    deadline_turn: 300                            # v1.1: was 200 — north again: Viridian + Route 2
 
   - id: pewter_reached
     name: "Reached Pewter City"
     type: map
     signature: {map_group: 3, map_num: 2}
-    deadline_turn: 300
+    deadline_turn: 500                            # v1.1: was 300 — the Forest maze is where turns go
 
   - id: brock_defeated
     name: "Defeated Brock (Boulder Badge)"
     type: flag
     signature: {flag_id: 0x820}                   # FLAG_BADGE01_GET
     cross_check: {type: flag, flag_id: 0x4B0}     # DEFEATED_BROCK (speedrun autosplitter's choice)
-    deadline_turn: 400
+    deadline_turn: 600                            # v1.1: was 400
     locus: {map_group: 6, map_num: 2, near: [[6,5]]}  # Brock in Pewter Gym (BROCK object_event; pret map.json, 2026-09-09)

@@ -1,6 +1,7 @@
 <script>
   import { usd, dur, perTurn, legLabel } from '../lib/format.js'
   import { STATIC } from '../lib/static.js'
+  import { BENCH_LABEL, BENCH_VERSION } from '../lib/version.js'
   let {
     rows = [], stats = {}, oninspect,
     benchmarks = [], benchmark = '', onbench = () => {},
@@ -22,7 +23,7 @@
     <!-- The public site (pokemon publish → GitHub Pages) is ONE benchmark, the
          first-badge ladder, and this is Andreas's description of it
          (2026-09-08). The local text below is the operator's view. -->
-    <h1>PokeBench v1</h1>
+    <h1>{BENCH_LABEL}</h1>
     <p class="tagline">A minimal, vision-only harness for Pokémon FireRed: the model sees the screen and presses buttons,
       nothing else. It is graded on the <em>fewest agent turns to defeat the first badge</em>, with
       progressive milestones an agent has to meet before certain turn numbers to be allowed to continue.
@@ -105,6 +106,7 @@
         <span class="c-model">
           <span class="mname mono">{r.model}</span>
           {#if r.openSource}<span class="oss" title="Open-weights">OSS</span>{/if}
+          {#if r.benchmarkVersion && r.benchmarkVersion !== BENCH_VERSION}<span class="oldver mono" title="Ran under {r.benchmarkVersion} — see the changelog">{r.benchmarkVersion.replace('pokebench-', '')}</span>{/if}
         </span>
         <span class="c-comp">
           <span class="pct" class:full={r.completion >= 100}>{r.completion}%</span>
@@ -185,6 +187,7 @@
   .ranknum { font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; }
   .c-model { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .mname { font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .oldver { font-size: 9px; font-weight: 700; letter-spacing: .03em; color: var(--faint); background: var(--wash); padding: 2px 5px; border-radius: var(--radius-sm); flex: none; }
   .oss { font-size: 9px; font-weight: 800; letter-spacing: .03em; color: var(--oss); background: var(--oss-soft); padding: 2px 5px; border-radius: var(--radius-sm); flex: none; }
   .c-comp { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
   .pct { font-size: 15px; font-weight: 750; }

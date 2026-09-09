@@ -91,6 +91,8 @@ def test_map_entry_nodes_and_neighbours():
 def test_resolve_locus_map_tiles_near_and_none():
     g = toy()
     assert g.resolve_locus(_Gate("map", {"map_group": 4, "map_num": 3})) == {g.node_id(4, 3, 0, 0)}
+    # an explicit locus beats the map's entry tiles (Oak's trigger, 2026-09-09)
+    assert g.resolve_locus(_Gate("map", {"map_group": 4, "map_num": 3}, {"map_group": 3, "map_num": 0, "tiles": [[5, 0]]})) == {5}
     assert g.resolve_locus(_Gate("flag", {"flag_id": 1}, {"map_group": 3, "map_num": 0, "tiles": [[5, 0]]})) == {5}
     assert g.resolve_locus(_Gate("flag", {"flag_id": 1}, {"map_group": 4, "map_num": 3, "near": [[1, -1]]})) == {g.node_id(4, 3, 1, 0)}
     both = g.resolve_locus(_Gate("var", {}, {"map_group": 4, "map_num": 3, "tiles": [[2, 0]], "near": [[0, -1]]}))

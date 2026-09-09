@@ -1,4 +1,5 @@
 <script>
+  import { BENCH_VERSION } from '../lib/version.js'
   import Icon from './Icon.svelte'
   import QueueError from './QueueError.svelte'
   // Same `lastError` contract as QueueBar, rendered by the same component.
@@ -55,7 +56,7 @@
             </div>
             <div class="cmodel mono">{q.model}</div>
             <div class="cmeta faint">
-              {#if q.kind === 'casual'}<span class="mono">{q.config}</span> · {q.maxTurns}t{#if q.stopAt} · ⇥ <span class="mono">{q.stopAt}</span>{/if}{#if q.maxSpend} · ≤${q.maxSpend}{/if}{#if q.gameplay === 'speed'} · speed{/if}{#if q.rom} · <span class="mono">{q.rom}</span>{/if}{#if q.providerProfile} · <span class="mono">{q.providerProfile}</span>{/if}{:else}pokebench-v1{/if}
+              {#if q.kind === 'casual'}<span class="mono">{q.config}</span> · {q.maxTurns}t{#if q.stopAt} · ⇥ <span class="mono">{q.stopAt}</span>{/if}{#if q.maxSpend} · ≤${q.maxSpend}{/if}{#if q.gameplay === 'speed'} · speed{/if}{#if q.rom} · <span class="mono">{q.rom}</span>{/if}{#if q.providerProfile} · <span class="mono">{q.providerProfile}</span>{/if}{:else}{BENCH_VERSION}{/if}
             </div>
           </div>
           <button class="rm" onclick={() => onremove(q.queueId)} title="Remove from queue"><Icon name="close" size={12} /></button>

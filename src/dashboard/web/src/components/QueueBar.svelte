@@ -1,4 +1,5 @@
 <script>
+  import { BENCH_VERSION } from '../lib/version.js'
   import Icon from './Icon.svelte'
   import QueueError from './QueueError.svelte'
   // `lastError` is /api/queue's last_error (see lib/queue.js): the item that was
@@ -89,7 +90,7 @@
              the base profile is the default for every run and naming it on each
              card would be noise. Two config-5.0 runs of the same model under
              different variants are otherwise indistinguishable here. -->
-        <div class="cmeta faint">{#if q.kind === 'casual'}<span class="mono">{q.config}</span> · {q.maxTurns}t{#if q.stopAt} · ⇥ <span class="mono">{q.stopAt}</span>{/if}{#if q.maxSpend} · ≤${q.maxSpend}{/if}{#if q.gameplay === 'speed'} · speed{/if}{#if q.rom} · <span class="mono">{q.rom}</span>{/if}{#if q.providerProfile} · <span class="mono">{q.providerProfile}</span>{/if}{:else}pokebench-v1{/if}</div>
+        <div class="cmeta faint">{#if q.kind === 'casual'}<span class="mono">{q.config}</span> · {q.maxTurns}t{#if q.stopAt} · ⇥ <span class="mono">{q.stopAt}</span>{/if}{#if q.maxSpend} · ≤${q.maxSpend}{/if}{#if q.gameplay === 'speed'} · speed{/if}{#if q.rom} · <span class="mono">{q.rom}</span>{/if}{#if q.providerProfile} · <span class="mono">{q.providerProfile}</span>{/if}{:else}{BENCH_VERSION}{/if}</div>
         {#if confirmId === q.queueId}
           <div class="confirm">
             <span class="confirm-q">Remove this run?</span>

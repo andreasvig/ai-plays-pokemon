@@ -155,9 +155,13 @@ diagnostics only — it never decides.
 | 19 | `ss_anne_boarded` — Boarded the S.S. Anne | map | T1100 |
 | 20 | `thunder_badge` — Defeated Lt. Surge (Thunder Badge) | flag | T1200 |
 
-The first-badge benchmark has its own deadlines: receive Oak's Parcel by T120,
-receive the Pokédex by T150, and earn the Boulder Badge by T400. The full
-benchmark above keeps its Boulder Badge deadline at T500.
+The first-badge benchmark has its own deadlines (v1.1, 2026-09-09): bedroom
+T30, outside T40, Oak's Lab T50, starter T65, rival T85, Route 1 T100, Viridian
+T150, Oak's Parcel T180, Pokédex T220, Viridian Forest T300, Pewter T500,
+Boulder Badge T600. v1 ran 20/30/40/50/65/75/100/120/150/200/300/400; runs
+stamped `pokebench-v1` stay on the board because a run that met the tighter
+deadlines meets the looser ones. The full benchmark above keeps its Boulder
+Badge deadline at T500.
 
 The parcel checkpoint retains the legacy ID `parcel_delivered` for saved-run
 compatibility. Its detector now checks the Mart scene variable for ≥1 (pickup),
