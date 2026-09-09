@@ -48,6 +48,23 @@
   const reachedN = $derived(gates.filter((g) => clearedStatuses.has(g.status)).length)
   const totalN = $derived(gates.length || GATES.length)
   const termination = $derived(summary?.referee?.termination_reason ?? null)
+  // Rows for the gate table. Two things the raw scorecard leaves implicit:
+  // the gate that ENDED the run (missed deadline or spent leg cap) is marked
+  // failed rather than pending, and the leg the run was on when it stopped
+  // shows the turns spent so far — total turns minus the previous gate's stamp —
+  // when the scorecard did not carry it (runs projected before leg_turns existed,
+  // and adjudicated summaries). A leg-cap end therefore reads "200 / 200".
+  const gateRows = $derived(gates.map((g, i) => {
+    const endedHere = !!termination && termination.split(':')[1] === g.id && g.turn == null
+    const prevTurn = i === 0 ? 0 : gates[i - 1]?.turn
+    let legTurns = g.leg_turns ?? null
+    if (legTurns == null && g.turn == null && prevTurn != null && run?.turns != null && g.leg_cap_turns != null) {
+      const spent = run.turns - prevTurn
+      // Only the leg that was open when the run stopped; deeper legs never opened.
+      if (spent >= 0 && (i === 0 || gates[i - 1]?.turn != null)) legTurns = Math.min(spent, g.leg_cap_turns)
+    }
+    return { ...g, status: endedHere ? 'failed' : g.status, legTurns }
+  }))
   // Between-gate progress from the referee's ProgressTracker (referee.progress):
   // one row per leg the run opened, plus the leg it was on when it stopped.
   const progress = $derived(summary?.referee?.progress ?? null)
@@ -401,7 +418,7 @@ where: {crash.where.join(' ← ')}{/if}</pre>
           <span class="verdict" class:fail={termination && (termination.startsWith('missed_gate:') || termination.startsWith('leg_cap:'))} class:win={reachedN >= totalN && totalN > 0}>{verdict()}</span>
         </div>
         <div class="gtable">
-          {#each gates as g (g.id)}
+          {#each gateRows as g (g.id)}
             <div class="grow {g.status}" class:grp={g.group}>
               <span class="gst {g.status}">{stIcon[g.status] ?? '·'}</span>
               <span class="gname">{g.name}</span>
@@ -410,7 +427,7 @@ where: {crash.where.join(' ← ')}{/if}</pre>
                    cumulative deadline still governs the run but is no longer shown
                    here (Andreas, 2026-09-09: "remove the old T limits such that we only
                    have the per leg ones"); a missed-deadline verdict still names it. -->
-              <span class="gleg tnum faint" title="turns on this leg / leg cap">{g.leg_cap_turns != null ? `${g.leg_turns != null ? g.leg_turns : '·'} / ${g.leg_cap_turns}` : ''}</span>
+              <span class="gleg tnum" class:faint={g.status !== 'failed'} title="turns on this leg / leg cap">{g.leg_cap_turns != null ? `${g.legTurns != null ? g.legTurns : '·'} / ${g.leg_cap_turns}` : ''}</span>
             </div>
           {/each}
         </div>

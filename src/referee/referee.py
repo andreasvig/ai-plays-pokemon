@@ -148,6 +148,9 @@ class Referee:
         # Set to "missed_gate:<id>" the first time a gate is missed under
         # enforcement; otherwise None. Once set, never cleared.
         self.terminated_reason: Optional[str] = None
+        # Turn of the most recent poll — lets the scorecard report turns spent so far
+        # on the leg the run is currently walking (its gate has no stamp yet).
+        self._last_poll_turn: Optional[int] = None
 
         # Optional early finish line (casual runs): the id of a gate that ends
         # the run the moment it latches, wherever it sits in the ladder. Ends
@@ -304,6 +307,7 @@ class Referee:
         ``poll`` never raises or kills the process itself — the turn loop reads
         the flag (or ``should_terminate()``) and stops the run cleanly.
         """
+        self._last_poll_turn = turn_number
         snap = self._read_memory_snapshot()
         if snap is None:
             # Out-of-range pointer or unrecoverable torn read. We still surface
@@ -708,11 +712,15 @@ class Referee:
                 # rung's completion), when both ends are known — what the leg cap
                 # is compared against, so the report can show N / cap.
                 leg_start = self._leg_start_turn(i)
-                leg_turns = (
-                    turn - leg_start
-                    if turn is not None and leg_start is not None and turn >= leg_start
-                    else None
-                )
+                if turn is not None and leg_start is not None and turn >= leg_start:
+                    leg_turns = turn - leg_start
+                elif turn is None and leg_start is not None and self._last_poll_turn is not None:
+                    # The leg the run is ON (or died on): turns spent so far. For a
+                    # leg-cap termination this equals the cap — the row reads
+                    # "200 / 200" rather than an empty cell.
+                    leg_turns = max(0, self._last_poll_turn - leg_start)
+                else:
+                    leg_turns = None
                 gates.append(
                     {
                         "kind": "single",

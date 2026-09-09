@@ -356,8 +356,13 @@ def test_scorecard_reports_turns_per_leg_against_the_cap(tmp_path):
     gates = {g["id"]: g for g in ref.scorecard()["gates"]}
     assert gates["left_bedroom"]["leg_turns"] == 6 and gates["left_bedroom"]["leg_cap_turns"] == 30
     assert gates["left_house"]["leg_turns"] == 3 and gates["left_house"]["leg_cap_turns"] == 10
-    assert gates["starter_chosen"]["leg_turns"] is None            # not stamped yet
+    # the leg the run is ON reports turns spent so far (leg opened at 9, last poll 9)
+    assert gates["starter_chosen"]["leg_turns"] == 0
     assert gates["starter_chosen"]["leg_cap_turns"] == 100
+    emu.set_image(FakeImage(block=build_sb1(map_group=3, map_num=1)))
+    ref.poll(15)
+    gates = {g["id"]: g for g in ref.scorecard()["gates"]}
+    assert gates["starter_chosen"]["leg_turns"] == 6 and gates["starter_chosen"]["turn"] is None
 
 
 def test_loader_validates_leg_cap_turns(tmp_path):
