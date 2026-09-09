@@ -406,8 +406,10 @@ where: {crash.where.join(' ← ')}{/if}</pre>
               <span class="gst {g.status}">{stIcon[g.status] ?? '·'}</span>
               <span class="gname">{g.name}</span>
               <span class="gturn tnum">{g.turn != null ? 'T' + g.turn : '—'}</span>
-              <span class="glim tnum faint">{g.deadline_turn != null ? 'T' + g.deadline_turn : '—'}</span>
-              <!-- leg: turns spent walking into this gate / its per-leg cap (v1.1) -->
+              <!-- leg: turns spent walking into this gate / its per-leg cap (v1.1). The
+                   cumulative deadline still governs the run but is no longer shown
+                   here (Andreas, 2026-09-09: "remove the old T limits such that we only
+                   have the per leg ones"); a missed-deadline verdict still names it. -->
               <span class="gleg tnum faint" title="turns on this leg / leg cap">{g.leg_cap_turns != null ? `${g.leg_turns != null ? g.leg_turns : '·'} / ${g.leg_cap_turns}` : ''}</span>
             </div>
           {/each}
@@ -904,7 +906,7 @@ waited {Math.round(e.wait_s ?? 0)}s{/if}</pre>
   .verdict.fail { color: var(--red); }
   .verdict.win { color: var(--green); }
   .gtable { display: flex; flex-direction: column; }
-  .grow { display: grid; grid-template-columns: 22px 1fr 60px 50px 64px; gap: 10px; align-items: center; padding: 6px 8px; border-radius: var(--radius-sm); font-size: 12.5px; }
+  .grow { display: grid; grid-template-columns: 22px 1fr 60px 64px; gap: 10px; align-items: center; padding: 6px 8px; border-radius: var(--radius-sm); font-size: 12.5px; }
   .grow.grp { padding-left: 18px; }
   .grow.done { background: var(--green-soft); }
   .grow.missed, .grow.failed { background: var(--red-soft); }
@@ -912,7 +914,6 @@ waited {Math.round(e.wait_s ?? 0)}s{/if}</pre>
   .gst.done { color: var(--green); } .gst.missed, .gst.failed { color: var(--red); }
   .gname { font-weight: 550; }
   .gturn { text-align: right; font-weight: 650; }
-  .glim { text-align: right; font-size: 11.5px; }
   .gleg { text-align: right; font-size: 11.5px; }
 
   .trace { margin-top: 24px; }
