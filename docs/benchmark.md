@@ -155,28 +155,28 @@ diagnostics only — it never decides.
 | 19 | `ss_anne_boarded` — Boarded the S.S. Anne | map | T1100 |
 | 20 | `thunder_badge` — Defeated Lt. Surge (Thunder Badge) | flag | T1200 |
 
-The first-badge benchmark's cumulative deadlines (v1.1) are the running sums of
-its per-leg caps, below: T30 / 60 / 90 / 120 / 150 / 180 / 280 / 310 / 410 /
-560 / 860 / 960. A run that lives within its caps can never trip one; the field
-remains because it marks a gate as enforced. v1 ran 20/30/40/50/65/75/100/120/
-150/200/300/400, and v1.1's first cut (2026-09-09) 30/40/50/65/85/100/150/180/
-220/300/500/600; runs stamped `pokebench-v1` stay on the board because a run
-that met the tighter deadlines meets the looser ones. The full benchmark above
-keeps its Boulder Badge deadline at T500.
+The first-badge benchmark carries **no cumulative deadlines** since 2026-09-10:
+every gate is bounded by its per-leg cap alone (below), and a gate with a cap
+and no `deadline_turn` is enforced. v1 ran cumulative deadlines 20/30/40/50/65/
+75/100/120/150/200/300/400, and v1.1's first cut (2026-09-09) 30/40/50/65/85/
+100/150/180/220/300/500/600; runs stamped `pokebench-v1` stay on the board
+because a run that met the tighter deadlines meets the looser ones. The full
+benchmark above keeps its cumulative deadlines, Boulder Badge at T500.
 
 **Per-leg turn caps (v1.1, 2026-09-09).** Each first-badge gate also carries
 `leg_cap_turns`, the most turns a run may spend on the leg into that gate,
-counted from the previous gate's stamp: 30 / 30 / 30 / 30 / 30 / 30 / 100 / 30 /
-100 / 150 / 300 / 100 (2026-09-10; no leg under 30. The 2026-09-09 first cut was
-30 / 20 / 20 / 20 / 30 / 20 / 60 / 30 / 60 / 100 / 200 / 100, which ended two
-gemini-3.5-flash-lite runs on the 20-turn lab leg and the 30-turn rival leg).
-The cap and the cumulative deadline are independent and the first to fire ends
-the run (`termination_reason = "leg_cap:<id>"`); with the deadlines set to the
-cap sums, it is the cap. The motivation is the Viridian Forest maze: under
-cumulative deadlines a run that reached the Forest at turn 180 had 320 turns to
-reach Pewter, and a fast opening banked even more. Calibration: the first full
-clear (gemini-3.8-flash(medium)) spent 1/3/2/3/8/3/13/14/17/39/112/22 turns per
-leg. The scorecard's gate entries carry `leg_cap_turns` and `leg_turns`.
+counted from the previous gate's stamp: 30 / 30 / 30 / 30 / 30 / 30 / 100 / 50 /
+100 / 150 / 300 / 100, sum 980 (2026-09-10; no leg under 30. The 2026-09-09
+first cut was 30 / 20 / 20 / 20 / 30 / 20 / 60 / 30 / 60 / 100 / 200 / 100
+alongside cumulative deadlines, and ended two gemini-3.5-flash-lite runs on the
+20-turn lab leg and the 30-turn rival leg). Spending the cap ends the run with
+`termination_reason = "leg_cap:<id>"`. Where a ladder carries both a cap and a
+cumulative deadline they are independent and the first to fire ends the run.
+The motivation is the Viridian Forest maze: under cumulative deadlines a run
+that reached the Forest at turn 180 had 320 turns to reach Pewter, and a fast
+opening banked even more. Calibration: the first full clear
+(gemini-3.8-flash(medium)) spent 1/3/2/3/8/3/13/14/17/39/112/22 turns per leg.
+The scorecard's gate entries carry `leg_cap_turns` and `leg_turns`.
 
 The parcel checkpoint retains the legacy ID `parcel_delivered` for saved-run
 compatibility. Its detector now checks the Mart scene variable for ≥1 (pickup),

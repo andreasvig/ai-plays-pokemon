@@ -393,18 +393,32 @@ def test_loader_validates_leg_cap_turns(tmp_path):
         load_ladder(p)
 
 
-def test_first_badge_ladder_caps_every_enforced_leg():
+def test_first_badge_ladder_is_caps_only():
     """Structural, not numeric (the values are Andreas's calibration): every
-    deadline gate carries a cap, and each deadline is at least the running sum
-    of the caps up to it, so a run living within its caps never trips a deadline
-    (2026-09-10: deadlines ARE the cap sums; the cap is the only binding rule)."""
+    rung carries a leg cap and none carries a cumulative deadline — the per-leg
+    cap is the only bound (Andreas, 2026-09-10: "kill the old cumulative ladder
+    fully, only use this new one")."""
     from src.referee.checkpoints import load_ladder
 
     ladder = load_ladder("configs/checkpoints-firered-firstbadge.yaml")
-    singles = [n for n in ladder.nodes if isinstance(n, Checkpoint)]
-    enforced = [n for n in singles if n.deadline_turn is not None]
-    assert enforced and all(n.leg_cap_turns for n in enforced)
-    running = 0
-    for n in enforced:
-        running += n.leg_cap_turns
-        assert n.deadline_turn >= running, (n.id, n.deadline_turn, running)
+    assert ladder.nodes and all(isinstance(n, Checkpoint) for n in ladder.nodes)
+    assert all(n.leg_cap_turns for n in ladder.nodes)
+    assert all(n.deadline_turn is None for n in ladder.nodes)
+
+
+def test_leg_cap_enforces_without_a_deadline(tmp_path):
+    """A gate with a cap and no deadline is enforced: the run dies on the cap.
+    Before 2026-09-10 the deadline-None branch returned early as "observed-only"
+    and skipped the cap check, which would have made the caps-only ladder
+    unbounded."""
+    ladder = make_capped_ladder()
+    for cp in ladder:
+        cp.deadline_turn = None
+    logger = FakeLogger()
+    emu = FakeEmulator(FakeImage(block=build_sb1(map_group=4, map_num=1)))  # satisfies nothing
+    ref = Referee(ladder, emu, logger, tmp_path, enforce=True)
+    assert ref.poll(29) is False
+    assert ref.poll(30) is True
+    assert ref.termination_reason == "leg_cap:left_bedroom"
+    assert gate_missed_events(logger) == []
+    assert len(leg_cap_events(logger)) == 1 and leg_cap_events(logger)[0]["deadline_turn"] is None

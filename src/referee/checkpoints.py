@@ -59,7 +59,9 @@ class Checkpoint:
     ``leg_cap_turns`` (PokeBench v1.1, 2026-09-09) bounds the LEG into this gate:
     the run is terminated when ``turn - <previous rung's completion turn> >=
     leg_cap_turns`` with the gate still unstamped. It is independent of
-    ``deadline_turn`` — whichever fires first ends the run — and exists because
+    ``deadline_turn`` — either alone makes the gate enforced, and the
+    first-badge ladder carries caps only (2026-09-10: Andreas, "kill the old
+    cumulative ladder fully") — and exists because
     cumulative deadlines let a fast opening bank headroom that one section (the
     Viridian Forest maze) then burns for hundreds of turns with no progress
     (Andreas: "an agent which has 320+ turns in Viridian Forest, but might

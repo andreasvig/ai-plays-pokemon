@@ -8,7 +8,9 @@ By default the Referee is OBSERVE-ONLY: it stamps + emits events + persists
 state but never terminates a run (calibration runs leave ``enforce=False``).
 With ``enforce=True`` (Phase 5) it additionally evaluates deadline gates: a
 checkpoint with an int ``deadline_turn`` still unstamped once ``turn_number >=
-deadline_turn`` latches ``termination_reason = "missed_gate:<id>"`` (the first
+deadline_turn`` latches ``termination_reason = "missed_gate:<id>"``; a checkpoint
+with ``leg_cap_turns`` latches ``"leg_cap:<id>"`` once that many turns pass on
+the leg into it (v1.1 — the first-badge ladder uses caps only). The first
 missed gate in ladder order) and signals the turn loop to stop the run cleanly.
 The deadline is checked AFTER each poll's stamping, so a gate met exactly on
 its deadline turn — or reached early, out of ladder order — is pre-satisfied
@@ -472,11 +474,13 @@ class Referee:
         ladder-order) missed gate wins. Idempotent: once latched, never
         re-evaluated.
 
-        A single gate may also carry ``leg_cap_turns`` (v1.1): the run is
-        terminated with ``"leg_cap:<id>"`` once ``turn_number - leg_start >=
-        leg_cap_turns`` while the gate is unstamped, where ``leg_start`` is the
-        previous rung's completion turn. The two bounds are independent; on the
-        same poll the cumulative deadline is reported first.
+        A single gate may also (or instead) carry ``leg_cap_turns`` (v1.1): the
+        run is terminated with ``"leg_cap:<id>"`` once ``turn_number - leg_start
+        >= leg_cap_turns`` while the gate is unstamped, where ``leg_start`` is
+        the previous rung's completion turn. The two bounds are independent and
+        either alone makes the gate enforced — the first-badge ladder carries
+        caps only (2026-09-10, no cumulative deadlines at all). When a gate has
+        both, the cumulative deadline is reported first on the same poll.
         """
         if self.terminated_reason is not None:
             return
@@ -505,11 +509,11 @@ class Referee:
                         return
                 continue
             # single gate
-            if node.deadline_turn is None:
-                continue  # observed-only gate — never terminates
             if node.id in self.stamps:
                 continue  # satisfied (possibly out of order / early) — pre-met
-            if turn_number >= node.deadline_turn:
+            if node.deadline_turn is None and node.leg_cap_turns is None:
+                continue  # observed-only gate — never terminates
+            if node.deadline_turn is not None and turn_number >= node.deadline_turn:
                 self.terminated_reason = f"missed_gate:{node.id}"
                 self.logger.log_event(
                     "referee_gate_missed",

@@ -19,14 +19,14 @@ rom_sha1:
 
 # PokeBench First Badge — bedroom → Boulder Badge (defeat Brock in Pewter City).
 #
-# v1.1 calibration (Andreas, 2026-09-09/10): the PER-LEG CAP is the rule. Each
-# `deadline_turn` is the running sum of the caps (30/60/90/120/150/180/280/310/
-# 410/560/860/960), so a run that lives within its caps can never trip a deadline;
-# the deadline field stays only because the schema and the referee's missed_gate
-# path need an int to mark the gate as enforced. History: v1 ran 20/30/40/50/65/
-# 75/100/120/150/200/300/400 cumulative; v1.1's first cut (2026-09-09) raised
-# them to 30/40/50/65/85/100/150/180/220/300/500/600 and added caps 30/20/20/20/
-# 30/20/60/30/60/100/200/100; the 2026-09-10 cut below lifted every leg to ≥30.
+# v1.1 (Andreas, 2026-09-09/10): the PER-LEG CAP is the only bound. No gate on
+# this ladder carries a `deadline_turn` — Andreas, 2026-09-10: "kill the old
+# cumulative ladder fully, only use this new one". A cap alone makes a gate
+# enforced (referee._check_deadlines). Caps: 30/30/30/30/30/30/100/50/100/150/
+# 300/100, sum 980. History: v1 ran cumulative deadlines 20/30/40/50/65/75/100/
+# 120/150/200/300/400; v1.1's first cut (2026-09-09) raised them to 30/40/50/65/
+# 85/100/150/180/220/300/500/600 and added caps 30/20/20/20/30/20/60/30/60/100/
+# 200/100; the 2026-09-10 cut lifted every leg to ≥30 and dropped the deadlines.
 # Reference: the first full clear (gemini-3.8-flash medium) stamped the gates at
 # T1/4/6/9/17/20/33/47/64/103/215/237. Runs stamped `pokebench-v1` stay on the
 # board: a run that survived tighter deadlines satisfies the looser ones, and
@@ -41,16 +41,15 @@ rom_sha1:
 #   flag:  {flag_id}                       stamped when this story-flag bit is set
 #   var:   {var_id, min_value}             stamped when the var first reaches min_value
 #   party: {min_count}                     stamped when party count first reaches min_count
-# deadline_turn: int = enforced gate (terminate if unstamped when this turn ends)
-#                null = observed-only (stamped + scored, never terminates)
+# deadline_turn: int = cumulative deadline (terminate if unstamped when this turn
+#                ends); absent on this ladder. Other ladders (easy, full) use it.
 # leg_cap_turns: int = the most turns the run may spend on the leg INTO this gate,
-#                counted from the previous gate's stamp (v1.1, 2026-09-09). Whichever
-#                of deadline/leg cap fires first ends the run; with deadlines set to
-#                the cumulative cap sums, the cap is the one that fires. Cumulative
-#                deadlines alone let a fast opening bank headroom that one section
-#                (the Forest maze) then burned for hundreds of turns; the cap ends
-#                that grind within one leg's budget. Caps (2026-09-10, no leg under
-#                30): 30/30/30/30/30/30/100/30/100/150/300/100, sum 1070.
+#                counted from the previous gate's stamp (v1.1, 2026-09-09). A gate
+#                with a cap is enforced; a gate with neither is observed-only.
+#                Cumulative deadlines let a fast opening bank headroom that one
+#                section (the Forest maze) then burned for hundreds of turns; the
+#                cap ends that grind within one leg's budget. Caps (2026-09-10, no
+#                leg under 30): 30/30/30/30/30/30/100/50/100/150/300/100, sum 980.
 #                Calibration: gemini-3.8-flash(medium)'s full clear spent
 #                1/3/2/3/8/3/13/14/17/39/112/22 per leg; gemini-3.8-flash(minimal)
 #                6/3/6/12/14/3/31/6/35/41 before the Forest; the 3.5-flash-lite
@@ -62,14 +61,12 @@ checkpoints:
     name: "Left the bedroom"
     type: map
     signature: {map_group: 4, map_num: 0}        # Player's House 1F
-    deadline_turn: 30                        # v1.1: cumulative cap sum (was 30)
     leg_cap_turns: 30
 
   - id: left_house
     name: "Stepped outside in Pallet Town"
     type: map
     signature: {map_group: 3, map_num: 0}
-    deadline_turn: 60                        # v1.1: cumulative cap sum (was 40)
     leg_cap_turns: 30
 
   - id: oaks_lab_entered
@@ -77,7 +74,6 @@ checkpoints:
     type: map
     signature: {map_group: 4, map_num: 3}
     cross_check: {type: flag, flag_id: 0x2CF}     # FLAG_VISITED_OAKS_LAB
-    deadline_turn: 90                        # v1.1: cumulative cap sum (was 50)
     leg_cap_turns: 30
     # Where the story actually happens: Prof. Oak stops you on Pallet Town's north
     # edge (coord_events at (12,1)/(13,1), VAR_MAP_SCENE_PALLET_TOWN_OAK == 0, pret
@@ -91,7 +87,6 @@ checkpoints:
     type: flag
     signature: {flag_id: 0x828}                   # FLAG_SYS_POKEMON_GET
     cross_check: {type: party, min_count: 1}
-    deadline_turn: 120                       # v1.1: cumulative cap sum (was 65)
     leg_cap_turns: 30
     locus: {map_group: 4, map_num: 3, near: [[8,4],[9,4],[10,4]]}  # the three starter Pokéballs in Oak's Lab (ITEM_BALL object_events; pret map.json, 2026-09-09)
 
@@ -99,7 +94,6 @@ checkpoints:
     name: "First rival battle done"               # scene-complete, win or lose (no victory flag exists)
     type: flag
     signature: {flag_id: 0x258}                   # FLAG_BEAT_RIVAL_IN_OAKS_LAB
-    deadline_turn: 150                       # v1.1: cumulative cap sum (was 85)
     leg_cap_turns: 30
     locus: {map_group: 4, map_num: 3, tiles: [[5,8],[6,8],[7,8]]}  # rival battle trigger row in Oak's Lab (coord_events RivalBattleTrigger{Left,Mid,Right}; pret map.json, 2026-09-09)
 
@@ -107,22 +101,19 @@ checkpoints:
     name: "Reached Route 1"
     type: map
     signature: {map_group: 3, map_num: 19}
-    deadline_turn: 180                       # v1.1: cumulative cap sum (was 100)
     leg_cap_turns: 30
 
   - id: viridian_reached
     name: "Reached Viridian City"
     type: map
     signature: {map_group: 3, map_num: 1}
-    deadline_turn: 280                       # v1.1: cumulative cap sum (was 150)
     leg_cap_turns: 100
 
   - id: parcel_delivered                       # legacy ID retained for saved-run compatibility
     name: "Received Oak's Parcel"
     type: var
     signature: {var_id: 0x4057, min_value: 1}     # Mart pickup scene; 2 is after the Pokédex scene
-    deadline_turn: 310                       # v1.1: cumulative cap sum (was 180)
-    leg_cap_turns: 30
+    leg_cap_turns: 50
     locus: {map_group: 5, map_num: 3, near: [[2,3]]}  # Viridian Mart clerk (CLERK object_event; pret map.json, 2026-09-09)
 
   - id: pokedex_received
@@ -130,7 +121,6 @@ checkpoints:
     type: flag
     signature: {flag_id: 0x829}                   # FLAG_SYS_POKEDEX_GET
     cross_check: {type: var, var_id: 0x4055, min_value: 6}
-    deadline_turn: 410                       # v1.1: cumulative cap sum (was 220)
     leg_cap_turns: 100
     locus: {map_group: 4, map_num: 3, near: [[6,3]]}  # Prof. Oak in his lab (PROF_OAK object_event; pret map.json, 2026-09-09)
 
@@ -138,14 +128,12 @@ checkpoints:
     name: "Entered Viridian Forest"
     type: map
     signature: {map_group: 1, map_num: 0}
-    deadline_turn: 560                       # v1.1: cumulative cap sum (was 300)
     leg_cap_turns: 150
 
   - id: pewter_reached
     name: "Reached Pewter City"
     type: map
     signature: {map_group: 3, map_num: 2}
-    deadline_turn: 860                       # v1.1: cumulative cap sum (was 500)
     leg_cap_turns: 300
 
   - id: brock_defeated
@@ -153,6 +141,5 @@ checkpoints:
     type: flag
     signature: {flag_id: 0x820}                   # FLAG_BADGE01_GET
     cross_check: {type: flag, flag_id: 0x4B0}     # DEFEATED_BROCK (speedrun autosplitter's choice)
-    deadline_turn: 960                       # v1.1: cumulative cap sum (was 600)
     leg_cap_turns: 100
     locus: {map_group: 6, map_num: 2, near: [[6,5]]}  # Brock in Pewter Gym (BROCK object_event; pret map.json, 2026-09-09)
