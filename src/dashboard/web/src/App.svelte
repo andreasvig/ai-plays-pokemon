@@ -305,7 +305,7 @@
     <Spectate run={active} {activeRunId} muted={emulator.muted} ontogglemute={toggleMute} onnew={openNew} onback={() => go('/')}
       {recording} {forcedSimple} {forcedShow} />
   {:else if view === 'report'}
-    <Report run={selectedRun} onback={() => go('/history')} oncontinue={openContinue} />
+    <Report run={selectedRun} {benchmarks} onback={() => go('/history')} oncontinue={openContinue} />
   {:else if view === 'about'}
     <section class="about">
       <h2>About PokeBench</h2>

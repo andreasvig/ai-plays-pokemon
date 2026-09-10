@@ -13,7 +13,19 @@
   import Action, { actionTokens } from './Action.svelte'
   import Icon from './Icon.svelte'
   import ConversationDiagnostics from './ConversationDiagnostics.svelte'
-  let { run = null, onback, oncontinue } = $props()
+  let { run = null, onback, oncontinue, benchmarks = [] } = $props()
+  // The CURRENT per-leg caps of this run's benchmark, from the shared list the
+  // ladder YAML feeds (/api/benchmarks, data/benchmarks.json when published).
+  // Caps apply retroactively (Andreas, 2026-09-10: "make it true retroactively,
+  // such that the old runs get the ladder info from the shared per-leg cap
+  // list"): the gate table shows every run against today's caps, and the cap in
+  // force when a run was actually ended is kept only as a note.
+  const sharedCaps = $derived(() => {
+    const b = benchmarks.find((x) => x.id === run?.benchmark) ?? benchmarks.find((x) => x.default) ?? null
+    const m = {}
+    for (const g of b?.gates ?? []) if (g.leg_cap_turns != null) m[g.id] = g.leg_cap_turns
+    return m
+  })
 
   let summary = $state(null)     // raw nested run_summary.json (KPIs + referee.gates)
   let trace = $state(null)       // two-level master→player trace (B1/B2)
@@ -57,13 +69,17 @@
   const gateRows = $derived(gates.map((g, i) => {
     const endedHere = !!termination && termination.split(':')[1] === g.id && g.turn == null
     const prevTurn = i === 0 ? 0 : gates[i - 1]?.turn
+    // `capThen` is the cap the referee actually applied (stored in the scorecard);
+    // `cap` is today's from the shared list, which wins for display.
+    const capThen = g.leg_cap_turns ?? null
+    const cap = sharedCaps()[g.id] ?? capThen
     let legTurns = g.leg_turns ?? null
-    if (legTurns == null && g.turn == null && prevTurn != null && run?.turns != null && g.leg_cap_turns != null) {
+    if (legTurns == null && g.turn == null && prevTurn != null && run?.turns != null && capThen != null) {
       const spent = run.turns - prevTurn
       // Only the leg that was open when the run stopped; deeper legs never opened.
-      if (spent >= 0 && (i === 0 || gates[i - 1]?.turn != null)) legTurns = Math.min(spent, g.leg_cap_turns)
+      if (spent >= 0 && (i === 0 || gates[i - 1]?.turn != null)) legTurns = Math.min(spent, capThen)
     }
-    return { ...g, status: endedHere ? 'failed' : g.status, legTurns }
+    return { ...g, status: endedHere ? 'failed' : g.status, legTurns, cap, capThen, capChanged: capThen != null && cap != null && capThen !== cap }
   }))
   // Between-gate progress from the referee's ProgressTracker (referee.progress):
   // one row per leg the run opened, plus the leg it was on when it stopped.
@@ -115,8 +131,10 @@
     // v1.1 leg cap: the run spent the whole per-leg budget walking toward this
     // gate — the section it could not do, named as such.
     if (termination && termination.startsWith('leg_cap:')) {
-      const capped = gates.find((g) => g.id === termination.split(':')[1])
-      return `✗ Stuck on the leg to ${capped?.name ?? termination.split(':')[1]}${capped?.leg_cap_turns != null ? ` (leg cap ${capped.leg_cap_turns} turns)` : ''}`
+      const capped = gateRows.find((g) => g.id === termination.split(':')[1])
+      const then = capped?.capThen
+      const note = then == null ? '' : capped.capChanged ? ` (leg cap ${then} turns at the time, now ${capped.cap})` : ` (leg cap ${then} turns)`
+      return `✗ Stuck on the leg to ${capped?.name ?? termination.split(':')[1]}${note}`
     }
     const furthest = summary?.referee?.furthest
     const fg = gates.find((g) => g.id === furthest)
@@ -424,10 +442,11 @@ where: {crash.where.join(' ← ')}{/if}</pre>
               <span class="gname">{g.name}</span>
               <span class="gturn tnum">{g.turn != null ? 'T' + g.turn : '—'}</span>
               <!-- leg: turns spent walking into this gate / its per-leg cap (v1.1). The
-                   cumulative deadline still governs the run but is no longer shown
-                   here (Andreas, 2026-09-09: "remove the old T limits such that we only
-                   have the per leg ones"); a missed-deadline verdict still names it. -->
-              <span class="gleg tnum" class:faint={g.status !== 'failed'} title="turns on this leg / leg cap">{g.leg_cap_turns != null ? `${g.legTurns != null ? g.legTurns : '·'} / ${g.leg_cap_turns}` : ''}</span>
+                   cap shown is TODAY's, from the shared list (retroactive, 2026-09-10);
+                   when the run was judged under a different cap the tooltip says which.
+                   Cumulative deadlines are not shown (Andreas, 2026-09-09: "remove the
+                   old T limits such that we only have the per leg ones"). -->
+              <span class="gleg tnum" class:faint={g.status !== 'failed'} class:recap={g.capChanged} title={g.capChanged ? `turns on this leg / today's leg cap — the cap was ${g.capThen} when this run was judged` : 'turns on this leg / leg cap'}>{g.cap != null ? `${g.legTurns != null ? g.legTurns : '·'} / ${g.cap}` : ''}</span>
             </div>
           {/each}
         </div>
@@ -932,6 +951,7 @@ waited {Math.round(e.wait_s ?? 0)}s{/if}</pre>
   .gname { font-weight: 550; }
   .gturn { text-align: right; font-weight: 650; }
   .gleg { text-align: right; font-size: 11.5px; }
+  .gleg.recap { text-decoration: underline dotted var(--faint); text-underline-offset: 3px; cursor: help; }
 
   .trace { margin-top: 24px; }
   .trace h3 .faint { font-weight: 500; font-size: 12px; }
