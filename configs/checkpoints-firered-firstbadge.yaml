@@ -69,17 +69,21 @@ checkpoints:
     signature: {map_group: 3, map_num: 0}
     leg_cap_turns: 30
 
-  - id: oaks_lab_entered
+  - id: oaks_lab_entered                       # legacy ID retained for saved-run compatibility
     name: "Entered Oak's Lab"
-    type: map
-    signature: {map_group: 4, map_num: 3}
-    cross_check: {type: flag, flag_id: 0x2CF}     # FLAG_VISITED_OAKS_LAB
+    type: var
+    signature: {var_id: 0x4050, min_value: 1}     # VAR_MAP_SCENE_PALLET_TOWN_OAK: 0 until Oak stops you on the north edge; his trigger sets 1
+    cross_check: {type: var, var_id: 0x4055, min_value: 1}  # VAR_MAP_SCENE_PALLET_TOWN_PROFESSOR_OAKS_LAB, set 1 by the same trigger (3 starter, 4 rival, 6 Pokédex)
     leg_cap_turns: 30
-    # Where the story actually happens: Prof. Oak stops you on Pallet Town's north
-    # edge (coord_events at (12,1)/(13,1), VAR_MAP_SCENE_PALLET_TOWN_OAK == 0, pret
-    # map.json) and the cutscene walks you into the lab. Without this an explicit
-    # locus, a map gate targets the lab's door tile — 19 steps the OTHER way from
-    # the house, so a model heading north correctly read as walking away (2026-09-09).
+    # Was a map gate ({map_group: 4, map_num: 3}) until 2026-09-10: it stamped the
+    # moment the player stood in the lab by ANY route, and glm-5.3-flash(low)'s
+    # continue walked in on its own at T70 — Oak absent, no starter to take, the
+    # next leg burning (Andreas: "it got the event trigger for talking with Oak
+    # for just going into the lab, without hitting the dialogue at the start of
+    # Route 1"). The gate is the STORY beat: Oak's coord_event on Pallet Town's
+    # north edge ((12,1)/(13,1), pret PalletTown/scripts.inc OakTrigger), which is
+    # also what the locus below targets. FLAG_VISITED_OAKS_LAB (0x2CF) was the old
+    # cross-check and has the same by-any-route problem, so it went too.
     locus: {map_group: 3, map_num: 0, tiles: [[12,1],[13,1]]}
 
   - id: starter_chosen

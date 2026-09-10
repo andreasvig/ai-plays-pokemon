@@ -422,3 +422,19 @@ def test_leg_cap_enforces_without_a_deadline(tmp_path):
     assert ref.termination_reason == "leg_cap:left_bedroom"
     assert gate_missed_events(logger) == []
     assert len(leg_cap_events(logger)) == 1 and leg_cap_events(logger)[0]["deadline_turn"] is None
+
+
+def test_first_badge_lab_gate_is_oaks_trigger_not_the_lab_map():
+    """'Entered Oak's Lab' stamps on VAR_MAP_SCENE_PALLET_TOWN_OAK (0x4050) >= 1 —
+    Oak's coord_event on Pallet Town's north edge — not on standing in the lab's
+    map. As a map gate it stamped for a run that walked into the empty lab on
+    its own (glm-5.3-flash(low) continue, 2026-09-10 T70), then burned the
+    starter leg with no Oak and no starter. The cross-check is the lab scene
+    var the same trigger sets (0x4055 >= 1); the locus still targets the trigger."""
+    from src.referee.checkpoints import load_ladder
+
+    ladder = load_ladder("configs/checkpoints-firered-firstbadge.yaml")
+    lab = next(n for n in ladder.nodes if n.id == "oaks_lab_entered")
+    assert lab.type == "var" and lab.signature == {"var_id": 0x4050, "min_value": 1}
+    assert lab.cross_check == {"type": "var", "var_id": 0x4055, "min_value": 1}
+    assert lab.locus == {"map_group": 3, "map_num": 0, "tiles": [[12, 1], [13, 1]]}
