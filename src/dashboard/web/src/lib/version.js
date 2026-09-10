@@ -23,11 +23,11 @@ export const CHANGELOG = [
       },
       {
         head: 'A turn cap on every leg.',
-        body: 'Besides the cumulative deadline, each leg between two checkpoints now has its own cap, counted from the previous checkpoint: 30 / 20 / 20 / 20 / 30 / 20 / 60 / 30 / 60 / 100 / 200 / 100 turns. Whichever bound is hit first ends the run. Cumulative deadlines let a fast opening bank slack that one section — the Viridian Forest maze — could then burn for 300+ turns without progress; the cap ends such a run within that leg\'s budget. The caps sum to 690 against a 600-turn ladder, so a run pacing normally only ever meets the deadline. Runs ended this way read "leg cap" on their report.',
+        body: 'Besides the cumulative deadline, each leg between two checkpoints now has its own cap, counted from the previous checkpoint: 30 / 30 / 30 / 30 / 30 / 30 / 100 / 30 / 100 / 150 / 300 / 100 turns (no leg under 30; the first cut on Sep 9 ran 30 / 20 / 20 / 20 / 30 / 20 / 60 / 30 / 60 / 100 / 200 / 100). Cumulative deadlines let a fast opening bank slack that one section — the Viridian Forest maze — could then burn for 300+ turns without progress; the cap ends such a run within that leg\'s budget. Runs ended this way read "leg cap" on their report.',
       },
       {
-        head: 'Checkpoint deadlines raised.',
-        body: 'Every gate on the first-badge ladder got more turns: 30 / 40 / 50 / 65 / 85 / 100 / 150 / 180 / 220 / 300 / 500 / 600, up from 20 / 30 / 40 / 50 / 65 / 75 / 100 / 120 / 150 / 200 / 300 / 400. Each leg now allows at least twice the turns the first full clear needed, with extra absolute slack on the opening rungs.',
+        head: 'Cumulative deadlines are now the sum of the leg caps.',
+        body: 'The first-badge ladder no longer has a separate total-turn limit per checkpoint: each deadline equals the running sum of the leg caps (T30 / 60 / 90 / 120 / 150 / 180 / 280 / 310 / 410 / 560 / 860 / 960), so the per-leg cap is the only bound a run can hit. v1 ran 20 / 30 / 40 / 50 / 65 / 75 / 100 / 120 / 150 / 200 / 300 / 400.',
       },
       {
         head: 'Partial completion between checkpoints.',

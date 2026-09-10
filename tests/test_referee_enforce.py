@@ -395,12 +395,16 @@ def test_loader_validates_leg_cap_turns(tmp_path):
 
 def test_first_badge_ladder_caps_every_enforced_leg():
     """Structural, not numeric (the values are Andreas's calibration): every
-    deadline gate carries a cap, and the caps sum past the final deadline so a
-    normally paced run is only ever bounded by the cumulative ladder."""
+    deadline gate carries a cap, and each deadline is at least the running sum
+    of the caps up to it, so a run living within its caps never trips a deadline
+    (2026-09-10: deadlines ARE the cap sums; the cap is the only binding rule)."""
     from src.referee.checkpoints import load_ladder
 
     ladder = load_ladder("configs/checkpoints-firered-firstbadge.yaml")
     singles = [n for n in ladder.nodes if isinstance(n, Checkpoint)]
     enforced = [n for n in singles if n.deadline_turn is not None]
     assert enforced and all(n.leg_cap_turns for n in enforced)
-    assert sum(n.leg_cap_turns for n in enforced) >= max(n.deadline_turn for n in enforced)
+    running = 0
+    for n in enforced:
+        running += n.leg_cap_turns
+        assert n.deadline_turn >= running, (n.id, n.deadline_turn, running)
