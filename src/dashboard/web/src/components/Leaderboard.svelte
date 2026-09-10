@@ -57,7 +57,7 @@
          cell per gate, the cap being the most turns a run may spend on the leg
          INTO that gate. The total is the longest run the ladder allows. -->
     <div class="caps" aria-label="Turn cap per leg">
-      <span class="caps-label">Turn cap per leg{#if legCapTotal != null} · <span class="tnum">{legCapTotal}</span> max{/if}</span>
+      <span class="caps-label">Turn cap per leg{#if legCapTotal != null}&nbsp;· <span class="tnum">{legCapTotal}</span> max{/if}</span>
       <ol class="caps-list">
         {#each legCaps as g, i (g.id)}
           <li class="cap" title={`${g.name}: at most ${g.leg_cap_turns} turns on the leg into this gate`}>
@@ -163,7 +163,7 @@
   .caps-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
   .cap { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 4px 8px 4px 6px; }
   .cap-n { font-size: 10px; color: var(--faint); min-width: 14px; text-align: right; }
-  .cap-name { max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cap-name { white-space: nowrap; }
   .cap-turns { color: var(--text); font-weight: 700; }
 
   .board { max-width: var(--maxw); margin: 18px auto 50px; padding: 0 24px; }
