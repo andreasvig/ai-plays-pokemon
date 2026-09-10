@@ -216,3 +216,24 @@ def test_projection_reads_explicit_benchmark(tmp_path):
     )
     summary = project_run_dir(run_dir)
     assert summary.benchmark == "pokebench-easy"
+
+
+def test_payload_carries_the_ladders_caps_from_the_yaml():
+    """The board reads the per-leg caps from /api/benchmarks (data/benchmarks.json
+    when published), which reads them from the ladder YAML — nothing retyped
+    (Andreas, 2026-09-10: "make the caps a global value such that they
+    automatically populate the GitHub Pages leaderboard"). Structural: every
+    first-badge rung has a cap, the total is their sum, and the names match the
+    ladder; the numbers themselves are Andreas's calibration and not pinned."""
+    from src.app.benchmarks import benchmarks_payload
+    from src.referee.checkpoints import load_ladder
+
+    row = next(b for b in benchmarks_payload() if b["id"] == "pokebench-first-badge")
+    ladder = load_ladder("configs/checkpoints-firered-firstbadge.yaml")
+    assert [g["id"] for g in row["gates"]] == [n.id for n in ladder.nodes]
+    assert [g["leg_cap_turns"] for g in row["gates"]] == [n.leg_cap_turns for n in ladder.nodes]
+    assert all(g["leg_cap_turns"] for g in row["gates"])
+    assert row["leg_cap_total"] == sum(n.leg_cap_turns for n in ladder.nodes)
+    # A ladder without caps says so rather than inventing a zero.
+    full = next(b for b in benchmarks_payload() if b["id"] == "pokebench-full")
+    assert full["leg_cap_total"] is None and full["gates"]

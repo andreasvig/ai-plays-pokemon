@@ -211,10 +211,46 @@ def get_benchmark(
     return benchmarks[0]
 
 
+def ladder_gates(bench: Benchmark, repo_root: Optional[Path] = None) -> list[dict[str, Any]]:
+    """The benchmark's rungs with their bounds, for display: one entry per node
+    of its ladder — ``{id, name, leg_cap_turns, deadline_turn}`` for a single
+    gate, ``{id, name, kind: "multigate", deadline_turns, deadline_turn}`` for a
+    group. The ladder YAML is the ONE place the caps live (Andreas, 2026-09-10:
+    "make the caps a global value such that they automatically populate the
+    GitHub Pages leaderboard"); this is how the board, local and published,
+    reads them instead of anyone retyping the numbers in a component.
+    """
+    from src.referee.checkpoints import MultiGate, load_ladder
+
+    ladder_file = Path(bench.ladder)
+    if not ladder_file.is_absolute():
+        root = repo_root if repo_root is not None else BENCHMARKS_FILE.resolve().parent.parent
+        ladder_file = root / ladder_file
+    out: list[dict[str, Any]] = []
+    for node in load_ladder(ladder_file).nodes:
+        if isinstance(node, MultiGate):
+            final = next((d for d in reversed(node.deadline_turns) if d is not None), None)
+            out.append({
+                "id": node.id, "name": node.name, "kind": "multigate",
+                "deadline_turns": list(node.deadline_turns), "deadline_turn": final,
+                "leg_cap_turns": None,
+            })
+        else:
+            out.append({
+                "id": node.id, "name": node.name, "kind": "single",
+                "leg_cap_turns": node.leg_cap_turns, "deadline_turn": node.deadline_turn,
+            })
+    return out
+
+
 def benchmarks_payload() -> list[dict[str, Any]]:
     """``GET /api/benchmarks`` as a list — and ``data/benchmarks.json`` on the
     published site, which is the same list written to disk so the static page
     scopes its board the way the local one does.
+
+    Each row carries its ladder's bounds as ``gates`` (see :func:`ladder_gates`)
+    and ``leg_cap_total`` (the sum of the per-leg caps, None when the ladder has
+    none) so the board renders the current caps straight from the YAML.
 
     ``official_config`` rides on every row; it is the frozen stem official
     dispatch loads, not a property of a benchmark. Imported lazily because
@@ -223,4 +259,14 @@ def benchmarks_payload() -> list[dict[str, Any]]:
     from src.app.executor import OFFICIAL_CONFIG
 
     official_config = Path(OFFICIAL_CONFIG).stem
-    return [{**b.to_dict(), "official_config": official_config} for b in load_benchmarks()]
+    rows = []
+    for b in load_benchmarks():
+        gates = ladder_gates(b)
+        caps = [g["leg_cap_turns"] for g in gates if g.get("leg_cap_turns")]
+        rows.append({
+            **b.to_dict(),
+            "official_config": official_config,
+            "gates": gates,
+            "leg_cap_total": sum(caps) if caps else None,
+        })
+    return rows
