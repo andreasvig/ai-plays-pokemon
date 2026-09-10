@@ -6,6 +6,93 @@
     "ladder": "configs/checkpoints-firered-firstbadge.yaml",
     "default": true,
     "game": "firered-us",
-    "official_config": "config-5.1"
+    "official_config": "config-5.1",
+    "gates": [
+      {
+        "id": "left_bedroom",
+        "name": "Left the bedroom",
+        "kind": "single",
+        "leg_cap_turns": 30,
+        "deadline_turn": null
+      },
+      {
+        "id": "left_house",
+        "name": "Stepped outside in Pallet Town",
+        "kind": "single",
+        "leg_cap_turns": 30,
+        "deadline_turn": null
+      },
+      {
+        "id": "oaks_lab_entered",
+        "name": "Entered Oak's Lab",
+        "kind": "single",
+        "leg_cap_turns": 30,
+        "deadline_turn": null
+      },
+      {
+        "id": "starter_chosen",
+        "name": "Chose a starter",
+        "kind": "single",
+        "leg_cap_turns": 30,
+        "deadline_turn": null
+      },
+      {
+        "id": "rival1_done",
+        "name": "First rival battle done",
+        "kind": "single",
+        "leg_cap_turns": 30,
+        "deadline_turn": null
+      },
+      {
+        "id": "route1_reached",
+        "name": "Reached Route 1",
+        "kind": "single",
+        "leg_cap_turns": 30,
+        "deadline_turn": null
+      },
+      {
+        "id": "viridian_reached",
+        "name": "Reached Viridian City",
+        "kind": "single",
+        "leg_cap_turns": 100,
+        "deadline_turn": null
+      },
+      {
+        "id": "parcel_delivered",
+        "name": "Received Oak's Parcel",
+        "kind": "single",
+        "leg_cap_turns": 50,
+        "deadline_turn": null
+      },
+      {
+        "id": "pokedex_received",
+        "name": "Received the Pokédex",
+        "kind": "single",
+        "leg_cap_turns": 100,
+        "deadline_turn": null
+      },
+      {
+        "id": "viridian_forest_reached",
+        "name": "Entered Viridian Forest",
+        "kind": "single",
+        "leg_cap_turns": 150,
+        "deadline_turn": null
+      },
+      {
+        "id": "pewter_reached",
+        "name": "Reached Pewter City",
+        "kind": "single",
+        "leg_cap_turns": 300,
+        "deadline_turn": null
+      },
+      {
+        "id": "brock_defeated",
+        "name": "Defeated Brock (Boulder Badge)",
+        "kind": "single",
+        "leg_cap_turns": 100,
+        "deadline_turn": null
+      }
+    ],
+    "leg_cap_total": 980
   }
 ]
