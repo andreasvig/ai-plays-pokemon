@@ -10,6 +10,9 @@ import { toQueueError } from './queue.js'
 import { runSlug } from './router.svelte.js'
 import { STATIC, staticGet, noSocket } from './static.js'
 
+/** The most completion % a run that did not clear the ladder can show. */
+export const INCOMPLETE_MAX_PCT = 95
+
 // open-weight families (for the All / Open-source filter) — same regex as the mock
 const OSS = /^(kimi|qwen|mimo|gemma|glm|minimax|deepseek)/  // open-weights vendors in configs/models.yaml
 export const isOpenSource = (m) => OSS.test(m)
@@ -48,12 +51,14 @@ export function toRun(s) {
   // so a run that died 62% of the way to gate 4 reads 30%, not 25%.
   const progress = typeof s.progress === 'number' ? s.progress : null
   const score = progress ?? reached
-  // 100% is reserved for a run that actually holds every gate: an open leg is
-  // capped at 0.95 by the referee (OPEN_LEG_FRACTION_CAP, 2026-09-11), and
-  // plain rounding would still lift 11.95/12 to "100%" — so anything short of
-  // the full ladder rounds DOWN and tops out at 99.
+  // 100% is reserved for a run that actually holds every gate. A run that did
+  // not finish tops out at INCOMPLETE_MAX_PCT: the referee already caps an open
+  // leg at 0.95 (OPEN_LEG_FRACTION_CAP), but 11.95/12 still reads "99%", and
+  // Andreas wanted dying at Brock's feet to FEEL unfinished on the board —
+  // "scale this to be at 95%, that feels more fair" (2026-09-11). Ranking is
+  // untouched (it uses `progress`); this is the displayed percent only.
   const completion = total > 0
-    ? (score >= total ? 100 : Math.min(99, Math.floor((score / total) * 100)))
+    ? (score >= total ? 100 : Math.min(INCOMPLETE_MAX_PCT, Math.floor((score / total) * 100)))
     : 0
   const furthestGate = s.furthest_gate ?? null
   const legGate = s.leg_gate ?? null

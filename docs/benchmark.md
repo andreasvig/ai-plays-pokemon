@@ -257,6 +257,9 @@ A run's score is **"farthest, fastest"**:
   2026-09-11): standing on the target's tile without the stamp is not the gate,
   so a run that died at Brock's feet reads 11.95, not 12.0, and never ties a
   run that beat him. Only a stamp closes the leg and counts the whole gate.
+  On the board the displayed completion % of any run that did not clear the
+  ladder is capped at 95 % (`INCOMPLETE_MAX_PCT`, api.js); 100 % is reserved
+  for a clear. Ranking uses `progress`, not the percent.
 - **tiebreak:** `turns` (total game turns) — fewer is better
 
 Why the fraction exists: two official runs terminated at the same gate carry
