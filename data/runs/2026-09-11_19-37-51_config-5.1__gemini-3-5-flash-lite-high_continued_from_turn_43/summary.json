@@ -1,0 +1,323 @@
+{
+  "session": {
+    "llm_alias": "gemini-3.5-flash-lite(high)",
+    "llm_model": "google/gemini-3.5-flash-lite",
+    "thinking": {
+      "effort": "high"
+    },
+    "fallback_models": [],
+    "task": "Your goal is to earn the Boulder Badge by defeating Brock, the Pewter City Gym Leader, in as few turns as possible — you're measured on fewest player turns.",
+    "total_turns": 53,
+    "player_turns": 53,
+    "task_master_turns": 0,
+    "duration_seconds": 797.4,
+    "resumed": true,
+    "segment": {
+      "continued_from": "2026-09-09_21-20-50_config-5.1__gemini-3-5-flash-lite-high",
+      "resumed_at_turn": 43,
+      "prior_duration_s": 641.5,
+      "segment_duration_s": 155.9,
+      "segment_player_turns": 10
+    },
+    "started_at": "2026-09-11T19:37:52"
+  },
+  "cost": {
+    "total_usd": 0.234346,
+    "llm_usd": 0.221955,
+    "ocr_usd": 0.012391,
+    "task_master_usd": 0.0,
+    "total_input_tokens": 947763,
+    "total_output_tokens": 19993,
+    "per_turn": []
+  },
+  "agent_type": "append_compact",
+  "conversation": {
+    "segment": 3,
+    "completed_game_turns": 53,
+    "compactions": 2,
+    "cache": {
+      "attempts": 55,
+      "measured_attempts": 55,
+      "cached_tokens": 416135,
+      "measured_input_tokens": 947763,
+      "input_read_fraction": 0.4390707381486722,
+      "request_hit_fraction": 0.45454545454545453,
+      "economics": {
+        "verdict": "unknown",
+        "saved_usd": null,
+        "discount_fraction": null
+      }
+    }
+  },
+  "max_turns": 10000000,
+  "referee": {
+    "checkpoints": {
+      "left_bedroom": 15,
+      "left_house": 19,
+      "oaks_lab_entered": 23,
+      "starter_chosen": null,
+      "rival1_done": null,
+      "route1_reached": null,
+      "viridian_reached": null,
+      "parcel_delivered": null,
+      "pokedex_received": null,
+      "viridian_forest_reached": null,
+      "pewter_reached": null,
+      "brock_defeated": null
+    },
+    "gates": [
+      {
+        "kind": "single",
+        "id": "left_bedroom",
+        "name": "Left the bedroom",
+        "type": "map",
+        "deadline_turn": null,
+        "leg_cap_turns": 30,
+        "leg_turns": 15,
+        "turn": 15,
+        "status": "done"
+      },
+      {
+        "kind": "single",
+        "id": "left_house",
+        "name": "Stepped outside in Pallet Town",
+        "type": "map",
+        "deadline_turn": null,
+        "leg_cap_turns": 30,
+        "leg_turns": 4,
+        "turn": 19,
+        "status": "done"
+      },
+      {
+        "kind": "single",
+        "id": "oaks_lab_entered",
+        "name": "Entered Oak's Lab",
+        "type": "var",
+        "deadline_turn": null,
+        "leg_cap_turns": 30,
+        "leg_turns": 4,
+        "turn": 23,
+        "status": "done"
+      },
+      {
+        "kind": "single",
+        "id": "starter_chosen",
+        "name": "Chose a starter",
+        "type": "flag",
+        "deadline_turn": null,
+        "leg_cap_turns": 30,
+        "leg_turns": 30,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "rival1_done",
+        "name": "First rival battle done",
+        "type": "flag",
+        "deadline_turn": null,
+        "leg_cap_turns": 30,
+        "leg_turns": null,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "route1_reached",
+        "name": "Reached Route 1",
+        "type": "map",
+        "deadline_turn": null,
+        "leg_cap_turns": 30,
+        "leg_turns": null,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "viridian_reached",
+        "name": "Reached Viridian City",
+        "type": "map",
+        "deadline_turn": null,
+        "leg_cap_turns": 100,
+        "leg_turns": null,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "parcel_delivered",
+        "name": "Received Oak's Parcel",
+        "type": "var",
+        "deadline_turn": null,
+        "leg_cap_turns": 50,
+        "leg_turns": null,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "pokedex_received",
+        "name": "Received the Pokédex",
+        "type": "flag",
+        "deadline_turn": null,
+        "leg_cap_turns": 100,
+        "leg_turns": null,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "viridian_forest_reached",
+        "name": "Entered Viridian Forest",
+        "type": "map",
+        "deadline_turn": null,
+        "leg_cap_turns": 150,
+        "leg_turns": null,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "pewter_reached",
+        "name": "Reached Pewter City",
+        "type": "map",
+        "deadline_turn": null,
+        "leg_cap_turns": 300,
+        "leg_turns": null,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "brock_defeated",
+        "name": "Defeated Brock (Boulder Badge)",
+        "type": "flag",
+        "deadline_turn": null,
+        "leg_cap_turns": 100,
+        "leg_turns": null,
+        "turn": null,
+        "status": "pending"
+      }
+    ],
+    "furthest": "oaks_lab_entered",
+    "first_unmet": "starter_chosen",
+    "autofilled": [],
+    "termination_reason": "leg_cap:starter_chosen",
+    "progress": {
+      "progress": 3.95,
+      "gates_reached": 3,
+      "total_gates": 12,
+      "current_leg": {
+        "index": 3,
+        "node_id": "starter_chosen",
+        "name": "Chose a starter",
+        "status": "open",
+        "scored": true,
+        "opened_turn": 23,
+        "closed_turn": null,
+        "d_open": 1,
+        "d_min": 0,
+        "distance_now": 6,
+        "fraction": 0.95,
+        "steps_walked": 15,
+        "tiles_seen": 10,
+        "off_graph": 0,
+        "efficiency": null
+      },
+      "legs": [
+        {
+          "index": 0,
+          "node_id": "left_bedroom",
+          "name": "Left the bedroom",
+          "status": "closed",
+          "scored": true,
+          "opened_turn": 0,
+          "closed_turn": 15,
+          "d_open": 9,
+          "d_min": 0,
+          "distance_now": 0,
+          "fraction": 1.0,
+          "steps_walked": 27,
+          "tiles_seen": 11,
+          "off_graph": 0,
+          "efficiency": 0.3333333333333333
+        },
+        {
+          "index": 1,
+          "node_id": "left_house",
+          "name": "Stepped outside in Pallet Town",
+          "status": "closed",
+          "scored": true,
+          "opened_turn": 15,
+          "closed_turn": 19,
+          "d_open": 12,
+          "d_min": 1,
+          "distance_now": 1,
+          "fraction": 0.9166666666666666,
+          "steps_walked": 13,
+          "tiles_seen": 5,
+          "off_graph": 0,
+          "efficiency": 0.9230769230769231
+        },
+        {
+          "index": 2,
+          "node_id": "oaks_lab_entered",
+          "name": "Entered Oak's Lab",
+          "status": "closed",
+          "scored": true,
+          "opened_turn": 19,
+          "closed_turn": 23,
+          "d_open": 13,
+          "d_min": 0,
+          "distance_now": 27,
+          "fraction": 1.0,
+          "steps_walked": 42,
+          "tiles_seen": 5,
+          "off_graph": 0,
+          "efficiency": 0.30952380952380953
+        },
+        {
+          "index": 3,
+          "node_id": "starter_chosen",
+          "name": "Chose a starter",
+          "status": "open",
+          "scored": true,
+          "opened_turn": 23,
+          "closed_turn": null,
+          "d_open": 1,
+          "d_min": 0,
+          "distance_now": 6,
+          "fraction": 0.95,
+          "steps_walked": 15,
+          "tiles_seen": 10,
+          "off_graph": 0,
+          "efficiency": null
+        }
+      ],
+      "graph": {
+        "loaded": true,
+        "source": "pret/pokefirered@c75f352304d529f6ba92d4f74b9cf8b5c3810788",
+        "nodes": 8473
+      },
+      "positions_recorded": 54
+    }
+  },
+  "status": "terminated",
+  "recording_splice": [
+    {
+      "file": "recording.mp4",
+      "segment_file": "recording-segment.mp4",
+      "source_run": "2026-09-09_21-20-50_config-5.1__gemini-3-5-flash-lite-high",
+      "resumed_at_turn": 43,
+      "source_s": 417.07,
+      "segment_s": 109.13,
+      "total_s": 526.2
+    }
+  ],
+  "run_id": "2026-09-11_19-37-51_config-5.1__gemini-3-5-flash-lite-high_continued_from_turn_43",
+  "kind": "official",
+  "continued_from": "2026-09-09_21-20-50_config-5.1__gemini-3-5-flash-lite-high",
+  "benchmark": "pokebench-first-badge",
+  "benchmark_version": "pokebench-v1.1",
+  "ended_at": "2026-09-11T19:40:29"
+}
