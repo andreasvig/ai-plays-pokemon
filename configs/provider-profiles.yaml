@@ -353,6 +353,16 @@ profiles:
     final_turn_text_only: false
     notes: 'Use tools: the native API requires previous reasoning_content in thinking tool conversations; non-tool history may be ignored. Campaign 2026-09-06: 89% hits on the deepseek tag. Survey 2026-09-07: the first-party deepseek tag is $0.44/$1.32 per M with cache read $0.014 (97% off) and no cache-write price. Fireworks is half that ($0.22/$0.66, cache read $0.007) but the first-party endpoint keeps the documented reasoning-with-tools contract, which the endpoint rule prefers. The 2026-09-06 lessons table listed the deepseek row at $0.22/$0.007 — that is Fireworks'' pricing, or the first-party price has since doubled; either way the current snapshot is the one this profile is priced against.'
 
+  deepseek/deepseek-v4.1-flash:
+    endpoint: deepseek
+    context_length: 1048576
+    max_completion_tokens: 384000
+    reasoning_efforts: [max, high, low]
+    reasoning_default: {effort: high}
+    cache_mode: implicit
+    final_turn_text_only: false
+    notes: 'ADDED 2026-09-11 from the OpenRouter survey only — NOT probed live (no cache-hit or reasoning-replay probe yet; reasoning_use stays at the default unverified). First-party `deepseek` tag: $0.15/$0.60 per M, cache read $0.003 (98% off), no cache-write price, 1,048,576 context / 384,000 output, advertises reasoning_effort + tools + response_format. Ten other endpoints serve it (deepinfra/fp8 $0.20/$0.60, fireworks $0.22/$0.66, the rest $0.30/$1.20); first-party is both the cheapest and the one with the documented reasoning-with-tools contract, same reasoning as the V4 vision-exp row above. Effort ladder max/high/low copied from that row — verify on first run (a 400 on `max` would mean the ladder differs). Model is multimodal per the catalog (input text+image), which the vision-only harness requires.'
+
   # --- Meta Muse ------------------------------------------------------------
   meta/muse-spark-1.3:
     endpoint: meta

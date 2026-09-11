@@ -622,6 +622,21 @@ deepseek-v4-flash-vision-exp:
       sample_turns: 0
     low:
       sample_turns: 0
+# DeepSeek V4.1 Flash (released 2026-09-10; added 2026-09-11 on Andreas's ask) — first model on DeepSeek's Causal Encoder-Decoder architecture (8B active on input / 16B on output), multimodal (text+image), 1M ctx / 384K output on the first-party `deepseek` tag, $0.15/$0.60 per M with cache read $0.003 (98% off — now the deepest discount here, below the V4 vision-exp's 97%). Effort ladder mirrors the V4 Flash Vision entry (max/high/low) until a probe says otherwise; NOT yet probed for cache shape or reasoning replay — the profile carries the survey facts only.
+deepseek-v4.1-flash:
+  openrouter_id: deepseek/deepseek-v4.1-flash
+  reasoning_type: effort
+  thinking_levels:
+  - max
+  - high
+  - low
+  observed:
+    max:
+      sample_turns: 0
+    high:
+      sample_turns: 0
+    low:
+      sample_turns: 0
 # Meta Muse Spark 1.3 (released 2026-09-02) — effort-tiered with the widest ladder here (max/xhigh/high/medium/low/minimal, mandatory reasoning), multimodal, 1M ctx / 943K output, $1.25/$4.25 per M on the sole `meta` endpoint (cache read $0.15, 88% off; no cache-write price). NOTE the predecessor muse-spark-1.1 was probed 2026-07-30 and rejected with HTTP 403 "only available in the United States"; 1.3 answered normally on 2026-09-07, so that block does not apply to this slug. Probed 2026-09-07: implicit whole-prefix caching hits with no marker, and replayed reasoning IS billed by the endpoint.
 muse-spark-1.3:
   openrouter_id: meta/muse-spark-1.3
