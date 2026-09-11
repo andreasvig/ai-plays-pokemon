@@ -450,7 +450,11 @@ where: {crash.where.join(' ← ')}{/if}</pre>
             </div>
           {/each}
         </div>
-        {#if legs.length || currentLeg}
+        <!-- Between-gate table is the operator's view (walk-graph diagnostics:
+             path vs walked, efficiency, tiles). Not on the public site — Andreas,
+             2026-09-11: "remove this info from the online one". The gate table
+             above already carries the per-leg turns / cap the reader needs. -->
+        {#if (legs.length || currentLeg) && !STATIC}
           <!-- Between-gate progress: where the run walked on each leg. `walked` is
                a lower bound (position is sampled once per turn); efficiency =
                shortest path ÷ walked, so 100% means no wasted step. -->
