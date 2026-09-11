@@ -253,6 +253,10 @@ A run's score is **"farthest, fastest"**:
   turn 30 earns nothing on the Pokédex leg that opens at turn 110. The first
   leg opens on a read taken *before* turn 1's action, so its length is the
   walk from the canonical start tile, the same for every run.
+  An **unfinished** leg is capped at 0.95 (`OPEN_LEG_FRACTION_CAP`,
+  2026-09-11): standing on the target's tile without the stamp is not the gate,
+  so a run that died at Brock's feet reads 11.95, not 12.0, and never ties a
+  run that beat him. Only a stamp closes the leg and counts the whole gate.
 - **tiebreak:** `turns` (total game turns) — fewer is better
 
 Why the fraction exists: two official runs terminated at the same gate carry

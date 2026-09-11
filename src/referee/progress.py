@@ -18,7 +18,11 @@ Vocabulary
   leg record so the list stays aligned with the ladder.
 - **d_open (D)** — steps from the position where the leg opened to the target;
   **d_min** — the closest the run has ever been during the leg;
-  ``fraction = clamp(1 - d_min / D, 0, 1)``.
+  ``fraction = clamp(1 - d_min / D, 0, 1)``, capped at
+  :data:`OPEN_LEG_FRACTION_CAP` (0.95) while the leg is still open: standing
+  on the target's tile is not the target (2026-09-11 — glm-5.3-flash(max) stood
+  at Brock for its last leg and read as a 100 % clear next to two runs that
+  actually won). Only a stamp closes the leg and makes it a whole gate.
 - **progress** — ``gates_reached + fraction`` where ``gates_reached`` counts
   COMPLETE rungs (the same count the scorecard's done/auto statuses give).
 
@@ -38,6 +42,11 @@ the same way for distances (it still counts as a tile seen and toward steps).
 from __future__ import annotations
 
 from typing import Any, Optional
+
+# The most an UNFINISHED leg can contribute to ``progress``. A run at the target
+# tile without the stamp has not done the gate: cap it below 1.0 so it never
+# ties a run that did (Andreas, 2026-09-11, option A).
+OPEN_LEG_FRACTION_CAP = 0.95
 
 from src.referee.checkpoints import MultiGate, Node
 from src.referee.walkgraph import WalkGraph
@@ -77,7 +86,10 @@ class _Leg:
             return None
         if self.d_open <= 0:
             return 0.0
-        return max(0.0, min(1.0, 1.0 - self.d_min / self.d_open))
+        frac = max(0.0, min(1.0, 1.0 - self.d_min / self.d_open))
+        if self.status != "closed":
+            frac = min(frac, OPEN_LEG_FRACTION_CAP)
+        return frac
 
     def efficiency(self) -> Optional[float]:
         if self.status != "closed" or self.d_open is None or self.d_open <= 0:

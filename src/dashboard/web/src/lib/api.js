@@ -48,7 +48,13 @@ export function toRun(s) {
   // so a run that died 62% of the way to gate 4 reads 30%, not 25%.
   const progress = typeof s.progress === 'number' ? s.progress : null
   const score = progress ?? reached
-  const completion = total > 0 ? Math.round((score / total) * 100) : 0
+  // 100% is reserved for a run that actually holds every gate: an open leg is
+  // capped at 0.95 by the referee (OPEN_LEG_FRACTION_CAP, 2026-09-11), and
+  // plain rounding would still lift 11.95/12 to "100%" — so anything short of
+  // the full ladder rounds DOWN and tops out at 99.
+  const completion = total > 0
+    ? (score >= total ? 100 : Math.min(99, Math.floor((score / total) * 100)))
+    : 0
   const furthestGate = s.furthest_gate ?? null
   const legGate = s.leg_gate ?? null
   const r = {

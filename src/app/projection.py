@@ -21,6 +21,7 @@ import json
 from pathlib import Path
 
 from src.app.models import RunKind, RunStatus, RunSummary
+from src.referee.progress import OPEN_LEG_FRACTION_CAP
 
 # Benchmark legacy official runs (a benchmark_version but no benchmark id) map to.
 # They were scored on the full 20-gate ladder, so they belong to pokebench-full.
@@ -35,7 +36,7 @@ _DEFAULT_LADDER = Path("configs/checkpoints-firered-v1.yaml")
 # field added here reaches History without anyone deleting runs_index.json.
 #   1 — 2026-09-09: error / crash (why a crashed run ended).
 #   2 — 2026-09-09: record (the spec the run was recorded with, for continues).
-PROJECTION_VERSION = 2
+PROJECTION_VERSION = 3  # 3 (2026-09-11): open-leg fraction capped at OPEN_LEG_FRACTION_CAP
 
 # Status values the report treats as "cleared" for a gate (mirror report.py).
 _CLEARED_STATUSES = ("done", "auto")
@@ -235,6 +236,17 @@ def project_run_dir(run_dir: Path) -> RunSummary | None:
             leg_fraction = _num(leg.get("fraction"))
             leg_dmin = _int(leg.get("d_min"))
             leg_dopen = _int(leg.get("d_open"))
+            # Summaries written before 2026-09-11 let an OPEN leg reach 1.0 (the
+            # run stood on the target tile without the stamp). The tracker now
+            # caps that at OPEN_LEG_FRACTION_CAP; apply the same cap here so a
+            # stored row never reads as a full clear it did not make. The
+            # current leg is by definition unfinished, so no status check.
+            if leg_fraction is not None and leg_fraction > OPEN_LEG_FRACTION_CAP:
+                gates_n = _int(prog.get("gates_reached"))
+                if gates_n is None:
+                    gates_n = gates_reached
+                leg_fraction = OPEN_LEG_FRACTION_CAP
+                progress = float(gates_n) + OPEN_LEG_FRACTION_CAP
 
     return RunSummary(
         run_id=run_id,

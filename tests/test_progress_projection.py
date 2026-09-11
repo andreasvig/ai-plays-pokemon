@@ -72,3 +72,20 @@ def test_projection_carries_the_crash_error_and_record(tmp_path):
     # a clean run has neither
     clean = project_run_dir(_run_dir(tmp_path, {"gates": _GATES, "furthest": "left_house", "termination_reason": None}))
     assert clean.error is None and clean.crash is None
+
+
+def test_projection_caps_a_stored_open_leg_at_the_cap(tmp_path):
+    """Summaries written before 2026-09-11 carry fraction 1.0 for a run that stood
+    on the target tile; the projection re-derives progress with the cap so the
+    stored row cannot read as a full clear (glm-5.3-flash(max) at Brock, T557)."""
+    from src.referee.progress import OPEN_LEG_FRACTION_CAP
+
+    run = _run_dir(tmp_path, {
+        "gates": _GATES, "furthest": "left_house", "first_unmet": "oaks_lab_entered", "termination_reason": "leg_cap:oaks_lab_entered",
+        "progress": {"progress": 3.0, "gates_reached": 2, "current_leg": {"node_id": "oaks_lab_entered", "name": "Entered Oak's Lab",
+                                                                          "d_min": 0, "d_open": 16, "fraction": 1.0},
+                     "legs": [], "graph": {"loaded": True, "source": "pret"}, "positions_recorded": 40},
+    })
+    s = project_run_dir(run)
+    assert s.leg_fraction == OPEN_LEG_FRACTION_CAP
+    assert s.progress == 2 + OPEN_LEG_FRACTION_CAP and s.rank_score < 3.0

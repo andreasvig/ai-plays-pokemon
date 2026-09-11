@@ -541,3 +541,21 @@ def test_referee_default_loads_committed_graph(tmp_path):
     assert ref.walkgraph is not None and len(ref.walkgraph) > 1000
     prog = ref.scorecard()["progress"]
     assert prog["graph"]["loaded"] is True and prog["graph"]["source"].startswith("pret/")
+
+
+def test_open_leg_fraction_is_capped_below_one():
+    """Standing on the target tile without the stamp is not the gate (option A,
+    2026-09-11): an OPEN leg tops out at OPEN_LEG_FRACTION_CAP so a run that
+    died at Brock's feet never ties a run that beat him. A CLOSED leg keeps 1.0."""
+    from src.referee.progress import OPEN_LEG_FRACTION_CAP, _Leg
+
+    leg = _Leg(index=11, node_id="brock_defeated", name="Defeated Brock", scored=True, targets=set(), steps_known=True)
+    leg.d_open, leg.d_min = 40, 0
+    assert leg.fraction() == OPEN_LEG_FRACTION_CAP < 1.0
+    leg.d_min = 2
+    assert leg.fraction() == pytest.approx(0.95)  # 1 - 2/40 = 0.95 exactly: at the cap, unchanged
+    leg.d_min = 1
+    assert leg.fraction() == OPEN_LEG_FRACTION_CAP  # 0.975 would beat the cap
+    leg.status = "closed"
+    leg.d_min = 0
+    assert leg.fraction() == 1.0
