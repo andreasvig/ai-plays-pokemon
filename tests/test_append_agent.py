@@ -1002,3 +1002,65 @@ def test_official_config_is_config_5_1_and_the_casual_default_matches():
     raw = _yaml.safe_load((ROOT / OFFICIAL_CONFIG).read_text())
     assert "referee" not in raw
     assert "referee" not in (raw.get("player_agent") or {})
+
+
+# ───────────── empty inputs are an output defect, retried with a note (2026-09-11) ─────────────
+
+class EmptyThenActProvider(FakeProvider):
+    """First gameplay answer returns no inputs (the astra-low refusal), the next one plays."""
+
+    async def __call__(self, body, key, timeout, on_chunk):
+        result = await super().__call__(body, key, timeout, on_chunk)
+        request = self.requests[-1]
+        gameplay = [t for t in request.get("tools", []) if t["function"]["name"] == "gameplay"]
+        if gameplay and len([r for r in self.requests if any(t["function"]["name"] == "gameplay" for t in r.get("tools", []))]) == 1:
+            call = result["choices"][0]["message"]["tool_calls"][0]
+            args = json.loads(call["function"]["arguments"]); args["inputs"] = []
+            call["function"]["arguments"] = json.dumps(args)
+        return result
+
+
+def test_empty_inputs_are_retried_once_with_a_correction_note(config, tmp_path):
+    """gpt-6-astra(low) beat Brock, saw the badge text and returned [] for 80 turns
+    (2026-09-11). An empty list is now an output defect: the retry carries a note
+    saying the referee reads game memory, the accepted history keeps that note,
+    and the JSON schema on the wire is unchanged (no minItems) so continues of
+    older conversations still pass the wire-contract check."""
+    from src.agent.append_agent import EMPTY_INPUTS_NOTE
+
+    config["transport"]["max_retries"] = 1
+    agent, provider, events = engine(config, tmp_path, EmptyThenActProvider())
+    action = asyncio.run(agent.play(1, "badge text on screen", IMAGE))
+    assert action.inputs == ["a"]
+    gameplay = [r for r in provider.requests if any(t["function"]["name"] == "gameplay" for t in r.get("tools", []))]
+    assert len(gameplay) == 2
+    assert gameplay[0]["messages"][-1]["content"] != EMPTY_INPUTS_NOTE
+    assert gameplay[1]["messages"][-1] == {"role": "user", "content": EMPTY_INPUTS_NOTE}
+    assert gameplay[1]["messages"][:len(gameplay[0]["messages"])] == gameplay[0]["messages"], "the retry extends the same prefix"
+    schema = gameplay[1]["tools"][0]["function"]["parameters"]["properties"]["inputs"]
+    assert "minItems" not in schema and "min_length" not in json.dumps(schema)
+    assert [e for e in events if e["type"] == "output_retry"][0]["content"].startswith("Empty inputs")
+    assert any(m.get("content") == EMPTY_INPUTS_NOTE for m in agent.pending[1]), "the note is part of the accepted history"
+    agent.commit_action(1)
+    assert any(m.get("content") == EMPTY_INPUTS_NOTE for m in agent.state["messages"]), "…and of the retained conversation"
+
+
+def test_persistent_empty_inputs_exhaust_the_output_budget(config, tmp_path):
+    """A model that keeps refusing gets the note once, then the normal output
+    budget applies — the run fails loudly instead of burning a leg cap."""
+    class AlwaysEmpty(FakeProvider):
+        async def __call__(self, body, key, timeout, on_chunk):
+            result = await super().__call__(body, key, timeout, on_chunk)
+            msg = result["choices"][0]["message"]
+            if msg.get("tool_calls") and msg["tool_calls"][0]["function"]["name"] == "gameplay":
+                args = json.loads(msg["tool_calls"][0]["function"]["arguments"]); args["inputs"] = []
+                msg["tool_calls"][0]["function"]["arguments"] = json.dumps(args)
+            return result
+
+    from src.agent.append_agent import EMPTY_INPUTS_NOTE, EmptyInputs
+    config["transport"]["max_retries"] = 2
+    agent, provider, events = engine(config, tmp_path, AlwaysEmpty())
+    with pytest.raises(EmptyInputs):
+        asyncio.run(agent.play(1, "badge text on screen", IMAGE))
+    assert len(provider.requests) == 3
+    assert sum(1 for r in provider.requests for m in r["messages"] if m.get("content") == EMPTY_INPUTS_NOTE) == 2, "note appended once, carried on the later retry"

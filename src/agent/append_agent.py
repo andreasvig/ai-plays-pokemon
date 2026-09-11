@@ -195,6 +195,24 @@ def reasoning_manifest(messages: list[dict]) -> list[dict]:
     return blocks
 
 
+class EmptyInputs(ValueError):
+    """The gameplay output carried no inputs — an output defect, retried with a note."""
+
+    def __init__(self):
+        super().__init__("Empty inputs: every gameplay turn must return at least one input")
+
+
+# Appended to the retry after an EmptyInputs defect. Written as a rule, not as the
+# Brock case: the referee's ground truth is game memory, and a message box still
+# on screen means the game has not yet processed whatever the box announces.
+EMPTY_INPUTS_NOTE = (
+    "Your last output contained no inputs. Every turn must return at least one input. "
+    "Progress is judged from the game's memory, not from what the screen says: an event only counts "
+    "once the game has processed it, and an open message box means it has not been processed yet. "
+    "Close dialogue with A or B and keep playing; never return an empty list."
+)
+
+
 def replay_check(expected: list[dict], outbound: list[dict]) -> dict:
     old = reasoning_manifest(expected)
     # Check the entire prefix, including image bytes and associated tool IDs.
@@ -836,6 +854,16 @@ class AppendAgent:
                     value["memory"] = json.loads(value["memory"])
                 output = schema.model_validate(value).model_dump()
                 json.dumps(output, allow_nan=False)  # Reject NaN/Infinity before any state mutation.
+                if phase == "gameplay" and not output["inputs"]:
+                    # An empty input list is an output defect, not a legal move
+                    # (2026-09-11): gpt-6-astra(low) beat Brock, saw "received the
+                    # BOULDERBADGE" on the battle screen and returned [] for 80
+                    # turns — the post-battle script that sets the badge flag only
+                    # runs once that text box is dismissed, so the referee never saw
+                    # the win and the leg cap ended the run. Checked HERE rather than
+                    # as `min_length=1` on the schema so the tool JSON schema — part
+                    # of the wire contract every continue re-verifies — is unchanged.
+                    raise EmptyInputs()
                 if phase == "compaction" and len(json.dumps(output)) > self.options["max_handover_chars"]:
                     raise ValueError("Handover exceeds configured size limit")
                 accepted = messages + [message]
@@ -905,5 +933,12 @@ class AppendAgent:
                 if output_failures > output_budget:
                     raise
                 self.emit("output_retry", {"turn": turn, "phase": phase, "content": str(exc)})
+                if isinstance(exc, EmptyInputs) and not any(m.get("content") == EMPTY_INPUTS_NOTE for m in messages):
+                    # Identical re-asks reproduce an identical refusal, so this one
+                    # defect gets a correction appended for the retry. It extends the
+                    # outbound history past the retained prefix (replay_check is a
+                    # prefix check, so continuity holds) and, on acceptance, becomes
+                    # part of the conversation like any other user turn.
+                    messages = messages + [{"role": "user", "content": EMPTY_INPUTS_NOTE}]
                 # Failed requests are archived, not appended to accepted history.
                 # Retry identical context without switching models or stripping state.
