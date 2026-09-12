@@ -523,6 +523,14 @@ class AppendAgent:
         self.budget_exhausted = budget_exhausted or (lambda: False)
         self.model = config["llm_model"]
         self.profile = deepcopy(config.get("_provider_profile") or {})
+        # A continue queued with rebase_contract: the ONE place a conversation may
+        # change its provider profile / wire contract, on purpose and on record
+        # (2026-09-12: a harness fix — memory as a JSON string under strict
+        # json_schema — had to reach a run already 77 turns in). Consumed once:
+        # the first mismatching request re-baselines the digest and emits
+        # `contract_rebased`; a second change in the same segment is still an error.
+        self.rebase_contract = bool(config.get("_rebase_contract"))
+        self._rebased = False
         # config-5.0 grades the previous turn in the output; 5.1+ does not.
         self.graded = bool(config.get("self_grade", True))
         mode = str(config.get("mode") or "benchmark").lower()
@@ -551,7 +559,14 @@ class AppendAgent:
         if value.get("messages") and value["messages"][0] != {"role": "system", "content": self.system}:
             raise ContinuityError("System prompt changed since conversation checkpoint")
         if value.get("provider_profile", {}) != self.profile:
-            raise ContinuityError("Provider profile changed since conversation checkpoint; start a new run")
+            if not self.rebase_contract:
+                raise ContinuityError("Provider profile changed since conversation checkpoint; start a new run")
+            before = value.get("provider_profile", {})
+            changed = sorted(k for k in set(before) | set(self.profile) if before.get(k) != self.profile.get(k))
+            self.emit("contract_rebased", {"turn": completed_turn, "stage": "profile", "changed": changed,
+                                           "before": {k: before.get(k) for k in changed}, "after": {k: self.profile.get(k) for k in changed}})
+            value.setdefault("contract_rebases", []).append({"turn": completed_turn, "stage": "profile", "changed": changed})
+            value["provider_profile"] = deepcopy(self.profile)
         self.state = value
         self.checkpoint = deepcopy(value)
 
@@ -843,9 +858,22 @@ class AppendAgent:
             if mode == "prompted":
                 contract_fields["system_messages"] = [m for m in outbound["messages"] if m.get("role") == "system"]
             contract = digest(contract_fields)
+            field_digests = {k: digest(v) for k, v in contract_fields.items()}
             if self.state.get("wire_contract") not in (None, contract):
-                raise ContinuityError("Model/tool/reasoning contract changed within the conversation")
+                if not (self.rebase_contract and not self._rebased):
+                    raise ContinuityError("Model/tool/reasoning contract changed within the conversation")
+                # Deliberate rebase (see __init__): name what changed, using the
+                # per-field digests kept since this feature landed; an older state
+                # without them reports every field as unknown rather than guessing.
+                previous = self.state.get("wire_contract_fields")
+                changed = (sorted(k for k in field_digests if previous.get(k) != field_digests[k]) if previous
+                           else ["unknown (state predates per-field digests)"])
+                self._rebased = True
+                self.emit("contract_rebased", {"turn": turn, "phase": phase, "stage": "wire", "changed": changed,
+                                               "from": self.state["wire_contract"], "to": contract})
+                self.state.setdefault("contract_rebases", []).append({"turn": turn, "stage": "wire", "changed": changed})
             self.state["wire_contract"] = contract
+            self.state["wire_contract_fields"] = field_digests
             if continuity["local_replay"] != "intact" or continuity["history_prefix"] != "unchanged":
                 self.emit("llm_request_error", {"turn": turn, "phase": phase, "segment": self.state["segment"],
                     "request_id": request_id, "continuity": continuity, "error": "Final outbound history differs from retained conversation"})

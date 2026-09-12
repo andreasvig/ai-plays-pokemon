@@ -825,3 +825,33 @@ def test_a_clean_run_is_unaffected_by_the_abort_latch(tmp_path):
     summary = _json.loads((run_dir / "run_summary.json").read_text())
     assert "status" not in summary          # left for the executor to infer
     assert "error" not in summary           # key only exists on the abort path
+
+
+def test_continue_dispatch_with_rebase_contract_flags_the_config(harness):
+    """QueuedRun.rebase_contract (2026-09-12) reaches the agent as cfg['_rebase_contract'];
+    a saved config that cannot re-resolve its profile keeps the saved one."""
+    executor = harness["executor"]
+    runs_root = harness["runs_root"]
+    queue = harness["queue"]
+    source_id = "2026-09-12_src__opus"
+
+    def fake_continue_fn(arg):
+        return (
+            {"run_name": "x", "_config_path": "configs/x.yaml", "_llm_alias": "claude-opus-5(high)",
+             "llm_model": "anthropic/claude-opus-5", "task_master": {"mode": "freeplay"},
+             "_provider_profile": {"memory_encoding": "object"}},
+            runs_root / source_id / "savepoints" / "turn_77",
+        )
+
+    executor._continue_fn = fake_continue_fn
+    plain = queue.enqueue(kind=RunKind.casual, model="claude-opus-5(high)", max_turns=30)
+    plain.continue_from = source_id
+    cfg, _s, _t = executor.build_run_config(plain)
+    assert "_rebase_contract" not in cfg
+
+    flagged = queue.enqueue(kind=RunKind.casual, model="claude-opus-5(high)", max_turns=30, rebase_contract=True)
+    flagged.continue_from = source_id
+    assert flagged.rebase_contract is True
+    cfg, _s, _t = executor.build_run_config(flagged)
+    assert cfg["_rebase_contract"] is True
+    assert cfg["_provider_profile"] == {"memory_encoding": "object"}, "no catalog here → the saved profile is kept"

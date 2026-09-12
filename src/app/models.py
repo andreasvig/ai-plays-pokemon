@@ -323,6 +323,14 @@ class QueuedRun(BaseModel):
     # mGBA — so the documented Gemma A/B was control-center-unreachable.
     provider_profile: str | None = None
     continue_from: str | None = None
+    # Continue-only, explicit opt-in (2026-09-12): let the resumed conversation
+    # pick up today's provider profile and wire shape even though they differ
+    # from the checkpoint's. Without it an append continue is refused at the
+    # first request when the harness changed since the source ran — which is
+    # the RIGHT default (a silent mid-run change makes a score incomparable);
+    # this records the change instead (`contract_rebased` events) for the case
+    # where the change is a harness fix the run should have had all along.
+    rebase_contract: bool = False
     # Optional TaskMaster model override (casual only). None → inherit the
     # source/config/freeplay-default resolution. The Player model rides on
     # ``model``; on a casual continue the UI may set both to new picks.

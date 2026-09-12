@@ -81,6 +81,8 @@ def _cmd_continue(args) -> int:
     # footage onto its video; an explicit false is the only way to say "no video".
     if args.no_record:
         body["record"] = False
+    if args.rebase_contract:
+        body["rebase_contract"] = True
     status, data = api(
         "POST", f"/api/runs/{args.run_id}/continue", port=args.port, body=body
     )
@@ -192,6 +194,10 @@ the leaderboard).
     p_cont.add_argument("--max-turns", type=int, dest="max_turns", help="Max turns for the continue.")
     p_cont.add_argument("--no-record", dest="no_record", action="store_true",
                         help="Don't record. Default: record like the source run (its view and speed) and splice the new footage onto its video.")
+    p_cont.add_argument("--rebase-contract", dest="rebase_contract", action="store_true",
+                        help="Let the continue take TODAY's provider profile and wire shape even though they differ from the "
+                             "checkpoint's (a harness fix the run should have had). Recorded as contract_rebased events. "
+                             "Without it such a continue is refused at its first request.")
 
     p_stop = sub.add_parser("stop", parents=[common], help="Stop the active run (or a named run_id).")
     p_stop.add_argument("run_id", nargs="?", default=None, help="run_id (default: the active run).")

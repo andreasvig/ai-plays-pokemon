@@ -562,3 +562,26 @@ def test_continue_default_degrades_without_a_recorder(client, monkeypatch):
     # …but an explicit ask is still refused up front, like a fresh enqueue
     r = tc.post("/api/runs/2026-09-08_src4_config-5.0__claude/continue", json={"record": {"view": "simple"}})
     assert r.status_code == 400
+
+
+def test_rebase_contract_is_a_continue_only_opt_in(client):
+    """2026-09-12: `rebase_contract` rides the continue body onto the queue item;
+    on a fresh spec it is a 400, since there is no checkpoint contract to rebase."""
+    tc = client["tc"]
+    runs_root = client["runs_root"]
+    index = client["index"]
+    source_id = "2026-09-12_src_config-5.1__claude-opus-5-high"
+    source_dir = runs_root / source_id
+    (source_dir / "savepoints" / "turn_77").mkdir(parents=True)
+    with open(source_dir / "run_summary.json", "w") as f:
+        json.dump({"session": {"llm_alias": "claude-opus-5(high)", "llm_model": "anthropic/claude-opus-5"}}, f)
+    index.rebuild_from_scan()
+
+    r = tc.post(f"/api/runs/{source_id}/continue", json={"rebase_contract": True})
+    assert r.status_code == 201 and r.json()["rebase_contract"] is True
+    r = tc.post(f"/api/runs/{source_id}/continue", json={})
+    assert r.status_code == 201 and r.json()["rebase_contract"] is False
+    r = tc.post(f"/api/runs/{source_id}/continue", json={"rebase_contract": "yes"})
+    assert r.status_code == 400 and "boolean" in r.json()["detail"]
+    r = tc.post("/api/queue", json={"kind": "casual", "model": "claude-opus-5(high)", "max_turns": 5, "rebase_contract": True})
+    assert r.status_code == 400 and "continue only" in r.json()["detail"]

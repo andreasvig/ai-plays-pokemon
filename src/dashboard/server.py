@@ -955,8 +955,27 @@ def _validate_config_stem(config: Any, *, is_continue: bool) -> str | None:
 _ENQUEUE_KEYS = frozenset({
     "kind", "model", "benchmark", "config", "max_turns", "stop_at",
     "max_spend_usd", "gameplay", "rom", "start", "continue_from",
-    "provider_profile", "record",
+    "provider_profile", "record", "rebase_contract",
 })
+
+
+def _validate_rebase_contract(raw: Any, *, is_continue: bool) -> bool:
+    """``rebase_contract`` is a continue-only boolean (see QueuedRun).
+
+    A fresh run has no checkpoint to disagree with, so the flag would be stored
+    and read by nobody; refuse it at the door rather than let a queue card
+    advertise an opt-in that does nothing.
+    """
+    if raw is None or raw is False:
+        return False
+    if raw is not True:
+        raise HTTPException(status_code=400, detail="rebase_contract must be a boolean")
+    if not is_continue:
+        raise HTTPException(
+            status_code=400,
+            detail="rebase_contract applies to a continue only — a fresh run has no checkpoint contract to rebase",
+        )
+    return True
 
 
 def _reject_unknown_spec_keys(spec: dict) -> None:
@@ -1267,6 +1286,9 @@ def _enqueue_kwargs(spec: dict) -> dict:
         "start": _validate_start(spec.get("start"), rom_id),
         "continue_from": spec.get("continue_from"),
         "record": record,
+        "rebase_contract": _validate_rebase_contract(
+            spec.get("rebase_contract"), is_continue=bool(spec.get("continue_from"))
+        ),
     }
 
 
@@ -1512,6 +1534,8 @@ async def api_run_continue(run_id: str, body: dict | None = None):
         continue_from=spec["continue_from"],
         task_master_model=spec.get("task_master_model"),
         record=_continue_record(body, executor.runs_root / run_id, spec["kind"]),
+        # Explicit opt-in to take today's profile/wire shape (QueuedRun.rebase_contract).
+        rebase_contract=_validate_rebase_contract(body.get("rebase_contract"), is_continue=True),
     )
     notify_control()
     return JSONResponse(item.model_dump(mode="json"), status_code=201)

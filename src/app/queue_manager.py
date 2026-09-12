@@ -80,6 +80,7 @@ class QueueManager:
         task_master_model: str | None = None,
         record: dict | RecordSpec | None = None,
         enqueued_at: str | None = None,
+        rebase_contract: bool = False,
     ) -> QueuedRun:
         """Mint a :class:`QueuedRun`, append it, and save.
 
@@ -117,6 +118,7 @@ class QueueManager:
             provider_profile=provider_profile,
             continue_from=continue_from,
             task_master_model=task_master_model,
+            rebase_contract=bool(rebase_contract),
             record=RecordSpec.model_validate(record) if record is not None else None,
             enqueued_at=enqueued_at or _now_iso(),
         )

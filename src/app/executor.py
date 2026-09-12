@@ -243,6 +243,20 @@ class RunExecutor:
             # would resolve against CWD and fail "not a directory".
             source_dir = self.runs_root / item.continue_from
             cfg, savepoint_dir = self._resolve_continue_fn()(str(source_dir))
+            if item.rebase_contract:
+                # Explicit opt-in (see QueuedRun.rebase_contract): the resumed
+                # conversation may take today's provider profile and wire shape.
+                # Re-resolve the profile from the CURRENT catalog — the saved
+                # config carries the one the source ran with — and tell the
+                # agent to re-baseline its contract once, on record. A catalog
+                # that cannot be resolved here keeps the saved profile; the
+                # agent's rebase still covers code-side changes to the wire.
+                cfg["_rebase_contract"] = True
+                try:
+                    from src.agent.provider_profiles import resolve_provider_profile
+                    resolve_provider_profile(cfg)
+                except Exception:
+                    pass
             if item.kind == RunKind.official:
                 # Tamper-seal gate: an official resume must prove the paused
                 # checkpoint wasn't hand-edited. A present-but-mismatched seal is

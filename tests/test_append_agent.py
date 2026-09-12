@@ -1231,3 +1231,65 @@ def test_wire_schemas_carry_no_class_docstring(config, tmp_path):
         assert "description" not in tool["function"]["parameters"], tool["function"]["name"]
     assert "Decision 2026-09-08" not in json.dumps(request)
     assert "Muse" not in json.dumps(request)
+
+
+# ───────────── a continue may rebase its contract, explicitly and on record (2026-09-12) ─────────────
+
+def _restored(config, tmp_path, provider, events, flag):
+    """Play one turn under `config`, then restore that checkpoint into an agent whose
+    profile carries a change (memory as a JSON string), with or without the flag."""
+    first = AppendAgent(config, tmp_path / "first", lambda k, d: None, provider)
+    asyncio.run(first.play(1, "screen", IMAGE)); first.commit_action(1)
+    saved = first.export_checkpoint()
+    shutil.copytree(tmp_path / "first/conversation", tmp_path / "again/conversation")
+    changed = deepcopy(config)
+    changed["_provider_profile"] = {**config["_provider_profile"], "memory_encoding": "json_string"}
+    if flag:
+        changed["_rebase_contract"] = True
+    agent = AppendAgent(changed, tmp_path / "again", lambda kind, data: events.append({"type": kind, **deepcopy(data)}), provider)
+    agent.restore(saved, 1)
+    return agent
+
+
+def test_continue_without_the_flag_still_refuses_a_changed_profile(tmp_path):
+    config = load_config(str(ROOT / "configs/config-5.0.yaml"), llm_alias="deepseek/deepseek-v4.1-flash")
+    with pytest.raises(ContinuityError, match="Provider profile changed"):
+        _restored(config, tmp_path, FakeProvider(), [], flag=False)
+
+
+def test_rebase_contract_takes_the_new_profile_and_wire_once_on_record(tmp_path):
+    """The opus memory fix (2026-09-12) had to reach a run 77 turns in. With
+    rebase_contract the restore accepts the changed profile, the first request
+    re-baselines the wire digest, both are `contract_rebased` events naming what
+    changed, and a SECOND change in the same segment is still refused."""
+    config = load_config(str(ROOT / "configs/config-5.0.yaml"), llm_alias="deepseek/deepseek-v4.1-flash")
+    events = []
+    provider = FakeProvider()
+    agent = _restored(config, tmp_path, provider, events, flag=True)
+    profile_events = [e for e in events if e["type"] == "contract_rebased" and e["stage"] == "profile"]
+    assert len(profile_events) == 1 and profile_events[0]["changed"] == ["memory_encoding"]
+    assert profile_events[0]["before"] == {"memory_encoding": "object"} and profile_events[0]["after"] == {"memory_encoding": "json_string"}
+    assert agent.state["provider_profile"]["memory_encoding"] == "json_string"
+    # First request: the tools schema (memory now a string) and the profile differ → rebased, not refused.
+    asyncio.run(agent.play(2, "screen", IMAGE)); agent.commit_action(2)
+    wire = [e for e in events if e["type"] == "contract_rebased" and e["stage"] == "wire"]
+    assert len(wire) == 1 and wire[0]["turn"] == 2
+    assert set(wire[0]["changed"]) == {"profile", "tools"}, wire[0]["changed"]
+    assert provider.requests[-1]["tools"][1]["function"]["parameters"]["properties"]["memory"]["type"] == "string"
+    assert [r["stage"] for r in agent.state["contract_rebases"]] == ["profile", "wire"]
+    # Rebased once: the next request matches the new digest and emits nothing more…
+    asyncio.run(agent.play(3, "screen", IMAGE)); agent.commit_action(3)
+    assert len([e for e in events if e["type"] == "contract_rebased"]) == 2
+    # …and a further change in the same segment is still a ContinuityError.
+    agent.config["_provider_profile"]["sampling"] = {"temperature": 0.1}
+    agent.profile["sampling"] = {"temperature": 0.1}
+    with pytest.raises(ContinuityError, match="contract changed"):
+        asyncio.run(agent.play(4, "screen", IMAGE))
+
+
+def test_per_field_contract_digests_are_kept_so_a_rebase_can_name_the_change(config, tmp_path):
+    agent, provider, events = engine(config, tmp_path)
+    asyncio.run(agent.play(1, "", IMAGE))
+    fields = agent.state["wire_contract_fields"]
+    assert {"model", "tools", "response_format", "reasoning", "temperature", "top_p"} <= set(fields)
+    assert all(len(v) == 64 for v in fields.values())
