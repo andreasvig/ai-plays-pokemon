@@ -222,8 +222,11 @@ player_agent:
     timeout_seconds: 360
     # max_retries = OUTPUT re-asks: the model answered in the wrong shape (bad
     # JSON, schema miss, wrong tool). Immediate, few — waiting does not teach a
-    # model the schema.
-    max_retries: 2
+    # model the schema, but since 2026-09-12 each retry quotes the error, so a
+    # different defect per attempt gets a different correction. 4 (was 2) since
+    # claude-fable-5.1(medium) spent three attempts on turn 1 on three different
+    # one-character prompted-JSON defects; a well-formed model never pays for it.
+    max_retries: 4
     # Transient PROVIDER failures (429 / 5xx / network / timeout) are a separate
     # budget with long equal-jitter exponential backoff (src/agent/backoff.py):
     # waits of ~5, 10, 20, 40, 80, 160, 320, then 600 s, honouring Retry-After,

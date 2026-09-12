@@ -70,3 +70,25 @@ def coerce_object_to_json_string(value: Any) -> Any:
         except (TypeError, ValueError):
             return value
     return value
+
+
+def drop_null_extras(value: Any, allowed) -> Any:
+    """Drop keys outside ``allowed`` whose value is ``None`` from a prompted-JSON object.
+
+    Prompted-JSON models (no tool schema, no response_format enforcing the
+    object) pad the action with one invented key holding null: claude-fable-5.1
+    (medium) on 2026-09-12 answered turn 1 with ``"inputs_note": null``, then
+    ``"result": null`` inside the result, then a trailing comma, and burnt all
+    three gameplay attempts before its first action. Fable cannot be moved off
+    prompted output: Anthropic's classifier refuses its requests carrying
+    ``response_format`` or ``tools`` (3/3 each, probed the same day).
+
+    A null under a key the schema never reads carries no information, so
+    removing it is lossless coercion in the sense of ``coerce_stringified_object``
+    above. A non-null extra key is NOT dropped — the model put content
+    somewhere the harness would not read — and still fails ``extra="forbid"``
+    so the retry note names it. Non-dict input passes through untouched.
+    """
+    if not isinstance(value, dict):
+        return value
+    return {k: v for k, v in value.items() if k in allowed or v is not None}

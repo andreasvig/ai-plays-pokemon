@@ -197,7 +197,9 @@ def test_provider_drop_stops_without_committing(config, tmp_path):
 
 @pytest.mark.parametrize("mode", ["native_json", "prompted"])
 def test_non_tool_output_modes_preserve_history(config, tmp_path, mode):
-    config["_llm_resolved"] = {"output_mode": mode}
+    # The profile owns output_mode (the fixture's unprofiled model carries the
+    # defaults contract); setting _llm_resolved alone leaves the run in tool mode.
+    config["_provider_profile"]["output_mode"] = mode
     agent, provider, _ = engine(config, tmp_path)
     async def run():
         await agent.play(1, "", IMAGE)
@@ -1293,3 +1295,62 @@ def test_per_field_contract_digests_are_kept_so_a_rebase_can_name_the_change(con
     fields = agent.state["wire_contract_fields"]
     assert {"model", "tools", "response_format", "reasoning", "temperature", "top_p"} <= set(fields)
     assert all(len(v) == 64 for v in fields.values())
+
+
+# ───────────── prompted JSON: a null under an invented key is dropped (2026-09-12) ─────────────
+
+def _padded_provider(extra_value):
+    """First reply carries one invented key, in the tool arguments or the prompted object."""
+    class Padded(FakeProvider):
+        async def __call__(self, *args):
+            response = await super().__call__(*args)
+            if len(self.requests) == 1:
+                message = response["choices"][0]["message"]
+                if message.get("tool_calls"):
+                    arguments = json.loads(message["tool_calls"][0]["function"]["arguments"])
+                    arguments["inputs_note"] = extra_value
+                    message["tool_calls"][0]["function"]["arguments"] = json.dumps(arguments)
+                else:
+                    content = json.loads(message["content"])
+                    content["result"]["inputs_note"] = extra_value
+                    message["content"] = json.dumps(content)
+            return response
+    return Padded()
+
+
+def test_prompted_reply_with_a_null_extra_key_is_accepted_without_a_retry(config, tmp_path):
+    """claude-fable-5.1(medium) 2026-09-12 17:30: `"inputs_note": null` beside the two
+    real fields, then `"result": null`, then a trailing comma — three attempts, no
+    action. A null under a key the schema never reads carries nothing, so the
+    prompted parser drops it and the first reply is accepted. The fixture's
+    max_retries is 0, so without the drop this raises."""
+    config["_provider_profile"]["output_mode"] = "prompted"  # the profile owns the mode; _llm_resolved is overridden
+    agent, provider, events = engine(config, tmp_path, _padded_provider(None))
+    action = asyncio.run(agent.play(1, "", IMAGE))
+    assert len(provider.requests) == 1
+    assert not [e for e in events if e["type"] == "output_retry"]
+    assert action.inputs == ["a"] and not hasattr(action, "inputs_note")
+
+
+def test_prompted_reply_with_a_non_null_extra_key_is_still_an_output_defect(config, tmp_path):
+    """Mutation control for the drop: a VALUE under an unknown key is content the
+    harness would not read, so extra="forbid" still rejects it and the retry note
+    names the key."""
+    config["_provider_profile"]["output_mode"] = "prompted"  # the profile owns the mode; _llm_resolved is overridden
+    config["transport"]["max_retries"] = 1
+    agent, provider, events = engine(config, tmp_path, _padded_provider("go up"))
+    asyncio.run(agent.play(1, "", IMAGE))
+    assert len(provider.requests) == 2
+    retries = [e["content"] for e in events if e["type"] == "output_retry"]
+    assert len(retries) == 1 and "inputs_note" in retries[0] and "extra_forbidden" in retries[0]
+    assert "inputs_note" in provider.requests[1]["messages"][-1]["content"], "the retry quotes the error"
+
+
+def test_tool_arguments_with_a_null_extra_key_are_not_relaxed(config, tmp_path):
+    """The drop is scoped to prompted output. Tool arguments are schema-enforced on
+    the wire, so an extra key there is a real defect and is retried as before."""
+    config["transport"]["max_retries"] = 1
+    agent, provider, events = engine(config, tmp_path, _padded_provider(None))
+    asyncio.run(agent.play(1, "", IMAGE))
+    assert len(provider.requests) == 2
+    assert ["inputs_note" in e["content"] for e in events if e["type"] == "output_retry"] == [True]

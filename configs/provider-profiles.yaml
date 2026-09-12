@@ -202,7 +202,7 @@ profiles:
     reasoning_default: {effort: high}
     cache_mode: automatic
     final_turn_text_only: false
-    notes: 'Mandatory thinking (catalog reasoning.mandatory true); no tool_choice advertised on ANY of its four endpoints, re-verified 2026-09-07 — hence prompted output. Preserve signed blocks including empty thinking blocks. Cache/replay behaviour copied from claude-opus-5 on the shared anthropic tag. Own survey facts: $10/$50 per M, cache read $0.25 (97.5% off), cache write $12.50. NOTE: OpenRouter serves BOTH anthropic/claude-fable-5 (2026-06-09, cache read $1.00, tool_choice advertised) and anthropic/claude-fable-5.1 (2026-09-01); the registry pointed at 5 and this profile at 5.1, and the registry was moved to 5.1 to match the keep list.'
+    notes: 'Mandatory thinking (catalog reasoning.mandatory true); no tool_choice advertised on ANY of its four endpoints, re-verified 2026-09-07 — hence prompted output. Preserve signed blocks including empty thinking blocks. Cache/replay behaviour copied from claude-opus-5 on the shared anthropic tag. Own survey facts: $10/$50 per M, cache read $0.25 (97.5% off), cache write $12.50. NOTE: OpenRouter serves BOTH anthropic/claude-fable-5 (2026-06-09, cache read $1.00, tool_choice advertised) and anthropic/claude-fable-5.1 (2026-09-01); the registry pointed at 5 and this profile at 5.1, and the registry was moved to 5.1 to match the keep list. 2026-09-12 evening: Anthropic''s classifier refuses Fable''s request when it carries `response_format` (3/3, afternoon) AND when it carries `tools` without tool_choice (3/3, evening probe from the real turn-1 request) — every structured-output form is refused, prompted is the only path. Its prompted JSON pads the object with one null key per attempt (`"inputs_note": null`, `"result": null`, then a trailing comma), so the parser drops null-valued extra keys (src/agent/coerce.py drop_null_extras) and gameplay max_retries is 4.'
   anthropic/claude-haiku-4.5:
     endpoint: anthropic
     probed_as: anthropic/claude-opus-5
@@ -372,13 +372,14 @@ profiles:
 
   deepseek/deepseek-v4.1-flash:
     endpoint: deepseek
-    # Forced per-phase tool call (enabled 2026-09-12 after the control center
-    # restarted on the phase-aware contract digest, 5a32115). Under `auto` the
-    # model answered the handover prompt as plain text on 6 of 12 compaction
-    # attempts and lost the max run at T110; the `deepseek` endpoint advertises
-    # tool_choice. Runs started under `auto` cannot be continued past this change
-    # (the profile is part of the digest) — start them fresh.
-    tool_choice: named
+    # tool_choice stays the default `auto`. The endpoint ADVERTISES tool_choice,
+    # but OpenRouter's "Filter by Tool Compatibility" rejects every value except
+    # auto on the first-party route: `named` and `required` both return HTTP 404
+    # "No endpoints found that support the provided 'tool_choice' value" (probed
+    # 2026-09-12 evening after the fresh max run died at T1 on `named`, which was
+    # enabled that morning for the T110 "Expected exactly one compaction call"
+    # crash). The text-instead-of-tool-call defect is handled by the retry note
+    # (tool_call_note) and compaction max_retries 4 instead.
     context_length: 1048576
     max_completion_tokens: 384000
     reasoning_efforts: [max, high, low]

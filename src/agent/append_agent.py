@@ -19,7 +19,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.core.prompts import fill_prompt
-from src.agent.coerce import coerce_stringified_object
+from src.agent.coerce import coerce_stringified_object, drop_null_extras
 from src.agent.provider_profiles import project_history, router_diagnostics, output_json_text
 from src.agent.backoff import RetryPolicy, classify, describe, parse_retry_after
 
@@ -941,6 +941,10 @@ class AppendAgent:
                         value = parsed
                     else:
                         raise ValueError("Expected a JSON object containing result")
+                    # A prompted model that pads the object with a key holding null
+                    # has encoded nothing; dropping it is lossless (coerce.py).
+                    # Tool and native_json output is schema-enforced on the wire.
+                    value = drop_null_extras(value, schema.model_fields)
                 if phase == "compaction" and self.profile.get("memory_encoding") == "json_string":
                     value["memory"] = json.loads(value["memory"])
                 output = schema.model_validate(value).model_dump()
