@@ -5,7 +5,7 @@
   // ten turns. One bar per MODEL — the best-ranked thinking level — regardless
   // of the board's "include all thinking levels" toggle; the caller passes the
   // collapsed rows.
-  import { headlineSeries, vendorOf, baseModel, PERF_LINE } from '../lib/board.js'
+  import { headlineSeries, vendorOf, PERF_LINE } from '../lib/board.js'
   let { rows = [], oninspect = () => {} } = $props()
 
   const series = $derived(headlineSeries(rows))
@@ -34,7 +34,7 @@
           <span class="fill">
             <span class="val tnum" class:outside={s.height < INSIDE_MIN}>{s.label}</span>
           </span>
-          <span class="name mono">{baseModel(s.row.model)}</span>
+          <span class="name mono">{s.row.model}</span>
         </button>
       {/each}
     </div>
@@ -50,7 +50,7 @@
         <button class="bar" style={`--h:${(s.height * 100).toFixed(1)}%; --c:${vendorOf(s.row).color}`}
           title={`${s.row.model}: ${s.label} turns/min (${s.row.avgSPerTurn.toFixed(1)}s per turn)`} onclick={() => oninspect(s.row)}>
           <span class="fill"><span class="val tnum" class:outside={s.height < INSIDE_MIN}>{s.label}</span></span>
-          <span class="name mono">{baseModel(s.row.model)}</span>
+          <span class="name mono">{s.row.model}</span>
         </button>
       {/each}
     </div>
@@ -67,7 +67,7 @@
           title={`${s.row.model}: ${s.label} per 10 turns`} onclick={() => oninspect(s.row)}>
           <span class="above tnum">{s.label}</span>
           <span class="fill"></span>
-          <span class="name mono">{baseModel(s.row.model)}</span>
+          <span class="name mono">{s.row.model}</span>
         </button>
       {/each}
     </div>
@@ -95,10 +95,11 @@
   /* The plot: bars sit on a baseline, names hang below it. --h is the bar's
      height as a percentage of the bar area; --c its vendor colour. */
   /* --bars is the bar area, --lane the name lane under the baseline. */
-  /* --top is headroom for the label above the tallest bar. Names show the base
-     model (the level is in the tooltip): one bar per model, and the lane is
-     sized for the longest alias in the roster (gemini-3.5-flash-lite). */
-  .plot { --top: 22px; --bars: 190px; --lane: 150px; position: relative; display: flex; align-items: flex-end; gap: 6px; height: calc(var(--top) + var(--bars) + var(--lane)); padding: var(--top) 0 var(--lane); box-sizing: border-box; }
+  /* --top is headroom for the label above the tallest bar. Names are the full
+     alias with its thinking level (Andreas 2026-09-12: "i still want the
+     thinking level in parentheses"); the lane is sized for the longest one in
+     the roster, gemini-3.5-flash-lite(minimal). */
+  .plot { --top: 22px; --bars: 190px; --lane: 196px; position: relative; display: flex; align-items: flex-end; gap: 6px; height: calc(var(--top) + var(--bars) + var(--lane)); padding: var(--top) 0 var(--lane); box-sizing: border-box; }
   .hundred { position: absolute; left: 0; right: 0; bottom: calc(var(--lane) + var(--bars) * var(--linef)); border-top: 1px dashed var(--faint); pointer-events: none; }
   .hundred span { position: absolute; right: 0; top: -15px; font-size: 10px; color: var(--faint); font-weight: 700; }
   .bar { position: relative; flex: 1 1 0; min-width: 0; height: var(--bars); border: none; background: none; padding: 0; cursor: pointer; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; font: inherit; color: inherit; }
@@ -111,7 +112,7 @@
   .above small { font-size: 9px; color: var(--muted); margin-left: 1px; }
   /* Names read bottom-to-top under the baseline, clipped to the label lane. */
   .name { position: absolute; top: calc(100% + 6px); height: calc(var(--lane) - 10px); left: 50%;
-    writing-mode: vertical-rl; transform: translateX(-50%) rotate(180deg); font-size: 10.5px; color: var(--muted);
+    writing-mode: vertical-rl; transform: translateX(-50%) rotate(180deg); font-size: 10px; color: var(--muted);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1; text-align: right; }
   .legend { grid-column: 1 / -1; font-size: 11.5px; text-align: center; display: flex; align-items: center; justify-content: center; gap: 6px 10px; flex-wrap: wrap; margin: -4px 0 0; }
   .key { display: inline-block; width: 9px; height: 9px; background: var(--c); border-radius: 2px; vertical-align: -1px; margin-right: 4px; }
