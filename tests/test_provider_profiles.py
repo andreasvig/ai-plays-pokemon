@@ -572,3 +572,29 @@ def test_opus_profile_uses_strict_native_json_and_fable_stays_prompted(tmp_path)
         else:
             assert "response_format" not in request
             assert request["messages"][1]["role"] == "system" and "matching this schema" in request["messages"][1]["content"]
+
+
+def test_native_json_sends_memory_as_a_string_and_decodes_it(tmp_path):
+    """Strict json_schema closes every object, so an open memory dict can only
+    come back empty (claude-opus-5, 3 of 3 compactions on 2026-09-12). Under
+    native_json the compaction schema types memory as a string, whatever the
+    profile says, and the stringified memory decodes back into a dict."""
+    config = load_config(str(ROOT / "configs/config-5.0.yaml"), llm_alias="anthropic/claude-opus-5")
+    config["compaction"]["every_n_turns"] = 2
+    config["_provider_profile"]["memory_encoding"] = "object"   # the code rule, not the profile, must carry it
+    provider = FakeProvider()
+    agent = AppendAgent(config, tmp_path, lambda kind, data: None, provider)
+    async def run():
+        for turn in (1, 2):
+            await agent.play(turn, "screen", IMAGE)
+            agent.commit_action(turn)
+        await agent.play(3, "screen", IMAGE)
+    asyncio.run(run())
+    schema = provider.requests[0]["response_format"]["json_schema"]["schema"]["properties"]["result"]["anyOf"][1]
+    assert schema["properties"]["memory"]["type"] == "string"
+    assert "serialized as a JSON object string" in schema["properties"]["memory"]["description"]
+    # The fake serialises memory when the wire schema types it as a string, so the
+    # reply carried `"memory": "{...}"` and the agent decoded it back into a dict.
+    handover_request = provider.requests[2]
+    assert handover_request["messages"][-1]["content"].startswith("Pause gameplay")
+    assert agent.state["handover"]["memory"] == {"invented_key": {"last_seen": "Town"}}

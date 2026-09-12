@@ -56,6 +56,12 @@ class FakeProvider:
                 function = tool["function"]
                 if function["name"] == "compaction" and function["parameters"]["properties"]["memory"]["type"] == "string":
                     value["memory"] = json.dumps(value["memory"])
+            # Same for a strict json_schema (native_json): the wire schema types memory as a string.
+            rf = request.get("response_format")
+            if rf and rf.get("type") == "json_schema":
+                mem = rf["json_schema"]["schema"]["properties"]["result"]["anyOf"][1]["properties"]["memory"]
+                if mem.get("type") == "string":
+                    value["memory"] = json.dumps(value["memory"])
         msg = {"role": "assistant", "content": None,
                "reasoning_details": [{"type": "reasoning.encrypted", "id": f"rs-{n}", "index": 0,
                                       "format": "test-v1", "data": f"opaque-{n}"}],

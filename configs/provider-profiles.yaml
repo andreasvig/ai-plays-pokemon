@@ -164,6 +164,10 @@ profiles:
     # every reply validated. The anthropic tag advertises response_format and
     # structured_outputs.
     output_mode: native_json
+    # Under strict json_schema the provider closes every object, so the free-form
+    # memory dict can only come back as {} — it did on all three compactions of
+    # the 14:17 run. As a JSON string it came back with 10 keys (probe 2026-09-12).
+    memory_encoding: json_string
     reasoning_efforts: [max, xhigh, high, medium, low]
     reasoning_default: {effort: high}
     cache_mode: automatic
@@ -175,6 +179,7 @@ profiles:
     context_length: 1000000
     max_completion_tokens: 128000
     output_mode: native_json  # copied from claude-opus-5 (2026-09-12); its tag advertises structured_outputs too
+    memory_encoding: json_string  # copied from claude-opus-5: strict schema empties an open memory object
     reasoning_efforts: [max, xhigh, high, medium, low]
     reasoning_default: {effort: high}
     cache_mode: automatic

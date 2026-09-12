@@ -706,8 +706,15 @@ class AppendAgent:
             # turn 1, and the same request with the description removed was
             # answered (probe 2026-09-12). Field descriptions stay.
             schema.pop("description", None)
-        if self.profile.get("memory_encoding") == "json_string":
-            schemas["compaction"]["properties"]["memory"] = {"type": "string", "description": self.profile["memory_wire_description"]}
+        # Memory travels as a JSON string when the profile says so — or whenever the
+        # output is a strict json_schema (native_json): the provider closes every
+        # object under strict, so an open `memory` object can only come back as {}
+        # (claude-opus-5, all three compactions of the 2026-09-12 14:17 run; a
+        # string memory came back with 10 keys). Handover's before-validator
+        # decodes the string, so the parse side needs nothing extra.
+        if self.profile.get("memory_encoding") == "json_string" or mode == "native_json":
+            schemas["compaction"]["properties"]["memory"] = {"type": "string", "description": (self.profile or {}).get("memory_wire_description")
+                or "The complete flexible memory dictionary serialized as a JSON object string. Choose keys freely; the harness parses it back into a dictionary."}
         body = {"model": self.model, "messages": messages, "session_id": self.state["session_id"],
                 "stream": self.config["transport"]["stream"],
                 "max_tokens": self.options["max_output_tokens"] if phase == "compaction" else resolved.get("max_tokens", self.config["transport"]["max_output_tokens"])}
