@@ -88,7 +88,7 @@
      its own token so a component that wants "body type" still reads correctly. */
   --font: var(--mono);
 
-  --maxw: 1080px;
+  --maxw: 90vw;   /* was 1080px; Andreas 2026-09-12: "use more screen width like 90%" */
 }
 
 * { box-sizing: border-box; }

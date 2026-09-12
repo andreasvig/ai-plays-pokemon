@@ -82,7 +82,8 @@
 
 <style>
   .cards { max-width: var(--maxw); margin: 26px auto 0; padding: 0 24px; display: grid; gap: 18px;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+    grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  @media (max-width: 960px) { .cards { grid-template-columns: minmax(0, 1fr); } }
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px 12px; box-shadow: var(--shadow); min-width: 0; }
   header { margin-bottom: 10px; }
   h3 { font-size: 17px; font-weight: 750; margin: 0; display: flex; align-items: center; gap: 8px; }
