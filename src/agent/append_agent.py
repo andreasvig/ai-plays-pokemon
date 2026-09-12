@@ -230,17 +230,8 @@ class MalformedJSON(ValueError):
     """A reply that json.loads rejected. The message is `describe_json_error`'s."""
 
 
-def describe_json_error(text, exc):
-    """Turn a JSONDecodeError into something a model can act on.
-
-    json's own message points at a character offset ("Expecting ',' delimiter:
-    line 1 column 6318 (char 6317)"), which is useless to the model when 6317 is
-    simply the end of its reply: qwen3.8-flash(thinking) ended every compaction
-    reply one `}` short on 2026-09-12 (turns 21, 41, 61, 101), got that offset
-    quoted back five times at turn 101, never understood it, and the run died.
-    When the text ends with brackets still open, say so and name the closers;
-    otherwise keep json's message.
-    """
+def _open_brackets(text):
+    """Brackets still open when the text ends, and whether it ends inside a string."""
     stack, in_string, escaped = [], False, False
     for char in text:
         if in_string:
@@ -256,6 +247,30 @@ def describe_json_error(text, exc):
             stack.append(char)
         elif char in "}]" and stack:
             stack.pop()
+    return stack, in_string
+
+
+def missing_closers(text):
+    """The closers a reply that stopped early is missing, or None when that is not
+    what is wrong with it (it ends inside a string, or nothing is open)."""
+    stack, in_string = _open_brackets(text)
+    if in_string or not stack:
+        return None
+    return "".join("}" if char == "{" else "]" for char in reversed(stack))
+
+
+def describe_json_error(text, exc):
+    """Turn a JSONDecodeError into something a model can act on.
+
+    json's own message points at a character offset ("Expecting ',' delimiter:
+    line 1 column 6318 (char 6317)"), which is useless to the model when 6317 is
+    simply the end of its reply: qwen3.8-flash(thinking) ended every compaction
+    reply one `}` short on 2026-09-12 (turns 21, 41, 61, 101), got that offset
+    quoted back five times at turn 101, never understood it, and the run died.
+    When the text ends with brackets still open, say so and name the closers;
+    otherwise keep json's message.
+    """
+    stack, in_string = _open_brackets(text)
     reason = f"{exc.msg.removesuffix(' at')} at character {exc.pos}"
     if in_string:
         # json points at the START of an unterminated string, not at the end of the text.
@@ -985,7 +1000,24 @@ class AppendAgent:
                         raise MissingToolCall(phase)
                     value = self._decode(calls[0]["function"]["arguments"])
                 else:
-                    parsed = self._decode(output_json_text(message["content"], self.profile))
+                    text = output_json_text(message["content"], self.profile)
+                    try:
+                        parsed = self._decode(text)
+                    except MalformedJSON as original:
+                        # Profile `close_unbalanced_json`: the reply stopped with
+                        # brackets still open (qwen3.8-flash, 2026-09-12: one `}`
+                        # short on 7 of 7 compaction replies, structure otherwise
+                        # intact). Append the derived closers; anything else that
+                        # is wrong with the text still raises the original error.
+                        closers = missing_closers(text) if self.profile.get("close_unbalanced_json") else None
+                        try:
+                            parsed = json.loads(text + closers) if closers else None
+                        except json.JSONDecodeError:
+                            parsed = None
+                        if parsed is None:
+                            raise original
+                        self.emit("output_coerced", {"turn": turn, "phase": phase, "kind": "closed_brackets",
+                                                     "appended": closers, "chars": len(text)})
                     if isinstance(parsed, dict) and "result" in parsed:
                         value = parsed["result"]
                     elif self.profile.get("allow_unwrapped_json", True):

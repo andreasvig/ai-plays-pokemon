@@ -1407,3 +1407,81 @@ def test_unclosed_compaction_reply_is_retried_with_the_missing_closer_named(conf
     notes = [m["content"] for r in provider.requests for m in r["messages"] if str(m.get("content", "")).startswith("Your last reply was not accepted")]
     assert len(notes) == 1 and "missing `}` at the very end" in notes[0] and "(char" not in notes[0]
     assert len([e for e in events if e["type"] == "compaction_complete"]) == 1
+
+
+# ───────────── profile close_unbalanced_json: closers appended, recorded (2026-09-12, Andreas: "a") ─────────────
+
+class _StopsEarly(FakeProvider):
+    """Compaction replies end one `}` short (qwen3.8-flash); gameplay replies are fine."""
+    def __init__(self, cut=1):
+        super().__init__(); self.cut = cut
+    async def __call__(self, *args):
+        response = await super().__call__(*args)
+        message = response["choices"][0]["message"]
+        if "Pause gameplay" in json.dumps(self.requests[-1]["messages"][-1]) and message.get("content"):
+            assert message["content"].endswith("}}")
+            message["content"] = message["content"][:-self.cut]
+        return response
+
+
+def test_close_unbalanced_json_appends_the_closers_and_records_it(config, tmp_path):
+    """The unclosed handover is accepted on the first attempt, the memory is the one
+    the model wrote, and the trace carries an output_coerced event naming the
+    appended text. The fixture's compaction max_retries is 0, so without the
+    repair this run would die here."""
+    config["_provider_profile"]["output_mode"] = "prompted"
+    config["_provider_profile"]["close_unbalanced_json"] = True
+    agent, provider, events = engine(config, tmp_path, _StopsEarly())
+    async def play():
+        for turn in (1, 2):
+            await agent.play(turn, "screen", IMAGE)
+            agent.commit_action(turn)
+        await agent.play(3, "new evidence", IMAGE)
+    asyncio.run(play())
+    coerced = [e for e in events if e["type"] == "output_coerced"]
+    assert [(e["turn"], e["phase"], e["kind"], e["appended"]) for e in coerced] == [(3, "compaction", "closed_brackets", "}")]
+    assert not [e for e in events if e["type"] == "output_retry"]
+    assert agent.checkpoint["handover"]["memory"] == {"invented_key": {"last_seen": "Town"}}
+    # Several closers, in the right order: the reply cut before `}}` of the envelope AND the memory value.
+    agent2, _, events2 = engine(config, tmp_path / "two", _StopsEarly(cut=3))
+    asyncio.run(agent2.play(1, "screen", IMAGE)); agent2.commit_action(1)
+    asyncio.run(agent2.play(2, "screen", IMAGE)); agent2.commit_action(2)
+    asyncio.run(agent2.play(3, "new evidence", IMAGE))
+    assert [e["appended"] for e in events2 if e["type"] == "output_coerced"] == ["}}}"]
+
+
+def test_close_unbalanced_json_leaves_other_defects_to_the_retry(config, tmp_path):
+    """Mutation controls: a trailing comma is not a missing closer (appending one
+    does not make it parse), so the normal defect path runs; and with the flag
+    off the same one-short reply is still a retry. No output_coerced either way."""
+    from src.agent.append_agent import MalformedJSON
+
+    config["_provider_profile"]["output_mode"] = "prompted"
+    config["_provider_profile"]["close_unbalanced_json"] = True
+    class TrailingComma(FakeProvider):
+        async def __call__(self, *args):
+            response = await super().__call__(*args)
+            message = response["choices"][0]["message"]
+            if "Pause gameplay" in json.dumps(self.requests[-1]["messages"][-1]) and message.get("content"):
+                message["content"] = message["content"][:-2] + ", }}"
+            return response
+    agent, provider, events = engine(config, tmp_path, TrailingComma())
+    async def play():
+        for turn in (1, 2):
+            await agent.play(turn, "screen", IMAGE)
+            agent.commit_action(turn)
+        with pytest.raises(MalformedJSON, match="Expecting property name"):
+            await agent.play(3, "new evidence", IMAGE)
+    asyncio.run(play())
+    assert not [e for e in events if e["type"] == "output_coerced"]
+
+    off = deepcopy(config); off["_provider_profile"]["close_unbalanced_json"] = False
+    agent, provider, events = engine(off, tmp_path / "off", _StopsEarly())
+    async def play_off():
+        for turn in (1, 2):
+            await agent.play(turn, "screen", IMAGE)
+            agent.commit_action(turn)
+        with pytest.raises(MalformedJSON, match="missing `}` at the very end"):
+            await agent.play(3, "new evidence", IMAGE)
+    asyncio.run(play_off())
+    assert not [e for e in events if e["type"] == "output_coerced"]

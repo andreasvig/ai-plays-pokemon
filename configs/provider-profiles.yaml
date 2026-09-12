@@ -57,6 +57,13 @@ defaults:
   sampling: {}
   excluded_endpoints: []
   allow_json_fence: false
+  # Prompted-JSON replies that end with brackets still open (outside a string)
+  # get the derived closers appended before validation, recorded as an
+  # `output_coerced` event. Off by default: this IS a JSON repair, allowed per
+  # model only where the defect is proven to be "the reply stops one closer
+  # short" (qwen3.8-flash, 2026-09-12: 7 of 7 compaction replies at turn 101,
+  # each exactly one `}` short with an otherwise identical memory structure).
+  close_unbalanced_json: false
   # Prompted-JSON models sometimes return the action/handover object without the
   # {"result": ...} envelope (Gemma after a handover, Qwen on compaction). The
   # schema validation is the real guard, so accept either shape everywhere.
@@ -282,11 +289,12 @@ profiles:
     max_completion_tokens: 131072
     output_mode: prompted
     allow_json_fence: true
+    close_unbalanced_json: true
     reasoning_efforts: [thinking, non-thinking]
     reasoning_default: {enabled: true}
     cache_mode: implicit
     final_turn_text_only: false
-    notes: 'Family representative for Qwen. Live routing rejects required tool choice; auto can skip tools, and native JSON failed the envelope during compaction. Use validated prompted JSON. Cache probe 2026-09-06: Alibaba caches the whole identical prefix implicitly (98% on the second call); an explicit system marker LIMITED caching to the system block (11% in the campaign), so no markers are sent. Native preserve_thinking defaults on, gateway use remains unverified. BINARY reasoning axis (no supported_efforts in the catalog). $0.15/$0.47 per M, cache read $0.016, cache write $0.20.'
+    notes: 'Family representative for Qwen. Live routing rejects required tool choice; auto can skip tools, and native JSON failed the envelope during compaction. Use validated prompted JSON. Cache probe 2026-09-06: Alibaba caches the whole identical prefix implicitly (98% on the second call); an explicit system marker LIMITED caching to the system block (11% in the campaign), so no markers are sent. Native preserve_thinking defaults on, gateway use remains unverified. 2026-09-12: every compaction reply ends one `}` short once the handover passes ~5k chars (turn 101: 7 of 7 attempts, two of them after a note naming the missing closer); appending the closer reproduces the turn-81 memory structure key for key, so close_unbalanced_json is on for this model (Andreas chose the repair over dropping Qwen). BINARY reasoning axis (no supported_efforts in the catalog). $0.15/$0.47 per M, cache read $0.016, cache write $0.20.'
   qwen/qwen3.7-plus:
     endpoint: alibaba
     probed_as: qwen/qwen3.8-flash

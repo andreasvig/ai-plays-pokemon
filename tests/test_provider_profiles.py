@@ -598,3 +598,15 @@ def test_native_json_sends_memory_as_a_string_and_decodes_it(tmp_path):
     handover_request = provider.requests[2]
     assert handover_request["messages"][-1]["content"].startswith("Pause gameplay")
     assert agent.state["handover"]["memory"] == {"invented_key": {"last_seen": "Town"}}
+
+
+def test_close_unbalanced_json_is_a_bool_and_on_for_qwen_only():
+    """The closer repair is a per-model opt-in (2026-09-12): qwen3.8-flash has it,
+    the catalog default is off, and a non-bool value is rejected."""
+    import yaml
+    catalog = yaml.safe_load((ROOT / "configs/provider-profiles.yaml").read_text())
+    assert catalog["defaults"]["close_unbalanced_json"] is False
+    assert catalog["profiles"]["qwen/qwen3.8-flash"]["close_unbalanced_json"] is True
+    assert [m for m, p in catalog["profiles"].items() if p.get("close_unbalanced_json")] == ["qwen/qwen3.8-flash"]
+    config = load_config(str(ROOT / "configs/config-5.1.yaml"), llm_alias="qwen/qwen3.8-flash")
+    assert config["_provider_profile"]["close_unbalanced_json"] is True
