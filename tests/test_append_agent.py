@@ -1151,3 +1151,61 @@ def test_persistent_text_replies_exhaust_the_compaction_budget(config, tmp_path)
     assert len(compactions) == 3
     assert sum(1 for r in compactions for m in r["messages"] if m.get("content") == tool_call_note("compaction")) == 2, "note appended once, carried on the later retry"
     assert not any(e["type"] == "compaction_complete" for e in events)
+
+
+# ───────────── every other output defect carries its error on the retry (2026-09-12) ─────────────
+
+def test_output_defect_retry_carries_the_error_and_the_required_shape(config, tmp_path):
+    """Andreas 2026-09-12: "in the retry feed the model with the error message of
+    what it has to do". Unparsable tool arguments on turn 1: the retry's last message
+    quotes the JSON error and names the required shape; the accepted history keeps it."""
+    from src.agent.append_agent import output_defect_note
+
+    config["transport"]["max_retries"] = 1
+    class WrongShape(FakeProvider):
+        async def __call__(self, *args):
+            response = await super().__call__(*args)
+            if len(self.requests) == 1:
+                response["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"] = "{not json"
+            return response
+    agent, provider, events = engine(config, tmp_path, WrongShape())
+    assert asyncio.run(agent.play(1, "", IMAGE)).inputs == ["a"]
+    assert len(provider.requests) == 2
+    note = provider.requests[1]["messages"][-1]
+    assert note["role"] == "user" and note["content"].startswith("Your last reply was not accepted: Expecting property name")
+    assert "exactly one `gameplay` tool call whose arguments match that tool's schema" in note["content"]
+    assert provider.requests[1]["messages"][:len(provider.requests[0]["messages"])] == provider.requests[0]["messages"]
+    assert note["content"] == output_defect_note("gameplay", "tool", json.JSONDecodeError("Expecting property name enclosed in double quotes", "{not json", 1))
+    agent.commit_action(1)
+    assert any(m.get("content") == note["content"] for m in agent.state["messages"])
+
+
+def test_truncated_output_retry_says_to_shorten(config, tmp_path):
+    """finish_reason length is an output defect; its note adds the shorten hint."""
+    config["transport"]["max_retries"] = 1
+    class CutOff(FakeProvider):
+        async def __call__(self, *args):
+            response = await super().__call__(*args)
+            if len(self.requests) == 1:
+                response["choices"][0]["finish_reason"] = "length"
+            return response
+    agent, provider, events = engine(config, tmp_path, CutOff())
+    assert asyncio.run(agent.play(1, "", IMAGE)).inputs == ["a"]
+    note = provider.requests[1]["messages"][-1]["content"]
+    assert "Incomplete model output: length" in note and note.endswith("so make it shorter.")
+
+
+def test_same_error_twice_gets_one_note(config, tmp_path):
+    """Three identical schema misses: one note, carried on both retries."""
+    config["transport"]["max_retries"] = 2
+    class AlwaysBad(FakeProvider):
+        async def __call__(self, *args):
+            response = await super().__call__(*args)
+            response["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"] = "{not json"
+            return response
+    agent, provider, events = engine(config, tmp_path, AlwaysBad())
+    with pytest.raises(json.JSONDecodeError):
+        asyncio.run(agent.play(1, "", IMAGE))
+    assert len(provider.requests) == 3
+    notes = [m for r in provider.requests for m in r["messages"] if str(m.get("content", "")).startswith("Your last reply was not accepted")]
+    assert len(notes) == 2 and len({n["content"] for n in notes}) == 1

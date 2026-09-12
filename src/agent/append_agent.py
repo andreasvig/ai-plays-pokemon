@@ -226,6 +226,18 @@ def tool_call_note(phase):
             "and put the whole answer in its arguments.")
 
 
+def output_defect_note(phase, mode, exc):
+    """Appended to the retry after any other output defect (unparsable arguments, a
+    schema miss, a truncated completion, an oversized handover): the error the
+    harness saw, then the shape it needs. Andreas 2026-09-12: "in the retry feed
+    the model with the error message of what it has to do"."""
+    reason = " ".join(str(exc).split())[:600]
+    shape = (f"exactly one `{phase}` tool call whose arguments match that tool's schema"
+             if mode == "tool" else f"a single JSON object that matches the {phase} schema")
+    hint = " The reply was cut off at the output limit, so make it shorter." if "length" in reason else ""
+    return f"Your last reply was not accepted: {reason}. Answer with {shape}.{hint}"
+
+
 # Appended to the retry after an EmptyInputs defect. Written as a rule, not as the
 # Brock case: the referee's ground truth is game memory, and a message box still
 # on screen means the game has not yet processed whatever the box announces.
@@ -799,7 +811,14 @@ class AppendAgent:
                     continuity["profile_name"] = self.profile["name"]
             contract_fields = {k: outbound.get(k) for k in ("model", "tools", "response_format", "reasoning", "temperature", "top_p")}
             if self.profile:
-                contract_fields.update(profile=self.profile, provider=outbound.get("provider"), tool_choice=outbound.get("tool_choice"),
+                # A forced call to the phase's own tool (profile tool_choice `named`)
+                # differs between gameplay and compaction requests by design; digest
+                # it as the policy, not the value, or the first handover would read
+                # as a contract change (2026-09-12).
+                tool_choice = outbound.get("tool_choice")
+                if isinstance(tool_choice, dict) and tool_choice.get("function", {}).get("name") == phase:
+                    tool_choice = "named"
+                contract_fields.update(profile=self.profile, provider=outbound.get("provider"), tool_choice=tool_choice,
                                        cache_control=outbound.get("cache_control"), transforms=outbound.get("transforms"))
             if mode == "prompted":
                 contract_fields["system_messages"] = [m for m in outbound["messages"] if m.get("role") == "system"]
@@ -957,17 +976,26 @@ class AppendAgent:
                 if output_failures > output_budget:
                     raise
                 self.emit("output_retry", {"turn": turn, "phase": phase, "content": str(exc)})
-                if isinstance(exc, EmptyInputs) and not any(m.get("content") == EMPTY_INPUTS_NOTE for m in messages):
-                    # Identical re-asks reproduce an identical refusal, so this one
+                if isinstance(exc, EmptyInputs):
+                    # Identical re-asks reproduce an identical refusal, so each
                     # defect gets a correction appended for the retry. It extends the
                     # outbound history past the retained prefix (replay_check is a
                     # prefix check, so continuity holds) and, on acceptance, becomes
                     # part of the conversation like any other user turn.
-                    messages = messages + [{"role": "user", "content": EMPTY_INPUTS_NOTE}]
-                if isinstance(exc, MissingToolCall) and not any(m.get("content") == tool_call_note(phase) for m in messages):
+                    if not any(m.get("content") == EMPTY_INPUTS_NOTE for m in messages):
+                        messages = messages + [{"role": "user", "content": EMPTY_INPUTS_NOTE}]
+                elif isinstance(exc, MissingToolCall):
                     # Same shape for a text reply in tool mode. For compaction the
                     # accepted history is discarded anyway (compact() replaces it
                     # with the handover), so the note never reaches a later request.
-                    messages = messages + [{"role": "user", "content": tool_call_note(phase)}]
+                    note = tool_call_note(phase)
+                    if not any(m.get("content") == note for m in messages):
+                        messages = messages + [{"role": "user", "content": note}]
+                else:
+                    # Every other output defect carries the error it caused, once per
+                    # distinct error, so the retry is never a byte-identical re-ask.
+                    note = output_defect_note(phase, mode, exc)
+                    if not any(m.get("content") == note for m in messages):
+                        messages = messages + [{"role": "user", "content": note}]
                 # Failed requests are archived, not appended to accepted history.
                 # Retry identical context without switching models or stripping state.

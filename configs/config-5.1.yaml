@@ -204,7 +204,11 @@ player_agent:
     summary_target_tokens: 1500
     max_output_tokens: 12288
     max_handover_chars: 24000
-    max_retries: 2
+    # 4, not 2 (2026-09-12): a failed compaction ends the run, and since each
+    # retry now carries the error it caused, extra attempts are not identical
+    # re-asks. deepseek-v4.1-flash(max) wrote the handover as text on all three
+    # attempts at T110 and lost a 2h20m run over three ~$0.005 requests.
+    max_retries: 4
     prompt: |-
       Pause gameplay after turn {{after_turn}} and prepare a handover for yourself. The latest screenshot and OCR show the observed result of that action. Your earlier conversation will be replaced by this handover before you continue.
 

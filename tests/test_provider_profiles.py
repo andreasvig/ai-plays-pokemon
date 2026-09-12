@@ -53,9 +53,14 @@ def test_profile_roundtrip_and_fresh_segment(model, variant, tmp_path):
         # No harness budget: output may run to the endpoint's own ceiling.
         assert request["max_tokens"] == profile["max_completion_tokens"]
     assert config["compaction"]["context_token_limit"] == profile["context_length"]
-    # Tool definitions AND tool choice remain stable during the handover request.
-    for key in ("tools", "tool_choice", "response_format"):
+    # Tool definitions remain stable during the handover request; so does tool choice,
+    # except that a `named` profile forces the phase's own tool on each request.
+    for key in ("tools", "response_format"):
         assert all(r.get(key) == provider.requests[0].get(key) for r in provider.requests)
+    if profile["tool_choice"] == "named":
+        assert [r["tool_choice"]["function"]["name"] for r in provider.requests] == ["gameplay", "gameplay", "compaction", "gameplay"]
+    else:
+        assert all(r.get("tool_choice") == provider.requests[0].get("tool_choice") for r in provider.requests)
     # The model's own reply (a split-turn profile also carries a synthetic "Observed." assistant message).
     previous = [m for m in provider.requests[1]["messages"] if m["role"] == "assistant" and m.get("content") != "Observed."][0]
     if profile["reasoning_replay"] == "omit_prior":
@@ -499,3 +504,36 @@ def test_every_offered_level_actually_dispatches():
         except Exception as exc:  # noqa: BLE001 - the message is the report
             failures.append(f"{alias}: {exc}")
     assert not failures, "aliases the picker offers but config-5.0 refuses:\n" + "\n".join(failures)
+
+
+def test_named_tool_choice_forces_the_phase_tool_without_a_contract_change(tmp_path):
+    """Profile tool_choice `named` (2026-09-12, for deepseek-v4.1-flash): gameplay
+    requests force the gameplay tool, the handover request forces compaction, and
+    the wire-contract digest reads the two as one policy — before this the first
+    compaction raised ContinuityError because tool_choice was digested by value.
+    A resume across the compaction stays on the same contract."""
+    config = load_config(str(ROOT / "configs/config-5.0.yaml"), llm_alias="deepseek/deepseek-v4.1-flash")
+    config["compaction"]["every_n_turns"] = 2
+    config["_provider_profile"]["tool_choice"] = "named"
+    provider = FakeProvider()
+    events = []
+    emit = lambda kind, data: events.append({"type": kind, **deepcopy(data)})
+    agent = AppendAgent(config, tmp_path / "first", emit, provider)
+    async def run():
+        for turn in (1, 2):
+            await agent.play(turn, "screen", IMAGE)
+            agent.commit_action(turn)
+        saved = agent.export_checkpoint()
+        shutil.copytree(tmp_path / "first/conversation", tmp_path / "resumed/conversation")
+        resumed = AppendAgent(config, tmp_path / "resumed", emit, provider)
+        resumed.restore(saved, 2)
+        await resumed.play(3, "screen", IMAGE)
+        resumed.commit_action(3)
+        assert resumed.state["segment"] == 2
+    asyncio.run(run())
+    choices = [r["tool_choice"] for r in provider.requests]
+    named = lambda name: {"type": "function", "function": {"name": name}}
+    assert choices == [named("gameplay"), named("gameplay"), named("compaction"), named("gameplay")]
+    assert all("parallel_tool_calls" not in r for r in provider.requests)
+    assert len({e["continuity"].get("request") for e in events if e["type"] == "llm_request_usage"}) == 1
+    assert len([e for e in events if e["type"] == "compaction_complete"]) == 1
