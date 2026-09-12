@@ -355,15 +355,13 @@ profiles:
 
   deepseek/deepseek-v4.1-flash:
     endpoint: deepseek
-    # tool_choice: named   # HELD 2026-09-12 — uncomment only once the control center
-    # runs a build with the phase-aware contract digest (commit after cc978c3). The
-    # profile is read at run start by the RUNNING app, and the old digest treats the
-    # per-phase forced call as a contract change, so enabling it under the old build
-    # crashes the next dequeued run at its first compaction. Why we want it: the
+    # Forced per-phase tool call (enabled 2026-09-12 after the control center
+    # restarted on the phase-aware contract digest, 5a32115). Under `auto` the
     # model answered the handover prompt as plain text on 6 of 12 compaction
-    # attempts under `auto` and lost the max run at T110; the endpoint advertises
-    # tool_choice. Note: a continue of a run started under `auto` fails the contract
-    # check once this changes (the profile is part of the digest).
+    # attempts and lost the max run at T110; the `deepseek` endpoint advertises
+    # tool_choice. Runs started under `auto` cannot be continued past this change
+    # (the profile is part of the digest) — start them fresh.
+    tool_choice: named
     context_length: 1048576
     max_completion_tokens: 384000
     reasoning_efforts: [max, high, low]
