@@ -202,6 +202,30 @@ class EmptyInputs(ValueError):
         super().__init__("Empty inputs: every gameplay turn must return at least one input")
 
 
+class MissingToolCall(ValueError):
+    """Tool mode got a reply that is not exactly one call to the phase's tool.
+
+    Usually the model wrote its answer as plain text: deepseek-v4.1-flash(max)
+    (2026-09-12) returned the handover as a JSON string, a fenced block or
+    <continuation_summary> tags on 6 of 12 compaction attempts; at turn 110 all
+    three attempts did, and the run crashed. The message text is unchanged from
+    the old bare ValueError so traces and tallies read the same.
+    """
+
+    def __init__(self, phase):
+        self.phase = phase
+        super().__init__(f"Expected exactly one {phase} call")
+
+
+def tool_call_note(phase):
+    """Appended to the retry after a MissingToolCall. A rule, not the deepseek case:
+    the retry is otherwise byte-identical to the request that failed, and an
+    identical re-ask reproduces an identical reply."""
+    return (f"Your last reply was not accepted: it was not a call to the `{phase}` tool. "
+            f"Text outside a tool call is never read. Answer with exactly one `{phase}` tool call "
+            "and put the whole answer in its arguments.")
+
+
 # Appended to the retry after an EmptyInputs defect. Written as a rule, not as the
 # Brock case: the referee's ground truth is game memory, and a message box still
 # on screen means the game has not yet processed whatever the box announces.
@@ -840,7 +864,7 @@ class AppendAgent:
                 calls = message.get("tool_calls") or []
                 if mode == "tool":
                     if len(calls) != 1 or calls[0]["function"]["name"] != phase or not calls[0].get("id"):
-                        raise ValueError(f"Expected exactly one {phase} call")
+                        raise MissingToolCall(phase)
                     value = json.loads(calls[0]["function"]["arguments"])
                 else:
                     parsed = json.loads(output_json_text(message["content"], self.profile))
@@ -940,5 +964,10 @@ class AppendAgent:
                     # prefix check, so continuity holds) and, on acceptance, becomes
                     # part of the conversation like any other user turn.
                     messages = messages + [{"role": "user", "content": EMPTY_INPUTS_NOTE}]
+                if isinstance(exc, MissingToolCall) and not any(m.get("content") == tool_call_note(phase) for m in messages):
+                    # Same shape for a text reply in tool mode. For compaction the
+                    # accepted history is discarded anyway (compact() replaces it
+                    # with the handover), so the note never reaches a later request.
+                    messages = messages + [{"role": "user", "content": tool_call_note(phase)}]
                 # Failed requests are archived, not appended to accepted history.
                 # Retry identical context without switching models or stripping state.

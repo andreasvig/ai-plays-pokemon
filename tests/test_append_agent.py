@@ -39,7 +39,10 @@ class FakeProvider:
         choice = request.get("tool_choice")
         phase = choice.get("function", {}).get("name") if isinstance(choice, dict) else None
         if phase is None:
-            phase = "compaction" if isinstance(request["messages"][-1]["content"], str) and request["messages"][-1]["content"].startswith("Pause gameplay") else "gameplay"
+            # The handover prompt is the last message, or second-to-last when a
+            # retry appended a correction note after it.
+            phase = "compaction" if any(isinstance(m.get("content"), str) and m["content"].startswith("Pause gameplay")
+                                        for m in request["messages"][-2:]) else "gameplay"
         n = len(self.requests)
         if phase == "gameplay":
             value = {"inputs": ["a"], "reasoning": f"Observed dialogue; next screen will close it. Call {n}",
@@ -1064,3 +1067,87 @@ def test_persistent_empty_inputs_exhaust_the_output_budget(config, tmp_path):
         asyncio.run(agent.play(1, "badge text on screen", IMAGE))
     assert len(provider.requests) == 3
     assert sum(1 for r in provider.requests for m in r["messages"] if m.get("content") == EMPTY_INPUTS_NOTE) == 2, "note appended once, carried on the later retry"
+
+
+# ───────────── a text reply in tool mode is an output defect, retried with a note (2026-09-12) ─────────────
+
+def _as_text_reply(result):
+    """Turn the fake's tool call into what deepseek-v4.1-flash sent: the same JSON as plain content, no tool call."""
+    msg = result["choices"][0]["message"]
+    call = msg.pop("tool_calls")[0]
+    msg["content"] = call["function"]["arguments"]
+    result["choices"][0]["finish_reason"] = "stop"
+    return result
+
+
+class TextThenToolProvider(FakeProvider):
+    """The first compaction answer is the handover written as text; the retry calls the tool."""
+
+    def __init__(self):
+        super().__init__()
+        self.compactions = 0
+
+    async def __call__(self, body, key, timeout, on_chunk):
+        result = await super().__call__(body, key, timeout, on_chunk)
+        if result["choices"][0]["message"]["tool_calls"][0]["function"]["name"] == "compaction":
+            self.compactions += 1
+            if self.compactions == 1:
+                return _as_text_reply(result)
+        return result
+
+
+def test_text_reply_in_tool_mode_is_retried_once_with_a_correction_note(config, tmp_path):
+    """deepseek-v4.1-flash(max) wrote the handover as plain text on three identical
+    compaction requests and the run crashed at turn 110 (2026-09-12). The retry now
+    carries a note naming the tool; the request is otherwise the same prefix, and
+    the compaction still completes and replaces the history as usual."""
+    from src.agent.append_agent import tool_call_note
+
+    config["compaction"]["max_retries"] = 1
+    agent, provider, events = engine(config, tmp_path, TextThenToolProvider())
+    async def play():
+        for turn in (1, 2):
+            await agent.play(turn, "screen", IMAGE)
+            agent.commit_action(turn)
+        await agent.play(3, "new evidence", IMAGE)
+    asyncio.run(play())
+    compactions = [r for r in provider.requests if r["messages"][-1].get("content") and isinstance(r["messages"][-1]["content"], str)
+                   and (r["messages"][-1]["content"].startswith("Pause gameplay") or r["messages"][-1]["content"] == tool_call_note("compaction"))]
+    assert len(compactions) == 2
+    assert compactions[1]["messages"][-1] == {"role": "user", "content": tool_call_note("compaction")}
+    assert compactions[1]["messages"][:len(compactions[0]["messages"])] == compactions[0]["messages"], "the retry extends the same prefix"
+    retries = [e for e in events if e["type"] == "output_retry"]
+    assert [e["content"] for e in retries] == ["Expected exactly one compaction call"]
+    assert len([e for e in events if e["type"] == "compaction_complete"]) == 1
+    assert agent.checkpoint["segment"] == 2
+    assert not any(m.get("content") == tool_call_note("compaction") for m in agent.state["messages"]), "compaction replaced the history; the note is gone"
+
+
+def test_persistent_text_replies_exhaust_the_compaction_budget(config, tmp_path):
+    """A model that keeps answering in text gets the note once, then the compaction
+    output budget applies and the failure is the same MissingToolCall as before."""
+    from src.agent.append_agent import MissingToolCall, tool_call_note
+
+    class AlwaysText(FakeProvider):
+        async def __call__(self, body, key, timeout, on_chunk):
+            result = await super().__call__(body, key, timeout, on_chunk)
+            if result["choices"][0]["message"]["tool_calls"][0]["function"]["name"] == "compaction":
+                return _as_text_reply(result)
+            return result
+
+    config["compaction"]["max_retries"] = 2
+    agent, provider, events = engine(config, tmp_path, AlwaysText())
+    async def play():
+        for turn in (1, 2):
+            await agent.play(turn, "screen", IMAGE)
+            agent.commit_action(turn)
+        checkpoint = deepcopy(agent.checkpoint)
+        with pytest.raises(MissingToolCall, match="Expected exactly one compaction call"):
+            await agent.play(3, "new evidence", IMAGE)
+        assert agent.checkpoint == checkpoint
+    asyncio.run(play())
+    compactions = [r for r in provider.requests if isinstance(r["messages"][-1].get("content"), str)
+                   and (r["messages"][-1]["content"].startswith("Pause gameplay") or r["messages"][-1]["content"] == tool_call_note("compaction"))]
+    assert len(compactions) == 3
+    assert sum(1 for r in compactions for m in r["messages"] if m.get("content") == tool_call_note("compaction")) == 2, "note appended once, carried on the later retry"
+    assert not any(e["type"] == "compaction_complete" for e in events)
