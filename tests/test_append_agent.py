@@ -1167,7 +1167,7 @@ def test_output_defect_retry_carries_the_error_and_the_required_shape(config, tm
     """Andreas 2026-09-12: "in the retry feed the model with the error message of
     what it has to do". Unparsable tool arguments on turn 1: the retry's last message
     quotes the JSON error and names the required shape; the accepted history keeps it."""
-    from src.agent.append_agent import output_defect_note
+    from src.agent.append_agent import MalformedJSON, describe_json_error, output_defect_note
 
     config["transport"]["max_retries"] = 1
     class WrongShape(FakeProvider):
@@ -1183,7 +1183,8 @@ def test_output_defect_retry_carries_the_error_and_the_required_shape(config, tm
     assert note["role"] == "user" and note["content"].startswith("Your last reply was not accepted: Expecting property name")
     assert "exactly one `gameplay` tool call whose arguments match that tool's schema" in note["content"]
     assert provider.requests[1]["messages"][:len(provider.requests[0]["messages"])] == provider.requests[0]["messages"]
-    assert note["content"] == output_defect_note("gameplay", "tool", json.JSONDecodeError("Expecting property name enclosed in double quotes", "{not json", 1))
+    exc = json.JSONDecodeError("Expecting property name enclosed in double quotes", "{not json", 1)
+    assert note["content"] == output_defect_note("gameplay", "tool", MalformedJSON(describe_json_error("{not json", exc)))
     agent.commit_action(1)
     assert any(m.get("content") == note["content"] for m in agent.state["messages"])
 
@@ -1212,7 +1213,8 @@ def test_same_error_twice_gets_one_note(config, tmp_path):
             response["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"] = "{not json"
             return response
     agent, provider, events = engine(config, tmp_path, AlwaysBad())
-    with pytest.raises(json.JSONDecodeError):
+    from src.agent.append_agent import MalformedJSON
+    with pytest.raises(MalformedJSON):
         asyncio.run(agent.play(1, "", IMAGE))
     assert len(provider.requests) == 3
     notes = [m for r in provider.requests for m in r["messages"] if str(m.get("content", "")).startswith("Your last reply was not accepted")]
@@ -1354,3 +1356,54 @@ def test_tool_arguments_with_a_null_extra_key_are_not_relaxed(config, tmp_path):
     asyncio.run(agent.play(1, "", IMAGE))
     assert len(provider.requests) == 2
     assert ["inputs_note" in e["content"] for e in events if e["type"] == "output_retry"] == [True]
+
+
+# ───────────── an unclosed JSON reply gets told which brackets it is missing (2026-09-12) ─────────────
+
+def test_describe_json_error_names_the_missing_closers_only_when_the_text_ends_early():
+    from src.agent.append_agent import describe_json_error
+
+    def err(text):
+        try:
+            json.loads(text)
+        except json.JSONDecodeError as exc:
+            return describe_json_error(text, exc)
+        raise AssertionError("valid JSON")
+
+    # qwen3.8-flash(thinking) 2026-09-12: the handover object one `}` short, five times.
+    one_short = '{"continuation_summary": "x", "memory": {"log": ["a", "b"]}'
+    assert "1 bracket(s) still open" in err(one_short) and "missing `}` at the very end" in err(one_short)
+    assert "missing `]}}`" in err('{"memory": {"log": ["a"')
+    assert "ended inside a string" in err('{"memory": "unterminated')
+    # A defect in the middle of the text keeps json's own message: the offset is meaningful there.
+    middle = err('{"result": {"inputs": ["a"], }}')
+    assert middle.startswith("Expecting property name enclosed in double quotes at character") and "still open" not in middle
+    # Brackets inside strings do not count.
+    assert "missing `}`" in err('{"note": "a } inside a string", "memory": {"k": "v"}')
+
+
+def test_unclosed_compaction_reply_is_retried_with_the_missing_closer_named(config, tmp_path):
+    """The note the model gets is the actionable one — "missing `}` at the very end" —
+    not json's character offset (mutation control: the old note quoted only the offset)."""
+    config["_provider_profile"]["output_mode"] = "prompted"
+    config["compaction"]["max_retries"] = 1
+    class OneBraceShort(FakeProvider):
+        async def __call__(self, *args):
+            response = await super().__call__(*args)
+            message = response["choices"][0]["message"]
+            if "Pause gameplay" in json.dumps(self.requests[-1]["messages"][-1]) and message.get("content"):
+                assert message["content"].endswith("}}")
+                message["content"] = message["content"][:-1]
+            return response
+    agent, provider, events = engine(config, tmp_path, OneBraceShort())
+    async def play():
+        for turn in (1, 2):
+            await agent.play(turn, "screen", IMAGE)
+            agent.commit_action(turn)
+        await agent.play(3, "new evidence", IMAGE)
+    asyncio.run(play())
+    retries = [e["content"] for e in events if e["type"] == "output_retry"]
+    assert len(retries) == 1 and "missing `}` at the very end" in retries[0], retries
+    notes = [m["content"] for r in provider.requests for m in r["messages"] if str(m.get("content", "")).startswith("Your last reply was not accepted")]
+    assert len(notes) == 1 and "missing `}` at the very end" in notes[0] and "(char" not in notes[0]
+    assert len([e for e in events if e["type"] == "compaction_complete"]) == 1

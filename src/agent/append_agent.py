@@ -226,6 +226,49 @@ def tool_call_note(phase):
             "and put the whole answer in its arguments.")
 
 
+class MalformedJSON(ValueError):
+    """A reply that json.loads rejected. The message is `describe_json_error`'s."""
+
+
+def describe_json_error(text, exc):
+    """Turn a JSONDecodeError into something a model can act on.
+
+    json's own message points at a character offset ("Expecting ',' delimiter:
+    line 1 column 6318 (char 6317)"), which is useless to the model when 6317 is
+    simply the end of its reply: qwen3.8-flash(thinking) ended every compaction
+    reply one `}` short on 2026-09-12 (turns 21, 41, 61, 101), got that offset
+    quoted back five times at turn 101, never understood it, and the run died.
+    When the text ends with brackets still open, say so and name the closers;
+    otherwise keep json's message.
+    """
+    stack, in_string, escaped = [], False, False
+    for char in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+        elif char == '"':
+            in_string = True
+        elif char in "{[":
+            stack.append(char)
+        elif char in "}]" and stack:
+            stack.pop()
+    reason = f"{exc.msg.removesuffix(' at')} at character {exc.pos}"
+    if in_string:
+        # json points at the START of an unterminated string, not at the end of the text.
+        return f"The reply ended inside a string value ({reason}). Close the string and every open object and array."
+    if exc.pos < len(text.rstrip()):
+        return reason
+    if stack:
+        closers = "".join("}" if char == "{" else "]" for char in reversed(stack))
+        return (f"The reply ended with {len(stack)} bracket(s) still open ({reason}). "
+                f"It is missing `{closers}` at the very end; close every object and array you open.")
+    return reason
+
+
 def output_defect_note(phase, mode, exc):
     """Appended to the retry after any other output defect (unparsable arguments, a
     schema miss, a truncated completion, an oversized handover): the error the
@@ -692,6 +735,14 @@ class AppendAgent:
         self.store.write("state.json", self.state)
         self.checkpoint = deepcopy(self.state)
 
+    @staticmethod
+    def _decode(text):
+        """json.loads, with an error message the model can act on (describe_json_error)."""
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise MalformedJSON(describe_json_error(text, exc)) from exc
+
     def _body(self, phase, messages):
         resolved = self.config.get("_llm_resolved") or {}
         if self.profile:
@@ -932,9 +983,9 @@ class AppendAgent:
                 if mode == "tool":
                     if len(calls) != 1 or calls[0]["function"]["name"] != phase or not calls[0].get("id"):
                         raise MissingToolCall(phase)
-                    value = json.loads(calls[0]["function"]["arguments"])
+                    value = self._decode(calls[0]["function"]["arguments"])
                 else:
-                    parsed = json.loads(output_json_text(message["content"], self.profile))
+                    parsed = self._decode(output_json_text(message["content"], self.profile))
                     if isinstance(parsed, dict) and "result" in parsed:
                         value = parsed["result"]
                     elif self.profile.get("allow_unwrapped_json", True):
