@@ -2,10 +2,16 @@
   import { usd, dur, perTurn, legLabel } from '../lib/format.js'
   import { STATIC } from '../lib/static.js'
   import { BENCH_LABEL, BENCH_VERSION } from '../lib/version.js'
+  import HeadlineCards from './HeadlineCards.svelte'
   let {
     rows = [], stats = {}, oninspect,
+    // One row per model (best thinking level), for the headline cards. Not
+    // affected by the board's toggle or filters.
+    cardRows = [],
     benchmarks = [], benchmark = '', onbench = () => {},
     oss = $bindable('all'), maxPrice = $bindable(0), priceMax = 1,
+    // false = one row per model (its best thinking level); true = every level.
+    allLevels = $bindable(false),
   } = $props()
 
   let expanded = $state(false)
@@ -71,6 +77,8 @@
   {/if}
 </section>
 
+<HeadlineCards rows={cardRows} {oninspect} />
+
 <section class="board">
   <!-- No picker on the public site: it publishes a single benchmark. -->
   {#if benchmarks.length && !STATIC}
@@ -92,6 +100,13 @@
   <div class="board-head">
     <h2>Leaderboard</h2>
     <div class="filters">
+      <!-- Default is one row per model, its best thinking level (Andreas
+           2026-09-12). The toggle re-expands the board AND the two charts below. -->
+      <label class="toggle" class:on={allLevels}>
+        <input type="checkbox" bind:checked={allLevels} />
+        <span class="knob" aria-hidden="true"></span>
+        Include all thinking levels
+      </label>
       <div class="segs">
         <button class:on={oss === 'all'} onclick={() => oss = 'all'}>All models</button>
         <button class:on={oss === 'oss'} onclick={() => oss = 'oss'}>Open-source</button>
@@ -109,7 +124,7 @@
     </div>
   </div>
   {#if !STATIC}
-    <p class="rule-note faint">Ranked by gate completion, then fewest turns. 100%-clears compared head-to-head on turns. Best official run per model, config-5.x only — earlier harnesses stay in History.</p>
+    <p class="rule-note faint">Ranked by gate completion, then fewest turns. 100%-clears compared head-to-head on turns. Best official run per model{allLevels ? ' and thinking level' : ' (its best thinking level)'}, config-5.x only — earlier harnesses stay in History.</p>
   {/if}
 
   <div class="lhead">
@@ -179,7 +194,15 @@
   .board-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; flex-wrap: wrap; }
   h2 { font-size: 18px; font-weight: 750; margin: 0; }
   .rule-note { font-size: 12px; margin: 0 0 14px; }
-  .filters { display: flex; align-items: center; gap: 14px; }
+  .filters { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; color: var(--muted); cursor: pointer; user-select: none; }
+  .toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .knob { width: 30px; height: 17px; border-radius: 9px; background: var(--wash); border: 1px solid var(--border); position: relative; transition: background .15s; }
+  .knob::after { content: ''; position: absolute; top: 2px; left: 2px; width: 11px; height: 11px; border-radius: 50%; background: var(--surface); box-shadow: 0 1px 2px rgba(0,0,0,.2); transition: left .15s; }
+  .toggle.on { color: var(--text); }
+  .toggle.on .knob { background: var(--accent); border-color: var(--accent); }
+  .toggle.on .knob::after { left: 15px; }
+  .toggle input:focus-visible + .knob { outline: 2px solid var(--accent); outline-offset: 2px; }
   .segs { display: flex; background: var(--wash); border-radius: var(--radius); padding: 3px; gap: 2px; }
   .segs button { border: none; background: none; padding: 5px 12px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 600; color: var(--muted); }
   .segs button.on { background: var(--surface); color: var(--text); box-shadow: inset 0 0 0 1px var(--border); }

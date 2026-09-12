@@ -66,6 +66,7 @@ export function toRun(s) {
     runId: s.run_id,
     kind: s.kind,
     model: s.model,
+    modelResolved: s.model_resolved ?? null,   // OpenRouter id; the headline cards colour bars by its vendor prefix
     openSource: isOpenSource(s.model),
     config: s.config_stem ?? (s.kind === 'casual' ? null : 'pokebench-v1'),
     benchmark: s.benchmark ?? null,

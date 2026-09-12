@@ -2,6 +2,7 @@
   import TopBar from './components/TopBar.svelte'
   import Leaderboard from './components/Leaderboard.svelte'
   import Charts from './components/Charts.svelte'
+  import { collapseBest } from './lib/board.js'
   import History from './components/History.svelte'
   import QueueBar from './components/QueueBar.svelte'
   import Spectate from './components/Spectate.svelte'
@@ -76,14 +77,21 @@
       .filter((r) => ossFilter === 'all' || r.openSource)
       .filter((r) => r.avgCostPerTurn <= maxPrice + 1e-9)
   )
+  // The board and the two charts show one row per model by default — its
+  // best-ranked thinking level — and every level when the toggle is on
+  // (Andreas 2026-09-12). The headline cards always take the collapsed view of
+  // the whole leaderboard, so the filters below them do not empty a card.
+  let allLevels = $state(false)
+  const boardRows = $derived(allLevels ? filteredRows : collapseBest(filteredRows))
+  const cardRows = $derived(collapseBest(leaderboard))
 
   // name of the currently-selected benchmark (shown as the leaderboard chip)
   const benchmarkName = $derived(benchmarks.find((b) => b.id === benchmark)?.name ?? benchmark)
 
   // stats chips (mockData exported these precomputed; derive from live rows)
   const stats = $derived({
-    modelsRanked: leaderboard.length,
-    completers: leaderboard.filter((r) => r.completion >= 100).length,
+    modelsRanked: boardRows.length,
+    completers: boardRows.filter((r) => r.completion >= 100).length,
     totalRuns: runs.length,
     benchmarkVersion: benchmarkName,
   })
@@ -295,10 +303,10 @@
       <QueueBar {active} {queue} lastError={queueError} onkill={killRun} onremove={removeFromQueue} onreorder={reorder}
         onnew={openNew} onspectate={() => go('/spectate')} />
     {/if}
-    <Leaderboard rows={filteredRows} {stats} oninspect={inspect}
+    <Leaderboard rows={boardRows} {cardRows} {stats} oninspect={inspect}
       {benchmarks} {benchmark} onbench={selectBenchmark}
-      bind:oss={ossFilter} bind:maxPrice={maxPrice} {priceMax} />
-    <Charts rows={filteredRows} onpick={(slug) => go(`/history/${slug}`)} />
+      bind:oss={ossFilter} bind:maxPrice={maxPrice} {priceMax} bind:allLevels />
+    <Charts rows={boardRows} onpick={(slug) => go(`/history/${slug}`)} />
   {:else if view === 'history'}
     <History {runs} oninspect={inspect} oncontinue={openContinue} ondelete={removeRun} />
   {:else if view === 'spectate'}
