@@ -1,0 +1,261 @@
+{
+  "session": {
+    "llm_alias": "gemini-3.5-flash-lite(minimal)",
+    "llm_model": "google/gemini-3.5-flash-lite",
+    "thinking": {
+      "effort": "minimal"
+    },
+    "fallback_models": [],
+    "task": "Your goal is to earn the Boulder Badge by defeating Brock, the Pewter City Gym Leader, in as few turns as possible — you're measured on fewest player turns.",
+    "total_turns": 30,
+    "player_turns": 30,
+    "task_master_turns": 0,
+    "duration_seconds": 212.3,
+    "resumed": false,
+    "segment": {
+      "continued_from": null,
+      "resumed_at_turn": null,
+      "prior_duration_s": 0.0,
+      "segment_duration_s": 212.3,
+      "segment_player_turns": 30
+    },
+    "started_at": "2026-09-12T13:32:30"
+  },
+  "cost": {
+    "total_usd": 0.095822,
+    "llm_usd": 0.09275,
+    "ocr_usd": 0.003072,
+    "task_master_usd": 0.0,
+    "total_input_tokens": 406489,
+    "total_output_tokens": 3544,
+    "per_turn": []
+  },
+  "agent_type": "append_compact",
+  "conversation": {
+    "segment": 2,
+    "completed_game_turns": 30,
+    "compactions": 1,
+    "cache": {
+      "attempts": 31,
+      "measured_attempts": 31,
+      "cached_tokens": 140949,
+      "measured_input_tokens": 406489,
+      "input_read_fraction": 0.3467473904582904,
+      "request_hit_fraction": 0.2903225806451613,
+      "economics": {
+        "verdict": "unknown",
+        "saved_usd": null,
+        "discount_fraction": null
+      }
+    }
+  },
+  "max_turns": 10000000,
+  "referee": {
+    "checkpoints": {
+      "left_bedroom": null,
+      "left_house": null,
+      "oaks_lab_entered": null,
+      "starter_chosen": null,
+      "rival1_done": null,
+      "route1_reached": null,
+      "viridian_reached": null,
+      "parcel_delivered": null,
+      "pokedex_received": null,
+      "viridian_forest_reached": null,
+      "pewter_reached": null,
+      "brock_defeated": null
+    },
+    "gates": [
+      {
+        "kind": "single",
+        "id": "left_bedroom",
+        "name": "Left the bedroom",
+        "type": "map",
+        "deadline_turn": null,
+        "leg_cap_turns": 30,
+        "leg_turns": 30,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "left_house",
+        "name": "Stepped outside in Pallet Town",
+        "type": "map",
+        "deadline_turn": null,
+        "leg_cap_turns": 30,
+        "leg_turns": null,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "oaks_lab_entered",
+        "name": "Entered Oak's Lab",
+        "type": "var",
+        "deadline_turn": null,
+        "leg_cap_turns": 30,
+        "leg_turns": null,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "starter_chosen",
+        "name": "Chose a starter",
+        "type": "flag",
+        "deadline_turn": null,
+        "leg_cap_turns": 30,
+        "leg_turns": null,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "rival1_done",
+        "name": "First rival battle done",
+        "type": "flag",
+        "deadline_turn": null,
+        "leg_cap_turns": 30,
+        "leg_turns": null,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "route1_reached",
+        "name": "Reached Route 1",
+        "type": "map",
+        "deadline_turn": null,
+        "leg_cap_turns": 30,
+        "leg_turns": null,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "viridian_reached",
+        "name": "Reached Viridian City",
+        "type": "map",
+        "deadline_turn": null,
+        "leg_cap_turns": 100,
+        "leg_turns": null,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "parcel_delivered",
+        "name": "Received Oak's Parcel",
+        "type": "var",
+        "deadline_turn": null,
+        "leg_cap_turns": 50,
+        "leg_turns": null,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "pokedex_received",
+        "name": "Received the Pokédex",
+        "type": "flag",
+        "deadline_turn": null,
+        "leg_cap_turns": 100,
+        "leg_turns": null,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "viridian_forest_reached",
+        "name": "Entered Viridian Forest",
+        "type": "map",
+        "deadline_turn": null,
+        "leg_cap_turns": 150,
+        "leg_turns": null,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "pewter_reached",
+        "name": "Reached Pewter City",
+        "type": "map",
+        "deadline_turn": null,
+        "leg_cap_turns": 300,
+        "leg_turns": null,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "brock_defeated",
+        "name": "Defeated Brock (Boulder Badge)",
+        "type": "flag",
+        "deadline_turn": null,
+        "leg_cap_turns": 100,
+        "leg_turns": null,
+        "turn": null,
+        "status": "pending"
+      }
+    ],
+    "furthest": null,
+    "first_unmet": "left_bedroom",
+    "autofilled": [],
+    "termination_reason": "leg_cap:left_bedroom",
+    "progress": {
+      "progress": 0.5555555555555556,
+      "gates_reached": 0,
+      "total_gates": 12,
+      "current_leg": {
+        "index": 0,
+        "node_id": "left_bedroom",
+        "name": "Left the bedroom",
+        "status": "open",
+        "scored": true,
+        "opened_turn": 0,
+        "closed_turn": null,
+        "d_open": 9,
+        "d_min": 4,
+        "distance_now": 5,
+        "fraction": 0.5555555555555556,
+        "steps_walked": 34,
+        "tiles_seen": 8,
+        "off_graph": 0,
+        "efficiency": null
+      },
+      "legs": [
+        {
+          "index": 0,
+          "node_id": "left_bedroom",
+          "name": "Left the bedroom",
+          "status": "open",
+          "scored": true,
+          "opened_turn": 0,
+          "closed_turn": null,
+          "d_open": 9,
+          "d_min": 4,
+          "distance_now": 5,
+          "fraction": 0.5555555555555556,
+          "steps_walked": 34,
+          "tiles_seen": 8,
+          "off_graph": 0,
+          "efficiency": null
+        }
+      ],
+      "graph": {
+        "loaded": true,
+        "source": "pret/pokefirered@c75f352304d529f6ba92d4f74b9cf8b5c3810788",
+        "nodes": 8473
+      },
+      "positions_recorded": 31
+    }
+  },
+  "status": "terminated",
+  "run_id": "2026-09-12_13-32-29_config-5.1__gemini-3-5-flash-lite-minimal",
+  "kind": "official",
+  "continued_from": null,
+  "benchmark": "pokebench-first-badge",
+  "benchmark_version": "pokebench-v1.1",
+  "ended_at": "2026-09-12T13:36:03"
+}
