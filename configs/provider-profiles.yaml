@@ -157,7 +157,13 @@ profiles:
     endpoint: anthropic
     context_length: 1000000
     max_completion_tokens: 128000
-    output_mode: prompted
+    # native_json since 2026-09-12 (was prompted). Prompted, the model returned a
+    # valid action plus one invented key on 2 of 3 first attempts (`prediction`,
+    # then a garbled `"}": null`), each costing a retry. response_format
+    # json_schema strict, probed live 3x gameplay + 1x handover with thinking on:
+    # every reply validated. The anthropic tag advertises response_format and
+    # structured_outputs.
+    output_mode: native_json
     reasoning_efforts: [max, xhigh, high, medium, low]
     reasoning_default: {effort: high}
     cache_mode: automatic
@@ -168,7 +174,7 @@ profiles:
     probed_as: anthropic/claude-opus-5
     context_length: 1000000
     max_completion_tokens: 128000
-    output_mode: prompted
+    output_mode: native_json  # copied from claude-opus-5 (2026-09-12); its tag advertises structured_outputs too
     reasoning_efforts: [max, xhigh, high, medium, low]
     reasoning_default: {effort: high}
     cache_mode: automatic
@@ -179,6 +185,12 @@ profiles:
     probed_as: anthropic/claude-opus-5
     context_length: 1000000
     max_completion_tokens: 128000
+    # STAYS prompted (2026-09-12): with response_format json_schema on the request
+    # Anthropic's classifier refuses the turn outright, 3 of 3 probes
+    # (finish_reason content_filter, "duplicating model outputs"), even though the
+    # tag advertises structured_outputs. The same turn in prompted mode was answered
+    # 3 of 3 once the PlayAction class docstring stopped leaking into the schema —
+    # that docstring was the cause of its 2026-09-11 turn-1 crash.
     output_mode: prompted
     reasoning_mandatory: true
     reasoning_efforts: [max, xhigh, high, medium, low]

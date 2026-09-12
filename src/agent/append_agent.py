@@ -742,7 +742,10 @@ class AppendAgent:
         else:
             envelope = {"type": "object", "properties": {"result": {"anyOf": list(schemas.values())}}, "required": ["result"], "additionalProperties": False}
             if mode == "native_json":
-                body["response_format"] = {"type": "json_schema", "json_schema": {"name": "agent_response", "schema": envelope}}
+                # strict: the provider constrains generation to the schema, so an
+                # invented key (claude-opus-5's `prediction`, 2 of 3 first attempts
+                # on 2026-09-12) or a garbled one (`"}": null`) cannot be emitted.
+                body["response_format"] = {"type": "json_schema", "json_schema": {"name": "agent_response", "strict": True, "schema": envelope}}
             elif mode == "prompted":
                 # Append once per segment; never edit the original system prefix.
                 instruction = fill_prompt(self.config["transport"]["prompted_output_prompt"], schema=json.dumps(envelope))

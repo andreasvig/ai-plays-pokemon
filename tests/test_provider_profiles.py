@@ -549,3 +549,26 @@ def test_prompted_schema_message_carries_no_class_docstring(tmp_path):
     assert schema_message["role"] == "system" and "matching this schema" in schema_message["content"]
     assert '"description"' not in schema_message["content"]
     assert "Muse" not in schema_message["content"]
+
+
+def test_opus_profile_uses_strict_native_json_and_fable_stays_prompted(tmp_path):
+    """2026-09-12: claude-opus-5 invents keys in prompted mode (2 of 3 first
+    attempts), and response_format json_schema strict fixed that live (4 of 4).
+    claude-fable-5.1 is refused by Anthropic's classifier whenever the request
+    carries a response_format (3 of 3), so it keeps the prompted schema message."""
+    for model, mode in (("anthropic/claude-opus-5", "native_json"), ("anthropic/claude-fable-5.1", "prompted")):
+        config = load_config(str(ROOT / "configs/config-5.0.yaml"), llm_alias=model)
+        provider = FakeProvider()
+        agent = AppendAgent(config, tmp_path / model.replace("/", "_"), lambda kind, data: None, provider)
+        asyncio.run(agent.play(1, "screen", IMAGE))
+        request = provider.requests[0]
+        assert "tools" not in request
+        if mode == "native_json":
+            rf = request["response_format"]
+            assert rf["type"] == "json_schema" and rf["json_schema"]["strict"] is True
+            assert rf["json_schema"]["schema"]["properties"]["result"]["anyOf"][0]["additionalProperties"] is False
+            assert "description" not in rf["json_schema"]["schema"]["properties"]["result"]["anyOf"][0]
+            assert not any(m["role"] == "system" and "matching this schema" in str(m.get("content")) for m in request["messages"])
+        else:
+            assert "response_format" not in request
+            assert request["messages"][1]["role"] == "system" and "matching this schema" in request["messages"][1]["content"]
