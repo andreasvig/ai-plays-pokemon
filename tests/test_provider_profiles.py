@@ -537,3 +537,15 @@ def test_named_tool_choice_forces_the_phase_tool_without_a_contract_change(tmp_p
     assert all("parallel_tool_calls" not in r for r in provider.requests)
     assert len({e["continuity"].get("request") for e in events if e["type"] == "llm_request_usage"}) == 1
     assert len([e for e in events if e["type"] == "compaction_complete"]) == 1
+
+
+def test_prompted_schema_message_carries_no_class_docstring(tmp_path):
+    """Same leak on the prompted path: the schema is inlined into a system message."""
+    config = load_config(str(ROOT / "configs/config-5.0.yaml"), llm_alias="anthropic/claude-fable-5.1")
+    provider = FakeProvider()
+    agent = AppendAgent(config, tmp_path, lambda kind, data: None, provider)
+    asyncio.run(agent.play(1, "screen", IMAGE))
+    schema_message = provider.requests[0]["messages"][1]
+    assert schema_message["role"] == "system" and "matching this schema" in schema_message["content"]
+    assert '"description"' not in schema_message["content"]
+    assert "Muse" not in schema_message["content"]

@@ -696,6 +696,16 @@ class AppendAgent:
         messages = project_history(messages, self.profile)
         mode = resolved.get("output_mode", "tool")
         schemas = {"gameplay": self._play_schema().model_json_schema(), "compaction": Handover.model_json_schema()}
+        for schema in schemas.values():
+            # A class docstring is documentation for developers, not the model.
+            # pydantic copies it into the schema's top-level `description`, and
+            # PlayAction's ("…schema quirks (Muse's stringified null, mimo's
+            # "None")…") reached every request from 2026-09-08: Anthropic's
+            # classifier refused claude-fable-5.1 outright ("duplicating model
+            # outputs", finish_reason content_filter) on all three attempts of
+            # turn 1, and the same request with the description removed was
+            # answered (probe 2026-09-12). Field descriptions stay.
+            schema.pop("description", None)
         if self.profile.get("memory_encoding") == "json_string":
             schemas["compaction"]["properties"]["memory"] = {"type": "string", "description": self.profile["memory_wire_description"]}
         body = {"model": self.model, "messages": messages, "session_id": self.state["session_id"],

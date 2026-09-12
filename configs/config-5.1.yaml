@@ -236,9 +236,13 @@ player_agent:
     backoff_cap_seconds: 600
     retry_budget_seconds: 2700
     max_output_tokens: 8192
+    # "Include no keys beyond…" added 2026-09-12: claude-opus-5(high) returned a
+    # valid action plus one invented key (predicted_screen, memory, prediction) on
+    # three attempts in a row and the run died at turn 1; additionalProperties
+    # false in the schema was not enough on its own.
     prompted_output_prompt: 'Respond only with a JSON object matching this schema:
-      {{schema}}. Put the current phase output in result. Do not use Markdown fences
-      or prose outside the object.'
+      {{schema}}. Put the current phase output in result. Include no keys beyond
+      those the schema lists. Do not use Markdown fences or prose outside the object.'
   caching:
     cache_control_by_model_prefix:
       anthropic/:

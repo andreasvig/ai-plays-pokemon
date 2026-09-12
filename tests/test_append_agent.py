@@ -1209,3 +1209,19 @@ def test_same_error_twice_gets_one_note(config, tmp_path):
     assert len(provider.requests) == 3
     notes = [m for r in provider.requests for m in r["messages"] if str(m.get("content", "")).startswith("Your last reply was not accepted")]
     assert len(notes) == 2 and len({n["content"] for n in notes}) == 1
+
+
+# ───────────── class docstrings stay out of the wire schema (2026-09-12) ─────────────
+
+def test_wire_schemas_carry_no_class_docstring(config, tmp_path):
+    """PlayAction's docstring reached every request as the schema's top-level
+    description and Anthropic's classifier refused claude-fable-5.1 on it
+    (content_filter, 2026-09-11); the same request without it was answered.
+    Field-level descriptions (the json_string memory wording) are unaffected."""
+    agent, provider, events = engine(config, tmp_path)
+    asyncio.run(agent.play(1, "", IMAGE))
+    request = provider.requests[0]
+    for tool in request["tools"]:
+        assert "description" not in tool["function"]["parameters"], tool["function"]["name"]
+    assert "Decision 2026-09-08" not in json.dumps(request)
+    assert "Muse" not in json.dumps(request)
