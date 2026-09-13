@@ -228,6 +228,52 @@ export function secondarySeries(rows, gateIds = [], pool = rows) {
   return { speed, cost10, turnsPerTask }
 }
 
+/**
+ * The runs × legs matrix behind the projections, for the Estimation methods
+ * page: every run of `pool` (all thinking levels, not collapsed), each leg's
+ * actual turns and ratio to the typical value, the estimated turns for each leg
+ * the run never cleared (failed leg floored at turns burned), and the per-run
+ * totals the board cards use. `typical` is the same MEAN-over-≥3-clears the
+ * cards use, so a cell here is exactly what a card's projection is built from.
+ */
+export function estimationMatrix(pool, gateIds) {
+  const typical = typicalTurnsPerLeg(pool, gateIds)
+  const clears = {}, slowest = {}
+  for (const g of gateIds) { clears[g] = 0; slowest[g] = null }
+  pool.forEach((r) => legTurns(r, gateIds).forEach((t, i) => {
+    const g = gateIds[i]; clears[g] += 1; slowest[g] = slowest[g] == null ? t : Math.max(slowest[g], t)
+  }))
+  const n = gateIds.length || 1
+  const rows = pool.map((r) => {
+    const legs = legTurns(r, gateIds).map((t, i) => {
+      const g = gateIds[i]; const ref = typical[g]
+      return { gate: g, turns: t, ratio: ref ? t / ref : null }
+    })
+    const p = projectRun(r, typical, gateIds)
+    const lastStamp = legs.length ? r.gateTurns[gateIds[legs.length - 1]] : 0
+    const tail = p.complete ? null : { gate: gateIds[legs.length], turns: Math.max(0, (r.turns ?? 0) - lastStamp) }
+    const estimates = p.eligible && !p.complete
+      ? gateIds.slice(legs.length).map((g, i) => {
+          const atPace = p.pace * typical[g]
+          const turns = i === 0 ? Math.max(tail.turns, atPace) : atPace
+          return { gate: g, turns, ratio: turns / typical[g], floored: i === 0 && p.floored }
+        })
+      : []
+    const costToFinish = p.eligible ? (r.totalCostUsd ?? 0) + p.estimated * (r.avgCostPerTurn ?? 0) : null
+    const minutesToFinish = p.eligible ? ((r.durationS ?? 0) + p.estimated * (r.avgSPerTurn ?? 0)) / 60 : null
+    return {
+      row: r, legs, tail, estimates, ...p,
+      costToFinish, minutesToFinish,
+      costPerTask: costToFinish == null ? null : costToFinish / n,
+      minutesPerTask: minutesToFinish == null ? null : minutesToFinish / n,
+      turnsPerTask: p.projected == null ? null : p.projected / n,
+      playedShare: p.projected ? p.played / p.projected : null,
+    }
+  })
+  rows.sort((a, b) => (b.cleared - a.cleared) || ((a.projected ?? a.played) - (b.projected ?? b.played)))
+  return { typical, clears, slowest, rows }
+}
+
 export function fmtTpm(v) {
   if (!(v > 0)) return '—'
   return v >= 10 ? String(Math.round(v)) : v.toFixed(1)

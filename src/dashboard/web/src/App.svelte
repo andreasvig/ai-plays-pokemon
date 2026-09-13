@@ -8,6 +8,7 @@
   import Spectate from './components/Spectate.svelte'
   import Report from './components/Report.svelte'
   import Changelog from './components/Changelog.svelte'
+  import EstimationMethods from './components/EstimationMethods.svelte'
   import { BENCH_VERSION } from './lib/version.js'
   import AddRunDialog from './components/AddRunDialog.svelte'
   import { router } from './lib/router.svelte.js'
@@ -22,6 +23,7 @@
     parts[0] === 'spectate' ? (STATIC ? 'home' : 'spectate')
     : parts[0] === 'about' ? 'about'
     : parts[0] === 'changelog' ? 'changelog'
+    : parts[0] === 'methods' ? 'methods'
     : parts[0] === 'history' ? (parts[1] ? 'report' : 'history')
     : 'home'
   )
@@ -327,6 +329,8 @@
         first on how much of the ladder it clears, then — among full clears — on how few turns it took.</p>
       <p class="faint">{BENCH_VERSION} · see the <button class="link" onclick={() => go('/changelog')}>changelog</button> for what changed between versions.</p>
     </section>
+  {:else if view === 'methods'}
+    <EstimationMethods rows={leaderboard} oninspect={inspect} />
   {:else if view === 'changelog'}
     <Changelog />
   {/if}

@@ -11,7 +11,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   baseModel, collapseBest, vendorOf, headlineSeries, secondarySeries, turnsPerMinute, costPer10, PERF_LINE,
-  legTurns, typicalTurnsPerLeg, projectRun, perTaskSeries, PROJECT_FROM_GATE, fmtMinutes,
+  legTurns, typicalTurnsPerLeg, projectRun, perTaskSeries, estimationMatrix, PROJECT_FROM_GATE, fmtMinutes,
 } from '../../src/dashboard/web/src/lib/board.js'
 
 const GATES = ['left_bedroom', 'left_house', 'oaks_lab_entered', 'starter_chosen', 'rival1_done', 'route1_reached',
@@ -182,4 +182,40 @@ test('secondary strip keeps the per-turn measurements and adds turns per task', 
 test('empty board yields empty series without dividing by zero', () => {
   assert.deepEqual(headlineSeries([], GATES), { performance: [], time: [], cost: [] })
   assert.deepEqual(secondarySeries([], GATES), { speed: [], cost10: [], turnsPerTask: [] })
+})
+
+test('estimationMatrix: every run, every leg, ratios to the typical leg, estimates that sum to the projection', () => {
+  const m = estimationMatrix(RANKED, GATES)
+  assert.deepEqual(m.typical, typicalTurnsPerLeg(RANKED, GATES))
+  assert.equal(m.clears.left_bedroom, 7)          // every run cleared the first gate
+  assert.equal(m.clears.brock_defeated, 4)        // the four full clears
+  assert.equal(m.slowest.pewter_reached, 166)     // gemini low's Pewter leg
+  // Sorted: most gates first, then fewest projected turns.
+  assert.deepEqual(m.rows.slice(0, 4).map((x) => x.row.model),
+    ['gpt-6-astra(medium)', 'gemini-3.8-flash(medium)', 'gemini-3.8-flash(low)', 'claude-opus-5(high)'])
+  const glm = m.rows.find((x) => x.row.model === 'glm-5.3-flash(high)')
+  assert.equal(glm.legs.length, 10)
+  assert.equal(glm.legs[0].ratio, 6 / m.typical.left_bedroom)
+  // Two estimated legs (Pewter floored at the 300 turns burned, Brock at pace); they sum to the projection.
+  assert.deepEqual(glm.estimates.map((e) => e.gate), ['pewter_reached', 'brock_defeated'])
+  assert.equal(glm.tail.turns, 300)
+  assert.equal(glm.estimates[0].turns, 300)
+  assert.ok(glm.estimates[0].floored)
+  const played = glm.legs.reduce((a, l) => a + l.turns, 0)
+  assert.ok(Math.abs(played + glm.estimates[0].turns + glm.estimates[1].turns - glm.projected) < 1e-9)
+  assert.equal(glm.turnsPerTask, glm.projected / 12)
+  assert.ok(Math.abs(glm.playedShare - 512 / glm.projected) < 1e-9)
+  // A run below the eligibility gate has no estimates and no totals, but its legs are still in the matrix.
+  const luna = m.rows.find((x) => x.row.model === 'gpt-5.6-luna(max)')
+  assert.equal(luna.eligible, false)
+  assert.equal(luna.legs.length, 4)
+  assert.deepEqual(luna.estimates, [])
+  assert.equal(luna.costPerTask, null)
+  assert.deepEqual(luna.tail, { gate: 'rival1_done', turns: 30 })
+  // A full clear has no tail and no estimates; played share is 100%.
+  const astra = m.rows[0]
+  assert.equal(astra.tail, null)
+  assert.equal(astra.playedShare, 1)
+  // Empty pool: no rows, no division by zero.
+  assert.deepEqual(estimationMatrix([], GATES).rows, [])
 })

@@ -47,6 +47,7 @@
       </button>
     {/if}
     <button class="btn ghost" class:active={view === 'history'} onclick={() => onnav('/history')}>History</button>
+    <button class="btn ghost" class:active={view === 'methods'} onclick={() => onnav('/methods')}>Estimation methods</button>
     <button class="btn ghost" class:active={view === 'changelog'} onclick={() => onnav('/changelog')}>Changelog</button>
     <button class="btn ghost" class:active={view === 'about'} onclick={() => onnav('/about')}>About</button>
   </nav>
