@@ -755,14 +755,66 @@ def publish_run(
                          page_url=page, committed=committed, r2_keys=keys)
 
 
+# Keys a published row carries that the projection does not know about; kept
+# verbatim when the row is re-projected.
+ROW_PUBLISH_KEYS = ("has_recording", "video_url", "video_view", "screenshots_base_url", "trace_published", "published_at")
+
+
+def refresh_rows(pages: PagesRepo, runs_root: Path, *, secrets: Iterable[str] = (), log: Callable[[str], None] = print) -> int:
+    """Re-project every published row whose run dir is still on this machine.
+
+    A published row is a cached ``project_run_dir()`` result plus the publish-only
+    keys (video URL, published_at, ...). When the projection learns a field —
+    ``gate_turns`` on 2026-09-13 — the rows on gh-pages do not have it, and the
+    board reads the rows, not the run dirs. This rewrites the projected part of
+    each row from the local run dir and keeps the publish-only keys; rows whose
+    run dir is gone are left as they are. The rewritten rows go through the same
+    leak audit as a fresh publish. Returns how many rows changed. This is its
+    own verb (``pokemon publish --site-only --refresh-rows``): rebuilding the
+    bundle must not silently rewrite rows, and rewriting rows must be asked for.
+    """
+    runs_root = Path(runs_root)
+    rows = pages.read_board()
+    changed = 0
+    out: list[dict] = []
+    for row in rows:
+        run_id = row.get("run_id")
+        run_dir = runs_root / str(run_id)
+        projected = project_run_dir(run_dir) if run_id and (run_dir / "run_summary.json").is_file() else None
+        if projected is None:
+            out.append(row)
+            continue
+        fresh = projected.model_dump(mode="json")
+        for k in ROW_PRIVATE_KEYS:
+            fresh.pop(k, None)
+        for k in ROW_PUBLISH_KEYS:
+            if k in row:
+                fresh[k] = row[k]
+        if fresh != row:
+            hits = audit_files({f"{run_id}.json": json.dumps(fresh, indent=2, ensure_ascii=False)}, secrets)
+            if hits:
+                raise PublishError(f"{run_id}: refreshed row failed the leak audit: {hits[0]}")
+            changed += 1
+            log(f"row refreshed: {run_id}")
+        out.append(fresh)
+    if changed:
+        pages.write_board(out)
+    return changed
+
+
 def publish_site(
     *,
     pages: PagesRepo,
     build_site: Callable[[Path], Path],
     benchmarks: list[dict] | None = None,
+    refresh: Callable[[PagesRepo], int] | None = None,
     log: Callable[[str], None] = print,
 ) -> bool:
     """Rebuild and push the SPA bundle (and the benchmark registry) — no run touched.
+
+    ``refresh`` (``--refresh-rows``) runs after the worktree is synced and before
+    the build, so its row rewrite lands in the same commit; it is the one caller
+    allowed to change rows here, and only because the flag asked for it.
 
     `publish_run` is the only other thing that rebuilds the bundle, and using it
     as a build trigger re-uploads a video and REPLACES that run's row (a
@@ -770,12 +822,13 @@ def publish_site(
     gets its own verb. Returns True when something was pushed.
     """
     pages.ensure()
+    refreshed = refresh(pages) if refresh is not None else 0
     if benchmarks is not None:
         pages.write_benchmarks(benchmarks)
     dist = build_site(pages.worktree)
     if dist is not None:
         pages.sync_site(Path(dist))
-    committed = pages.commit_and_push("rebuild site")
+    committed = pages.commit_and_push(f"rebuild site, refresh {refreshed} rows" if refreshed else "rebuild site")
     log("gh-pages: " + ("pushed" if committed else "nothing changed"))
     return committed
 

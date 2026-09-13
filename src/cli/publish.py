@@ -52,6 +52,8 @@ def _parser() -> argparse.ArgumentParser:
     ap.add_argument("run_id", nargs="?", help="run-dir name under --runs-root, e.g. 2026-09-08_12-04-58_config-5.1__glm-5-3-flash-high")
     ap.add_argument("--site-only", action="store_true",
                     help="rebuild and push the SPA bundle only — no run_id, nothing uploaded, no row changed (after a UI change)")
+    ap.add_argument("--refresh-rows", action="store_true",
+                    help="with --site-only: re-project every published row from its local run dir first (after the projection learns a field)")
     ap.add_argument("--runs-root", default=str(REPO_ROOT / "local" / "runs"), help="where run folders live (default local/runs)")
     ap.add_argument("--no-video", action="store_true", help="do not upload a recording even if present")
     ap.add_argument("--video", choices=["full", "simple"], default="full",
@@ -70,8 +72,10 @@ def main() -> None:
     if args.site_only:
         if args.run_id:
             sys.exit("ERROR: --site-only takes no run_id; it rebuilds the bundle and touches no run")
-        _site_only(log)
+        _site_only(log, refresh_rows_from=Path(args.runs_root) if args.refresh_rows else None)
         return
+    if args.refresh_rows:
+        sys.exit("ERROR: --refresh-rows goes with --site-only")
     if not args.run_id:
         sys.exit("ERROR: a run_id is required (or --site-only to push the bundle alone)")
     run_dir = Path(args.runs_root) / args.run_id
@@ -114,15 +118,21 @@ def main() -> None:
         print("  Pages picks up the push within ~1 minute.")
 
 
-def _site_only(log) -> None:
-    """`pokemon publish --site-only`: rebuild the SPA, push gh-pages, change no row."""
+def _site_only(log, refresh_rows_from: Path | None = None) -> None:
+    """`pokemon publish --site-only`: rebuild the SPA, push gh-pages, change no row
+    — unless ``--refresh-rows`` asks for the published rows to be re-projected
+    from their local run dirs first (pub.refresh_rows)."""
     from src.app.benchmarks import benchmarks_payload
 
     try:
         pages = _pages(log)
         pages_url = pub.pages_base_url(pages.remote_url(), __import__("os").environ.get("PAGES_BASE_URL"))
+        refresh = None
+        if refresh_rows_from is not None:
+            secrets = pub.secret_values(pub.read_env_file(REPO_ROOT / ".env"))
+            refresh = lambda p: pub.refresh_rows(p, refresh_rows_from, secrets=secrets, log=log)  # noqa: E731
         build = lambda _wt: pub.build_static_site(WEB_DIR, WEB_DIR / pub.SITE_DIST_DIRNAME, pub.base_path(pages_url), log=log)  # noqa: E731
-        committed = pub.publish_site(pages=pages, build_site=build, benchmarks=pub.public_benchmarks(benchmarks_payload()), log=log)
+        committed = pub.publish_site(pages=pages, build_site=build, benchmarks=pub.public_benchmarks(benchmarks_payload()), refresh=refresh, log=log)
     except pub.PublishError as exc:
         sys.exit(f"ERROR: {exc}")
     print(f"site {'rebuilt and pushed' if committed else 'unchanged'}  {pages_url}")

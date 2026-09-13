@@ -141,6 +141,12 @@ class RunSummary(BaseModel):
     furthest_gate_turn: int | None = None
     gates_reached: int = 0
     total_gates: int = 0
+    # The turn each CLEARED gate was stamped, gate id → turn, in ladder order
+    # (2026-09-13). The board's Speed and Cost cards project a partial run's
+    # turns to a full clear from its pace on the legs it did clear, against the
+    # field's mean turns per leg — that needs every run's per-gate stamps, not
+    # just the furthest one. None on a run without a referee scorecard.
+    gate_turns: dict[str, int] | None = None
     # Between-gate progress (2026-09-09, artifacts/granular-progress/plan.md):
     # ``gates_reached`` plus the fraction of the CURRENT leg walked, where the
     # fraction is 1 - d_min/D on the FireRed walk graph (d_min = steps from the

@@ -3,11 +3,15 @@
   import { STATIC } from '../lib/static.js'
   import { BENCH_LABEL, BENCH_VERSION } from '../lib/version.js'
   import HeadlineCards from './HeadlineCards.svelte'
+  import SecondaryCards from './SecondaryCards.svelte'
   let {
     rows = [], stats = {}, oninspect,
     // One row per model (best thinking level), for the headline cards. Not
     // affected by the board's toggle or filters.
     cardRows = [],
+    // Every leaderboard row (all levels): the pool the per-leg typical turns
+    // are computed over, so a collapsed card view still uses every clear.
+    allRows = [],
     benchmarks = [], benchmark = '', onbench = () => {},
     oss = $bindable('all'), maxPrice = $bindable(0), priceMax = 1,
     // false = one row per model (its best thinking level); true = every level.
@@ -77,7 +81,7 @@
   {/if}
 </section>
 
-<HeadlineCards rows={cardRows} {oninspect} />
+<HeadlineCards rows={cardRows} pool={allRows} {oninspect} />
 
 <section class="board">
   <!-- No picker on the public site: it publishes a single benchmark. -->
@@ -163,6 +167,11 @@
     </button>
   {/if}
 </section>
+
+<!-- The per-turn measurements the cards used to lead with (Andreas 2026-09-13:
+     "the old measurements should still be there, it should just be below like
+     on Artificial Analysis"), plus average turns per task with projections. -->
+<SecondaryCards rows={cardRows} pool={allRows} {oninspect} />
 
 <style>
   .hero { max-width: var(--maxw); margin: 0 auto; padding: 40px 24px 8px; }

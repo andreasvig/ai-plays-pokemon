@@ -3,9 +3,10 @@
 //
 // Rows are the `toRun` shape from api.js: model ("gemini-3.8-flash(medium)"),
 // modelResolved ("google/gemini-3.8-flash"), completion (0–100), perfScore
-// (0–100 completion, 100–150 = fewest turns among clears), turns, avgSPerTurn,
-// avgCostPerTurn. The leaderboard arrives already ranked (gates desc, turns asc),
-// and every helper here keeps that order unless it says otherwise.
+// (0–100 completion, 100–150 = fewest turns among clears), turns, durationS,
+// totalCostUsd, avgSPerTurn, avgCostPerTurn, gateTurns ({gate id → turn the
+// gate was stamped}). The leaderboard arrives already ranked (gates desc, turns
+// asc), and every helper here keeps that order unless it says otherwise.
 
 /** "gemini-3.8-flash(medium)" → "gemini-3.8-flash". A bare alias is its own base. */
 export function baseModel(alias) {
@@ -74,16 +75,122 @@ export function costPer10(avgCostPerTurn) {
   return (avgCostPerTurn ?? 0) * 10
 }
 
+// ───────────── projection to a full clear (Andreas 2026-09-13) ─────────────
+//
+// The Speed and Cost cards read "what would it take this model to beat Brock",
+// not "what did a turn cost". A run that cleared every gate is measured; a
+// partial run is PROJECTED: its turns on the legs it did clear, divided by the
+// field's mean turns on those legs, is its pace; each leg it never reached
+// costs pace × the field's mean for that leg; the leg it died on costs at least
+// the turns it already burned there (the floor — an estimate below what was
+// spent would be a lie). Cost and time to finish are the run's own totals plus
+// the estimated extra turns at its own per-turn rates. Only a run that reached
+// PROJECT_FROM_GATE is projected: the six gates before it cost cents for every
+// model and say nothing about pace.
+
+/** A run counts on the per-task cards once it has reached this gate. */
+export const PROJECT_FROM_GATE = 'viridian_reached'
+/** A leg has a typical value once this many runs cleared it. */
+export const MIN_CLEARS_FOR_TYPICAL = 3
+
+/** Turns spent on each cleared leg, in ladder order (stops at the first uncleared gate). */
+export function legTurns(row, gateIds) {
+  const stamps = row?.gateTurns || {}
+  const out = []
+  let prev = 0
+  for (const g of gateIds) {
+    const t = stamps[g]
+    if (typeof t !== 'number') break
+    out.push(t - prev)
+    prev = t
+  }
+  return out
+}
+
+/** Mean turns per leg over the runs that cleared it (≥ MIN_CLEARS_FOR_TYPICAL), gate id → turns. */
+export function typicalTurnsPerLeg(pool, gateIds) {
+  const legsByRow = pool.map((r) => legTurns(r, gateIds))
+  const out = {}
+  gateIds.forEach((g, i) => {
+    const vals = legsByRow.map((legs) => legs[i]).filter((v) => v != null)
+    if (vals.length >= MIN_CLEARS_FOR_TYPICAL) out[g] = vals.reduce((a, b) => a + b, 0) / vals.length
+  })
+  return out
+}
+
 /**
- * The three headline series. Each entry: {row, value, height (0–1), label}.
+ * Project one run to a full clear. Returns {eligible, complete, cleared, pace,
+ * projected, estimated, floored, failedGate}. `projected` is turns to beat the
+ * last gate; `estimated` the part of it not played. Ineligible when the run has
+ * not reached PROJECT_FROM_GATE or a missing leg has no typical value yet.
+ */
+export function projectRun(row, typical, gateIds) {
+  const legs = legTurns(row, gateIds)
+  const cleared = legs.length
+  const played = row.turns ?? 0
+  const complete = cleared >= gateIds.length && gateIds.length > 0
+  const base = { cleared, complete, played }
+  if (complete) return { ...base, eligible: true, pace: paceOf(legs, typical, gateIds), projected: played, estimated: 0, floored: false, failedGate: null }
+  const reached = gateIds.indexOf(PROJECT_FROM_GATE)
+  const pace = paceOf(legs, typical, gateIds)
+  const remaining = gateIds.slice(cleared)
+  if (reached < 0 || cleared <= reached || pace == null || remaining.some((g) => typical[g] == null)) {
+    return { ...base, eligible: false, pace, projected: null, estimated: null, floored: false, failedGate: remaining[0] ?? null }
+  }
+  const lastStamp = row.gateTurns[gateIds[cleared - 1]]
+  const tail = Math.max(0, played - lastStamp)          // turns burned on the leg never finished
+  const failedGate = remaining[0]
+  const atPace = pace * typical[failedGate]
+  const failTurns = Math.max(tail, atPace)
+  const rest = remaining.slice(1).reduce((a, g) => a + pace * typical[g], 0)
+  const projected = lastStamp + failTurns + rest
+  return { ...base, eligible: true, pace, projected, estimated: projected - played, floored: tail > atPace, failedGate }
+}
+
+function paceOf(legs, typical, gateIds) {
+  let mine = 0, typ = 0
+  legs.forEach((t, i) => { const ref = typical[gateIds[i]]; if (ref != null) { mine += t; typ += ref } })
+  return typ > 0 ? mine / typ : null
+}
+
+/**
+ * Per-task figures for each row: {row, ...projection, costToFinish,
+ * minutesToFinish, costPerTask, minutesPerTask, turnsPerTask}. `pool` is the set
+ * the typical leg turns are computed over (every leaderboard row, so a collapsed
+ * card view still uses every clear); it defaults to `rows`.
+ */
+export function perTaskSeries(rows, gateIds, pool = rows) {
+  const typical = typicalTurnsPerLeg(pool, gateIds)
+  const n = gateIds.length || 1
+  return rows.map((r) => {
+    const p = projectRun(r, typical, gateIds)
+    if (!p.eligible) return { row: r, ...p, costToFinish: null, minutesToFinish: null, costPerTask: null, minutesPerTask: null, turnsPerTask: null }
+    const costToFinish = (r.totalCostUsd ?? 0) + p.estimated * (r.avgCostPerTurn ?? 0)
+    const minutesToFinish = ((r.durationS ?? 0) + p.estimated * (r.avgSPerTurn ?? 0)) / 60
+    return { row: r, ...p, costToFinish, minutesToFinish, costPerTask: costToFinish / n, minutesPerTask: minutesToFinish / n, turnsPerTask: p.projected / n }
+  })
+}
+
+// Bars for a "lower is better" card: eligible entries sorted ascending, tallest
+// = the largest value, then the ineligible ones (height 0, label "—") in rank order.
+function lowerIsBetter(series, pick, fmt) {
+  const ok = series.filter((s) => s.eligible && pick(s) != null).map((s) => ({ ...s, value: pick(s) })).sort((a, b) => a.value - b.value)
+  const max = ok.length ? Math.max(...ok.map((s) => s.value)) || 1 : 1
+  const rest = series.filter((s) => !(s.eligible && pick(s) != null)).map((s) => ({ ...s, value: null, height: 0, label: '—' }))
+  return ok.map((s) => ({ ...s, height: s.value / max, label: fmt(s.value) })).concat(rest)
+}
+
+/**
+ * The three headline series. Each entry: {row, value, height (0–1), label, complete, eligible, ...}.
  *
  * performance — rank order. Bars reach the 100% line in proportion to
  *   completion; clears rise above it in proportion to perfScore's 100–150 band
  *   (fewest turns = tallest), so the best clear touches the top of the plot.
- * speed — turns per minute, fastest first. Height relative to the fastest.
- * cost — USD per 10 turns, cheapest first. Height relative to the dearest.
+ * time — minutes per task (projected minutes to beat Brock ÷ gates), fastest
+ *   first; a partial run's bar is a projection (`complete` false → hatched).
+ * cost — USD per task, cheapest first, same projection rule.
  */
-export function headlineSeries(rows) {
+export function headlineSeries(rows, gateIds = [], pool = rows) {
   const performance = rows.map((r) => {
     const complete = (r.completion ?? 0) >= 100
     const above = complete ? Math.max(0, Math.min(1, ((r.perfScore ?? 100) - 100) / 50)) : 0
@@ -93,18 +200,32 @@ export function headlineSeries(rows) {
     return { row: r, value: r.completion ?? 0, height, label: `${r.completion ?? 0}%`, complete }
   })
   // If several clears tie at perfScore 125 (maxC === minC) they all sit at the same height.
+  const per = perTaskSeries(rows, gateIds, pool)
+  const time = lowerIsBetter(per, (s) => s.minutesPerTask, fmtMinutes)
+  const cost = lowerIsBetter(per, (s) => s.costPerTask, fmtUsd)
+  return { performance, time, cost }
+}
 
-  const speedVals = rows.map((r) => ({ row: r, value: turnsPerMinute(r.avgSPerTurn) }))
+/**
+ * The strip under the board: the per-turn measurements the cards used to lead
+ * with, plus average turns per task with the same projection rule.
+ * speed — turns per minute, fastest first, tallest = fastest.
+ * cost10 — USD per 10 turns, cheapest first, tallest = dearest.
+ * turnsPerTask — projected turns to beat Brock ÷ gates, fewest first.
+ */
+export function secondarySeries(rows, gateIds = [], pool = rows) {
+  const speedVals = rows.map((r) => ({ row: r, value: turnsPerMinute(r.avgSPerTurn), eligible: true, complete: true }))
     .sort((a, b) => b.value - a.value)
   const speedMax = speedVals.length ? Math.max(...speedVals.map((s) => s.value)) || 1 : 1
   const speed = speedVals.map((s) => ({ ...s, height: s.value / speedMax, label: fmtTpm(s.value) }))
 
-  const costVals = rows.map((r) => ({ row: r, value: costPer10(r.avgCostPerTurn) }))
+  const costVals = rows.map((r) => ({ row: r, value: costPer10(r.avgCostPerTurn), eligible: true, complete: true }))
     .sort((a, b) => a.value - b.value)
   const costMax = costVals.length ? Math.max(...costVals.map((c) => c.value)) || 1 : 1
-  const cost = costVals.map((c) => ({ ...c, height: c.value / costMax, label: fmtUsd(c.value) }))
+  const cost10 = costVals.map((c) => ({ ...c, height: c.value / costMax, label: fmtUsd(c.value) }))
 
-  return { performance, speed, cost }
+  const turnsPerTask = lowerIsBetter(perTaskSeries(rows, gateIds, pool), (s) => s.turnsPerTask, (v) => v.toFixed(1))
+  return { speed, cost10, turnsPerTask }
 }
 
 export function fmtTpm(v) {
@@ -116,4 +237,11 @@ export function fmtUsd(n) {
   if (n == null) return '—'
   if (n >= 1) return '$' + n.toFixed(2)
   return '$' + n.toFixed(n < 0.1 ? 3 : 2)
+}
+
+/** Minutes as "4.2m" / "12m" / "1.3h". */
+export function fmtMinutes(v) {
+  if (v == null || !(v >= 0)) return '—'
+  if (v >= 90) return (v / 60).toFixed(1) + 'h'
+  return v >= 10 ? Math.round(v) + 'm' : v.toFixed(1) + 'm'
 }

@@ -303,7 +303,7 @@
       <QueueBar {active} {queue} lastError={queueError} onkill={killRun} onremove={removeFromQueue} onreorder={reorder}
         onnew={openNew} onspectate={() => go('/spectate')} />
     {/if}
-    <Leaderboard rows={boardRows} {cardRows} {stats} oninspect={inspect}
+    <Leaderboard rows={boardRows} {cardRows} allRows={leaderboard} {stats} oninspect={inspect}
       {benchmarks} {benchmark} onbench={selectBenchmark}
       bind:oss={ossFilter} bind:maxPrice={maxPrice} {priceMax} bind:allLevels />
     <Charts rows={boardRows} onpick={(slug) => go(`/history/${slug}`)} />

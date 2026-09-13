@@ -556,3 +556,41 @@ def test_publish_uploads_the_full_view_by_default_and_the_simple_file_on_request
     assert pub.recorded_view(run) == "simple"
     (run / "config.json").unlink()
     assert pub.recorded_view(run) is None
+
+
+def test_refresh_rows_reprojects_published_rows_and_keeps_publish_only_keys(tmp_path):
+    """--refresh-rows (2026-09-13): a published row is a cached projection plus the
+    publish-only keys. Re-projecting from the local run dir adds what the projection
+    learnt since (gate_turns) and leaves video_url / published_at untouched; a row
+    whose run dir is gone is kept as it was."""
+    import json as _json
+    from src.app import publish as pub
+
+    runs = tmp_path / "runs"
+    run = runs / "2026-09-12_10-00-00_config-5.1__m-high"
+    run.mkdir(parents=True)
+    (run / "run_summary.json").write_text(_json.dumps({
+        "run_id": run.name, "kind": "official", "status": "terminated", "benchmark": "pokebench-first-badge",
+        "session": {"llm_alias": "m(high)", "total_turns": 40, "duration_seconds": 400.0}, "cost": {"total_usd": 1.0},
+        "referee": {"gates": [{"id": "left_bedroom", "turn": 3, "status": "done"}, {"id": "left_house", "turn": 9, "status": "done"},
+                              {"id": "oaks_lab_entered", "turn": None, "status": "pending"}], "furthest": "left_house"},
+    }))
+    stale = {"run_id": run.name, "model": "m(high)", "turns": 40, "video_url": "https://r2.example/v.mp4", "published_at": "2026-09-12T10:00:00Z",
+             "has_recording": True, "projection_version": 3}
+    gone = {"run_id": "2026-09-01_00-00-00_config-5.1__gone", "model": "gone(high)", "turns": 7, "video_url": None}
+
+    class Board:
+        def __init__(self): self.rows = [stale, gone]; self.writes = 0
+        def read_board(self): return [dict(r) for r in self.rows]
+        def write_board(self, rows): self.rows = rows; self.writes += 1
+
+    board = Board()
+    assert pub.refresh_rows(board, runs, secrets=["sekrit"], log=lambda m: None) == 1
+    assert board.writes == 1
+    fresh = next(r for r in board.rows if r["run_id"] == run.name)
+    assert fresh["gate_turns"] == {"left_bedroom": 3, "left_house": 9}
+    assert fresh["video_url"] == "https://r2.example/v.mp4" and fresh["published_at"] == "2026-09-12T10:00:00Z" and fresh["has_recording"] is True
+    assert fresh["projection_version"] >= 4 and "error" not in fresh and "record" not in fresh
+    assert next(r for r in board.rows if r["run_id"] == gone["run_id"]) == gone
+    # Nothing to change → nothing written.
+    assert pub.refresh_rows(board, runs, log=lambda m: None) == 0 and board.writes == 1

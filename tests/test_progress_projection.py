@@ -89,3 +89,18 @@ def test_projection_caps_a_stored_open_leg_at_the_cap(tmp_path):
     s = project_run_dir(run)
     assert s.leg_fraction == OPEN_LEG_FRACTION_CAP
     assert s.progress == 2 + OPEN_LEG_FRACTION_CAP and s.rank_score < 3.0
+
+
+def test_projection_records_each_cleared_gates_turn_in_ladder_order(tmp_path):
+    """gate_turns (2026-09-13): the board projects a partial run's turns to a full
+    clear from its per-leg pace, which needs every cleared gate's stamp, not just
+    the furthest. Pending gates (turn None) are left out; order follows the scorecard."""
+    s = project_run_dir(_run_dir(tmp_path, {"gates": _GATES, "furthest": "left_house", "termination_reason": None}))
+    assert s.gate_turns == {"left_bedroom": 1, "left_house": 4}
+    assert list(s.gate_turns) == ["left_bedroom", "left_house"]
+    # A run without a scorecard has no stamps at all — None, not {}.
+    bare = tmp_path / "2026-09-09_11-00-00_config-5.0__bare"
+    bare.mkdir()
+    (bare / "run_summary.json").write_text(json.dumps({"run_id": bare.name, "kind": "official", "status": "completed",
+                                                        "session": {"llm_alias": "x(high)", "total_turns": 5}, "cost": {"total_usd": 0}}))
+    assert project_run_dir(bare).gate_turns is None

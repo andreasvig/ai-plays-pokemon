@@ -1,14 +1,23 @@
 <script>
   // Three headline bar cards above the board (Andreas 2026-09-12, modelled on
   // Artificial Analysis's Intelligence / Speed / Cost strip): performance with a
-  // 100% line and clears rising above it, speed as turns per minute, cost per
-  // ten turns. One bar per MODEL — the best-ranked thinking level — regardless
-  // of the board's "include all thinking levels" toggle; the caller passes the
-  // collapsed rows.
-  import { headlineSeries, vendorOf, PERF_LINE } from '../lib/board.js'
-  let { rows = [], oninspect = () => {} } = $props()
+  // 100% line and clears rising above it, then — since 2026-09-13 — time per
+  // task and cost per task, where a task is one gate of the ladder and a partial
+  // run is PROJECTED to a full clear from its pace (lib/board.js projectRun).
+  // One bar per MODEL, its best-ranked thinking level; the caller passes the
+  // collapsed rows, and `pool` (every row) is what the field's typical turns
+  // per leg are computed over.
+  import { headlineSeries, vendorOf, PERF_LINE, PROJECT_FROM_GATE, fmtMinutes, fmtUsd } from '../lib/board.js'
+  import { GATES, gate } from '../lib/gates.js'
+  let { rows = [], pool = rows, oninspect = () => {} } = $props()
 
-  const series = $derived(headlineSeries(rows))
+  // The ladder the board plays: the first `totalGates` ids of the flattened ladder.
+  const gateIds = $derived(GATES.slice(0, rows[0]?.totalGates || 12).map((g) => g.id))
+  const series = $derived(headlineSeries(rows, gateIds, pool))
+  const nGates = $derived(gateIds.length)
+  const fromGate = $derived(gate(PROJECT_FROM_GATE)?.name ?? PROJECT_FROM_GATE)
+  const projectedCount = $derived(series.cost.filter((s) => s.eligible && !s.complete).length)
+  const noProjection = $derived(series.cost.filter((s) => !s.eligible).length)
   const vendors = $derived((() => {
     const seen = new Map()
     for (const r of rows) { const v = vendorOf(r); if (!seen.has(v.key)) seen.set(v.key, v) }
@@ -16,6 +25,12 @@
   })())
   // A bar too short to hold its number gets the number above it instead.
   const INSIDE_MIN = 0.16
+  const tip = (s, unit, fmt) => {
+    if (!s.eligible) return `${s.row.model}: never “${fromGate}”, no projection`
+    const base = `${s.row.model}: ${fmt(s.value)} per task`
+    if (s.complete) return `${base} · measured over ${s.row.turns} turns`
+    return `${base} · projected: ${Math.round(s.projected)} turns to beat Brock at ${s.pace.toFixed(2)}× the field's pace (${Math.round(s.estimated)} estimated${s.floored ? ', failed leg floored at turns spent' : ''})`
+  }
 </script>
 
 {#if rows.length}
@@ -42,14 +57,19 @@
 
   <div class="card">
     <header>
-      <h3><span class="sw speed"></span>Speed</h3>
-      <p class="faint">Average turns per minute · Higher is better</p>
+      <h3><span class="sw speed"></span>Time per task</h3>
+      <p class="faint">Minutes to beat Brock ÷ {nGates} gates · partial runs projected · Lower is better</p>
     </header>
     <div class="plot">
-      {#each series.speed as s (s.row.runId)}
-        <button class="bar" style={`--h:${(s.height * 100).toFixed(1)}%; --c:${vendorOf(s.row).color}`}
-          title={`${s.row.model}: ${s.label} turns/min (${s.row.avgSPerTurn.toFixed(1)}s per turn)`} onclick={() => oninspect(s.row)}>
-          <span class="fill"><span class="val tnum" class:outside={s.height < INSIDE_MIN}>{s.label}</span></span>
+      {#each series.time as s (s.row.runId)}
+        <button class="bar" class:none={!s.eligible} style={`--h:${(s.height * 100).toFixed(1)}%; --c:${vendorOf(s.row).color}`}
+          title={tip(s, 'min', fmtMinutes)} onclick={() => oninspect(s.row)}>
+          {#if s.eligible}
+            <span class="above tnum">{s.label}</span>
+            <span class="fill" class:est={!s.complete}></span>
+          {:else}
+            <span class="fill placeholder"><span class="np">no projection</span></span>
+          {/if}
           <span class="name mono">{s.row.model}</span>
         </button>
       {/each}
@@ -58,15 +78,19 @@
 
   <div class="card">
     <header>
-      <h3><span class="sw cost"></span>Cost per 10 turns</h3>
-      <p class="faint">Average USD for ten turns, all calls included · Lower is better</p>
+      <h3><span class="sw cost"></span>Cost per task</h3>
+      <p class="faint">USD to beat Brock ÷ {nGates} gates · partial runs projected · Lower is better</p>
     </header>
     <div class="plot">
       {#each series.cost as s (s.row.runId)}
-        <button class="bar" style={`--h:${(s.height * 100).toFixed(1)}%; --c:${vendorOf(s.row).color}`}
-          title={`${s.row.model}: ${s.label} per 10 turns`} onclick={() => oninspect(s.row)}>
-          <span class="above tnum">{s.label}</span>
-          <span class="fill"></span>
+        <button class="bar" class:none={!s.eligible} style={`--h:${(s.height * 100).toFixed(1)}%; --c:${vendorOf(s.row).color}`}
+          title={tip(s, 'USD', fmtUsd)} onclick={() => oninspect(s.row)}>
+          {#if s.eligible}
+            <span class="above tnum">{s.label}</span>
+            <span class="fill" class:est={!s.complete}></span>
+          {:else}
+            <span class="fill placeholder"><span class="np">no projection</span></span>
+          {/if}
           <span class="name mono">{s.row.model}</span>
         </button>
       {/each}
@@ -76,6 +100,8 @@
   <p class="legend faint">
     {#each vendors as v (v.key)}<span class="key" style={`--c:${v.color}`}></span>{v.label}{/each}
     <span class="sep">·</span> one bar per model, its best thinking level
+    {#if projectedCount}<span class="sep">·</span><span class="key hatch"></span>projected from a full-run estimate: the run's pace on the gates it cleared, applied to the legs it never reached, the failed leg floored at the turns it spent{/if}
+    {#if noProjection}<span class="sep">·</span>dashed outline: the run never “{fromGate}”, so nothing is projected{/if}
   </p>
 </section>
 {/if}
@@ -107,6 +133,12 @@
   .bar:hover .fill { filter: brightness(1.12); }
   .fill { width: 100%; max-width: 44px; height: var(--h); min-height: 2px; background: var(--c); border-radius: 3px 3px 0 0; position: relative; display: flex; align-items: flex-end; justify-content: center; transition: height .2s; }
   .bar.complete .fill { box-shadow: inset 0 0 0 1px rgba(0,0,0,.08); }
+  /* A projected bar is hatched in the vendor colour (Andreas 2026-09-13). */
+  .fill.est { background: repeating-linear-gradient(135deg, var(--c) 0 4px, color-mix(in srgb, var(--c) 30%, var(--surface)) 4px 8px); }
+  /* No projection: a short dashed outline where the bar would be. */
+  .fill.placeholder { height: 14px; background: none; border: 1px dashed var(--border); border-bottom: none; }
+  .np { position: absolute; bottom: 100%; padding-bottom: 3px; font-size: 9px; color: var(--faint); white-space: nowrap; writing-mode: vertical-rl; transform: rotate(180deg); display: none; }
+  .bar.none .name { color: var(--faint); }
   .val { color: #fff; font-size: 11px; font-weight: 750; padding-bottom: 6px; text-shadow: 0 0 2px rgba(0,0,0,.25); white-space: nowrap; }
   .val.outside { position: absolute; bottom: 100%; padding-bottom: 3px; color: var(--text); text-shadow: none; }
   .above { position: absolute; bottom: calc(var(--h) + 3px); font-size: 11px; font-weight: 750; color: var(--text); white-space: nowrap; }
@@ -117,5 +149,6 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1; text-align: right; }
   .legend { grid-column: 1 / -1; font-size: 11.5px; text-align: center; display: flex; align-items: center; justify-content: center; gap: 6px 10px; flex-wrap: wrap; margin: -4px 0 0; }
   .key { display: inline-block; width: 9px; height: 9px; background: var(--c); border-radius: 2px; vertical-align: -1px; margin-right: 4px; }
+  .key.hatch { --c: var(--muted); background: repeating-linear-gradient(135deg, var(--muted) 0 2px, transparent 2px 4px); border: 1px solid var(--border); }
   .sep { opacity: .5; }
 </style>

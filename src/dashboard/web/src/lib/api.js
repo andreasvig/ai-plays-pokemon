@@ -88,6 +88,9 @@ export function toRun(s) {
     furthestGateName: furthestGate && GATE_INDEX[furthestGate] != null ? gate(furthestGate).name : null,
     gatesReached: reached,
     totalGates: total,
+    // Turn each cleared gate was stamped, gate id → turn (2026-09-13). The
+    // headline cards project a partial run to a full clear from these.
+    gateTurns: s.gate_turns ?? null,
     completion,
     progress,
     // the current leg: which gate it leads to, how much of it was walked

@@ -36,7 +36,8 @@ _DEFAULT_LADDER = Path("configs/checkpoints-firered-v1.yaml")
 # field added here reaches History without anyone deleting runs_index.json.
 #   1 — 2026-09-09: error / crash (why a crashed run ended).
 #   2 — 2026-09-09: record (the spec the run was recorded with, for continues).
-PROJECTION_VERSION = 3  # 3 (2026-09-11): open-leg fraction capped at OPEN_LEG_FRACTION_CAP
+#   3 — 2026-09-11: open-leg fraction capped at OPEN_LEG_FRACTION_CAP.
+PROJECTION_VERSION = 4  # 4 (2026-09-13): gate_turns (per-gate stamps for the board's projections)
 
 # Status values the report treats as "cleared" for a gate (mirror report.py).
 _CLEARED_STATUSES = ("done", "auto")
@@ -205,8 +206,15 @@ def project_run_dir(run_dir: Path) -> RunSummary | None:
     gates_reached = 0
     furthest_gate = None
     furthest_gate_turn = None
+    gate_turns = None
     if has_gates:
         gates = referee["gates"]
+        # Per-gate stamps in ladder order; only cleared gates carry a turn.
+        gate_turns = {
+            g["id"]: g["turn"] for g in gates
+            if isinstance(g.get("id"), str) and g.get("status") in _CLEARED_STATUSES
+            and isinstance(g.get("turn"), int) and not isinstance(g.get("turn"), bool)
+        }
         gates_reached = sum(
             1 for g in gates if g.get("status") in _CLEARED_STATUSES
         )
@@ -269,6 +277,7 @@ def project_run_dir(run_dir: Path) -> RunSummary | None:
         furthest_gate_turn=furthest_gate_turn,
         gates_reached=gates_reached,
         total_gates=total_gates,
+        gate_turns=gate_turns,
         progress=progress,
         leg_gate=leg_gate,
         leg_fraction=leg_fraction,
