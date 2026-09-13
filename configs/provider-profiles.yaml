@@ -64,6 +64,13 @@ defaults:
   # short" (qwen3.8-flash, 2026-09-12: 7 of 7 compaction replies at turn 101,
   # each exactly one `}` short with an otherwise identical memory structure).
   close_unbalanced_json: false
+  # Prompted-JSON replies that put a sentence of prose BEFORE an otherwise
+  # complete object get the object parsed and the prose recorded as an
+  # `output_coerced` event (kind stripped_prose). Off by default, same doctrine
+  # as above: allowed only where the defect is proven (claude-fable-5.1,
+  # 2026-09-13: "Prediction correct: ..." then the object, 5 of 5 attempts at
+  # turn 8). Text AFTER the object is not this defect and still retries.
+  strip_leading_prose: false
   # Prompted-JSON models sometimes return the action/handover object without the
   # {"result": ...} envelope (Gemma after a handover, Qwen on compaction). The
   # schema validation is the real guard, so accept either shape everywhere.
@@ -209,7 +216,8 @@ profiles:
     reasoning_default: {effort: high}
     cache_mode: automatic
     final_turn_text_only: false
-    notes: 'Mandatory thinking (catalog reasoning.mandatory true); no tool_choice advertised on ANY of its four endpoints, re-verified 2026-09-07 — hence prompted output. Preserve signed blocks including empty thinking blocks. Cache/replay behaviour copied from claude-opus-5 on the shared anthropic tag. Own survey facts: $10/$50 per M, cache read $0.25 (97.5% off), cache write $12.50. NOTE: OpenRouter serves BOTH anthropic/claude-fable-5 (2026-06-09, cache read $1.00, tool_choice advertised) and anthropic/claude-fable-5.1 (2026-09-01); the registry pointed at 5 and this profile at 5.1, and the registry was moved to 5.1 to match the keep list. 2026-09-12 evening: Anthropic''s classifier refuses Fable''s request when it carries `response_format` (3/3, afternoon) AND when it carries `tools` without tool_choice (3/3, evening probe from the real turn-1 request) — every structured-output form is refused, prompted is the only path. Its prompted JSON pads the object with one null key per attempt (`"inputs_note": null`, `"result": null`, then a trailing comma), so the parser drops null-valued extra keys (src/agent/coerce.py drop_null_extras) and gameplay max_retries is 4.'
+    strip_leading_prose: true
+    notes: 'Mandatory thinking (catalog reasoning.mandatory true); no tool_choice advertised on ANY of its four endpoints, re-verified 2026-09-07 — hence prompted output. Preserve signed blocks including empty thinking blocks. Cache/replay behaviour copied from claude-opus-5 on the shared anthropic tag. Own survey facts: $10/$50 per M, cache read $0.25 (97.5% off), cache write $12.50. NOTE: OpenRouter serves BOTH anthropic/claude-fable-5 (2026-06-09, cache read $1.00, tool_choice advertised) and anthropic/claude-fable-5.1 (2026-09-01); the registry pointed at 5 and this profile at 5.1, and the registry was moved to 5.1 to match the keep list. 2026-09-12 evening: Anthropic''s classifier refuses Fable''s request when it carries `response_format` (3/3, afternoon) AND when it carries `tools` without tool_choice (3/3, evening probe from the real turn-1 request) — every structured-output form is refused, prompted is the only path. Its prompted JSON pads the object with one null key per attempt (`"inputs_note": null`, `"result": null`, then a trailing comma), so the parser drops null-valued extra keys (src/agent/coerce.py drop_null_extras) and gameplay max_retries is 4. 2026-09-13: with those in place the medium run cleared turns 1-7, then at turn 8 wrote a sentence of prose ("Prediction correct: Oak''s event triggered...") before the object on 5 of 5 attempts (turn 2 attempt 1 too) and crashed; strip_leading_prose is on for this model — the object after the prose was complete every time.'
   anthropic/claude-haiku-4.5:
     endpoint: anthropic
     probed_as: anthropic/claude-opus-5

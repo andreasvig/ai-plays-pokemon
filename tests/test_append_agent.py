@@ -1382,6 +1382,79 @@ def test_describe_json_error_names_the_missing_closers_only_when_the_text_ends_e
     assert "missing `}`" in err('{"note": "a } inside a string", "memory": {"k": "v"}')
 
 
+def test_describe_json_error_names_leading_prose():
+    """claude-fable-5.1(medium) 2026-09-13: a sentence before the object, offset 0
+    quoted back five times. The note names the prose; whitespace before `{` is not
+    prose, and a reply with no object at all keeps json's message."""
+    from src.agent.append_agent import describe_json_error
+
+    def err(text):
+        try:
+            json.loads(text)
+        except json.JSONDecodeError as exc:
+            return describe_json_error(text, exc)
+        raise AssertionError("valid JSON")
+
+    note = err("Prediction correct: Oak triggered. Mash B.\n\n{\"result\": {\"inputs\": [\"b\"]}}")
+    assert note.startswith("The reply began with prose ('Prediction correct: Oak triggered.") and "JSON object only" in note
+    assert json.loads("  \n{\"a\": 1}") == {"a": 1}  # whitespace is not a defect at all
+    assert err("no object here").startswith("Expecting value at character 0")
+    assert "began with prose" not in err('{"result": {"inputs": ["a"], }}')
+
+
+class _ProsePrefix(FakeProvider):
+    """Gameplay replies open with a sentence before the object (claude-fable-5.1)."""
+    def __init__(self, prefix="Prediction correct: Oak triggered. Mash B through the dialogue.\n\n", suffix=""):
+        super().__init__(); self.prefix = prefix; self.suffix = suffix
+    async def __call__(self, *args):
+        response = await super().__call__(*args)
+        message = response["choices"][0]["message"]
+        if message.get("content") and "Pause gameplay" not in json.dumps(self.requests[-1]["messages"][-1]):
+            message["content"] = self.prefix + message["content"] + self.suffix
+        return response
+
+
+def test_strip_leading_prose_parses_the_object_and_records_the_prose(config, tmp_path):
+    """Flag on: the prose-prefixed gameplay reply is accepted on the first attempt,
+    the action is the one the model wrote, and the trace carries an
+    output_coerced event quoting the prose. The fixture's gameplay max_retries is
+    0, so without the repair this turn would die."""
+    config["_provider_profile"]["output_mode"] = "prompted"
+    config["_provider_profile"]["strip_leading_prose"] = True
+    agent, provider, events = engine(config, tmp_path, _ProsePrefix())
+    action = asyncio.run(agent.play(1, "screen", IMAGE))
+    assert action.inputs == ["a"]
+    coerced = [e for e in events if e["type"] == "output_coerced"]
+    assert [(e["turn"], e["phase"], e["kind"], e["prose"]) for e in coerced] == \
+        [(1, "gameplay", "stripped_prose", "Prediction correct: Oak triggered. Mash B through the dialogue.\n\n")]
+    assert not [e for e in events if e["type"] == "output_retry"]
+
+
+def test_strip_leading_prose_leaves_other_defects_to_the_retry(config, tmp_path):
+    """Mutation controls: text AFTER the object is not this defect (still a retry,
+    no coercion); and with the flag off the same prose-prefixed reply is retried
+    with the prose named in the note, not the offset."""
+    from src.agent.append_agent import MalformedJSON
+
+    config["_provider_profile"]["output_mode"] = "prompted"
+    config["_provider_profile"]["strip_leading_prose"] = True
+    agent, provider, events = engine(config, tmp_path, _ProsePrefix(suffix="\n\nGood luck!"))
+    with pytest.raises(MalformedJSON, match="began with prose"):
+        asyncio.run(agent.play(1, "screen", IMAGE))
+    assert not [e for e in events if e["type"] == "output_coerced"]
+
+    off = deepcopy(config); off["_provider_profile"]["strip_leading_prose"] = False
+    off["transport"]["max_retries"] = 1
+    agent, provider, events = engine(off, tmp_path / "off", _ProsePrefix())
+    with pytest.raises(MalformedJSON, match="began with prose"):
+        asyncio.run(agent.play(1, "screen", IMAGE))
+    retries = [e["content"] for e in events if e["type"] == "output_retry"]
+    assert len(retries) == 1 and "began with prose ('Prediction correct" in retries[0] and "character 0" not in retries[0]
+    notes = [m["content"] for r in provider.requests for m in r["messages"] if str(m.get("content", "")).startswith("Your last reply was not accepted")]
+    assert len(notes) == 1 and "JSON object only" in notes[0]
+    assert not [e for e in events if e["type"] == "output_coerced"]
+
+
 def test_unclosed_compaction_reply_is_retried_with_the_missing_closer_named(config, tmp_path):
     """The note the model gets is the actionable one — "missing `}` at the very end" —
     not json's character offset (mutation control: the old note quoted only the offset)."""

@@ -610,3 +610,16 @@ def test_close_unbalanced_json_is_a_bool_and_on_for_qwen_only():
     assert [m for m, p in catalog["profiles"].items() if p.get("close_unbalanced_json")] == ["qwen/qwen3.8-flash"]
     config = load_config(str(ROOT / "configs/config-5.1.yaml"), llm_alias="qwen/qwen3.8-flash")
     assert config["_provider_profile"]["close_unbalanced_json"] is True
+
+
+def test_strip_leading_prose_is_a_bool_and_on_for_fable_only():
+    """The prose-prefix repair is a per-model opt-in (2026-09-13): claude-fable-5.1
+    has it and the catalog default is off."""
+    import yaml
+    catalog = yaml.safe_load((ROOT / "configs/provider-profiles.yaml").read_text())
+    assert catalog["defaults"]["strip_leading_prose"] is False
+    assert [m for m, p in catalog["profiles"].items() if p.get("strip_leading_prose")] == ["anthropic/claude-fable-5.1"]
+    config = load_config(str(ROOT / "configs/config-5.1.yaml"), llm_alias="claude-fable-5.1(medium)")
+    assert config["_provider_profile"]["strip_leading_prose"] is True
+    config = load_config(str(ROOT / "configs/config-5.1.yaml"), llm_alias="qwen/qwen3.8-flash")
+    assert config["_provider_profile"]["strip_leading_prose"] is False

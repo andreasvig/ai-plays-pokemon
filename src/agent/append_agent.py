@@ -272,6 +272,13 @@ def describe_json_error(text, exc):
     """
     stack, in_string = _open_brackets(text)
     reason = f"{exc.msg.removesuffix(' at')} at character {exc.pos}"
+    prose = leading_prose(text)
+    if prose is not None:
+        # claude-fable-5.1(medium) 2026-09-13: "Prediction correct: Oak's event
+        # triggered. Now mash B..." then the object, five attempts in a row; the
+        # quoted offset (0) told it nothing.
+        return (f"The reply began with prose ({prose[:80]!r}) instead of the JSON object. "
+                f"Reply with the JSON object only, nothing before or after it.")
     if in_string:
         # json points at the START of an unterminated string, not at the end of the text.
         return f"The reply ended inside a string value ({reason}). Close the string and every open object and array."
@@ -282,6 +289,33 @@ def describe_json_error(text, exc):
         return (f"The reply ended with {len(stack)} bracket(s) still open ({reason}). "
                 f"It is missing `{closers}` at the very end; close every object and array you open.")
     return reason
+
+
+def leading_prose(text):
+    """The text before the first `{` when a reply starts with something other
+    than the JSON object, else None. Whitespace alone is not prose (json accepts
+    it); a reply with no object at all is a different defect."""
+    start = text.find("{")
+    if start <= 0 or not text[:start].strip():
+        return None
+    return text[:start]
+
+
+def strip_leading_prose(text):
+    """Parse the object that follows a prose prefix. Returns ``(value, prose)``,
+    or ``(None, None)`` when the reply is not exactly "prose, then one complete
+    JSON object": no prefix, an object that does not parse, or text after the
+    object all leave the original error to the retry path."""
+    prose = leading_prose(text)
+    if prose is None:
+        return None, None
+    try:
+        value, end = json.JSONDecoder().raw_decode(text, len(prose))
+    except json.JSONDecodeError:
+        return None, None
+    if text[end:].strip():
+        return None, None
+    return value, prose
 
 
 def output_defect_note(phase, mode, exc):
@@ -758,6 +792,31 @@ class AppendAgent:
         except json.JSONDecodeError as exc:
             raise MalformedJSON(describe_json_error(text, exc)) from exc
 
+    def _repair_prompted(self, text):
+        """The two allowed prompted-JSON repairs, each behind its profile flag.
+        Returns ``(value, output_coerced fields)`` or ``(None, None)``.
+
+        - `close_unbalanced_json` (qwen3.8-flash, 2026-09-12): the reply stopped
+          with brackets still open, one `}` short on 7 of 7 compaction replies
+          with the structure otherwise intact. Append the derived closers.
+        - `strip_leading_prose` (claude-fable-5.1, 2026-09-13): a sentence of
+          prose before an otherwise complete object ("Prediction correct: ...
+          {...}"), 5 of 5 attempts at turn 8 even with the prose named in the
+          retry note. Parse the object that follows the prose.
+        """
+        if self.profile.get("close_unbalanced_json"):
+            closers = missing_closers(text)
+            if closers:
+                try:
+                    return json.loads(text + closers), {"kind": "closed_brackets", "appended": closers, "chars": len(text)}
+                except json.JSONDecodeError:
+                    pass
+        if self.profile.get("strip_leading_prose"):
+            value, prose = strip_leading_prose(text)
+            if value is not None:
+                return value, {"kind": "stripped_prose", "prose": prose[:200], "chars": len(prose)}
+        return None, None
+
     def _body(self, phase, messages):
         resolved = self.config.get("_llm_resolved") or {}
         if self.profile:
@@ -1004,20 +1063,13 @@ class AppendAgent:
                     try:
                         parsed = self._decode(text)
                     except MalformedJSON as original:
-                        # Profile `close_unbalanced_json`: the reply stopped with
-                        # brackets still open (qwen3.8-flash, 2026-09-12: one `}`
-                        # short on 7 of 7 compaction replies, structure otherwise
-                        # intact). Append the derived closers; anything else that
-                        # is wrong with the text still raises the original error.
-                        closers = missing_closers(text) if self.profile.get("close_unbalanced_json") else None
-                        try:
-                            parsed = json.loads(text + closers) if closers else None
-                        except json.JSONDecodeError:
-                            parsed = None
+                        # Profile-gated repairs (each proven per model, off by
+                        # default); anything else wrong with the text still raises
+                        # the original error and takes the retry path.
+                        parsed, repair = self._repair_prompted(text)
                         if parsed is None:
                             raise original
-                        self.emit("output_coerced", {"turn": turn, "phase": phase, "kind": "closed_brackets",
-                                                     "appended": closers, "chars": len(text)})
+                        self.emit("output_coerced", {"turn": turn, "phase": phase, **repair})
                     if isinstance(parsed, dict) and "result" in parsed:
                         value = parsed["result"]
                     elif self.profile.get("allow_unwrapped_json", True):

@@ -150,6 +150,8 @@ def resolve_provider_profile(config):
         raise ValueError("Provider profile final_turn_text_only must be true or false")
     if not isinstance(profile.get("close_unbalanced_json", False), bool):
         raise ValueError("Provider profile close_unbalanced_json must be true or false")
+    if not isinstance(profile.get("strip_leading_prose", False), bool):
+        raise ValueError("Provider profile strip_leading_prose must be true or false")
     if not isinstance(profile["endpoint"], str):
         raise ValueError("Provider profile endpoint must be a string")
     if not unprofiled and not profile["endpoint"]:
