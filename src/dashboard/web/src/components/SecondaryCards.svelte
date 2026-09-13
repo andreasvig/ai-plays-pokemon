@@ -11,6 +11,7 @@
   const series = $derived(secondarySeries(rows, gateIds, pool))
   const nGates = $derived(gateIds.length)
   const fromGate = $derived(gate(PROJECT_FROM_GATE)?.name ?? PROJECT_FROM_GATE)
+  const leftOff = $derived(series.turnsPerTask.filter((s) => !s.eligible).length)
   const INSIDE_MIN = 0.22
 </script>
 
@@ -45,18 +46,15 @@
       </div>
     </div>
     <div class="card">
-      <header><h3>Average turns per task</h3><p class="faint">Turns to beat Brock ÷ {nGates} gates · partial runs projected (hatched) · Lower is better</p></header>
+      <header><h3>Average turns per task</h3><p class="faint">Turns to beat Brock ÷ {nGates} gates · partial runs projected (hatched){leftOff ? ` · ${leftOff} never “${fromGate}”, not shown` : ''} · Lower is better</p></header>
       <div class="plot">
-        {#each series.turnsPerTask as s (s.row.runId)}
-          <button class="bar" class:none={!s.eligible} style={`--h:${(s.height * 100).toFixed(1)}%; --c:${vendorOf(s.row).color}`}
-            title={s.eligible ? `${s.row.model}: ${s.label} turns per task${s.complete ? '' : ` · projected ${Math.round(s.projected)} turns to beat Brock`}` : `${s.row.model}: never “${fromGate}”, no projection`}
+        <!-- Models below the projection gate are left off, as on the headline cards (Andreas 2026-09-13). -->
+        {#each series.turnsPerTask.filter((s) => s.eligible) as s (s.row.runId)}
+          <button class="bar" style={`--h:${(s.height * 100).toFixed(1)}%; --c:${vendorOf(s.row).color}`}
+            title={`${s.row.model}: ${s.label} turns per task${s.complete ? '' : ` · projected ${Math.round(s.projected)} turns to beat Brock`}`}
             onclick={() => oninspect(s.row)}>
-            {#if s.eligible}
-              <span class="above tnum">{s.label}</span>
-              <span class="fill" class:est={!s.complete}></span>
-            {:else}
-              <span class="fill placeholder"></span>
-            {/if}
+            <span class="above tnum">{s.label}</span>
+            <span class="fill" class:est={!s.complete}></span>
             <span class="name mono">{s.row.model}</span>
           </button>
         {/each}
@@ -81,8 +79,6 @@
   .bar:hover .fill { filter: brightness(1.12); }
   .fill { width: 100%; max-width: 44px; height: var(--h); min-height: 2px; background: var(--c); border-radius: 3px 3px 0 0; position: relative; display: flex; align-items: flex-end; justify-content: center; transition: height .2s; }
   .fill.est { background: repeating-linear-gradient(135deg, var(--c) 0 4px, color-mix(in srgb, var(--c) 30%, var(--surface)) 4px 8px); }
-  .fill.placeholder { height: 12px; background: none; border: 1px dashed var(--border); border-bottom: none; }
-  .bar.none .name { color: var(--faint); }
   .val { color: #fff; font-size: 11px; font-weight: 750; padding-bottom: 5px; text-shadow: 0 0 2px rgba(0,0,0,.25); white-space: nowrap; }
   .val.outside { position: absolute; bottom: 100%; padding-bottom: 3px; color: var(--text); text-shadow: none; }
   .above { position: absolute; bottom: calc(var(--h) + 3px); font-size: 11px; font-weight: 750; color: var(--text); white-space: nowrap; }
