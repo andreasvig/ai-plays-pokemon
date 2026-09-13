@@ -17,6 +17,8 @@
   const nGates = $derived(gateIds.length)
   const fromGate = $derived(gate(PROJECT_FROM_GATE)?.name ?? PROJECT_FROM_GATE)
   const projectedCount = $derived(series.cost.filter((s) => s.eligible && !s.complete).length)
+  // Models below the projection gate are left OFF the two per-task cards rather
+  // than drawn as a placeholder (Andreas 2026-09-13: "remove those ghosts").
   const noProjection = $derived(series.cost.filter((s) => !s.eligible).length)
   const vendors = $derived((() => {
     const seen = new Map()
@@ -26,7 +28,6 @@
   // A bar too short to hold its number gets the number above it instead.
   const INSIDE_MIN = 0.16
   const tip = (s, unit, fmt) => {
-    if (!s.eligible) return `${s.row.model}: never “${fromGate}”, no projection`
     const base = `${s.row.model}: ${fmt(s.value)} per task`
     if (s.complete) return `${base} · measured over ${s.row.turns} turns`
     return `${base} · projected: ${Math.round(s.projected)} turns to beat Brock at ${s.pace.toFixed(2)}× the field's pace (${Math.round(s.estimated)} estimated${s.floored ? ', failed leg floored at turns spent' : ''})`
@@ -61,15 +62,11 @@
       <p class="faint">Minutes to beat Brock ÷ {nGates} gates · partial runs projected · Lower is better</p>
     </header>
     <div class="plot">
-      {#each series.time as s (s.row.runId)}
-        <button class="bar" class:none={!s.eligible} style={`--h:${(s.height * 100).toFixed(1)}%; --c:${vendorOf(s.row).color}`}
+      {#each series.time.filter((s) => s.eligible) as s (s.row.runId)}
+        <button class="bar" style={`--h:${(s.height * 100).toFixed(1)}%; --c:${vendorOf(s.row).color}`}
           title={tip(s, 'min', fmtMinutes)} onclick={() => oninspect(s.row)}>
-          {#if s.eligible}
-            <span class="above tnum">{s.label}</span>
-            <span class="fill" class:est={!s.complete}></span>
-          {:else}
-            <span class="fill placeholder"><span class="np">no projection</span></span>
-          {/if}
+          <span class="above tnum">{s.label}</span>
+          <span class="fill" class:est={!s.complete}></span>
           <span class="name mono">{s.row.model}</span>
         </button>
       {/each}
@@ -82,15 +79,11 @@
       <p class="faint">USD to beat Brock ÷ {nGates} gates · partial runs projected · Lower is better</p>
     </header>
     <div class="plot">
-      {#each series.cost as s (s.row.runId)}
-        <button class="bar" class:none={!s.eligible} style={`--h:${(s.height * 100).toFixed(1)}%; --c:${vendorOf(s.row).color}`}
+      {#each series.cost.filter((s) => s.eligible) as s (s.row.runId)}
+        <button class="bar" style={`--h:${(s.height * 100).toFixed(1)}%; --c:${vendorOf(s.row).color}`}
           title={tip(s, 'USD', fmtUsd)} onclick={() => oninspect(s.row)}>
-          {#if s.eligible}
-            <span class="above tnum">{s.label}</span>
-            <span class="fill" class:est={!s.complete}></span>
-          {:else}
-            <span class="fill placeholder"><span class="np">no projection</span></span>
-          {/if}
+          <span class="above tnum">{s.label}</span>
+          <span class="fill" class:est={!s.complete}></span>
           <span class="name mono">{s.row.model}</span>
         </button>
       {/each}
@@ -101,7 +94,7 @@
     {#each vendors as v (v.key)}<span class="key" style={`--c:${v.color}`}></span>{v.label}{/each}
     <span class="sep">·</span> one bar per model, its best thinking level
     {#if projectedCount}<span class="sep">·</span><span class="key hatch"></span>projected from a full-run estimate: the run's pace on the gates it cleared, applied to the legs it never reached, the failed leg floored at the turns it spent{/if}
-    {#if noProjection}<span class="sep">·</span>dashed outline: the run never “{fromGate}”, so nothing is projected{/if}
+    {#if noProjection}<span class="sep">·</span>{noProjection} model{noProjection === 1 ? '' : 's'} left off these two cards: never “{fromGate}”, so nothing to project{/if}
   </p>
 </section>
 {/if}
@@ -135,10 +128,6 @@
   .bar.complete .fill { box-shadow: inset 0 0 0 1px rgba(0,0,0,.08); }
   /* A projected bar is hatched in the vendor colour (Andreas 2026-09-13). */
   .fill.est { background: repeating-linear-gradient(135deg, var(--c) 0 4px, color-mix(in srgb, var(--c) 30%, var(--surface)) 4px 8px); }
-  /* No projection: a short dashed outline where the bar would be. */
-  .fill.placeholder { height: 14px; background: none; border: 1px dashed var(--border); border-bottom: none; }
-  .np { position: absolute; bottom: 100%; padding-bottom: 3px; font-size: 9px; color: var(--faint); white-space: nowrap; writing-mode: vertical-rl; transform: rotate(180deg); display: none; }
-  .bar.none .name { color: var(--faint); }
   .val { color: #fff; font-size: 11px; font-weight: 750; padding-bottom: 6px; text-shadow: 0 0 2px rgba(0,0,0,.25); white-space: nowrap; }
   .val.outside { position: absolute; bottom: 100%; padding-bottom: 3px; color: var(--text); text-shadow: none; }
   .above { position: absolute; bottom: calc(var(--h) + 3px); font-size: 11px; font-weight: 750; color: var(--text); white-space: nowrap; }
