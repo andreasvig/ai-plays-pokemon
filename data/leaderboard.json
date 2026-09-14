@@ -48,6 +48,15 @@
     "wild_battle_turns": 78,
     "trainer_battles": [
       {
+        "group": "102",
+        "id": 102,
+        "name": "Bug Catcher Rick",
+        "attempts": 1,
+        "turns": 20,
+        "won": false,
+        "mandatory": false
+      },
+      {
         "group": "rival_oaks_lab",
         "id": 328,
         "name": "Rival (Oak's Lab)",
@@ -61,7 +70,7 @@
         "id": 531,
         "name": "Bug Catcher Anthony",
         "attempts": 1,
-        "turns": 20,
+        "turns": 0,
         "won": true,
         "mandatory": false
       }
@@ -238,9 +247,9 @@
         "mandatory": true
       },
       {
-        "group": "unknown",
-        "id": null,
-        "name": "Unknown trainer",
+        "group": "531",
+        "id": 531,
+        "name": "Bug Catcher Anthony",
         "attempts": 1,
         "turns": 17,
         "won": false,
@@ -486,8 +495,8 @@
         "group": "102",
         "id": 102,
         "name": "Bug Catcher Rick",
-        "attempts": 3,
-        "turns": 3,
+        "attempts": 2,
+        "turns": 6,
         "won": true,
         "mandatory": false
       },
@@ -496,7 +505,7 @@
         "id": 104,
         "name": "Bug Catcher Sammy",
         "attempts": 1,
-        "turns": 5,
+        "turns": 2,
         "won": true,
         "mandatory": false
       },
@@ -633,10 +642,10 @@
     "trainer_battle_turns": 23,
     "battle_turn_share": 0.2903846153846154,
     "battle_fidelity": "backfill",
-    "overworld_steps": 555,
+    "overworld_steps": 592,
     "shortest_steps": 286,
-    "movement_efficiency": 0.5153153153153153,
-    "steps_fidelity": "bound",
+    "movement_efficiency": 0.4831081081081081,
+    "steps_fidelity": "video",
     "progress": 10.335329341317365,
     "leg_gate": "pewter_reached",
     "leg_fraction": 0.33532934131736525,
@@ -1113,14 +1122,14 @@
     "avg_output_tokens_per_turn": 3036.9845857418113,
     "thinking_share": 0.8787002877182074,
     "wild_battles": 38,
-    "wild_battle_turns": 105,
+    "wild_battle_turns": 88,
     "trainer_battles": [
       {
         "group": "102",
         "id": 102,
         "name": "Bug Catcher Rick",
-        "attempts": 2,
-        "turns": 12,
+        "attempts": 1,
+        "turns": 11,
         "won": true,
         "mandatory": false
       },
@@ -1129,7 +1138,7 @@
         "id": 103,
         "name": "Bug Catcher Doug",
         "attempts": 1,
-        "turns": 0,
+        "turns": 18,
         "won": true,
         "mandatory": false
       },
@@ -1152,7 +1161,7 @@
         "mandatory": false
       }
     ],
-    "trainer_battle_turns": 26,
+    "trainer_battle_turns": 43,
     "battle_turn_share": 0.2524084778420039,
     "battle_fidelity": "backfill",
     "overworld_steps": 384,
@@ -1387,8 +1396,8 @@
         "group": "142",
         "id": 142,
         "name": "Camper Liam",
-        "attempts": 2,
-        "turns": 9,
+        "attempts": 1,
+        "turns": 6,
         "won": true,
         "mandatory": false
       },
@@ -1399,6 +1408,15 @@
         "attempts": 1,
         "turns": 3,
         "won": true,
+        "mandatory": true
+      },
+      {
+        "group": "414",
+        "id": 414,
+        "name": "Leader Brock",
+        "attempts": 1,
+        "turns": 3,
+        "won": false,
         "mandatory": true
       },
       {
@@ -1484,8 +1502,17 @@
     "avg_output_tokens_per_turn": 227.91034482758621,
     "thinking_share": 0.001573516506793355,
     "wild_battles": 10,
-    "wild_battle_turns": 19,
+    "wild_battle_turns": 20,
     "trainer_battles": [
+      {
+        "group": "102",
+        "id": 102,
+        "name": "Bug Catcher Rick",
+        "attempts": 1,
+        "turns": 4,
+        "won": false,
+        "mandatory": false
+      },
       {
         "group": "104",
         "id": 104,
@@ -1509,18 +1536,9 @@
         "id": 328,
         "name": "Rival (Oak's Lab)",
         "attempts": 1,
-        "turns": 2,
+        "turns": 1,
         "won": true,
         "mandatory": true
-      },
-      {
-        "group": "531",
-        "id": 531,
-        "name": "Bug Catcher Anthony",
-        "attempts": 2,
-        "turns": 9,
-        "won": true,
-        "mandatory": false
       },
       {
         "group": "414",
@@ -1528,11 +1546,20 @@
         "name": "Leader Brock",
         "attempts": 1,
         "turns": 5,
-        "won": true,
+        "won": false,
         "mandatory": true
+      },
+      {
+        "group": "531",
+        "id": 531,
+        "name": "Bug Catcher Anthony",
+        "attempts": 1,
+        "turns": 5,
+        "won": true,
+        "mandatory": false
       }
     ],
-    "trainer_battle_turns": 23,
+    "trainer_battle_turns": 22,
     "battle_turn_share": 0.2896551724137931,
     "battle_fidelity": "backfill",
     "overworld_steps": 563,
@@ -1799,14 +1826,14 @@
     "avg_output_tokens_per_turn": 354.0393873085339,
     "thinking_share": 0.32130584192439865,
     "wild_battles": 50,
-    "wild_battle_turns": 96,
+    "wild_battle_turns": 90,
     "trainer_battles": [
       {
         "group": "102",
         "id": 102,
         "name": "Bug Catcher Rick",
-        "attempts": 3,
-        "turns": 11,
+        "attempts": 2,
+        "turns": 17,
         "won": true,
         "mandatory": false
       },
@@ -1820,7 +1847,7 @@
         "mandatory": true
       }
     ],
-    "trainer_battle_turns": 20,
+    "trainer_battle_turns": 26,
     "battle_turn_share": 0.2538293216630197,
     "battle_fidelity": "backfill",
     "overworld_steps": 403,
@@ -2122,8 +2149,17 @@
     "avg_output_tokens_per_turn": 176.69333333333333,
     "thinking_share": 0.008715665559915485,
     "wild_battles": 11,
-    "wild_battle_turns": 19,
+    "wild_battle_turns": 20,
     "trainer_battles": [
+      {
+        "group": "102",
+        "id": 102,
+        "name": "Bug Catcher Rick",
+        "attempts": 1,
+        "turns": 7,
+        "won": false,
+        "mandatory": false
+      },
       {
         "group": "103",
         "id": 103,
@@ -2138,7 +2174,7 @@
         "id": 104,
         "name": "Bug Catcher Sammy",
         "attempts": 1,
-        "turns": 5,
+        "turns": 4,
         "won": true,
         "mandatory": false
       },
@@ -2147,7 +2183,7 @@
         "id": 142,
         "name": "Camper Liam",
         "attempts": 1,
-        "turns": 7,
+        "turns": 0,
         "won": true,
         "mandatory": false
       },
@@ -2170,7 +2206,7 @@
         "mandatory": true
       }
     ],
-    "trainer_battle_turns": 29,
+    "trainer_battle_turns": 28,
     "battle_turn_share": 0.32,
     "battle_fidelity": "backfill",
     "overworld_steps": 553,
@@ -2249,8 +2285,8 @@
         "group": "102",
         "id": 102,
         "name": "Bug Catcher Rick",
-        "attempts": 1,
-        "turns": 7,
+        "attempts": 2,
+        "turns": 10,
         "won": true,
         "mandatory": false
       },
@@ -2282,21 +2318,21 @@
         "mandatory": true
       },
       {
+        "group": "414",
+        "id": 414,
+        "name": "Leader Brock",
+        "attempts": 1,
+        "turns": 12,
+        "won": false,
+        "mandatory": true
+      },
+      {
         "group": "531",
         "id": 531,
         "name": "Bug Catcher Anthony",
         "attempts": 1,
-        "turns": 3,
+        "turns": 0,
         "won": true,
-        "mandatory": false
-      },
-      {
-        "group": "unknown",
-        "id": null,
-        "name": "Unknown trainer",
-        "attempts": 1,
-        "turns": 12,
-        "won": false,
         "mandatory": false
       }
     ],
@@ -2373,14 +2409,14 @@
     "avg_output_tokens_per_turn": 2301.253164556962,
     "thinking_share": 0.9011454041734737,
     "wild_battles": 19,
-    "wild_battle_turns": 33,
+    "wild_battle_turns": 27,
     "trainer_battles": [
       {
         "group": "102",
         "id": 102,
         "name": "Bug Catcher Rick",
-        "attempts": 1,
-        "turns": 7,
+        "attempts": 2,
+        "turns": 14,
         "won": true,
         "mandatory": false
       },
@@ -2398,7 +2434,7 @@
         "id": 142,
         "name": "Camper Liam",
         "attempts": 1,
-        "turns": 1,
+        "turns": 4,
         "won": true,
         "mandatory": false
       },
@@ -2416,21 +2452,12 @@
         "id": 414,
         "name": "Leader Brock",
         "attempts": 1,
-        "turns": 10,
+        "turns": 6,
         "won": true,
         "mandatory": true
-      },
-      {
-        "group": "unknown",
-        "id": null,
-        "name": "Unknown trainer",
-        "attempts": 1,
-        "turns": 0,
-        "won": false,
-        "mandatory": false
       }
     ],
-    "trainer_battle_turns": 29,
+    "trainer_battle_turns": 35,
     "battle_turn_share": 0.2616033755274262,
     "battle_fidelity": "backfill",
     "overworld_steps": null,
