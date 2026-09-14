@@ -43,8 +43,8 @@ from typing import Any, Optional
 
 from src.referee.battles import (
     GAME_STAT_TOTAL_BATTLES, GAME_STAT_TRAINER_BATTLES, GAME_STAT_WILD_BATTLES, GMAIN_IN_BATTLE_BYTE,
-    NUM_GAME_STATS, SB1_GAME_STATS, SB2_ENCRYPTION_KEY, BattleTracker, decode_game_stat, decode_trainer_flags,
-    in_battle_from_byte,
+    GTRAINER_BATTLE_OPPONENT_A, NUM_GAME_STATS, SB1_GAME_STATS, SB2_ENCRYPTION_KEY, BattleTracker, decode_game_stat,
+    decode_trainer_flags, in_battle_from_byte,
 )
 from src.referee.checkpoints import Checkpoint, MultiGate, Node
 from src.referee import trace
@@ -310,7 +310,7 @@ class Referee:
             # Battle telemetry reads. Best-effort: an emulator (or test fake)
             # that cannot serve them leaves the battle fields None for this
             # poll; the gate latch above must never depend on them.
-            key = in_battle_byte = None
+            key = in_battle_byte = opponent = None
             try:
                 sb2_ptr = self._read_u32(GSAVEBLOCK2_PTR)
                 if self._in_ewram(sb2_ptr):
@@ -318,9 +318,13 @@ class Referee:
                 in_battle_byte = self.emulator.read_memory(GMAIN_IN_BATTLE_BYTE, 1)[0]
             except Exception:
                 key = in_battle_byte = None
+            try:
+                opponent = int.from_bytes(self.emulator.read_memory(GTRAINER_BATTLE_OPPONENT_A, 2), "little")
+            except Exception:
+                opponent = None
             if key is not None:
                 self.last_encryption_key = key
-            return _MemorySnapshot(block, party_count, key=key, in_battle_byte=in_battle_byte)
+            return _MemorySnapshot(block, party_count, key=key, in_battle_byte=in_battle_byte, opponent=opponent)
 
         # Pointer kept moving across both attempts — give up for this poll.
         return None
@@ -815,14 +819,15 @@ class _MemorySnapshot:
     decodes fields lazily on access. All multi-byte fields are little-endian.
     """
 
-    __slots__ = ("_block", "party_count", "key", "in_battle_byte")
+    __slots__ = ("_block", "party_count", "key", "in_battle_byte", "opponent")
 
     def __init__(self, block: bytes, party_count: int, key: Optional[int] = None,
-                 in_battle_byte: Optional[int] = None) -> None:
+                 in_battle_byte: Optional[int] = None, opponent: Optional[int] = None) -> None:
         self._block = block
         self.party_count = party_count
         self.key = key  # SaveBlock2 encryptionKey; None when the read failed
         self.in_battle_byte = in_battle_byte  # gMain byte holding inBattle; None when unread
+        self.opponent = opponent  # gTrainerBattleOpponent_A; None when unread
 
     def battle_state(self) -> Optional[dict]:
         """Kwargs for ``BattleTracker.record`` or None when this poll cannot say."""
@@ -834,6 +839,7 @@ class _MemorySnapshot:
             "wild": decode_game_stat(self._block, GAME_STAT_WILD_BATTLES, self.key),
             "trainer": decode_game_stat(self._block, GAME_STAT_TRAINER_BATTLES, self.key),
             "trainers": decode_trainer_flags(self._block, SB1_FLAGS),
+            "opponent": self.opponent,
         }
 
     @property

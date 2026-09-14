@@ -23,7 +23,7 @@ def test_synthesis_places_one_wild_battle_at_the_visible_segment_and_charges_its
     states = {t: t in (14, 15, 16) for t in range(1, 22)}
     recs = synthesize_records(records, states)
     by_turn = {r[0]: r for r in recs}
-    assert by_turn[12][2] == 0 and by_turn[13] == (13, True, 1, 1, 0, ()) and by_turn[16][1] is False
+    assert by_turn[12][2] == 0 and by_turn[13] == (13, True, 1, 1, 0, (), None) and by_turn[16][1] is False
     s = _summary(records, states)
     assert s["wild"] == {"count": 1, "turns": 3, "segments": 1}
     assert s["turns_started_in_battle"] == 3
@@ -56,7 +56,7 @@ def test_synthesis_keeps_a_battle_running_across_a_savepoint_as_one_battle():
     states = {t: t in (10, 11, 12) for t in range(1, 22)}  # started during 9, ends during 12
     recs = synthesize_records(records, states)
     # recs[i] is turn i+1: turn 10 is the exact savepoint (still in battle), turn 11 still in, turn 12 ends it
-    assert recs[9] == (10, True, 1, 1, 0, ()) and recs[10][1] is True and recs[11][1] is False
+    assert recs[9] == (10, True, 1, 1, 0, (), None) and recs[10][1] is True and recs[11][1] is False
     assert recs[8][2] == 1  # the counter moved during turn 9, when the battle began
     s = _summary(records, states)
     assert s["wild"]["count"] == 1 and s["wild"]["turns"] == 3  # turns 10, 11, 12 started inside it
@@ -129,7 +129,7 @@ def test_hints_decide_the_kind_when_segments_tie_and_a_long_fight_runs_past_the_
     for hints in (None, {196: {"kind": "wild", "trainer_id": None}, 200: {"kind": "trainer", "trainer_id": 102}}):
         recs = synthesize_records(records, states, hints)
         by = {r[0]: r for r in recs}
-        assert by[196] == (196, True, 1, 1, 0, ()), hints         # wild opened at 196
+        assert by[196] == (196, True, 1, 1, 0, (), None), hints         # wild opened at 196
         assert by[200][4] == 1 and by[200][1] is True, hints        # trainer opened at 200
         t = BattleTracker()
         if hints:
@@ -185,3 +185,40 @@ def test_load_steps_backfill_accepts_both_shapes(tmp_path):
     assert load_steps_backfill(tmp_path) is None
     (tmp_path / "steps_backfill.json").write_text(json.dumps({"turns": [{"turn": 1, "overworld_steps": 4}, {"turn": "x"}], "steps": {"2": 5}}))
     assert load_steps_backfill(tmp_path) == {1: 4, 2: 5}
+
+
+def test_synthesis_puts_the_savepoint_opponent_id_on_the_turn_the_trainer_fight_opened():
+    """Savepoint 20 reads opponent 102 (Rick) with the trainer counter up by one;
+    the screenshots show the fight from turn 15 to 17. Turns before 14 keep the
+    previous value (None), the opening turn 14 and everything after carry 102,
+    so the tracker names the fight at its counter step — and the summary names
+    Rick even though no flag was set (a LOST fight)."""
+    records = [[10, False, 0, 0, 0, [], None], [20, False, 1, 0, 1, [], 102]]
+    states = {t: t in (15, 16, 17) for t in range(1, 22)}
+    recs = synthesize_records(records, states)
+    by = {r[0]: r for r in recs}
+    assert by[13][6] is None and by[14] == (14, True, 1, 0, 1, (), 102) and by[20][6] == 102
+    t = BattleTracker()
+    for r in recs:
+        t.record(*r)
+    g, = t.summary()["trainers"]
+    assert (g["id"], g["attempts"], g["turns"], g["won"]) == (102, 1, 3, False)
+    # Six-field records (pre-opponent backfills) still synthesize, with None.
+    assert synthesize_records([[10, False, 0, 0, 0, []]], {})[-1][6] is None
+
+
+def test_synthesis_leaves_the_first_of_two_fights_in_a_window_unnamed_rather_than_stale():
+    """Window 20→30: two trainer fights (counter +2), the savepoint reads opponent 414
+    (Brock, the last one). The earlier fight's opponent was never read, so its turns
+    carry None — not 104 from the previous window — and a flag names it instead."""
+    records = [[10, False, 0, 0, 0, [], None], [20, False, 1, 0, 1, [104], 104], [30, True, 3, 0, 3, [104, 142], 414]]
+    states = {t: t in (15, 16, 23, 24, 27, 28, 29, 30, 31) for t in range(1, 33)}
+    recs = synthesize_records(records, states)
+    by = {r[0]: r for r in recs}
+    assert by[14][6] == 104 and by[22][6] is None and by[26][6] == 414 and by[30][6] == 414
+    t = BattleTracker()
+    for r in recs:
+        t.record(*r)
+    segs = [x for x in t.segments() if x["kind"] == "trainer"]
+    # Sammy named by the savepoint at 20; the first Pewter fight named by Liam's flag; Brock still open at the end.
+    assert [(x["opened_turn"], x["trainer_id"], x["won"]) for x in segs] == [(14, 104, True), (22, 142, True), (26, 414, False)]

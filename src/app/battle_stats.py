@@ -95,8 +95,8 @@ def _load_json(path: Path) -> Optional[dict]:
 def synthesize_records(records: list, states: dict[int, bool], hints: Optional[dict[int, dict[str, Any]]] = None) -> list[tuple]:
     """Per-turn records from 10-turn savepoint records + per-turn start states.
 
-    ``records`` — ``[turn, in_battle, total, wild, trainer, [ids]]`` at savepoint
-    turns (exact). ``states[t]`` — was turn ``t`` STARTED in a battle (screenshot
+    ``records`` — ``[turn, in_battle, total, wild, trainer, [ids], opponent]`` at
+    savepoint turns (exact; a 6-field record has no opponent). ``states[t]`` — was turn ``t`` STARTED in a battle (screenshot
     classifier); the state after turn ``t`` is therefore ``states[t+1]``.
 
     Inside each window (a, b]: visible battle segments are the maximal runs of
@@ -108,20 +108,22 @@ def synthesize_records(records: list, states: dict[int, bool], hints: Optional[d
     segment of the window closed, else on ``b``, so the tracker credits the
     right attempt.
     """
-    recs = sorted((tuple(r) for r in records if isinstance(r, (list, tuple)) and len(r) == 6), key=lambda r: r[0])
+    recs = sorted((tuple(r) for r in records if isinstance(r, (list, tuple)) and len(r) in (6, 7)), key=lambda r: r[0])
     if not recs:
         return []
     out: list[tuple] = []
     prev: Optional[tuple] = None
     for rec in recs:
         b, in_b, total, wild, trainer, flags = int(rec[0]), bool(rec[1]), int(rec[2]), int(rec[3]), int(rec[4]), tuple(sorted(rec[5]))
+        opponent = int(rec[6]) if len(rec) == 7 and rec[6] is not None else None
         if prev is None:
             a = 0
             p_total = p_wild = p_trainer = 0
             p_flags: tuple = ()
             p_in = False
+            p_opp = None
         else:
-            a, p_in, p_total, p_wild, p_trainer, p_flags = prev[0], prev[1], prev[2], prev[3], prev[4], prev[5]
+            a, p_in, p_total, p_wild, p_trainer, p_flags, p_opp = prev[0], prev[1], prev[2], prev[3], prev[4], prev[5], prev[6]
         turns = list(range(a + 1, b + 1))
         # after-state per turn: classifier for interior turns, the exact bit at b
         after = {t: bool(states.get(t + 1, False)) for t in turns}
@@ -205,9 +207,18 @@ def synthesize_records(records: list, states: dict[int, bool], hints: Optional[d
             trainer_segs = [carried_seg]  # the flag belongs to the battle that ran into this window
         flag_turn = max(x[1] + 1 for x in trainer_segs) if trainer_segs else b
         flag_turn = min(flag_turn, b)
+        # The savepoint's opponent id names the LAST trainer fight started in the
+        # window: it applies from that fight's opening turn on, so the tracker
+        # reads it at the counter step. Earlier turns keep the previous value —
+        # unless a second trainer fight started in this window before it, whose
+        # opponent nobody read: those turns carry None (unknown), never the stale
+        # value from the last window (that named a Pewter fight "Sammy").
+        opp_turn = max(x[0] for x in trainer_segs) if trainer_segs and d_trainer > 0 else b
+        carried_opp = None if d_trainer >= 2 else p_opp
         # emit per-turn records
         cur_total, cur_wild, cur_trainer = p_total, p_wild, p_trainer
         cur_flags = list(p_flags)
+        cur_opp = carried_opp
         for t in turns:
             for k in opens.get(t, []) + contained_at.get(t, []):
                 cur_total += 1
@@ -221,11 +232,13 @@ def synthesize_records(records: list, states: dict[int, bool], hints: Optional[d
                 cur_wild += contained_wild
             if t == flag_turn:
                 cur_flags = sorted(set(cur_flags) | set(new_flags))
-            out.append((t, after[t], cur_total, cur_wild, cur_trainer, tuple(cur_flags)))
+            if t >= opp_turn:
+                cur_opp = opponent
+            out.append((t, after[t], cur_total, cur_wild, cur_trainer, tuple(cur_flags), cur_opp))
         # exactness at b: the savepoint's own values win
         if turns:
-            out[-1] = (b, in_b, total, wild, trainer, flags)
-        prev = (b, in_b, total, wild, trainer, flags)
+            out[-1] = (b, in_b, total, wild, trainer, flags, opponent)
+        prev = (b, in_b, total, wild, trainer, flags, opponent)
     return out
 
 
@@ -239,8 +252,8 @@ def cap_records(records: list, turns: int) -> list:
     excluded play)."""
     if not turns:
         return list(records)
-    kept = [r for r in records if isinstance(r, (list, tuple)) and len(r) == 6 and int(r[0]) <= turns]
-    later = [r for r in records if isinstance(r, (list, tuple)) and len(r) == 6 and int(r[0]) > turns]
+    kept = [r for r in records if isinstance(r, (list, tuple)) and len(r) in (6, 7) and int(r[0]) <= turns]
+    later = [r for r in records if isinstance(r, (list, tuple)) and len(r) in (6, 7) and int(r[0]) > turns]
     if later and (not kept or int(kept[-1][0]) < turns):
         first = min(later, key=lambda r: int(r[0]))
         kept.append([turns, *first[1:]])

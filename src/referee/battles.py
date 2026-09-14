@@ -43,6 +43,13 @@ GAME_STAT_TOTAL_BATTLES = 7
 GAME_STAT_WILD_BATTLES = 8
 GAME_STAT_TRAINER_BATTLES = 9
 
+# The trainer the player is (or was last) fighting: gTrainerBattleOpponent_A,
+# u16 in EWRAM. Set when a trainer battle starts and kept until the next one,
+# so read at the poll where the trainer counter stepped it names that fight —
+# won OR lost — with no flag needed. Verified 2026-09-14 on mid-fight save
+# states of six runs (142 during Liam, 414 during Brock, 104 after Sammy).
+GTRAINER_BATTLE_OPPONENT_A = 0x020386AE
+
 TRAINER_FLAGS_START = 0x500
 TRAINER_FLAGS_END = 0x7FF  # inclusive
 
@@ -100,7 +107,7 @@ def in_battle_from_byte(b: int) -> bool:
 
 
 # One record per poll: [turn, in_battle, total, wild, trainer, [trainer ids set]]
-Record = tuple[int, bool, int, int, int, tuple[int, ...]]
+Record = tuple[int, bool, int, int, int, tuple[int, ...], Optional[int]]  # …, opponent id (None when unread)
 
 
 class BattleTracker:
@@ -108,17 +115,17 @@ class BattleTracker:
 
     def __init__(self) -> None:
         self.records: list[Record] = []
-        # Optional: the turn a trainer battle began → trainer id, from a source
-        # other than the flags (the backfill reads it off the run's OCR text:
-        # "BUG CATCHER RICK would like to battle!"). Names a LOST attempt, which
-        # sets no flag, instead of guessing from the next win.
+        # Optional fallback: the turn a trainer battle began → trainer id, from
+        # the run's OCR text ("BUG CATCHER RICK would like to battle!"). Used
+        # only when the record carries no opponent id (pre-2026-09-14 data).
         self.identity_hints: dict[int, int] = {}
 
     # --- input ----------------------------------------------------------------
 
     def record(self, turn: int, in_battle: bool, total: int, wild: int, trainer: int,
-               trainers: list[int] | tuple[int, ...]) -> dict[str, Any]:
-        rec: Record = (int(turn), bool(in_battle), int(total), int(wild), int(trainer), tuple(sorted(int(t) for t in trainers)))
+               trainers: list[int] | tuple[int, ...], opponent: Optional[int] = None) -> dict[str, Any]:
+        rec: Record = (int(turn), bool(in_battle), int(total), int(wild), int(trainer), tuple(sorted(int(t) for t in trainers)),
+                       int(opponent) if opponent is not None else None)
         # A re-poll of the same turn (retry) replaces the earlier record.
         if self.records and self.records[-1][0] == rec[0]:
             self.records[-1] = rec
@@ -127,13 +134,13 @@ class BattleTracker:
         prev = self.records[-2] if len(self.records) > 1 else None
         return {
             "turn": rec[0], "in_battle": rec[1], "battles_total": rec[2], "wild_battles": rec[3],
-            "trainer_battles": rec[4],
+            "trainer_battles": rec[4], "opponent": rec[6],
             "new_battles": rec[2] - (prev[2] if prev else 0),
             "trainers_new": [t for t in rec[5] if not prev or t not in prev[5]],
         }
 
     def export_state(self) -> dict[str, Any]:
-        return {"battle_records": [[r[0], r[1], r[2], r[3], r[4], list(r[5])] for r in self.records]}
+        return {"battle_records": [[r[0], r[1], r[2], r[3], r[4], list(r[5]), r[6]] for r in self.records]}
 
     def load_state(self, data: Any) -> None:
         """Restore records (everything else is recomputed). Tolerant of junk."""
@@ -141,10 +148,11 @@ class BattleTracker:
         raw = data.get("battle_records") if isinstance(data, dict) else None
         for entry in raw or []:
             try:
-                if len(entry) != 6:
+                if len(entry) not in (6, 7):
                     continue
+                opp = entry[6] if len(entry) == 7 and entry[6] is not None else None
                 out.append((int(entry[0]), bool(entry[1]), int(entry[2]), int(entry[3]), int(entry[4]),
-                            tuple(sorted(int(t) for t in entry[5]))))
+                            tuple(sorted(int(t) for t in entry[5])), int(opp) if opp is not None else None))
             except (TypeError, ValueError):
                 continue
         self.records = out
@@ -180,9 +188,39 @@ class BattleTracker:
             return {"kind": kind, "opened_turn": turn, "closed_turn": None, "turns": 0, "turn_list": [],
                     "trainer_id": None, "won": None}
 
+        def settle_flags(new_flags: list[int], turn: int) -> None:
+            # A defeated-flag with no counter move is NOT a fight. Seen once,
+            # gpt-6-astra medium: Camper Liam's flag rose in the same window as
+            # Brock's with one counted battle, and the screenshots show the run
+            # walking past Liam straight to Brock. The segment is kept, marked
+            # `uncounted`, so the record explains the flag; summary() skips it.
+            for tid in new_flags:
+                # A flag landing after a NAMED attempt with that id (the backfill
+                # places flags at a savepoint, the opponent id / OCR placed the
+                # fight) confirms that attempt as the win instead of adding a
+                # phantom one.
+                hinted = [x for x in segs if x["kind"] == "trainer" and x["trainer_id"] == tid and x["won"] is not True]
+                if hinted:
+                    hinted[-1]["won"] = True
+                    continue
+                # Likewise an UNIDENTIFIED closed attempt just before it: that
+                # fight is the one the flag rewards (backfill puts the flag on
+                # the savepoint turn, up to a window after the fight closed).
+                unnamed = [x for x in segs if x["kind"] == "trainer" and x["trainer_id"] is None and x["won"] is not True]
+                if unnamed:
+                    unnamed[-1]["trainer_id"] = tid; unnamed[-1]["won"] = True
+                    continue
+                seg = new_segment("trainer", turn); seg["closed_turn"] = turn
+                seg["trainer_id"] = tid; seg["won"] = True; seg["uncounted"] = True
+                segs.append(seg)
+
         for rec in self.records:
-            turn, in_battle, total, wild, trainer, flags = rec
+            turn, in_battle, total, wild, trainer, flags, opponent = rec
             p_total, p_wild, p_trainer, p_flags = (prev[2], prev[3], prev[4], prev[5]) if prev else (0, 0, 0, ())
+            # Who the trainer fight(s) started this turn were against: the
+            # opponent id read at this poll names the LAST one started (it is
+            # set at battle start and kept), the OCR hint is the fallback.
+            named = opponent if opponent is not None else self.identity_hints.get(turn)
             new_total, new_wild, new_trainer = total - p_total, wild - p_wild, trainer - p_trainer
             new_flags = [t for t in flags if t not in p_flags]
             if open_seg is not None:
@@ -190,8 +228,13 @@ class BattleTracker:
                 open_seg["turns"] += 1
                 open_seg["turn_list"].append(turn)
                 if new_total == 0 and in_battle:
+                    # Same battle, still going. A flag landing now belongs to an
+                    # EARLIER fight (a backfill window puts flags on its savepoint
+                    # turn, which can fall inside the next fight) — settle it.
+                    if new_flags:
+                        settle_flags([f for f in new_flags if f != open_seg["trainer_id"]], turn)
                     prev = rec
-                    continue  # same battle, still going
+                    continue
                 open_seg["closed_turn"] = turn
                 if open_seg["kind"] == "trainer" and new_flags and open_seg["trainer_id"] in new_flags:
                     new_flags.remove(open_seg["trainer_id"]); open_seg["won"] = True  # hinted id confirmed by its flag
@@ -221,40 +264,24 @@ class BattleTracker:
                 # Battles that began and ended inside this turn cost 0 turns (5a).
                 for _ in range(max(contained_wild, 0)):
                     seg = new_segment("wild", turn); seg["closed_turn"] = turn; segs.append(seg)
-                for _ in range(max(contained_trainer, 0)):
+                n_contained = max(contained_trainer, 0)
+                for i in range(n_contained):
                     seg = new_segment("trainer", turn); seg["closed_turn"] = turn
-                    if new_flags:
+                    last_started = open_kind != "trainer" and i == n_contained - 1
+                    if last_started and named is not None:
+                        seg["trainer_id"] = named
+                        if named in new_flags:
+                            new_flags.remove(named); seg["won"] = True
+                        else:
+                            seg["won"] = False
+                    elif new_flags:
                         seg["trainer_id"] = new_flags.pop(0); seg["won"] = True
-                    elif turn in self.identity_hints:
-                        seg["trainer_id"] = self.identity_hints[turn]; seg["won"] = False
                     segs.append(seg)
                 if open_kind is not None:
                     open_seg = new_segment(open_kind, turn)
-                    if open_kind == "trainer" and turn in self.identity_hints:
-                        open_seg["trainer_id"] = self.identity_hints[turn]
-            # A defeated-flag with no counter move is NOT a fight. Seen once,
-            # gpt-6-astra medium: Camper Liam's flag rose in the same window as
-            # Brock's with one counted battle, and the screenshots show the run
-            # walking past Liam straight to Brock. The segment is kept, marked
-            # `uncounted`, so the record explains the flag; summary() skips it.
-            for tid in new_flags:
-                # A flag landing after a HINTED attempt with that id (the backfill
-                # places flags at a savepoint, the OCR placed the fight) confirms
-                # that attempt as the win instead of adding a phantom one.
-                hinted = [x for x in segs if x["kind"] == "trainer" and x["trainer_id"] == tid and x["won"] is not True]
-                if hinted:
-                    hinted[-1]["won"] = True
-                    continue
-                # Likewise an UNIDENTIFIED closed attempt just before it: that
-                # fight is the one the flag rewards (backfill puts the flag on
-                # the savepoint turn, up to a window after the fight closed).
-                unnamed = [x for x in segs if x["kind"] == "trainer" and x["trainer_id"] is None and x["won"] is not True]
-                if unnamed:
-                    unnamed[-1]["trainer_id"] = tid; unnamed[-1]["won"] = True
-                    continue
-                seg = new_segment("trainer", turn); seg["closed_turn"] = turn
-                seg["trainer_id"] = tid; seg["won"] = True; seg["uncounted"] = True
-                segs.append(seg)
+                    if open_kind == "trainer" and named is not None:
+                        open_seg["trainer_id"] = named
+            settle_flags(new_flags, turn)
             prev = rec
         if open_seg is not None:
             segs.append(open_seg)  # still fighting when the run ended

@@ -19,6 +19,13 @@
   const head = $derived(headlineSeries(rows, gateIds, pool))
   const sec = $derived(secondarySeries(rows, gateIds, pool))
   const bat = $derived(battleSeries(rows, pool))
+  // Every card but Performance shows only runs that cleared Route 1 (Andreas
+  // 2026-09-14): before it a run has too little play to say anything.
+  const past1 = (s) => s.row.gateTurns != null && s.row.gateTurns.route1_reached != null
+  const ROUTE1 = 'did not clear Route 1.'
+  const offNote = (n, why) => n ? `${n} selected model${n === 1 ? '' : 's'} not shown: ${why}` : ''
+  const early = $derived(rows.filter((r) => !(r.gateTurns != null && r.gateTurns.route1_reached != null)).length)
+  const earlyNote = $derived(offNote(early, ROUTE1))
 
   const tip = (s, fmt) => {
     const base = `${s.row.model}: ${fmt(s.value)} per task`
@@ -27,11 +34,11 @@
   }
   const performance = $derived(head.performance.map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true,
     above: s.complete ? `${s.row.turns}T` : null, tip: `${s.row.model}: ${s.label}${s.complete ? `, cleared in ${s.row.turns} turns` : ''}` })))
-  const cost = $derived(head.cost.filter((s) => s.eligible).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: s.complete, tip: tip(s, fmtUsd) })))
-  const time = $derived(head.time.filter((s) => s.eligible).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: s.complete, tip: tip(s, fmtMinutes) })))
-  const cost10 = $derived(sec.cost10.map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true, tip: `${s.row.model}: ${s.label} per 10 turns` })))
-  const speed = $derived(sec.speed.map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true, tip: `${s.row.model}: ${s.label} turns/min (${s.row.avgSPerTurn.toFixed(1)}s per turn)` })))
-  const turnsPerTask = $derived(sec.turnsPerTask.filter((s) => s.eligible).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: s.complete,
+  const cost = $derived(head.cost.filter((s) => s.eligible && past1(s)).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: s.complete, tip: tip(s, fmtUsd) })))
+  const time = $derived(head.time.filter((s) => s.eligible && past1(s)).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: s.complete, tip: tip(s, fmtMinutes) })))
+  const cost10 = $derived(sec.cost10.filter(past1).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true, tip: `${s.row.model}: ${s.label} per 10 turns` })))
+  const speed = $derived(sec.speed.filter(past1).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true, tip: `${s.row.model}: ${s.label} turns/min (${s.row.avgSPerTurn.toFixed(1)}s per turn)` })))
+  const turnsPerTask = $derived(sec.turnsPerTask.filter((s) => s.eligible && past1(s)).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: s.complete,
     tip: `${s.row.model}: ${s.label} turns per task${s.complete ? '' : ` · projected ${Math.round(s.projected)} turns to beat Brock`}` })))
   const leftOff = $derived(sec.turnsPerTask.filter((s) => !s.eligible).length)
   // Inputs per turn: the tooltip names the run's three most-pressed inputs.
@@ -40,35 +47,34 @@
     const total = Object.values(c).reduce((a, b) => a + b, 0) || 1
     return Object.entries(c).slice(0, 3).map(([k, n]) => `${k} ${Math.round(n / total * 100)}%`).join(', ')
   }
-  const inputsPerTurn = $derived(sec.inputsPerTurn.filter((s) => s.eligible).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true,
+  const inputsPerTurn = $derived(sec.inputsPerTurn.filter((s) => s.eligible && past1(s)).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true,
     tip: `${s.row.model}: ${s.label} inputs per turn on average${mix(s.row) ? ` · most pressed: ${mix(s.row)}` : ''}` })))
-  const noInputs = $derived(sec.inputsPerTurn.filter((s) => !s.eligible).length)
-  const inputsNote = $derived(noInputs ? `${noInputs} selected model${noInputs === 1 ? '' : 's'} not shown: the run predates per-turn input records.` : '')
+  const noInputs = $derived(sec.inputsPerTurn.filter((s) => !s.eligible && past1(s)).length)
+  const inputsNote = $derived([earlyNote, offNote(noInputs, 'the run predates per-turn input records.')].filter(Boolean).join(' '))
   // Output tokens per turn: thinking + reply over every call; the tooltip gives
   // the thinking share where the route reports reasoning tokens.
   // A run that did not finish is DOTTED (Andreas 2026-09-14; the hatch means
   // projected, this value is measured): models think
   // more as the game gets harder, so a run that ended early averaged over the
   // cheap early game only — its bar is low partly for that reason.
-  const outputTokens = $derived(sec.outputTokens.filter((s) => s.eligible).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true, partial: s.row.completion < 100,
+  const outputTokens = $derived(sec.outputTokens.filter((s) => s.eligible && past1(s)).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true, partial: s.row.completion < 100,
     tip: `${s.row.model}: ${fmtTokens(s.value)} output tokens per turn on average (thinking + reply, all calls)${s.row.thinkingShare != null ? ` · ${Math.round(s.row.thinkingShare * 100)}% of them thinking` : ''}${s.row.completion >= 100 ? '' : ` · run ended at ${Math.round(s.row.completion)}%: averaged over the early game only`}` })))
-  const noTokens = $derived(sec.outputTokens.filter((s) => !s.eligible).length)
+  const noTokens = $derived(sec.outputTokens.filter((s) => !s.eligible && past1(s)).length)
   // Battles + movement (2026-09-14). Fidelity words for the tooltips.
   const STEPS_FID = { trace: 'steps traced per input', video: 'steps counted from the recording', bound: 'steps are a lower bound between per-turn polls, so this is an upper bound', mixed: 'steps partly traced, partly bounded' }
   const BAT_FID = { live: 'battles polled every turn', backfill: 'battle counts from savepoints, turns from screenshots', savepoint: 'battle counts from savepoints' }
-  const offNote = (n, why) => n ? `${n} selected model${n === 1 ? '' : 's'} not shown: ${why}` : ''
-  const movement = $derived(bat.movement.filter((s) => s.eligible).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true, partial: s.row.completion < 100,
+  const movement = $derived(bat.movement.filter((s) => s.eligible && past1(s)).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true, partial: s.row.completion < 100,
     tip: `${s.row.model}: ${s.label} — shortest path ${s.row.shortestSteps} of ${s.row.overworldSteps} steps over its map legs (the unfinished leg credited with the ground it gained) · ${STEPS_FID[s.fidelity] || ''}${s.row.completion < 100 ? ` · run ended at ${Math.round(s.row.completion)}%` : ''}` })))
-  const movementNote = $derived(offNote(bat.movement.filter((s) => !s.eligible).length, 'no closed map leg to measure.'))
+  const movementNote = $derived([earlyNote, offNote(bat.movement.filter((s) => !s.eligible && past1(s)).length, 'no map leg to measure.')].filter(Boolean).join(' '))
   const wildTurns = $derived(bat.wildTurns.filter((s) => s.eligible).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true, partial: false,
     tip: `${s.row.model}: ${s.row.wildBattleTurns} turns started inside ${s.row.wildBattles} wild battle${s.row.wildBattles === 1 ? '' : 's'} = ${s.label} per battle · ${BAT_FID[s.row.battleFidelity] || ''}` })))
-  const wildNote = $derived(offNote(bat.wildTurns.filter((s) => !s.eligible).length, 'did not clear Route 1, met no wild Pokémon, or has no per-turn battle state.'))
-  const trainerTurns = $derived(bat.trainerTurns.filter((s) => s.eligible).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true, partial: false,
+  const wildNote = $derived([earlyNote, offNote(bat.wildTurns.filter((s) => !s.eligible && past1(s)).length, 'met no wild Pokémon, or has no per-turn battle state.')].filter(Boolean).join(' '))
+  const trainerTurns = $derived(bat.trainerTurns.filter((s) => s.eligible && past1(s)).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true, partial: false,
     tip: `${s.row.model}: ${s.label} turns per trainer battle — ${s.measured} turns over ${s.attempts} fight${s.attempts === 1 ? '' : 's'} (${(s.row.trainerBattles || []).filter((g) => g.attempts > 0 && !s.uncounted.some((u) => u.group === g.group)).map((g) => `${g.name} ${g.turns}T${g.attempts > 1 ? ` in ${g.attempts} attempts` : ''}${g.won ? '' : ', not won'}`).join('; ')})${s.uncounted.length ? ` · not counted: ${s.uncounted.map((u) => `${u.name} ${u.turns}T (only ${u.n} run${u.n === 1 ? '' : 's'} met them)`).join(', ')}` : ''}${s.projected ? ` + ${s.missing.map((m) => `${m.name} projected at ${m.turns.toFixed(1)} (pace ${s.pace.toFixed(2)}× the field mean ${m.typical.toFixed(1)} over ${m.n} fights)`).join(', ')}` : ''}` })))
   const TRAINER_PROJ = `* Every bar mixes measured and projected fights: each trainer the run did not fight is charged one fight at the run's pace × the field's mean turns for that trainer (once ${MIN_BATTLE_OBSERVATIONS}+ runs have fought them). The runs × trainers table on Estimation methods shows which fights are measured and which are projected.`
-  const trainerNote = $derived(TRAINER_PROJ + ' ' + offNote(bat.trainerTurns.filter((s) => !s.eligible).length, 'no trainer fought yet, or no per-turn battle state.'))
+  const trainerNote = $derived([TRAINER_PROJ, earlyNote, offNote(bat.trainerTurns.filter((s) => !s.eligible && past1(s)).length, 'no trainer fought yet, or no per-turn battle state.')].filter(Boolean).join(' '))
   const TOKENS_BIAS = '* Models think more as the game gets harder: over the runs with 80+ turns, the last 40 turns cost a median 1.65× the output tokens of the first 40. A run that ended early (dotted) averaged over the cheap early game only, so its bar is low partly for that reason.'
-  const tokensNote = $derived(TOKENS_BIAS + (noTokens ? ` ${noTokens} selected model${noTokens === 1 ? '' : 's'} not shown: the run recorded no token usage.` : ''))
+  const tokensNote = $derived([TOKENS_BIAS, earlyNote, offNote(noTokens, 'the run recorded no token usage.')].filter(Boolean).join(' '))
   const leftNote = $derived(leftOff ? `${leftOff} selected model${leftOff === 1 ? '' : 's'} not shown: never reached ${fromGate}, so nothing to project.` : '')
 
   const SECTIONS = [
@@ -113,12 +119,12 @@
           <BarCard title="Cost per task" subtitle={`USD to beat Brock ÷ ${nGates} gates · partial runs projected (hatched) · Lower is better`}
             entries={cost} picker pickerRows={pool} narrowFrom={18} bars={300} {oninspect} />
           <PlotCard kind="cost" {pool} {onpick} />
-          <BarCard title="Cost per 10 turns" subtitle="Average USD for ten turns, all calls included · Lower is better" entries={cost10} picker pickerRows={pool} narrowFrom={18} bars={220} {oninspect} />
+          <BarCard title="Cost per 10 turns" subtitle="Average USD for ten turns, all calls included · Lower is better" entries={cost10} picker pickerRows={pool} narrowFrom={18} bars={220} {oninspect} note={earlyNote} />
         {:else if s.id === 'speed'}
           <BarCard title="Time per task" subtitle={`Minutes to beat Brock ÷ ${nGates} gates · partial runs projected (hatched) · Lower is better`}
             entries={time} picker pickerRows={pool} narrowFrom={18} bars={300} {oninspect} />
           <PlotCard kind="time" {pool} {onpick} />
-          <BarCard title="Turns per minute" subtitle="Wall clock, all turns of the run · Higher is better" entries={speed} picker pickerRows={pool} narrowFrom={18} bars={220} {oninspect} />
+          <BarCard title="Turns per minute" subtitle="Wall clock, all turns of the run · Higher is better" entries={speed} picker pickerRows={pool} narrowFrom={18} bars={220} {oninspect} note={earlyNote} />
         {:else}
           <BarCard title="Turns per task" subtitle={`Turns to beat Brock ÷ ${nGates} gates · partial runs projected (hatched) · Lower is better`}
             entries={turnsPerTask} picker pickerRows={pool} narrowFrom={18} bars={300} {oninspect} note={leftNote} />

@@ -38,7 +38,8 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from src.referee.battles import (  # noqa: E402
     GAME_STAT_TOTAL_BATTLES, GAME_STAT_TRAINER_BATTLES, GAME_STAT_WILD_BATTLES, GMAIN_IN_BATTLE_BYTE,
-    SB2_ENCRYPTION_KEY, BattleTracker, decode_game_stat, decode_trainer_flags, in_battle_from_byte,
+    GTRAINER_BATTLE_OPPONENT_A, SB2_ENCRYPTION_KEY, BattleTracker, decode_game_stat, decode_trainer_flags,
+    in_battle_from_byte,
 )
 from src.referee.referee import GSAVEBLOCK1_PTR, GSAVEBLOCK2_PTR, SB1_FLAGS  # noqa: E402
 
@@ -86,6 +87,7 @@ def decode(state: bytes) -> dict:
         "wild": decode_game_stat(block, GAME_STAT_WILD_BATTLES, key),
         "trainer": decode_game_stat(block, GAME_STAT_TRAINER_BATTLES, key),
         "trainers": decode_trainer_flags(block, SB1_FLAGS),
+        "opponent": struct.unpack_from("<H", state, _off(state, GTRAINER_BATTLE_OPPONENT_A))[0],
     }
 
 

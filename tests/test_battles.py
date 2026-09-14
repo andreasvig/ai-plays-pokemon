@@ -10,6 +10,7 @@ from __future__ import annotations
 import struct
 
 from src.referee.battles import (
+    GTRAINER_BATTLE_OPPONENT_A,
     GAME_STAT_TOTAL_BATTLES,
     GAME_STAT_TRAINER_BATTLES,
     GAME_STAT_WILD_BATTLES,
@@ -177,7 +178,8 @@ class BattleFakeEmulator:
     """Serves the referee's reads including the three battle reads. Set
     ``serve_battle=False`` to raise on them like a pre-2026-09-14 fake."""
 
-    def __init__(self, block: bytes, in_battle_byte: int = 0, serve_battle: bool = True):
+    def __init__(self, block: bytes, in_battle_byte: int = 0, serve_battle: bool = True, opponent: int = 0):
+        self.opponent = opponent  # gTrainerBattleOpponent_A
         self.block = block
         self.in_battle_byte = in_battle_byte
         self.serve_battle = serve_battle
@@ -197,6 +199,8 @@ class BattleFakeEmulator:
             return struct.pack("<I", KEY)
         if addr == GMAIN_IN_BATTLE_BYTE and length == 1:
             return bytes([self.in_battle_byte])
+        if addr == GTRAINER_BATTLE_OPPONENT_A and length == 2:
+            return struct.pack("<H", self.opponent)
         raise AssertionError(f"unexpected read addr={addr:#x} len={length}")
 
 
@@ -205,7 +209,7 @@ def test_referee_records_battle_state_every_poll_and_persists_it(tmp_path):
     log = FakeLogger()
     ref = Referee(make_ladder(), emu, log, tmp_path)
     ref.poll(1)
-    emu.block = stats_block(total=1, wild=1, trainer=0, map_group=4, map_num=0); emu.in_battle_byte = 0x02
+    emu.block = stats_block(total=1, wild=1, trainer=0, map_group=4, map_num=0); emu.in_battle_byte = 0x02; emu.opponent = 327
     ref.poll(2)
     emu.block = stats_block(total=1, wild=1, trainer=0, map_group=4, map_num=0); emu.in_battle_byte = 0x00
     ref.poll(3)
@@ -213,7 +217,7 @@ def test_referee_records_battle_state_every_poll_and_persists_it(tmp_path):
     assert [(e["turn"], e["in_battle"], e["wild_battles"], e["new_battles"]) for e in battle_events] == [
         (1, False, 0, 0), (2, True, 1, 1), (3, False, 1, 0)]
     state = ref.export_state()
-    assert state["battle_records"] == [[1, False, 0, 0, 0, []], [2, True, 1, 1, 0, []], [3, False, 1, 1, 0, []]]
+    assert state["battle_records"] == [[1, False, 0, 0, 0, [], 0], [2, True, 1, 1, 0, [], 327], [3, False, 1, 1, 0, [], 327]]  # opponent id read each poll
     card = ref.scorecard()["battles"]
     assert card["available"] and card["wild"] == {"count": 1, "turns": 1, "segments": 1}
     # A fresh referee restores the records from the persisted file.
@@ -241,3 +245,28 @@ def test_a_flag_landing_after_an_unnamed_closed_attempt_rewards_that_attempt():
               (140, True, 2, 0, 2, (142,)), (141, True, 2, 0, 2, (142,))])
     segs = [s for s in t.segments() if s["kind"] == "trainer"]
     assert [(s["opened_turn"], s["trainer_id"], s["won"], s.get("uncounted")) for s in segs] == [(135, 142, True, None), (140, 414, False, None)]
+
+
+def test_the_opponent_id_names_a_lost_fight_and_its_rematch_without_any_flag():
+    """Live 2026-09-14 design (option A): gTrainerBattleOpponent_A read at every
+    poll. Turn 2: Rick's fight starts (trainer counter 0→1, opponent 102), turn 3
+    it ends with no flag → LOST. Turn 4: the counter steps again with the same
+    opponent → rematch, flag lands at 5 → won. Two attempts on Rick, 2 turns,
+    won — with no OCR hint and no guess from the next flag."""
+    t = BattleTracker()
+    for r in [(1, False, 0, 0, 0, (), None), (2, True, 1, 0, 1, (), 102), (3, False, 1, 0, 1, (), 102),
+              (4, True, 2, 0, 2, (), 102), (5, False, 2, 0, 2, (102,), 102)]:
+        t.record(*r)
+    segs = [s for s in t.segments() if s["kind"] == "trainer"]
+    assert [(s["opened_turn"], s["trainer_id"], s["won"], s["turns"]) for s in segs] == [(2, 102, False, 1), (4, 102, True, 1)]
+    g, = t.summary()["trainers"]
+    assert (g["id"], g["attempts"], g["turns"], g["won"]) == (102, 2, 2, True)
+    # A contained trainer fight (started and over inside one turn) is named too, and lost when no flag lands.
+    t2 = BattleTracker()
+    for r in [(1, False, 0, 0, 0, (), None), (2, False, 1, 0, 1, (), 103)]:
+        t2.record(*r)
+    seg, = t2.segments()
+    assert (seg["trainer_id"], seg["won"], seg["turns"]) == (103, False, 0)
+    # Six-field records (pre-opponent state files) load with opponent None.
+    t3 = BattleTracker(); t3.load_state({"battle_records": [[1, False, 0, 0, 0, []], [2, True, 1, 0, 1, [], 327]]})
+    assert [r[6] for r in t3.records] == [None, 327]
