@@ -39,6 +39,14 @@ def test_decode_reads_tile_bit_and_counter_and_tolerates_missing_ranges():
     assert trace.decode_samples(rows, None)[0]["battles_total"] is None  # no key → no counter
 
 
+def test_a_blind_trace_reports_no_steps_rather_than_zero():
+    """Live 2026-09-14: the bridge returned rows with empty samples for every
+    input; recording 0 traced steps would have replaced the bound with a lie."""
+    rows = [("U", [b"", b"", b""]), ("R", [b"", b"", b""])]
+    d = trace.derive(trace.decode_samples(rows, KEY), start_tile=(3, 0, 0, 0), start_in_battle=False)
+    assert d["blind"] is True and d["overworld_steps"] is None and d["inputs"] == 2
+
+
 def test_derive_counts_steps_only_outside_battle_and_names_lost_inputs():
     """Walk right twice, bump a wall, get jumped by a wild Pokémon on the fourth
     press, then press A twice in the battle: 2 steps, 1 lost input, battle from
@@ -46,7 +54,7 @@ def test_derive_counts_steps_only_outside_battle_and_names_lost_inputs():
     rows = [row("R", 1, 0), row("R", 2, 0), row("R", 2, 0), row("R", 3, 0, in_battle=True, total=1),
             row("A", 3, 0, in_battle=True, total=1), row("A", 3, 0, in_battle=True, total=1)]
     d = trace.derive(trace.decode_samples(rows, KEY), start_tile=(3, 0, 0, 0), start_in_battle=False)
-    assert d == {"inputs": 6, "overworld_steps": 2, "inputs_lost": 1, "battle_inputs": 3,
+    assert d == {"inputs": 6, "blind": False, "overworld_steps": 2, "inputs_lost": 1, "battle_inputs": 3,
                  "battle_started_at": 3, "end_in_battle": True}
 
 
@@ -107,3 +115,5 @@ def test_referee_folds_the_trace_in_before_the_poll_and_logs_it(tmp_path):
     ref.poll(2)
     assert ref.export_state()["traced_steps"] == {"2": derived["overworld_steps"]}
     assert ref.record_trace(3, []) is None
+    blind = ref.record_trace(3, [("U", [b"", b"", b""])])
+    assert blind["blind"] and "3" not in ref.export_state()["traced_steps"]  # the bound stands for a blind turn

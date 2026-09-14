@@ -97,9 +97,13 @@ def derive(samples: list[dict[str, Any]], start_tile: Optional[tuple[int, int, i
             prev_tile = tile
         if batt is not None:
             prev_batt = batt
+    # A trace whose samples carry no tile at all (the bridge could not read the
+    # ranges) is BLIND: it must not report 0 steps as a measurement.
+    blind = not any(_tile(d) is not None for d in samples)
     return {
         "inputs": len(samples),
-        "overworld_steps": steps,
+        "blind": blind,
+        "overworld_steps": None if blind else steps,
         "inputs_lost": lost,
         "battle_inputs": battle_inputs,
         "battle_started_at": battle_started_at,

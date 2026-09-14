@@ -415,7 +415,8 @@ class Referee:
         start_tile = tuple(self.progress.positions[-1][1:]) if self.progress.positions else None
         start_in_battle = self.battles.records[-1][1] if self.battles.records else (False if turn_number <= 1 else None)
         derived = trace.derive(samples, start_tile, start_in_battle)
-        self.progress.record_traced_steps(turn_number, derived["overworld_steps"])
+        if derived["overworld_steps"] is not None:  # a blind trace leaves the between-poll bound in place
+            self.progress.record_traced_steps(turn_number, derived["overworld_steps"])
         self.logger.log_event("turn_input_trace", {"turn": turn_number, **derived, "samples": samples})
         return derived
 

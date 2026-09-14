@@ -36,6 +36,35 @@ local queue_ab_gap_frames = 20  -- ~330ms gap for A/B — wait for next dialogue
 local queue_frame_counter = 0
 local queue_state = "idle" -- "idle", "pressing", "waiting"
 
+-- Single press state
+local press_key = nil
+local press_frames_remaining = 0
+
+-- Live stream: auto-capture screenshot for dashboard (separate from agent's CAP)
+local stream_path = "/tmp/mgba_stream_1.png"
+-- Publish every emulator frame. The recorder samples this 60fps source at
+-- 30fps; source and sampler running at the same cadence phase-lock and
+-- occasionally skip a version, while 60→30 gives every output tick a fresh
+-- frame with timing headroom. Native 240×160 PNGs are only a few KB each.
+local stream_interval = 1  -- every emulator frame = 60fps source
+local stream_counter = 0
+
+-- Send a response to the Python server
+local function respond(msg)
+    if conn then
+        conn:send(msg .. "\n")
+    end
+end
+
+-- Hex-encode a raw byte string (lowercase, two chars per byte)
+local function tohex(bytes)
+    local parts = {}
+    for i = 1, #bytes do
+        parts[i] = string.format("%02x", string.byte(bytes, i))
+    end
+    return table.concat(parts)
+end
+
 -- Per-input trace (src/referee/trace.py): Python sets a TRACESPEC of raw
 -- memory ranges; after each input's gap the ranges are sampled and kept as
 -- "name|hex;hex" rows until TRACE collects them. The bridge stays dumb — it
@@ -67,34 +96,6 @@ local function trace_sample(name)
     table.insert(trace_rows, (name or "?") .. "|" .. table.concat(parts, ";"))
 end
 
--- Single press state
-local press_key = nil
-local press_frames_remaining = 0
-
--- Live stream: auto-capture screenshot for dashboard (separate from agent's CAP)
-local stream_path = "/tmp/mgba_stream_1.png"
--- Publish every emulator frame. The recorder samples this 60fps source at
--- 30fps; source and sampler running at the same cadence phase-lock and
--- occasionally skip a version, while 60→30 gives every output tick a fresh
--- frame with timing headroom. Native 240×160 PNGs are only a few KB each.
-local stream_interval = 1  -- every emulator frame = 60fps source
-local stream_counter = 0
-
--- Send a response to the Python server
-local function respond(msg)
-    if conn then
-        conn:send(msg .. "\n")
-    end
-end
-
--- Hex-encode a raw byte string (lowercase, two chars per byte)
-local function tohex(bytes)
-    local parts = {}
-    for i = 1, #bytes do
-        parts[i] = string.format("%02x", string.byte(bytes, i))
-    end
-    return table.concat(parts)
-end
 
 -- Execute a command in the frame callback context (safe to call emu functions)
 local function execute_command(cmd)
