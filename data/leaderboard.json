@@ -93,9 +93,9 @@
     "trainer_battle_turns": 26,
     "battle_turn_share": 0.2157676348547718,
     "battle_fidelity": "backfill",
-    "overworld_steps": 2066,
-    "shortest_steps": 490,
-    "movement_efficiency": 0.2371732817037754,
+    "overworld_steps": 2203,
+    "shortest_steps": 529,
+    "movement_efficiency": 0.2401270994098956,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -148,6 +148,13 @@
         "status": "closed"
       },
       {
+        "node_id": "parcel_delivered",
+        "d_open": 39,
+        "steps": 137,
+        "source": "video",
+        "status": "closed"
+      },
+      {
         "node_id": "pokedex_received",
         "d_open": 107,
         "steps": 154,
@@ -175,7 +182,7 @@
     "leg_distance_min": 68,
     "leg_distance_open": 167,
     "termination_reason": "leg_cap:pewter_reached",
-    "projection_version": 8,
+    "projection_version": 9,
     "continued_from": "2026-09-12_05-47-17_config-5.1__deepseek-v4-1-flash-max",
     "resumed": true,
     "harness": "append_compact",
@@ -312,7 +319,7 @@
     "leg_distance_min": 8,
     "leg_distance_open": 25,
     "termination_reason": "leg_cap:route1_reached",
-    "projection_version": 8,
+    "projection_version": 9,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -428,9 +435,9 @@
     "trainer_battle_turns": 30,
     "battle_turn_share": 0.2819277108433735,
     "battle_fidelity": "backfill",
-    "overworld_steps": 2253,
-    "shortest_steps": 416,
-    "movement_efficiency": 0.1846426986240568,
+    "overworld_steps": 2363,
+    "shortest_steps": 448,
+    "movement_efficiency": 0.18958950486669487,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -483,6 +490,13 @@
         "status": "closed"
       },
       {
+        "node_id": "parcel_delivered",
+        "d_open": 32,
+        "steps": 110,
+        "source": "video",
+        "status": "closed"
+      },
+      {
         "node_id": "pokedex_received",
         "d_open": 106,
         "steps": 111,
@@ -510,7 +524,7 @@
     "leg_distance_min": 117,
     "leg_distance_open": 167,
     "termination_reason": "leg_cap:pewter_reached",
-    "projection_version": 8,
+    "projection_version": 9,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -599,9 +613,9 @@
     "trainer_battle_turns": 12,
     "battle_turn_share": 0.20666666666666667,
     "battle_fidelity": "backfill",
-    "overworld_steps": 237,
+    "overworld_steps": 484,
     "shortest_steps": 115,
-    "movement_efficiency": 0.48523206751054854,
+    "movement_efficiency": 0.23760330578512398,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -652,15 +666,22 @@
         "steps": 93,
         "source": "video",
         "status": "closed"
+      },
+      {
+        "node_id": "parcel_delivered",
+        "d_open": 0,
+        "steps": 247,
+        "source": "video",
+        "status": "open"
       }
     ],
-    "progress": 7.0,
+    "progress": 7.815789473684211,
     "leg_gate": "parcel_delivered",
-    "leg_fraction": null,
-    "leg_distance_min": null,
-    "leg_distance_open": null,
+    "leg_fraction": 0.8157894736842105,
+    "leg_distance_min": 7,
+    "leg_distance_open": 38,
     "termination_reason": "leg_cap:parcel_delivered",
-    "projection_version": 8,
+    "projection_version": 9,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -806,7 +827,7 @@
     "leg_distance_min": 22,
     "leg_distance_open": 58,
     "termination_reason": "leg_cap:viridian_reached",
-    "projection_version": 8,
+    "projection_version": 9,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -954,9 +975,9 @@
     "trainer_battle_turns": 25,
     "battle_turn_share": 0.2971014492753623,
     "battle_fidelity": "backfill",
-    "overworld_steps": 1732,
-    "shortest_steps": 631,
-    "movement_efficiency": 0.3643187066974596,
+    "overworld_steps": 1768,
+    "shortest_steps": 667,
+    "movement_efficiency": 0.377262443438914,
     "steps_fidelity": "bound",
     "movement_legs": [
       {
@@ -1009,6 +1030,13 @@
         "status": "closed"
       },
       {
+        "node_id": "parcel_delivered",
+        "d_open": 36,
+        "steps": 36,
+        "source": "bound",
+        "status": "closed"
+      },
+      {
         "node_id": "pokedex_received",
         "d_open": 107,
         "steps": 109,
@@ -1043,7 +1071,7 @@
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": null,
-    "projection_version": 8,
+    "projection_version": 9,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -1150,9 +1178,9 @@
     "trainer_battle_turns": 23,
     "battle_turn_share": 0.2903846153846154,
     "battle_fidelity": "backfill",
-    "overworld_steps": 2151,
-    "shortest_steps": 411,
-    "movement_efficiency": 0.1910739191073919,
+    "overworld_steps": 2301,
+    "shortest_steps": 447,
+    "movement_efficiency": 0.19426336375488917,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -1205,6 +1233,13 @@
         "status": "closed"
       },
       {
+        "node_id": "parcel_delivered",
+        "d_open": 36,
+        "steps": 150,
+        "source": "video",
+        "status": "closed"
+      },
+      {
         "node_id": "pokedex_received",
         "d_open": 107,
         "steps": 387,
@@ -1232,7 +1267,7 @@
     "leg_distance_min": 111,
     "leg_distance_open": 167,
     "termination_reason": "leg_cap:pewter_reached",
-    "projection_version": 8,
+    "projection_version": 9,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -1320,9 +1355,9 @@
     "trainer_battle_turns": 7,
     "battle_turn_share": 0.16167664670658682,
     "battle_fidelity": "backfill",
-    "overworld_steps": 282,
-    "shortest_steps": 121,
-    "movement_efficiency": 0.42907801418439717,
+    "overworld_steps": 445,
+    "shortest_steps": 130,
+    "movement_efficiency": 0.29213483146067415,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -1373,15 +1408,22 @@
         "steps": 106,
         "source": "video",
         "status": "closed"
+      },
+      {
+        "node_id": "parcel_delivered",
+        "d_open": 9,
+        "steps": 163,
+        "source": "video",
+        "status": "open"
       }
     ],
-    "progress": 7.0,
+    "progress": 7.394736842105263,
     "leg_gate": "parcel_delivered",
-    "leg_fraction": null,
-    "leg_distance_min": null,
-    "leg_distance_open": null,
+    "leg_fraction": 0.39473684210526316,
+    "leg_distance_min": 23,
+    "leg_distance_open": 38,
     "termination_reason": "leg_cap:parcel_delivered",
-    "projection_version": 8,
+    "projection_version": 9,
     "continued_from": "2026-09-12_17-31-29_config-5.1__qwen3-8-flash-thinking",
     "resumed": true,
     "harness": "append_compact",
@@ -1530,9 +1572,9 @@
     "trainer_battle_turns": 43,
     "battle_turn_share": 0.25474254742547425,
     "battle_fidelity": "backfill",
-    "overworld_steps": 1375,
-    "shortest_steps": 640,
-    "movement_efficiency": 0.46545454545454545,
+    "overworld_steps": 1468,
+    "shortest_steps": 681,
+    "movement_efficiency": 0.46389645776566757,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -1585,6 +1627,13 @@
         "status": "closed"
       },
       {
+        "node_id": "parcel_delivered",
+        "d_open": 41,
+        "steps": 93,
+        "source": "video",
+        "status": "closed"
+      },
+      {
         "node_id": "pokedex_received",
         "d_open": 107,
         "steps": 109,
@@ -1619,7 +1668,7 @@
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": null,
-    "projection_version": 8,
+    "projection_version": 9,
     "continued_from": "2026-09-12_14-17-37_config-5.1__claude-opus-5-high",
     "resumed": true,
     "harness": "append_compact",
@@ -1690,7 +1739,7 @@
     "leg_distance_min": 4,
     "leg_distance_open": 9,
     "termination_reason": "leg_cap:left_bedroom",
-    "projection_version": 8,
+    "projection_version": 9,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -1779,9 +1828,9 @@
     "trainer_battle_turns": 7,
     "battle_turn_share": 0.11560693641618497,
     "battle_fidelity": "backfill",
-    "overworld_steps": 382,
-    "shortest_steps": 119,
-    "movement_efficiency": 0.31151832460732987,
+    "overworld_steps": 600,
+    "shortest_steps": 153,
+    "movement_efficiency": 0.255,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -1832,15 +1881,22 @@
         "steps": 305,
         "source": "video",
         "status": "closed"
+      },
+      {
+        "node_id": "parcel_delivered",
+        "d_open": 34,
+        "steps": 218,
+        "source": "video",
+        "status": "open"
       }
     ],
-    "progress": 7.0,
+    "progress": 7.829268292682927,
     "leg_gate": "parcel_delivered",
-    "leg_fraction": null,
-    "leg_distance_min": null,
-    "leg_distance_open": null,
+    "leg_fraction": 0.8292682926829268,
+    "leg_distance_min": 7,
+    "leg_distance_open": 41,
     "termination_reason": "leg_cap:parcel_delivered",
-    "projection_version": 8,
+    "projection_version": 9,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -1965,9 +2021,9 @@
     "trainer_battle_turns": 43,
     "battle_turn_share": 0.2524084778420039,
     "battle_fidelity": "backfill",
-    "overworld_steps": 1509,
-    "shortest_steps": 447,
-    "movement_efficiency": 0.2962226640159046,
+    "overworld_steps": 1682,
+    "shortest_steps": 486,
+    "movement_efficiency": 0.28894173602853745,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -2020,6 +2076,13 @@
         "status": "closed"
       },
       {
+        "node_id": "parcel_delivered",
+        "d_open": 39,
+        "steps": 173,
+        "source": "video",
+        "status": "closed"
+      },
+      {
         "node_id": "pokedex_received",
         "d_open": 107,
         "steps": 196,
@@ -2047,7 +2110,7 @@
     "leg_distance_min": 53,
     "leg_distance_open": 167,
     "termination_reason": "leg_cap:pewter_reached",
-    "projection_version": 8,
+    "projection_version": 9,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -2204,9 +2267,9 @@
     "trainer_battle_turns": 55,
     "battle_turn_share": 0.36141304347826086,
     "battle_fidelity": "backfill",
-    "overworld_steps": 1383,
-    "shortest_steps": 630,
-    "movement_efficiency": 0.455531453362256,
+    "overworld_steps": 1434,
+    "shortest_steps": 670,
+    "movement_efficiency": 0.46722454672245467,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -2259,6 +2322,13 @@
         "status": "closed"
       },
       {
+        "node_id": "parcel_delivered",
+        "d_open": 40,
+        "steps": 51,
+        "source": "video",
+        "status": "closed"
+      },
+      {
         "node_id": "pokedex_received",
         "d_open": 107,
         "steps": 133,
@@ -2293,7 +2363,7 @@
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": null,
-    "projection_version": 8,
+    "projection_version": 9,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -2447,9 +2517,9 @@
     "trainer_battle_turns": 30,
     "battle_turn_share": 0.24700239808153476,
     "battle_fidelity": "backfill",
-    "overworld_steps": 2431,
-    "shortest_steps": 589,
-    "movement_efficiency": 0.24228712464006583,
+    "overworld_steps": 2519,
+    "shortest_steps": 628,
+    "movement_efficiency": 0.24930527987296547,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -2502,6 +2572,13 @@
         "status": "closed"
       },
       {
+        "node_id": "parcel_delivered",
+        "d_open": 39,
+        "steps": 88,
+        "source": "video",
+        "status": "closed"
+      },
+      {
         "node_id": "pokedex_received",
         "d_open": 107,
         "steps": 143,
@@ -2536,7 +2613,7 @@
     "leg_distance_min": 0,
     "leg_distance_open": 60,
     "termination_reason": "leg_cap:brock_defeated",
-    "projection_version": 8,
+    "projection_version": 9,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -2684,9 +2761,9 @@
     "trainer_battle_turns": 22,
     "battle_turn_share": 0.2896551724137931,
     "battle_fidelity": "backfill",
-    "overworld_steps": 887,
-    "shortest_steps": 643,
-    "movement_efficiency": 0.7249154453213078,
+    "overworld_steps": 938,
+    "shortest_steps": 681,
+    "movement_efficiency": 0.7260127931769723,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -2739,6 +2816,13 @@
         "status": "closed"
       },
       {
+        "node_id": "parcel_delivered",
+        "d_open": 38,
+        "steps": 51,
+        "source": "video",
+        "status": "closed"
+      },
+      {
         "node_id": "pokedex_received",
         "d_open": 107,
         "steps": 140,
@@ -2773,7 +2857,7 @@
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": null,
-    "projection_version": 8,
+    "projection_version": 9,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -2868,7 +2952,7 @@
     "leg_distance_min": 12,
     "leg_distance_open": 13,
     "termination_reason": "leg_cap:oaks_lab_entered",
-    "projection_version": 8,
+    "projection_version": 9,
     "continued_from": "2026-09-09_19-37-48_config-5.0__gemini-3-5-flash-lite-minimal",
     "resumed": true,
     "harness": "append_compact",
@@ -2974,7 +3058,7 @@
     "leg_distance_min": 0,
     "leg_distance_open": 1,
     "termination_reason": "leg_cap:starter_chosen",
-    "projection_version": 8,
+    "projection_version": 9,
     "continued_from": "2026-09-09_20-18-53_config-5.0__gemini-3-5-flash-lite-medium",
     "resumed": true,
     "harness": "append_compact",
@@ -3080,7 +3164,7 @@
     "leg_distance_min": 0,
     "leg_distance_open": 1,
     "termination_reason": "leg_cap:starter_chosen",
-    "projection_version": 8,
+    "projection_version": 9,
     "continued_from": "2026-09-09_21-20-50_config-5.1__gemini-3-5-flash-lite-high",
     "resumed": true,
     "harness": "append_compact",
@@ -3186,9 +3270,9 @@
     "trainer_battle_turns": 26,
     "battle_turn_share": 0.2538293216630197,
     "battle_fidelity": "backfill",
-    "overworld_steps": 1814,
-    "shortest_steps": 440,
-    "movement_efficiency": 0.24255788313120177,
+    "overworld_steps": 1867,
+    "shortest_steps": 474,
+    "movement_efficiency": 0.25388323513658273,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -3241,6 +3325,13 @@
         "status": "closed"
       },
       {
+        "node_id": "parcel_delivered",
+        "d_open": 34,
+        "steps": 53,
+        "source": "video",
+        "status": "closed"
+      },
+      {
         "node_id": "pokedex_received",
         "d_open": 107,
         "steps": 176,
@@ -3268,7 +3359,7 @@
     "leg_distance_min": 144,
     "leg_distance_open": 167,
     "termination_reason": "leg_cap:pewter_reached",
-    "projection_version": 8,
+    "projection_version": 9,
     "continued_from": "2026-09-09_16-04-56_config-5.0__gemini-3-8-flash-minimal_continued_from_turn_40",
     "resumed": true,
     "harness": "append_compact",
@@ -3364,7 +3455,7 @@
     "leg_distance_min": 7,
     "leg_distance_open": 13,
     "termination_reason": "leg_cap:oaks_lab_entered",
-    "projection_version": 8,
+    "projection_version": 9,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -3462,9 +3553,9 @@
     "trainer_battle_turns": 8,
     "battle_turn_share": 0.17578125,
     "battle_fidelity": "backfill",
-    "overworld_steps": 1983,
-    "shortest_steps": 419,
-    "movement_efficiency": 0.21129601613716592,
+    "overworld_steps": 2066,
+    "shortest_steps": 457,
+    "movement_efficiency": 0.22120038722168442,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -3517,6 +3608,13 @@
         "status": "closed"
       },
       {
+        "node_id": "parcel_delivered",
+        "d_open": 38,
+        "steps": 83,
+        "source": "video",
+        "status": "closed"
+      },
+      {
         "node_id": "pokedex_received",
         "d_open": 107,
         "steps": 165,
@@ -3544,7 +3642,7 @@
     "leg_distance_min": 158,
     "leg_distance_open": 167,
     "termination_reason": "leg_cap:pewter_reached",
-    "projection_version": 8,
+    "projection_version": 9,
     "continued_from": "2026-09-11_10-29-29_config-5.1__glm-5-3-flash-high_continued_from_turn_412",
     "resumed": true,
     "harness": "append_compact",
@@ -3632,9 +3730,9 @@
     "trainer_battle_turns": 11,
     "battle_turn_share": 0.14583333333333334,
     "battle_fidelity": "backfill",
-    "overworld_steps": 305,
-    "shortest_steps": 121,
-    "movement_efficiency": 0.39672131147540984,
+    "overworld_steps": 612,
+    "shortest_steps": 152,
+    "movement_efficiency": 0.24836601307189543,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -3685,15 +3783,22 @@
         "steps": 159,
         "source": "video",
         "status": "closed"
+      },
+      {
+        "node_id": "parcel_delivered",
+        "d_open": 31,
+        "steps": 307,
+        "source": "video",
+        "status": "open"
       }
     ],
-    "progress": 7.0,
+    "progress": 7.775,
     "leg_gate": "parcel_delivered",
-    "leg_fraction": null,
-    "leg_distance_min": null,
-    "leg_distance_open": null,
+    "leg_fraction": 0.775,
+    "leg_distance_min": 9,
+    "leg_distance_open": 40,
     "termination_reason": "leg_cap:parcel_delivered",
-    "projection_version": 8,
+    "projection_version": 9,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -3832,9 +3937,9 @@
     "trainer_battle_turns": 28,
     "battle_turn_share": 0.32,
     "battle_fidelity": "backfill",
-    "overworld_steps": 799,
-    "shortest_steps": 642,
-    "movement_efficiency": 0.8035043804755945,
+    "overworld_steps": 852,
+    "shortest_steps": 680,
+    "movement_efficiency": 0.7981220657276995,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -3887,6 +3992,13 @@
         "status": "closed"
       },
       {
+        "node_id": "parcel_delivered",
+        "d_open": 38,
+        "steps": 53,
+        "source": "video",
+        "status": "closed"
+      },
+      {
         "node_id": "pokedex_received",
         "d_open": 107,
         "steps": 109,
@@ -3921,7 +4033,7 @@
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": null,
-    "projection_version": 8,
+    "projection_version": 9,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -4067,9 +4179,9 @@
     "trainer_battle_turns": 33,
     "battle_turn_share": 0.16696588868940754,
     "battle_fidelity": "backfill",
-    "overworld_steps": 2348,
-    "shortest_steps": 637,
-    "movement_efficiency": 0.2712947189097104,
+    "overworld_steps": 2585,
+    "shortest_steps": 673,
+    "movement_efficiency": 0.26034816247582204,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -4122,6 +4234,13 @@
         "status": "closed"
       },
       {
+        "node_id": "parcel_delivered",
+        "d_open": 36,
+        "steps": 237,
+        "source": "video",
+        "status": "closed"
+      },
+      {
         "node_id": "pokedex_received",
         "d_open": 107,
         "steps": 325,
@@ -4156,7 +4275,7 @@
     "leg_distance_min": 0,
     "leg_distance_open": 55,
     "termination_reason": "leg_cap:brock_defeated",
-    "projection_version": 8,
+    "projection_version": 9,
     "continued_from": "2026-09-10_13-32-55_config-5.1__glm-5-3-flash-max_continued_from_turn_129",
     "resumed": true,
     "harness": "append_compact",
@@ -4306,7 +4425,7 @@
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": null,
-    "projection_version": 8,
+    "projection_version": 9,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
