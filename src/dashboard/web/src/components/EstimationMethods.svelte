@@ -5,13 +5,14 @@
   // turns for legs the run never cleared, and the totals the cards divide by
   // the gate count. Same helpers as the cards (lib/board.js), so a cell here is
   // exactly what a card's bar is built from.
-  import { estimationMatrix, vendorOf, fmtUsd, fmtMinutes, PROJECT_FROM_GATE, MIN_CLEARS_FOR_TYPICAL } from '../lib/board.js'
-  import { MIN_BATTLE_OBSERVATIONS } from '../lib/board.js'
+  import { estimationMatrix, trainerMatrix, vendorOf, fmtUsd, fmtMinutes, PROJECT_FROM_GATE, MIN_CLEARS_FOR_TYPICAL, MIN_BATTLE_OBSERVATIONS } from '../lib/board.js'
   import { GATES, gate } from '../lib/gates.js'
   let { rows = [], oninspect = () => {} } = $props()
 
   const gateIds = $derived(GATES.slice(0, rows[0]?.totalGates || 12).map((g) => g.id))
   const matrix = $derived(estimationMatrix(rows, gateIds))
+  const trainers = $derived(trainerMatrix(rows))
+  const trainerRows = $derived([...trainers.rows].sort((a, b) => (b.eligible - a.eligible) || ((a.avg ?? 1e9) - (b.avg ?? 1e9))))
   const nGates = $derived(gateIds.length)
   // 'Reached Viridian City' → 'Viridian City', so the prose can say 'reached …' without doubling the verb.
   const fromGate = $derived((gate(PROJECT_FROM_GATE)?.name ?? PROJECT_FROM_GATE).replace(/^Reached /, ''))
@@ -67,7 +68,7 @@
   <ol class="steps">
     <li><b>What counts.</b> The game's own battle counters (wild, trainer) and the trainer-defeated flags are read from memory every turn; older runs get them from their save states every 10 turns, with the turn-by-turn battle state read off each turn's screenshot (97.7% agreement on 610 labelled frames).</li>
     <li><b>Turn cost.</b> A turn belongs to the state it started in: a turn that began inside a battle is charged to that battle, a battle that began and ended inside one turn costs nothing. Losses and rematches are attempts, summed per trainer.</li>
-    <li><b>Projected trainers.</b> A run that never met a mandatory trainer (the rival in Oak's Lab, Brock) is charged the field's median turns for that trainer, but only once {MIN_BATTLE_OBSERVATIONS}+ runs have fought them. Optional trainers count when fought and are never projected.</li>
+    <li><b>Turns per trainer battle.</b> The card averages a run's turns over its trainer fights. A run enters once it has fought its first trainer. A mandatory trainer it never met (the rival in Oak's Lab, Brock) enters the average at the field's typical turns for that trainer — the median over the runs that fought them, once {MIN_BATTLE_OBSERVATIONS}+ have — and makes the bar hatched. Optional trainers count when fought and are never projected. The table below is the schema: every run, every trainer.</li>
     <li><b>Movement.</b> Shortest walk on the FireRed tile graph (ledges one-way, doors one step) from where a map leg opened to its gate, ÷ the overworld steps actually taken on that leg, summed over the map legs the run closed. Steps come from the per-input trace on new runs, from the recording on backfilled runs, else from the shortest path between per-turn polls, which is a lower bound — the card's tooltip says which.</li>
   </ol>
 
@@ -173,9 +174,69 @@
     <span class="sep">·</span> ratio = leg turns ÷ typical turns
     <span class="sep">·</span> click a run to open it
   </p>
+
+  <h3 class="tm-head">Trainers · turns spent on each</h3>
+  <p class="faint note tm-note">Turns that started inside a fight with that trainer, every attempt summed (attempts shown as ×n). Hatched cells are the projection a run that never met a mandatory trainer is charged. Typical = median over the runs that fought the trainer; a column is used for projection only past {MIN_BATTLE_OBSERVATIONS} fights. Dimmed runs have not fought their first trainer or have no per-turn battle state.</p>
+  <div class="scroll">
+    <table class="m tm">
+      <thead>
+        <tr>
+          <th class="run">Run</th>
+          {#each trainers.columns as c}
+            <th class="gate" class:mand={c.mandatory} title={c.name}><span class="idx">{c.mandatory ? 'mandatory' : 'optional'}</span>{c.short}</th>
+          {/each}
+          <th class="num" title="turns over the trainer fights the run had">Fights</th>
+          <th class="num" title="measured turns in trainer battles">Turns</th>
+          <th class="num" title="turns per trainer battle, projected trainers included">Per fight</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each trainerRows as t (t.row.runId)}
+          {@const r = t.row}
+          <tr class:dim={!t.eligible}>
+            <td class="run">
+              <button class="model" onclick={() => oninspect(r)} title="open the run">
+                <span class="dot" style={`--c:${vendorOf(r).color}`}></span>{r.model}
+              </button>
+              <span class="faint gates">{r.battleFidelity ?? '—'}</span>
+            </td>
+            {#each t.cells as c}
+              {#if c.kind === 'fought'}
+                <td class="cell" class:lost={c.won === false} title={`${r.model}: ${c.turns ?? '?'} turns${c.attempts > 1 ? ` over ${c.attempts} attempts` : ''}${c.won === false ? ' · not won' : ''}`}>
+                  <span class="t">{c.turns ?? '?'}</span>{#if c.attempts > 1}<span class="r">×{c.attempts}</span>{/if}
+                </td>
+              {:else if c.kind === 'projected'}
+                <td class="cell est" title={`projected: typical ${c.turns} turns`}><span class="t">{c.turns}</span><span class="r">est</span></td>
+              {:else}
+                <td class="none">·</td>
+              {/if}
+            {/each}
+            <td class="num">{t.attempts}{t.projectedCount ? ` +${t.projectedCount}` : ''}</td>
+            <td class="num">{t.measured ?? '—'}</td>
+            <td class="num"><b>{t.avg == null ? '—' : t.avg.toFixed(1)}</b></td>
+          </tr>
+        {/each}
+      </tbody>
+      <tfoot>
+        <tr class="ref">
+          <td class="run faint">typical (median) · fights</td>
+          {#each trainers.columns as c}
+            <td class="num" class:faint={!c.usable} title={c.usable ? `median over ${c.n} fights, used for projection` : `${c.n} fight${c.n === 1 ? '' : 's'} — below ${MIN_BATTLE_OBSERVATIONS}, not projected`}>{c.typical == null ? '—' : c.typical}<span class="r"> · {c.n}</span></td>
+          {/each}
+          <td class="num" colspan="3"></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
 </section>
 
+
 <style>
+  .tm-head { font-size: 18px; font-weight: 760; margin: 32px 0 6px; }
+  .tm-note { margin: 0 0 12px; max-width: 900px; }
+  .m th.gate.mand { color: var(--text); }
+  .m td.cell.lost { color: var(--retry); }
+  .m tfoot .r { font-size: 10px; color: var(--muted); }
   .methods { max-width: 1440px; margin: 0 auto; padding: 40px 24px 56px; }
   .methods h2 { font-size: 26px; font-weight: 780; letter-spacing: -.02em; margin: 0 0 6px; }
   .intro { font-size: 14px; margin: 0 0 22px; }

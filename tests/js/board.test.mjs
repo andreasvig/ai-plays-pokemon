@@ -10,7 +10,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  baseModel, collapseBest, vendorOf, headlineSeries, secondarySeries, battleSeries, trainerMedians, MIN_BATTLE_OBSERVATIONS, turnsPerMinute, costPer10, fmtTokens, PERF_LINE,
+  baseModel, collapseBest, vendorOf, headlineSeries, secondarySeries, battleSeries, trainerMedians, trainerMatrix, MIN_BATTLE_OBSERVATIONS, turnsPerMinute, costPer10, fmtTokens, PERF_LINE,
   legTurns, typicalTurnsPerLeg, projectRun, perTaskSeries, estimationMatrix, PROJECT_FROM_GATE, fmtMinutes,
 } from '../../src/dashboard/web/src/lib/board.js'
 
@@ -218,8 +218,18 @@ test('battle series: rule-A turn costs, medians over ≥5 fights, projected mand
   const noBrock = trainerTurns.filter((s) => s.eligible && s.projected > 0)
   assert.equal(noBrock.length, RANKED.length - 6)                // rows 6.. never met Brock and did not finish
   assert.ok(noBrock.every((s) => !s.complete && s.projected === 7 && s.missing[0].name === 'Leader Brock'))
+  assert.equal(noBrock[0].label, ((2 + 7) / 2).toFixed(1))        // (rival 2T + Brock median 7) ÷ 2 fights
   assert.ok(trainerTurns.filter((s) => s.eligible && s.projected === 0).every((s) => s.complete))
+  assert.equal(trainerTurns.at(-1).eligible, false)              // the row with no per-turn state
   assert.equal(MIN_BATTLE_OBSERVATIONS, 5)
+  const tm = trainerMatrix(pool)
+  assert.equal(tm.columns.length, 9)
+  assert.equal(tm.columns.find((c) => c.group === '414').typical, 7)
+  assert.equal(tm.rows[0].eligible, false)
+  assert.deepEqual(tm.rows[6].cells.filter((c) => c.kind !== 'none').map((c) => c.kind), ['fought', 'projected'])
+  // A run that fought nobody yet is left off even with per-turn state.
+  const virgin = [{ ...pool[1], trainerBattles: [], trainerBattleTurns: 0 }]
+  assert.equal(battleSeries(virgin, pool).trainerTurns[0].eligible, false)
   // Fewer than 5 fights → nothing projected, even for a mandatory trainer.
   const thin = pool.map((r, i) => ({ ...r, trainerBattles: i === 0 ? null : [rival(2), ...(i <= 3 ? [brock(4)] : [])] }))
   assert.ok(battleSeries(thin, thin).trainerTurns.every((s) => !s.projected))

@@ -310,6 +310,51 @@ export function fmtTpm(v) {
  *   statistic are ineligible and appended with height 0.
  */
 export const MIN_BATTLE_OBSERVATIONS = 5
+/** The first-badge trainer roster in encounter order (src/referee/battles.py TRAINER_GROUP). */
+export const TRAINER_ROSTER = [
+  { group: 'rival_oaks_lab', name: "Rival (Oak's Lab)", short: 'Rival 1', mandatory: true },
+  { group: 'rival_route22', name: 'Rival (Route 22)', short: 'Rival 22', mandatory: false },
+  { group: '102', name: 'Bug Catcher Rick', short: 'Rick', mandatory: false },
+  { group: '103', name: 'Bug Catcher Doug', short: 'Doug', mandatory: false },
+  { group: '104', name: 'Bug Catcher Sammy', short: 'Sammy', mandatory: false },
+  { group: '531', name: 'Bug Catcher Anthony', short: 'Anthony', mandatory: false },
+  { group: '532', name: 'Bug Catcher Charlie', short: 'Charlie', mandatory: false },
+  { group: '142', name: 'Camper Liam', short: 'Liam', mandatory: false },
+  { group: '414', name: 'Leader Brock', short: 'Brock', mandatory: true },
+]
+
+/**
+ * Runs × trainers: turns spent on each trainer (attempts summed), the field's
+ * typical (median) turns per trainer once MIN_BATTLE_OBSERVATIONS runs fought
+ * it, and per run the projected average the card shows. The Estimation
+ * methods page renders it; battleSeries().trainerTurns is built from the same
+ * numbers.
+ */
+export function trainerMatrix(pool, rows = pool) {
+  const medians = trainerMedians(pool)
+  const columns = TRAINER_ROSTER.map((t) => ({ ...t, typical: medians[t.group]?.median ?? null, n: medians[t.group]?.n ?? 0,
+    usable: (medians[t.group]?.n ?? 0) >= MIN_BATTLE_OBSERVATIONS }))
+  const out = rows.map((r) => {
+    const perTurn = r.battleFidelity === 'live' || r.battleFidelity === 'backfill'
+    const by = Object.fromEntries((r.trainerBattles || []).filter((g) => g.attempts > 0).map((g) => [g.group, g]))
+    const cells = TRAINER_ROSTER.map((t) => {
+      const g = by[t.group]
+      if (g) return { group: t.group, turns: perTurn ? g.turns : null, attempts: g.attempts, won: g.won, kind: 'fought' }
+      const col = columns.find((c) => c.group === t.group)
+      if (t.mandatory && !(r.completion >= 100) && col.usable) return { group: t.group, turns: col.typical, attempts: 1, kind: 'projected' }
+      return { group: t.group, turns: null, attempts: 0, kind: 'none' }
+    })
+    const fought = cells.filter((c) => c.kind === 'fought')
+    const projected = cells.filter((c) => c.kind === 'projected')
+    const measured = perTurn ? fought.reduce((a, c) => a + (c.turns ?? 0), 0) : null
+    const attempts = fought.reduce((a, c) => a + c.attempts, 0)
+    const projTurns = projected.reduce((a, c) => a + c.turns, 0)
+    const eligible = perTurn && attempts > 0   // the first trainer must have been fought
+    const avg = eligible ? (measured + projTurns) / (attempts + projected.length) : null
+    return { row: r, cells, measured, attempts, projected: projTurns, projectedCount: projected.length, eligible, avg, complete: projected.length === 0 }
+  })
+  return { columns, rows: out }
+}
 
 export function trainerMedians(pool) {
   const turnsBy = new Map()
@@ -353,25 +398,21 @@ export function battleSeries(rows, pool = rows) {
     (v) => Math.round(v * 100) + '%')
     .concat(rows.filter((r) => r.battleTurnShare == null).map(OFF))
 
-  const medians = trainerMedians(pool)
+  // Turns per trainer battle: (measured turns + projected mandatory trainers)
+  // ÷ (attempts + projected battles). A run qualifies once it fought its first
+  // trainer (Andreas 2026-09-14); the projection uses the trainer matrix.
+  const matrix = trainerMatrix(pool, rows)
+  const byId = new Map(matrix.rows.map((m) => [m.row, m]))
   const trainerVals = []
   const trainerOff = []
   for (const r of rows) {
-    if (r.trainerBattleTurns == null || !r.trainerBattles) { trainerOff.push(OFF(r)); continue }
-    const fought = new Set((r.trainerBattles || []).filter((g) => g.attempts > 0).map((g) => g.group))
-    const missing = []
-    let projected = 0
-    if (!(r.completion >= 100)) {
-      for (const [group, m] of Object.entries(medians)) {
-        if (!m.mandatory || fought.has(group) || m.n < MIN_BATTLE_OBSERVATIONS) continue
-        missing.push({ group, name: m.name, median: m.median, n: m.n })
-        projected += m.median
-      }
-    }
-    trainerVals.push({ row: r, value: r.trainerBattleTurns + projected, measured: r.trainerBattleTurns, projected, missing,
-      eligible: true, complete: projected === 0 })
+    const m = byId.get(r)
+    if (!m || !m.eligible) { trainerOff.push(OFF(r)); continue }
+    trainerVals.push({ row: r, value: m.avg, measured: m.measured, attempts: m.attempts, projected: m.projected,
+      missing: m.cells.filter((c) => c.kind === 'projected').map((c) => ({ ...c, ...matrix.columns.find((x) => x.group === c.group) })),
+      eligible: true, complete: m.complete })
   }
-  const trainerTurns = rank(trainerVals, (v) => String(Math.round(v))).concat(trainerOff)
+  const trainerTurns = rank(trainerVals, (v) => v.toFixed(1)).concat(trainerOff)
   return { movement, wildTurns, battleShare, trainerTurns }
 }
 

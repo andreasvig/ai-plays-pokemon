@@ -67,8 +67,8 @@
     tip: `${s.row.model}: ${s.label} of its ${s.row.turns} turns started inside a battle · ${BAT_FID[s.row.battleFidelity] || ''}` })))
   const shareNote = $derived(offNote(bat.battleShare.filter((s) => !s.eligible).length, 'no per-turn battle state.'))
   const trainerTurns = $derived(bat.trainerTurns.filter((s) => s.eligible).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: s.complete, partial: s.complete && s.row.completion < 100,
-    tip: `${s.row.model}: ${s.measured} turns in trainer battles (${(s.row.trainerBattles || []).filter((g) => g.attempts > 0).map((g) => `${g.name} ${g.turns}T${g.attempts > 1 ? ` in ${g.attempts} attempts` : ''}${g.won ? '' : ', not won'}`).join('; ') || 'none'})${s.projected ? ` · projected +${Math.round(s.projected)} for ${s.missing.map((m) => `${m.name} (median of ${m.n})`).join(', ')}` : ''}` })))
-  const trainerNote = $derived(offNote(bat.trainerTurns.filter((s) => !s.eligible).length, 'no per-turn battle state.'))
+    tip: `${s.row.model}: ${s.label} turns per trainer battle — ${s.measured} turns over ${s.attempts} fight${s.attempts === 1 ? '' : 's'} (${(s.row.trainerBattles || []).filter((g) => g.attempts > 0).map((g) => `${g.name} ${g.turns}T${g.attempts > 1 ? ` in ${g.attempts} attempts` : ''}${g.won ? '' : ', not won'}`).join('; ')})${s.projected ? ` + ${s.missing.map((m) => `${m.name} projected at ${m.typical} (median of ${m.n})`).join(', ')}` : ''}` })))
+  const trainerNote = $derived(offNote(bat.trainerTurns.filter((s) => !s.eligible).length, 'no trainer fought yet, or no per-turn battle state.'))
   const TOKENS_BIAS = '* Models think more as the game gets harder: over the runs with 80+ turns, the last 40 turns cost a median 1.65× the output tokens of the first 40. A run that ended early (dotted) averaged over the cheap early game only, so its bar is low partly for that reason.'
   const tokensNote = $derived(TOKENS_BIAS + (noTokens ? ` ${noTokens} selected model${noTokens === 1 ? '' : 's'} not shown: the run recorded no token usage.` : ''))
   const leftNote = $derived(leftOff ? `${leftOff} selected model${leftOff === 1 ? '' : 's'} not shown: never reached ${fromGate}, so nothing to project.` : '')
@@ -134,7 +134,7 @@
             entries={wildTurns} picker pickerRows={pool} narrowFrom={18} bars={220} {oninspect} note={wildNote} />
           <BarCard title="Battle share" subtitle="Share of all turns that started inside any battle, wild or trainer · runs that did not finish dotted · Lower is better"
             entries={battleShare} picker pickerRows={pool} narrowFrom={18} bars={220} {oninspect} note={shareNote} />
-          <BarCard title="Trainer battle turns" subtitle={`Turns spent fighting trainers, every attempt summed per trainer · a mandatory trainer the run never met is projected (hatched) from the field's median once ${MIN_BATTLE_OBSERVATIONS}+ runs have fought them · Lower is better`}
+          <BarCard title="Turns per trainer battle" subtitle={`Average turns a trainer fight costs, every attempt counted · shown once the first trainer is fought · a mandatory trainer the run never met enters at the field's median (hatched) once ${MIN_BATTLE_OBSERVATIONS}+ runs have fought them · Lower is better`}
             entries={trainerTurns} picker pickerRows={pool} narrowFrom={18} bars={220} {oninspect} note={trainerNote} />
         {/if}
       </section>

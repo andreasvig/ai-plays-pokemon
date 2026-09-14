@@ -132,28 +132,50 @@ def synthesize_records(records: list, states: dict[int, bool]) -> list[tuple]:
     return out
 
 
+def cap_records(records: list, turns: int) -> list:
+    """Drop backfill records after the run's counted turns. An adjudicated run
+    (gpt-6-astra low: the badge landed at turn 145, the referee missed the flag
+    and the model played to 224) keeps ``session.total_turns`` at the adjudicated
+    end, so savepoints past it describe play the run is not scored on. The first
+    record past the end is kept, clipped to ``turns``, so a battle in the last
+    few turns is still counted (its counters may include up to one window of
+    excluded play)."""
+    if not turns:
+        return list(records)
+    kept = [r for r in records if isinstance(r, (list, tuple)) and len(r) == 6 and int(r[0]) <= turns]
+    later = [r for r in records if isinstance(r, (list, tuple)) and len(r) == 6 and int(r[0]) > turns]
+    if later and (not kept or int(kept[-1][0]) < turns):
+        first = min(later, key=lambda r: int(r[0]))
+        kept.append([turns, *first[1:]])
+    return kept
+
+
 def battle_summary(run_dir: Path, referee: Optional[dict], turns: int) -> tuple[Optional[dict], Optional[str]]:
     """``(BattleTracker.summary(), fidelity)`` — fidelity "live", "backfill",
-    "savepoint" (counters only, no per-turn states) or ``(None, None)``."""
+    "savepoint" (counters only, no per-turn states) or ``(None, None)``.
+    Backfill records and states past ``turns`` are dropped (:func:`cap_records`)."""
     live = (referee or {}).get("battles") if isinstance(referee, dict) else None
     if isinstance(live, dict) and live.get("available") and turns and (live.get("polls") or 0) >= LIVE_MIN_COVERAGE * turns:
         return live, "live"
     bf = _load_json(run_dir / "battle_backfill.json")
     if not bf or not bf.get("records"):
         return None, None
+    records = cap_records(bf["records"], turns)
     sf = _load_json(run_dir / "state_backfill.json")
     states: dict[int, bool] = {}
     for k, v in ((sf or {}).get("states") or {}).items():
         try:
-            states[int(k)] = bool(v)
+            t = int(k)
         except (TypeError, ValueError):
             continue
+        if not turns or t <= turns + 1:
+            states[t] = bool(v)
     tracker = BattleTracker()
     if states:
-        for r in synthesize_records(bf["records"], states):
+        for r in synthesize_records(records, states):
             tracker.record(*r)
         return tracker.summary(), "backfill"
-    tracker.load_state({"battle_records": bf["records"]})
+    tracker.load_state({"battle_records": records})
     return tracker.summary(), "savepoint"
 
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from src.app.battle_stats import battle_summary, load_steps_backfill, movement, synthesize_records
+from src.app.battle_stats import battle_summary, cap_records, load_steps_backfill, movement, synthesize_records
 from src.referee.battles import BattleTracker
 
 
@@ -73,6 +73,20 @@ def test_battle_summary_prefers_live_then_backfill_then_savepoint(tmp_path):
     (tmp_path / "state_backfill.json").write_text(json.dumps({"states": {str(t): t in (14, 15) for t in range(1, 22)}}))
     s, fid = battle_summary(tmp_path, None, 20)
     assert fid == "backfill" and s["wild"] == {"count": 1, "turns": 2, "segments": 1}
+
+
+def test_backfill_past_the_counted_turns_is_dropped_and_the_first_later_record_clipped(tmp_path):
+    """An adjudicated run ends at session.total_turns; savepoints after it are
+    play the run is not scored on. gpt-6-astra(low): badge at 145, played to 224."""
+    records = [[140, False, 4, 3, 1, []], [150, False, 5, 3, 2, []], [160, False, 9, 7, 2, []], [224, True, 16, 10, 6, []]]
+    assert cap_records(records, 145) == [[140, False, 4, 3, 1, []], [145, False, 5, 3, 2, []]]
+    assert cap_records(records, 150) == [[140, False, 4, 3, 1, []], [150, False, 5, 3, 2, []]]
+    assert cap_records(records, 0) == records
+    (tmp_path / "battle_backfill.json").write_text(json.dumps({"records": records}))
+    (tmp_path / "state_backfill.json").write_text(json.dumps({"states": {str(t): 141 <= t <= 143 or t >= 155 for t in range(130, 225)}}))
+    s, fid = battle_summary(tmp_path, None, 145)
+    assert fid == "backfill" and s["battles_total"] == 5 and s["wild"]["count"] == 3
+    assert s["turns_started_in_battle"] == 2  # turns 142-143: the exact bit at 140 overrides the classifier for 141; nothing after 145
 
 
 REFEREE = {
