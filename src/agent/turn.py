@@ -1887,7 +1887,28 @@ class TurnManager:
         one-shot, so calling it on a handoff turn that pressed no buttons just
         re-runs the deadline check against the unchanged game state.
         """
+        # Per-input trace (2026-09-14): the tile and in-battle bit after every
+        # button of this turn, kept by the Lua bridge since the last fetch.
+        # Drained EVERY turn, referee or not — an undrained bridge buffer is a
+        # leak (capped in Lua, but the data would still be lost). With a referee
+        # it is folded in BEFORE the poll so the poll's position uses the exact
+        # step count; without one the derived figures are still logged.
+        rows = None
+        fetch = getattr(self.emulator, "fetch_trace", None)
+        if fetch is not None:
+            try:
+                rows = fetch()
+            except Exception as e:  # never let telemetry stop a run
+                self.logger.log_custom("trace_error", {"turn": self.turn_number, "error": str(e)[:200]})
         if self.referee is None:
+            if rows:
+                try:
+                    from src.referee import trace as _trace
+                    samples = _trace.decode_samples(rows, None)
+                    derived = _trace.derive(samples, None, None)
+                    self.logger.log_custom("turn_input_trace", {"turn": self.turn_number, **derived, "samples": samples})
+                except Exception as e:
+                    self.logger.log_custom("trace_error", {"turn": self.turn_number, "error": str(e)[:200]})
             return False
         # Missed-gate enforcement. Gate deadlines are measured against TOTAL
         # turns — player/game turns PLUS TaskMaster invocations (Andreas
@@ -1898,15 +1919,9 @@ class TurnManager:
         # run is terminated short of 100%. The summary's total_turns uses the
         # same player+master sum, so the two always agree.
         total_turns = self.turn_number + self.task_master_turns
-        # Per-input trace (2026-09-14): the tile and in-battle bit after every
-        # button of this turn, kept by the Lua bridge since the last fetch.
-        # Folded in BEFORE the poll so the poll's position uses the exact step
-        # count instead of the between-poll bound. Best-effort: a bridge or fake
-        # without tracing leaves the bound in place.
-        fetch = getattr(self.emulator, "fetch_trace", None)
-        if fetch is not None:
+        if rows:
             try:
-                self.referee.record_trace(total_turns, fetch())
+                self.referee.record_trace(total_turns, rows)
             except Exception as e:  # never let telemetry stop a run
                 self.logger.log_custom("trace_error", {"turn": self.turn_number, "error": str(e)[:200]})
         try:

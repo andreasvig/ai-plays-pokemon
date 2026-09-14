@@ -61,6 +61,9 @@ local function trace_sample(name)
         local ok, hex = pcall(sample_range, entry)
         parts[i] = ok and hex or ""
     end
+    -- Bounded: a run without a referee never fetches, so cap the buffer
+    -- (drop the oldest) rather than grow for hours.
+    if #trace_rows >= 4000 then table.remove(trace_rows, 1) end
     table.insert(trace_rows, (name or "?") .. "|" .. table.concat(parts, ";"))
 end
 
