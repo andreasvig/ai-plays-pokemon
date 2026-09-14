@@ -10,7 +10,11 @@
   import VendorMark from './VendorMark.svelte'
   // `pinned`: (row) => boolean — rows that are always in and cannot be unticked
   // (a model page keeps its own levels in every card, Andreas 2026-09-14).
-  let { rows = [], pinned = null } = $props()
+  // `dimmed`: (row) => boolean — rows this card cannot draw (no figure for
+  // them: too early a run, no statistic). Still tickable, greyed for
+  // visibility (Andreas 2026-09-14).
+  let { rows = [], pinned = null, dimmed = null } = $props()
+  const isDim = (r) => !!dimmed && dimmed(r)
   const isPinned = (r) => !!pinned && pinned(r)
 
   let open = $state(false)
@@ -45,7 +49,8 @@
       <ul class="list" role="listbox" aria-multiselectable="true">
         {#each shown as r (r.model)}
           <li>
-            <label class="opt" class:on={chosen.has(r.model)} class:pinned={isPinned(r)} title={isPinned(r) ? 'always shown on this page' : ''}>
+            <label class="opt" class:on={chosen.has(r.model)} class:pinned={isPinned(r)} class:dim={isDim(r)}
+                   title={isPinned(r) ? 'always shown on this page' : isDim(r) ? 'no figure on this card for this run' : ''}>
               <input type="checkbox" checked={chosen.has(r.model)} disabled={isPinned(r)} onchange={() => selection.toggle(r.model, rows)} />
               <VendorMark row={r} size={14} />
               <span class="alias mono">{r.model}</span>
@@ -77,6 +82,8 @@
   .opt:hover { background: var(--wash); }
   .opt.on { color: var(--text); }
   .opt.pinned { cursor: default; }
+  .opt.dim { opacity: .42; }
+  .opt.dim .alias { text-decoration: line-through; text-decoration-color: var(--faint); }
   .opt.pinned input { accent-color: var(--faint); }
   .opt input { margin: 0; accent-color: var(--accent); }
   .alias { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

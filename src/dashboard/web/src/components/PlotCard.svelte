@@ -22,6 +22,9 @@
   })
   const gateIds = $derived(GATES.slice(0, pool[0]?.totalGates || 12).map((g) => g.id))
   const series = $derived(perTaskSeries(rows, gateIds, pool))
+  // Which rows of the whole pool this plot can place — for the picker's greying.
+  const canShow = $derived(new Set(perTaskSeries(pool, gateIds, pool).filter((s) => s.eligible).map((s) => s.row.model)))
+  const dimmed = (r) => !canShow.has(r.model)
   const nGates = $derived(gateIds.length)
   const fromGate = $derived((gate(PROJECT_FROM_GATE)?.name ?? PROJECT_FROM_GATE).replace(/^Reached /, ''))
 
@@ -59,7 +62,7 @@
       <p class="faint">{c.blurb(nGates)} Hover for values; click to open the run.</p>
     </div>
     <div class="tools">
-      {#if picker}<ModelPicker rows={pool} {pinned} />{/if}
+      {#if picker}<ModelPicker rows={pool} {pinned} {dimmed} />{/if}
       <div class="segs">{#each MODES as [v, label]}<button class:on={mode === v} onclick={() => mode = v}>{label}</button>{/each}</div>
     </div>
   </header>

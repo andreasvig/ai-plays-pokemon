@@ -27,6 +27,19 @@
   const gateIds = $derived(GATES.slice(0, pool[0]?.totalGates || 12).map((g) => g.id))
   const nGates = $derived(gateIds.length)
   const fromGate = $derived((gate(PROJECT_FROM_GATE)?.name ?? PROJECT_FROM_GATE).replace(/^Reached /, ''))
+  // Which rows of the WHOLE pool each card can draw, independent of the
+  // selection — the picker greys the rest (still tickable; Andreas 2026-09-14
+  // "just for visibility"). Same rules as the entries below.
+  const p1 = (r) => r.gateTurns != null && r.gateTurns.route1_reached != null
+  const canShow = $derived.by(() => {
+    const h = headlineSeries(pool, gateIds, pool), s2 = secondarySeries(pool, gateIds, pool), b = battleSeries(pool, pool)
+    const set = (series, extra = () => true) => new Set(series.filter((x) => x.eligible && extra(x.row)).map((x) => x.row.model))
+    return {
+      perTask: set(h.cost, p1), turns: set(s2.turnsPerTask, p1), inputs: set(s2.inputsPerTurn, p1), tokens: set(s2.outputTokens, p1),
+      movement: set(b.movement, p1), wild: set(b.wildTurns), trainer: set(b.trainerTurns, p1),
+    }
+  })
+  const dimUnless = (key) => (r) => !canShow[key].has(r.model)
   const head = $derived(headlineSeries(rows, gateIds, pool))
   const sec = $derived(secondarySeries(rows, gateIds, pool))
   const bat = $derived(battleSeries(rows, pool))
@@ -132,27 +145,27 @@
             entries={performance} line={{ frac: PERF_LINE, label: '100%' }} {picker} pickerRows={pool} {highlight} {pinned} narrowFrom={18} bars={300} {oninspect} />
         {:else if s.id === 'price'}
           <BarCard title="Cost per task" subtitle={`USD to beat Brock ÷ ${nGates} gates · partial runs projected (hatched) · Lower is better`}
-            entries={cost} {picker} pickerRows={pool} {highlight} {pinned} narrowFrom={18} bars={300} {oninspect} />
+            entries={cost} {picker} pickerRows={pool} {highlight} {pinned} narrowFrom={18} bars={300} {oninspect} dimmed={dimUnless('perTask')} />
           <PlotCard kind="cost" {pool} {onpick} {picker} {highlight} {pinned} />
           <BarCard title="Cost per 10 turns" subtitle="Average USD for ten turns, all calls included · Lower is better" entries={cost10} {picker} pickerRows={pool} {highlight} {pinned} narrowFrom={18} bars={220} {oninspect} />
         {:else if s.id === 'speed'}
           <BarCard title="Time per task" subtitle={`Minutes to beat Brock ÷ ${nGates} gates · partial runs projected (hatched) · Lower is better`}
-            entries={time} {picker} pickerRows={pool} {highlight} {pinned} narrowFrom={18} bars={300} {oninspect} />
+            entries={time} {picker} pickerRows={pool} {highlight} {pinned} narrowFrom={18} bars={300} {oninspect} dimmed={dimUnless('perTask')} />
           <PlotCard kind="time" {pool} {onpick} {picker} {highlight} {pinned} />
           <BarCard title="Turns per minute" subtitle="Wall clock, all turns of the run · Higher is better" entries={speed} {picker} pickerRows={pool} {highlight} {pinned} narrowFrom={18} bars={220} {oninspect} />
         {:else}
           <BarCard title="Turns per task" subtitle={`Turns to beat Brock ÷ ${nGates} gates · partial runs projected (hatched) · Lower is better`}
-            entries={turnsPerTask} {picker} pickerRows={pool} {highlight} {pinned} narrowFrom={18} bars={300} {oninspect} note={leftNote} />
+            entries={turnsPerTask} {picker} pickerRows={pool} {highlight} {pinned} narrowFrom={18} bars={300} {oninspect} dimmed={dimUnless('turns')} note={leftNote} />
           <BarCard title="Inputs per turn" subtitle="Average game inputs (buttons and waits) one turn carries · hover for the button mix · more per turn = fewer turns, if the batch lands"
-            entries={inputsPerTurn} {picker} pickerRows={pool} {highlight} {pinned} narrowFrom={18} bars={220} {oninspect} note={inputsNote} />
+            entries={inputsPerTurn} {picker} pickerRows={pool} {highlight} {pinned} narrowFrom={18} bars={220} {oninspect} dimmed={dimUnless('inputs')} note={inputsNote} />
           <BarCard title="Output tokens per turn*" subtitle="Average completion tokens one turn costs the model — thinking plus the reply, every call included · runs that did not finish dotted · hover for the thinking share · fewer first"
-            entries={outputTokens} {picker} pickerRows={pool} {highlight} {pinned} narrowFrom={18} bars={220} {oninspect} note={tokensNote} />
+            entries={outputTokens} {picker} pickerRows={pool} {highlight} {pinned} narrowFrom={18} bars={220} {oninspect} dimmed={dimUnless('tokens')} note={tokensNote} />
           <BarCard title="Movement efficiency" subtitle="Shortest walk ÷ steps taken over the run's map legs, the unfinished leg credited only with the ground it gained · runs that did not finish dotted · hover for how the steps were counted · Higher is better"
-            entries={movement} {picker} pickerRows={pool} {highlight} {pinned} narrowFrom={18} bars={220} {oninspect} note={movementNote} />
+            entries={movement} {picker} pickerRows={pool} {highlight} {pinned} narrowFrom={18} bars={220} {oninspect} dimmed={dimUnless('movement')} note={movementNote} />
           <BarCard title="Turns per wild battle" subtitle="Turns that started inside a wild battle ÷ wild battles met · runs that cleared Route 1 · Lower is better"
-            entries={wildTurns} {picker} pickerRows={pool} {highlight} {pinned} narrowFrom={18} bars={220} {oninspect} note={wildNote} />
+            entries={wildTurns} {picker} pickerRows={pool} {highlight} {pinned} narrowFrom={18} bars={220} {oninspect} dimmed={dimUnless('wild')} note={wildNote} />
           <BarCard title="Turns per trainer battle*" subtitle="Average turns a trainer fight costs, every attempt counted · shown once the first trainer is fought · trainers the run did not fight are projected so every run is scored on the same roster · Lower is better"
-            entries={trainerTurns} {picker} pickerRows={pool} {highlight} {pinned} narrowFrom={18} bars={220} {oninspect} note={trainerNote} />
+            entries={trainerTurns} {picker} pickerRows={pool} {highlight} {pinned} narrowFrom={18} bars={220} {oninspect} dimmed={dimUnless('trainer')} note={trainerNote} />
         {/if}
       </section>
     {/each}
