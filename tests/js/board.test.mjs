@@ -199,12 +199,13 @@ test('secondary strip keeps the per-turn measurements and adds turns per task', 
 
 test('battle series: rule-A turn costs, means over ≥4 fights, unfought trainers projected as one fight at pace × mean, hatched', () => {
   const brock = (turns, attempts = 1) => ({ group: '414', id: 414, name: 'Leader Brock', attempts, turns, won: true, mandatory: true })
-  const rival = (turns) => ({ group: 'rival_oaks_lab', id: 327, name: "Rival (Oak's Lab)", attempts: 1, turns, won: true, mandatory: true })
+  // Rows 6.. fought only the rival — in two tries, so they clear the two-fight bar (MIN_FIGHTS_FOR_PROJECTION).
+  const rival = (turns, attempts = 1) => ({ group: 'rival_oaks_lab', id: 327, name: "Rival (Oak's Lab)", attempts, turns, won: true, mandatory: true })
   const pool = RANKED.map((r, i) => ({ ...r,
     battleFidelity: i === 0 ? null : 'backfill',
     wildBattles: 10, wildBattleTurns: 10 + i, battleTurnShare: 0.1 * (i + 1),
     movementEfficiency: i === 0 ? null : 0.5 + i * 0.05, stepsFidelity: 'bound', shortestSteps: 100, overworldSteps: 150,
-    trainerBattles: i === 0 ? null : [rival(2), ...(i <= 5 ? [brock(4 + i)] : [])],
+    trainerBattles: i === 0 ? null : [rival(2, i <= 5 ? 1 : 2), ...(i <= 5 ? [brock(4 + i)] : [])],
     trainerBattleTurns: i === 0 ? null : 2 + (i <= 5 ? 4 + i : 0),
     completion: i <= 5 ? 100 : 50 }))
   const typ = trainerTypicals(pool)
@@ -222,13 +223,13 @@ test('battle series: rule-A turn costs, means over ≥4 fights, unfought trainer
   assert.equal(noBrock.length, RANKED.length - 6)                // rows 6.. never met Brock and did not finish
   // Every projected row fought the rival in exactly the typical 2 turns → pace 1 → Brock at the mean 7.
   assert.ok(noBrock.every((s) => !s.complete && s.pace === 1 && s.projected === 7 && s.missing[0].name === 'Leader Brock'))
-  assert.equal(noBrock[0].label, ((2 + 7) / 2).toFixed(1))        // (rival 2T + Brock 7) ÷ 2 fights
+  assert.equal(noBrock[0].label, ((2 + 7) / 3).toFixed(1))        // (rival 2T over 2 tries + Brock 7) ÷ 3 fights
   // A slow rival fight (6 turns, 3× typical) projects Brock at 3 × 7 = 21, not the flat mean.
-  const slow = battleSeries([{ ...pool[6], trainerBattles: [rival(6)] }], pool).trainerTurns[0]
+  const slow = battleSeries([{ ...pool[6], trainerBattles: [rival(6, 2)] }], pool).trainerTurns[0]
   assert.deepEqual([slow.pace, slow.projected, slow.missing[0].turns, slow.missing[0].ratio], [3, 21, 21, 3])
-  assert.equal(slow.label, ((6 + 21) / 2).toFixed(1))
+  assert.equal(slow.label, ((6 + 21) / 3).toFixed(1))
   // A fast one (1 turn) projects Brock at 3.5; a projected cell carries the pace as its ratio.
-  const fast = trainerMatrix(pool, [{ ...pool[6], trainerBattles: [rival(1)] }]).rows[0]
+  const fast = trainerMatrix(pool, [{ ...pool[6], trainerBattles: [rival(1, 2)] }]).rows[0]
   assert.deepEqual([fast.pace, fast.cells.find((c) => c.kind === 'projected').turns, fast.cells[0].ratio], [0.5, 3.5, 0.5])
   assert.ok(trainerTurns.filter((s) => s.eligible && s.projected === 0).every((s) => s.complete))
   assert.equal(trainerTurns.at(-1).eligible, false)              // the row with no per-turn state
@@ -241,6 +242,11 @@ test('battle series: rule-A turn costs, means over ≥4 fights, unfought trainer
   // A run that fought nobody yet is left off even with per-turn state.
   const virgin = [{ ...pool[1], trainerBattles: [], trainerBattleTurns: 0 }]
   assert.equal(battleSeries(virgin, pool).trainerTurns[0].eligible, false)
+  // One fight is not enough either (Andreas 2026-09-14: two before a projection is made); two is.
+  const one = [{ ...pool[1], runId: 'one', model: 'one(high)', trainerBattles: [{ group: 'rival_oaks_lab', name: "Rival (Oak's Lab)", attempts: 1, turns: 5, won: true, mandatory: true }] }]
+  assert.equal(battleSeries(one, pool).trainerTurns[0].eligible, false)
+  const two = [{ ...one[0], trainerBattles: [{ ...one[0].trainerBattles[0], attempts: 2, turns: 9 }] }]
+  assert.equal(battleSeries(two, pool).trainerTurns[0].eligible, true)
   // Fewer than 4 fights → nothing projected, even for a mandatory trainer; 4 is enough.
   const thin = pool.map((r, i) => ({ ...r, trainerBattles: i === 0 ? null : [rival(2), ...(i <= 3 ? [brock(4)] : [])] }))
   assert.ok(battleSeries(thin, thin).trainerTurns.every((s) => !s.projected))

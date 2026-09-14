@@ -5,7 +5,7 @@
   // section in view; a menu item is an anchor (#price) so a section can be
   // linked. Every chart here follows the shared model picker (decision 1a);
   // the headline three above stay on the whole board.
-  import { headlineSeries, secondarySeries, battleSeries, MIN_BATTLE_OBSERVATIONS, PERF_LINE, PROJECT_FROM_GATE, fmtMinutes, fmtUsd, fmtTokens } from '../lib/board.js'
+  import { headlineSeries, secondarySeries, battleSeries, MIN_BATTLE_OBSERVATIONS, MIN_FIGHTS_FOR_PROJECTION, PERF_LINE, PROJECT_FROM_GATE, fmtMinutes, fmtUsd, fmtTokens } from '../lib/board.js'
   import { GATES, gate } from '../lib/gates.js'
   import { selection } from '../lib/selection.svelte.js'
   import BarCard from './BarCard.svelte'
@@ -100,7 +100,7 @@
   const trainerTurns = $derived(bat.trainerTurns.filter((s) => s.eligible && past1(s)).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true, partial: false,
     tip: `${s.row.model}: ${s.label} turns per trainer battle — ${s.measured} turns over ${s.attempts} fight${s.attempts === 1 ? '' : 's'} (${(s.row.trainerBattles || []).filter((g) => g.attempts > 0 && !s.uncounted.some((u) => u.group === g.group)).map((g) => `${g.name} ${g.turns}T${g.attempts > 1 ? ` in ${g.attempts} attempts` : ''}${g.won ? '' : ', not won'}`).join('; ')})${s.uncounted.length ? ` · not counted: ${s.uncounted.map((u) => `${u.name} ${u.turns}T (only ${u.n} run${u.n === 1 ? '' : 's'} met them)`).join(', ')}` : ''}${s.projected ? ` + ${s.missing.map((m) => `${m.name} projected at ${m.turns.toFixed(1)} (pace ${s.pace.toFixed(2)}× the field mean ${m.typical.toFixed(1)} over ${m.n} fights)`).join(', ')}` : ''}` })))
   const TRAINER_PROJ = `* Every bar mixes measured and projected fights: each trainer the run did not fight is charged one fight at the run's pace × the field's mean turns for that trainer (once ${MIN_BATTLE_OBSERVATIONS}+ runs have fought them). The runs × trainers table on Estimation methods shows which fights are measured and which are projected.`
-  const trainerNote = $derived([TRAINER_PROJ, earlyNote, offNote(bat.trainerTurns.filter((s) => !s.eligible && past1(s)).length, 'no trainer fought yet, or no per-turn battle state.')].filter(Boolean).join(' '))
+  const trainerNote = $derived([TRAINER_PROJ, earlyNote, offNote(bat.trainerTurns.filter((s) => !s.eligible && past1(s)).length, `fewer than ${MIN_FIGHTS_FOR_PROJECTION} trainer fights yet, or no per-turn battle state.`)].filter(Boolean).join(' '))
   const TOKENS_BIAS = '* Models think more as the game gets harder: over the runs with 80+ turns, the last 40 turns cost a median 1.65× the output tokens of the first 40. A run that ended early (dotted) averaged over the cheap early game only, so its bar is low partly for that reason.'
   const tokensNote = $derived([TOKENS_BIAS, earlyNote, offNote(noTokens, 'the run recorded no token usage.')].filter(Boolean).join(' '))
   const leftNote = $derived(leftOff ? `${leftOff} ${picker ? 'selected ' : ''}model${leftOff === 1 ? '' : 's'} not shown: never reached ${fromGate}, so nothing to project.` : '')
@@ -164,7 +164,7 @@
             entries={movement} {picker} pickerRows={pool} {highlight} {pinned} narrowFrom={18} bars={220} {oninspect} dimmed={dimUnless('movement')} note={movementNote} />
           <BarCard title="Turns per wild battle" subtitle="Turns that started inside a wild battle ÷ wild battles met · runs that cleared Route 1 · Lower is better"
             entries={wildTurns} {picker} pickerRows={pool} {highlight} {pinned} narrowFrom={18} bars={220} {oninspect} dimmed={dimUnless('wild')} note={wildNote} />
-          <BarCard title="Turns per trainer battle*" subtitle="Average turns a trainer fight costs, every attempt counted · shown once the first trainer is fought · trainers the run did not fight are projected so every run is scored on the same roster · Lower is better"
+          <BarCard title="Turns per trainer battle*" subtitle={`Average turns a trainer fight costs, every attempt counted · shown once ${MIN_FIGHTS_FOR_PROJECTION} trainer fights are done · trainers the run did not fight are projected so every run is scored on the same roster · Lower is better`}
             entries={trainerTurns} {picker} pickerRows={pool} {highlight} {pinned} narrowFrom={18} bars={220} {oninspect} dimmed={dimUnless('trainer')} note={trainerNote} />
         {/if}
       </section>

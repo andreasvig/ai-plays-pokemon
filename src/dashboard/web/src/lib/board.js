@@ -316,6 +316,8 @@ export function fmtTpm(v) {
  *   ineligible and appended with height 0.
  */
 export const MIN_BATTLE_OBSERVATIONS = 4
+/** A run enters the trainer card once it has this many trainer fights (attempts) behind it — Andreas 2026-09-14: two. */
+export const MIN_FIGHTS_FOR_PROJECTION = 2
 /**
  * The first-badge trainer roster in encounter order (src/referee/battles.py
  * TRAINER_GROUP).
@@ -378,7 +380,7 @@ export function trainerMatrix(pool, rows = pool) {
     const measured = perTurn ? fought.reduce((a, c) => a + (c.turns ?? 0), 0) : null
     const attempts = fought.reduce((a, c) => a + c.attempts, 0)
     const projTurns = projected.reduce((a, c) => a + c.turns, 0)
-    const eligible = perTurn && attempts > 0   // the first trainer must have been fought
+    const eligible = perTurn && attempts >= MIN_FIGHTS_FOR_PROJECTION   // one fight is too little to set a pace from
     const avg = eligible ? (measured + projTurns) / (attempts + projected.length) : null
     return { row: r, cells, measured, attempts, pace, projected: projTurns, projectedCount: projected.length, uncounted, eligible, avg, complete: projected.length === 0 }
   })
@@ -425,8 +427,8 @@ export function battleSeries(rows, pool = rows) {
     .concat(rows.filter((r) => !wildOk(r)).map(OFF))
 
   // Turns per trainer battle: (measured turns + projected mandatory trainers)
-  // ÷ (attempts + projected battles). A run qualifies once it fought its first
-  // trainer (Andreas 2026-09-14); the projection is pace-based, see trainerMatrix.
+  // ÷ (attempts + projected battles). A run qualifies once it has
+  // MIN_FIGHTS_FOR_PROJECTION fights (Andreas 2026-09-14); the projection is pace-based, see trainerMatrix.
   const matrix = trainerMatrix(pool, rows)
   const byId = new Map(matrix.rows.map((m) => [m.row, m]))
   const trainerVals = []
