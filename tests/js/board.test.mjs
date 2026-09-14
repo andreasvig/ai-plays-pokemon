@@ -248,21 +248,21 @@ test('battle series: rule-A turn costs, means over ≥4 fights, unfought trainer
   const two = [{ ...one[0], trainerBattles: [{ ...one[0].trainerBattles[0], attempts: 2, turns: 9 }] }]
   assert.equal(battleSeries(two, pool).trainerTurns[0].eligible, true)
   // Fewer than 4 fights → nothing projected, even for a mandatory trainer; 4 is enough.
-  const thin = pool.map((r, i) => ({ ...r, trainerBattles: i === 0 ? null : [rival(2), ...(i <= 3 ? [brock(4)] : [])] }))
+  const thin = pool.map((r, i) => ({ ...r, trainerBattles: i === 0 ? null : [rival(2, 2), ...(i <= 3 ? [brock(4)] : [])] }))   // rival in two tries: every row clears the two-fight bar
   assert.ok(battleSeries(thin, thin).trainerTurns.every((s) => !s.projected))
-  const four = pool.map((r, i) => ({ ...r, trainerBattles: i === 0 ? null : [rival(2), ...(i <= 4 ? [brock(4)] : [])] }))
+  const four = pool.map((r, i) => ({ ...r, trainerBattles: i === 0 ? null : [rival(2, 2), ...(i <= 4 ? [brock(4)] : [])] }))
   assert.ok(battleSeries(four, four).trainerTurns.some((s) => s.projected === 4))
   // Optional trainers: rows 1..5 finished; 4 of them fought Rick (10 turns each) → usable. Any run that did
   // not fight Rick — before Pewter, past it, or finished — is charged one Rick fight at pace × 10, so every
   // run is scored on the same roster.
   const rick = (turns) => ({ group: '102', id: 102, name: 'Bug Catcher Rick', attempts: 1, turns, won: true, mandatory: false })
-  const withRick = pool.map((r, i) => ({ ...r, trainerBattles: i === 0 ? null : [rival(2), ...(i <= 5 ? [brock(4 + i)] : []), ...(i >= 2 && i <= 5 ? [rick(10)] : [])] }))
+  const withRick = pool.map((r, i) => ({ ...r, trainerBattles: i === 0 ? null : [rival(2, i <= 5 ? 1 : 2), ...(i <= 5 ? [brock(4 + i)] : []), ...(i >= 2 && i <= 5 ? [rick(10)] : [])] }))
   const wm = trainerMatrix(withRick)
   const early = wm.rows[6]                                   // luna(max): four gates, before the forest
   const rickCell = early.cells.find((c) => c.group === '102')
   assert.deepEqual([rickCell.kind, rickCell.turns, rickCell.ratio], ['projected', 10, 1])
   assert.deepEqual([early.projectedCount, early.projected], [2, 17])                    // Brock 7 + Rick 10
-  assert.ok(Math.abs(early.avg - (2 + 17) / 3) < 1e-9)
+  assert.ok(Math.abs(early.avg - (2 + 17) / 4) < 1e-9)        // rival in 2 tries + 2 projected fights
   const finished = wm.rows[1]                                // finished, fought rival + Brock, never Rick
   const fr = finished.cells.find((c) => c.group === '102')
   assert.deepEqual([fr.kind, finished.complete, finished.projectedCount], ['projected', false, 1])
@@ -274,7 +274,7 @@ test('battle series: rule-A turn costs, means over ≥4 fights, unfought trainer
   const cc = solo.cells.find((c) => c.group === '532')
   assert.deepEqual([cc.kind, cc.counted, solo.measured, solo.attempts, solo.uncounted.length], ['fought', false, wm.rows[1].measured, wm.rows[1].attempts, 1])
   assert.equal(solo.avg, wm.rows[1].avg)
-  const pastPewter = trainerMatrix(withRick, [{ ...withRick[6], gateTurns: withRick[2].gateTurns, completion: 90, trainerBattles: [rival(2)] }]).rows[0]
+  const pastPewter = trainerMatrix(withRick, [{ ...withRick[6], gateTurns: withRick[2].gateTurns, completion: 90, trainerBattles: [rival(2, 2)] }]).rows[0]
   assert.deepEqual(pastPewter.cells.filter((c) => c.kind === 'projected').map((c) => c.group), ['102', '414'])   // past Pewter: still charged
 })
 
