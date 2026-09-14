@@ -17,7 +17,11 @@ Vocabulary
   jumps over (skipped past its deadline, or out-of-order) gets a ``skipped``
   leg record so the list stays aligned with the ladder.
 - **d_open (D)** — steps from the position where the leg opened to the target;
-  **d_min** — the closest the run has ever been during the leg;
+  **d_min** — the closest the run has ever been during the leg. A node with
+  ``score_to: reached`` (the starter gate, 2026-09-14) re-bases D when the leg
+  CLOSES: the shortest path from the opening position to the tile the gate was
+  completed on, so a legitimate choice among several finishing tiles is not
+  charged as a detour (d_min and distance_now become 0);
   ``fraction = clamp(1 - d_min / D, 0, 1)``, capped at
   :data:`OPEN_LEG_FRACTION_CAP` (0.95) while the leg is still open: standing
   on the target's tile is not the target (2026-09-11 — glm-5.3-flash(max) stood
@@ -61,10 +65,11 @@ class _Leg:
         "index", "node_id", "name", "status", "opened_turn", "closed_turn",
         "scored", "targets", "d_open", "d_min", "distance_now", "steps_walked",
         "tiles", "off_graph", "prev_node", "traced_turns", "bound_turns",
+        "open_node", "score_to",
     )
 
     def __init__(self, index: int, node_id: str, name: str, *, scored: bool,
-                 targets: frozenset[int], steps_known: bool) -> None:
+                 targets: frozenset[int], steps_known: bool, score_to: str = "nearest") -> None:
         self.index = index
         self.node_id = node_id
         self.name = name
@@ -84,6 +89,10 @@ class _Leg:
         # (exact) vs the shortest-path bound between polls (2026-09-14).
         self.traced_turns = 0
         self.bound_turns = 0
+        # The first on-graph node of the leg (where D was measured from) and
+        # the node's scoring rule — "reached" re-bases D at close (see module doc).
+        self.open_node: Optional[int] = None
+        self.score_to = score_to
 
     def fraction(self) -> Optional[float]:
         if not self.scored or self.d_open is None or self.d_min is None:
@@ -329,6 +338,7 @@ class ProgressTracker:
             scored=self.graph is not None and bool(targets),
             targets=targets,
             steps_known=self.graph is not None,
+            score_to=getattr(node, "score_to", "nearest"),
         )
 
     def _current_leg(self) -> Optional[_Leg]:
@@ -380,6 +390,8 @@ class ProgressTracker:
                     self._legs.append(leg)
                 leg.closed_turn = turn
                 leg.status = "closed" if self._complete_turn(k, turn) is not None else "skipped"
+                if leg.status == "closed":
+                    self._rebase_to_reached(leg)
             self._cursor = new_cursor
             if new_cursor < len(self.nodes):
                 leg = self._new_leg(new_cursor, new_targets)
@@ -411,6 +423,24 @@ class ProgressTracker:
             leg.d_open = d
             leg.d_min = d
             leg.distance_now = d
+            leg.open_node = node
+
+    def _rebase_to_reached(self, leg: _Leg) -> None:
+        """``score_to: reached`` — at close, D becomes the shortest path from
+        the leg's opening node to the node the gate was completed on (the last
+        on-graph position folded into the leg: the stamp turn's poll, folded
+        before the stamp closed it). Leaves the leg alone when either end is
+        unknown or unreachable, so a legacy leg keeps its nearest-tile D."""
+        if leg.score_to != "reached" or self.graph is None or not leg.scored:
+            return
+        if leg.open_node is None or leg.prev_node is None:
+            return
+        d = self._steps(leg.open_node, leg.prev_node)
+        if d is None:
+            return
+        leg.d_open = d
+        leg.d_min = 0
+        leg.distance_now = 0
 
     def _steps(self, a: int, b: int) -> Optional[int]:
         key = (a, b)
@@ -445,6 +475,7 @@ class ProgressTracker:
         if d is not None:
             if leg.d_open is None:
                 leg.d_open = d  # opening position unknown/off-graph: first on-graph one stands in
+                leg.open_node = node
             leg.distance_now = d
             leg.d_min = d if leg.d_min is None else min(leg.d_min, d)
         return node, d

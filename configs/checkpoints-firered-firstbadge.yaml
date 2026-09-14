@@ -93,6 +93,10 @@ checkpoints:
     cross_check: {type: party, min_count: 1}
     leg_cap_turns: 30
     locus: {map_group: 4, map_num: 3, near: [[8,4],[9,4],[10,4]]}  # the three starter Pokéballs in Oak's Lab (ITEM_BALL object_events; pret map.json, 2026-09-09)
+    # Three valid finishes: the leg's shortest path is re-based at close to the
+    # ball actually taken, so choosing the far one is not charged as a detour
+    # (Andreas 2026-09-14, option A; src/referee/progress.py _rebase_to_reached).
+    score_to: reached
 
   - id: rival1_done
     name: "First rival battle done"               # scene-complete, win or lose (no victory flag exists)

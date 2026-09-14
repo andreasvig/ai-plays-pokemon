@@ -79,6 +79,11 @@ LEDGE_TOP = Checkpoint("ledge_top", "On the ledge", "flag", {"flag_id": 3}, None
                        locus={"map_group": 3, "map_num": 0, "tiles": [[5, 1]]})
 
 LADDER = [ENTER_ROOM, TALK_NPC, NO_LOCUS]
+# Two valid finishing tiles in the room, (1,0) and (3,0); scored to the one reached.
+PICK_ONE = Checkpoint("pick_one", "Picked one", "flag", {"flag_id": 4}, None,
+                      locus={"map_group": 4, "map_num": 3, "tiles": [[1, 0], [3, 0]]}, score_to="reached")
+PICK_NEAREST = Checkpoint("pick_one", "Picked one", "flag", {"flag_id": 4}, None,
+                          locus={"map_group": 4, "map_num": 3, "tiles": [[1, 0], [3, 0]]})
 
 
 def tracker(nodes=LADDER, graph=None):
@@ -560,3 +565,43 @@ def test_open_leg_fraction_is_capped_below_one():
     leg.status = "closed"
     leg.d_min = 0
     assert leg.fraction() == 1.0
+
+
+# --- score_to: reached (2026-09-14, option A) ----------------------------------
+
+def test_score_to_reached_rebases_D_to_the_tile_the_gate_was_completed_on():
+    """Enter the room at (0,0); walk to the FAR finishing tile (3,0), 3 steps.
+    Nearest-tile scoring calls that a 1-step leg walked in 3 (33 %; d_min hits 0
+    because the far tile is a target too); scoring to the reached tile makes it
+    a 3-step leg walked in 3 (100 %). While the leg is open both trackers read
+    the nearest tile, so the live fraction is unchanged."""
+    def play(nodes):
+        tr = tracker(nodes)
+        tr.record(1, 3, 0, 8, 0); tr.record(2, 3, 0, 9, 0)
+        tr.record(3, 4, 3, 0, 0); tr.observe_stamps({"enter_room": 3})        # leg opens at (0,0)
+        tr.record(4, 4, 3, 2, 0)
+        mid = current(tr)
+        tr.record(5, 4, 3, 3, 0); tr.observe_stamps({"enter_room": 3, "pick_one": 5})
+        return mid, tr.summary()["legs"][1]
+    mid_n, leg_n = play([ENTER_ROOM, PICK_NEAREST])
+    mid_r, leg_r = play([ENTER_ROOM, PICK_ONE])
+    assert mid_n["d_open"] == 1 and mid_r["d_open"] == 1 and mid_r["d_min"] == 1           # open: nearest tile, both
+    assert (leg_n["d_open"], leg_n["d_min"], leg_n["efficiency"]) == (1, 0, pytest.approx(1 / 3))
+    assert (leg_r["d_open"], leg_r["d_min"], leg_r["distance_now"], leg_r["fraction"]) == (3, 0, 0, 1.0)
+    assert leg_r["efficiency"] == pytest.approx(1.0) and leg_r["steps_walked"] == leg_n["steps_walked"] == 3
+    # Finishing on the NEAR tile scores the same under both rules.
+    tr = tracker([ENTER_ROOM, PICK_ONE])
+    tr.record(3, 4, 3, 0, 0); tr.observe_stamps({"enter_room": 3}); tr.record(4, 4, 3, 1, 0); tr.observe_stamps({"enter_room": 3, "pick_one": 4})
+    assert (tr.summary()["legs"][1]["d_open"], tr.summary()["legs"][1]["efficiency"]) == (1, 1.0)
+    # A rebuild from exported state lands on the same numbers.
+    fresh = tracker([ENTER_ROOM, PICK_ONE]); fresh.load_state(tr.export_state()); fresh.observe_stamps({"enter_room": 3, "pick_one": 4})
+    assert fresh.summary() == tr.summary()
+
+
+def test_score_to_is_validated_and_defaults_to_nearest():
+    from src.referee.checkpoints import _parse_checkpoint
+    raw = {"id": "a", "name": "A", "type": "flag", "signature": {"flag_id": 1}, "deadline_turn": None}
+    assert ENTER_ROOM.score_to == "nearest" and _parse_checkpoint(raw, index=0).score_to == "nearest"
+    assert _parse_checkpoint({**raw, "score_to": "reached"}, index=0).score_to == "reached"
+    with pytest.raises(ValueError, match="score_to"):
+        _parse_checkpoint({**raw, "score_to": "closest"}, index=0)

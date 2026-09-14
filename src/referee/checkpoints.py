@@ -56,6 +56,15 @@ class Checkpoint:
     (the walk graph derives the map's entry tiles); a non-map gate without one
     simply has an unscored leg. It never decides a stamp.
 
+    ``score_to`` (2026-09-14, option A) says what the leg's shortest path runs
+    to once the leg is CLOSED: ``"nearest"`` (default) keeps the distance to
+    the closest target tile from where the leg opened; ``"reached"`` replaces
+    it with the shortest path from where the leg opened to the tile the run
+    actually completed the gate on. For the starter gate the three Pokéballs
+    are three valid finishes and picking the far one is a choice, not a
+    detour — scoring to the nearest ball charged that choice as wasted steps.
+    While the leg is open the nearest-tile distance still drives ``fraction``.
+
     ``leg_cap_turns`` (PokeBench v1.1, 2026-09-09) bounds the LEG into this gate:
     the run is terminated when ``turn - <previous rung's completion turn> >=
     leg_cap_turns`` with the gate still unstamped. It is independent of
@@ -78,6 +87,10 @@ class Checkpoint:
     cross_check: Optional[dict[str, Any]] = None
     locus: Optional[dict[str, Any]] = None
     leg_cap_turns: Optional[int] = None
+    score_to: str = "nearest"
+
+
+SCORE_TO_VALUES = frozenset({"nearest", "reached"})
 
 
 @dataclass
@@ -287,6 +300,10 @@ def _parse_checkpoint(raw: Any, *, index: int) -> Checkpoint:
     if locus is not None:
         locus = _validate_locus(locus, ctx=ctx)
 
+    score_to = raw.get("score_to", "nearest")
+    if score_to not in SCORE_TO_VALUES:
+        raise ValueError(f"{ctx}: score_to must be one of {sorted(SCORE_TO_VALUES)}, got {score_to!r}")
+
     return Checkpoint(
         id=cp_id,
         name=name,
@@ -296,6 +313,7 @@ def _parse_checkpoint(raw: Any, *, index: int) -> Checkpoint:
         cross_check=cross_check,
         locus=locus,
         leg_cap_turns=leg_cap_turns,
+        score_to=score_to,
     )
 
 
