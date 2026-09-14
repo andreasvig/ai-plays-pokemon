@@ -21,7 +21,8 @@ def test_the_corrected_locus_is_reachable_from_viridian_and_the_leg_rescores():
     # An OPEN leg: opened at T100 on the Viridian entry tile, walked into the Mart, ended two tiles from the clerk.
     entry = graph.nodes[sorted(graph.map_entry_nodes(3, 1))[0]]
     d_entry = graph.distance_to(targets, graph.node_id(*entry))
-    positions = [[99, 5, 3, 4, 7], [100, *entry],   # T99 (4 tiles from the clerk) predates the leg and must not seed it [101, 3, 1, 36, 19], [102, 5, 3, 4, 7], [103, 5, 3, 3, 7], [104, 5, 3, 9, 7]]
+    # T99 (4 tiles from the clerk) predates the leg and must not seed it.
+    positions = [[99, 5, 3, 4, 7], [100, *entry], [101, 3, 1, 36, 19], [102, 5, 3, 4, 7], [103, 5, 3, 3, 7], [104, 5, 3, 9, 7]]
     leg = {"node_id": "parcel_delivered", "status": "open", "scored": True, "opened_turn": 100, "closed_turn": None,
            "d_open": None, "d_min": None, "distance_now": None, "fraction": None, "steps_walked": 40, "efficiency": None}
     out = bpl.rescore_leg(leg, positions, graph, targets, last_turn=104)
@@ -30,8 +31,9 @@ def test_the_corrected_locus_is_reachable_from_viridian_and_the_leg_rescores():
     assert out["steps_walked"] == 40                                     # steps are left as recorded
     assert out["d_open"] != 4   # the T99 position is ignored: the opening distance is T100's
     # A CLOSED leg gets efficiency = d_open / max(steps, d_open) and an uncapped fraction.
-    closed = bpl.rescore_leg({**leg, "status": "closed", "closed_turn": 104}, positions + [[105, 5, 3, 2, 5]], graph, targets)
-    assert closed["fraction"] == 1.0 and abs(closed["efficiency"] - d_entry / 40) < 1e-9
+    # The stamp turn's position (T105, on the clerk's tile) belongs to the leg it closes, as in the tracker.
+    closed = bpl.rescore_leg({**leg, "status": "closed", "closed_turn": 105, "steps_walked": 60}, positions + [[105, 5, 3, 2, 5]], graph, targets)
+    assert closed["fraction"] == 1.0 and abs(closed["efficiency"] - d_entry / 60) < 1e-9
     # Summary-level: the current leg and the progress score follow.
     summary = {"session": {"total_turns": 104},
                "referee": {"progress": {"progress": 7.0, "gates_reached": 7, "current_leg": dict(leg), "legs": [{"node_id": "viridian_reached", "d_open": 5}, dict(leg)]}}}
