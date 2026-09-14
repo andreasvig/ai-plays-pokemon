@@ -301,8 +301,9 @@ export function fmtTpm(v) {
 /**
  * Battles + movement (2026-09-14, artifacts/battle-and-movement-fidelity/plan.md).
  * movement — shortest path ÷ overworld steps over closed map legs, best first.
- * wildTurns — turns per wild battle (rule A: turns that STARTED in one), fewest first.
- * battleShare — share of the run's turns that started inside a battle, lowest first.
+ * wildTurns — turns per wild battle (rule A: turns that STARTED in one), fewest
+ *   first; only runs that cleared Route 1 — before that no wild grass is
+ *   reachable and a run has nothing to say (Andreas 2026-09-14).
  * trainerTurns — turns spent in trainer battles (attempts summed per trainer) PLUS,
  *   for every trainer the run did not fight, a projection built like the leg
  *   projection (projectRun): the run's PACE — its turns on the trainers it
@@ -417,15 +418,11 @@ export function battleSeries(rows, pool = rows) {
     (v) => Math.round(v * 100) + '%', { desc: true })
     .concat(rows.filter((r) => r.movementEfficiency == null).map(OFF))
 
-  const wildTurns = rank(rows.filter((r) => r.wildBattles > 0 && r.wildBattleTurns != null)
+  const wildOk = (r) => r.wildBattles > 0 && r.wildBattleTurns != null && r.gateTurns != null && r.gateTurns.route1_reached != null
+  const wildTurns = rank(rows.filter(wildOk)
     .map((r) => ({ row: r, value: r.wildBattleTurns / r.wildBattles, eligible: true, complete: true })),
     (v) => v.toFixed(1))
-    .concat(rows.filter((r) => !(r.wildBattles > 0 && r.wildBattleTurns != null)).map(OFF))
-
-  const battleShare = rank(rows.filter((r) => r.battleTurnShare != null)
-    .map((r) => ({ row: r, value: r.battleTurnShare, eligible: true, complete: true })),
-    (v) => Math.round(v * 100) + '%')
-    .concat(rows.filter((r) => r.battleTurnShare == null).map(OFF))
+    .concat(rows.filter((r) => !wildOk(r)).map(OFF))
 
   // Turns per trainer battle: (measured turns + projected mandatory trainers)
   // ÷ (attempts + projected battles). A run qualifies once it fought its first
@@ -443,7 +440,7 @@ export function battleSeries(rows, pool = rows) {
       eligible: true, complete: m.complete })
   }
   const trainerTurns = rank(trainerVals, (v) => v.toFixed(1)).concat(trainerOff)
-  return { movement, wildTurns, battleShare, trainerTurns }
+  return { movement, wildTurns, trainerTurns }
 }
 
 /** Token counts as "480" / "1.2k" / "12k". */

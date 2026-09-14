@@ -210,11 +210,13 @@ test('battle series: rule-A turn costs, means over ≥4 fights, unfought trainer
   assert.equal(typ['414'].n, 5)                       // rows 1..5 fought Brock
   assert.deepEqual([typ['414'].typical, typ['414'].median], [7, 7])   // mean of 5,6,7,8,9
   assert.deepEqual([typ.rival_oaks_lab.n, typ.rival_oaks_lab.typical], [RANKED.length - 1, 2])
-  const { movement, wildTurns, battleShare, trainerTurns } = battleSeries(pool, pool)
+  const { movement, wildTurns, trainerTurns } = battleSeries(pool, pool)
   assert.equal(movement[0].row.model, pool.at(-1).model)         // best first
   assert.equal(movement.at(-1).eligible, false)                  // the row without the statistic
   assert.equal(wildTurns[0].label, '1.0')                        // row 0: 10 turns / 10 battles, fewest first
-  assert.equal(battleShare[0].label, '10%')
+  // Wild battles: only runs that cleared Route 1 (row 6 = luna(max), four gates, is off even with battles).
+  assert.equal(wildTurns.find((s) => s.row === pool[6]).eligible, false)
+  assert.ok(wildTurns.filter((s) => s.eligible).every((s) => s.row.gateTurns.route1_reached != null))
   const noBrock = trainerTurns.filter((s) => s.eligible && s.projected > 0)
   assert.equal(noBrock.length, RANKED.length - 6)                // rows 6.. never met Brock and did not finish
   // Every projected row fought the rival in exactly the typical 2 turns → pace 1 → Brock at the mean 7.
@@ -272,7 +274,7 @@ test('battle series: rule-A turn costs, means over ≥4 fights, unfought trainer
 test('empty board yields empty series without dividing by zero', () => {
   assert.deepEqual(headlineSeries([], GATES), { performance: [], time: [], cost: [] })
   assert.deepEqual(secondarySeries([], GATES), { speed: [], cost10: [], turnsPerTask: [], inputsPerTurn: [], outputTokens: [] })
-  assert.deepEqual(battleSeries([]), { movement: [], wildTurns: [], battleShare: [], trainerTurns: [] })
+  assert.deepEqual(battleSeries([]), { movement: [], wildTurns: [], trainerTurns: [] })
 })
 
 test('estimationMatrix: every run, every leg, ratios to the typical leg, estimates that sum to the projection', () => {

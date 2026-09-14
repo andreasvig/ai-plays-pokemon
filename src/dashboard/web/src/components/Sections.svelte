@@ -60,15 +60,13 @@
   const movement = $derived(bat.movement.filter((s) => s.eligible).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true, partial: s.row.completion < 100,
     tip: `${s.row.model}: ${s.label} — shortest path ${s.row.shortestSteps} of ${s.row.overworldSteps} steps over the map legs it closed · ${STEPS_FID[s.fidelity] || ''}${s.row.completion < 100 ? ` · run ended at ${Math.round(s.row.completion)}%` : ''}` })))
   const movementNote = $derived(offNote(bat.movement.filter((s) => !s.eligible).length, 'no closed map leg to measure.'))
-  const wildTurns = $derived(bat.wildTurns.filter((s) => s.eligible).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true, partial: s.row.completion < 100,
+  const wildTurns = $derived(bat.wildTurns.filter((s) => s.eligible).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true, partial: false,
     tip: `${s.row.model}: ${s.row.wildBattleTurns} turns started inside ${s.row.wildBattles} wild battle${s.row.wildBattles === 1 ? '' : 's'} = ${s.label} per battle · ${BAT_FID[s.row.battleFidelity] || ''}` })))
-  const wildNote = $derived(offNote(bat.wildTurns.filter((s) => !s.eligible).length, 'no wild battle, or no per-turn battle state.'))
-  const battleShare = $derived(bat.battleShare.filter((s) => s.eligible).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true, partial: s.row.completion < 100,
-    tip: `${s.row.model}: ${s.label} of its ${s.row.turns} turns started inside a battle · ${BAT_FID[s.row.battleFidelity] || ''}` })))
-  const shareNote = $derived(offNote(bat.battleShare.filter((s) => !s.eligible).length, 'no per-turn battle state.'))
-  const trainerTurns = $derived(bat.trainerTurns.filter((s) => s.eligible).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: s.complete, partial: s.complete && s.row.completion < 100,
+  const wildNote = $derived(offNote(bat.wildTurns.filter((s) => !s.eligible).length, 'did not clear Route 1, met no wild Pokémon, or has no per-turn battle state.'))
+  const trainerTurns = $derived(bat.trainerTurns.filter((s) => s.eligible).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true, partial: false,
     tip: `${s.row.model}: ${s.label} turns per trainer battle — ${s.measured} turns over ${s.attempts} fight${s.attempts === 1 ? '' : 's'} (${(s.row.trainerBattles || []).filter((g) => g.attempts > 0 && !s.uncounted.some((u) => u.group === g.group)).map((g) => `${g.name} ${g.turns}T${g.attempts > 1 ? ` in ${g.attempts} attempts` : ''}${g.won ? '' : ', not won'}`).join('; ')})${s.uncounted.length ? ` · not counted: ${s.uncounted.map((u) => `${u.name} ${u.turns}T (only ${u.n} run${u.n === 1 ? '' : 's'} met them)`).join(', ')}` : ''}${s.projected ? ` + ${s.missing.map((m) => `${m.name} projected at ${m.turns.toFixed(1)} (pace ${s.pace.toFixed(2)}× the field mean ${m.typical.toFixed(1)} over ${m.n} fights)`).join(', ')}` : ''}` })))
-  const trainerNote = $derived(offNote(bat.trainerTurns.filter((s) => !s.eligible).length, 'no trainer fought yet, or no per-turn battle state.'))
+  const TRAINER_PROJ = `* Every bar mixes measured and projected fights: each trainer the run did not fight is charged one fight at the run's pace × the field's mean turns for that trainer (once ${MIN_BATTLE_OBSERVATIONS}+ runs have fought them). The runs × trainers table on Estimation methods shows which fights are measured and which are projected.`
+  const trainerNote = $derived(TRAINER_PROJ + ' ' + offNote(bat.trainerTurns.filter((s) => !s.eligible).length, 'no trainer fought yet, or no per-turn battle state.'))
   const TOKENS_BIAS = '* Models think more as the game gets harder: over the runs with 80+ turns, the last 40 turns cost a median 1.65× the output tokens of the first 40. A run that ended early (dotted) averaged over the cheap early game only, so its bar is low partly for that reason.'
   const tokensNote = $derived(TOKENS_BIAS + (noTokens ? ` ${noTokens} selected model${noTokens === 1 ? '' : 's'} not shown: the run recorded no token usage.` : ''))
   const leftNote = $derived(leftOff ? `${leftOff} selected model${leftOff === 1 ? '' : 's'} not shown: never reached ${fromGate}, so nothing to project.` : '')
@@ -130,11 +128,9 @@
             entries={outputTokens} picker pickerRows={pool} narrowFrom={18} bars={220} {oninspect} note={tokensNote} />
           <BarCard title="Movement efficiency" subtitle="Shortest walk ÷ steps taken over the map legs the run closed · runs that did not finish dotted · hover for how the steps were counted · Higher is better"
             entries={movement} picker pickerRows={pool} narrowFrom={18} bars={220} {oninspect} note={movementNote} />
-          <BarCard title="Turns per wild battle" subtitle="Turns that started inside a wild battle ÷ wild battles met · runs that did not finish dotted · Lower is better"
+          <BarCard title="Turns per wild battle" subtitle="Turns that started inside a wild battle ÷ wild battles met · runs that cleared Route 1 · Lower is better"
             entries={wildTurns} picker pickerRows={pool} narrowFrom={18} bars={220} {oninspect} note={wildNote} />
-          <BarCard title="Battle share" subtitle="Share of all turns that started inside any battle, wild or trainer · runs that did not finish dotted · Lower is better"
-            entries={battleShare} picker pickerRows={pool} narrowFrom={18} bars={220} {oninspect} note={shareNote} />
-          <BarCard title="Turns per trainer battle" subtitle={`Average turns a trainer fight costs, every attempt counted · shown once the first trainer is fought · each trainer the run did not fight is charged as one fight at its pace × the field's mean turns for them (hatched), so every run is scored on the same roster, once ${MIN_BATTLE_OBSERVATIONS}+ runs have fought them · Lower is better`}
+          <BarCard title="Turns per trainer battle*" subtitle="Average turns a trainer fight costs, every attempt counted · shown once the first trainer is fought · trainers the run did not fight are projected so every run is scored on the same roster · Lower is better"
             entries={trainerTurns} picker pickerRows={pool} narrowFrom={18} bars={220} {oninspect} note={trainerNote} />
         {/if}
       </section>
