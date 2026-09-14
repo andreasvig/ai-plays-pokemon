@@ -31,9 +31,11 @@ from typing import Any, Optional
 
 from src.referee.battles import BattleTracker, MANDATORY_TRAINERS, TRAINER_NAMES  # noqa: F401  (re-exported for the projection)
 
-# "BUG CATCHER RICK would like to battle!" → 102. Upper-cased game names; the
-# rival is left out (his id depends on the starter, and the flags always name him).
-_OCR_TRAINERS = {name.upper(): tid for tid, name in TRAINER_NAMES.items() if not name.startswith("Rival")}
+# "BUG CATCHER RICK would like to battle!" → 102, keyed by the GIVEN name (the
+# last word): an OCR line that only caught "BUG CATCHER" names the kind, not the
+# trainer. The rival is left out (his id depends on the starter; the flags
+# always name him).
+_OCR_TRAINERS = {name.upper().split()[-1]: tid for tid, name in TRAINER_NAMES.items() if not name.startswith("Rival")}
 _TRAINER_RE = re.compile(r"([A-Z][A-Z .'-]{2,40}?)\s+would like to battle", re.I)
 _WILD_RE = re.compile(r"wild\s+[A-Z][A-Za-z'.\- ]{1,20}\s+appeared", re.I)
 
@@ -68,8 +70,8 @@ def ocr_hints(run_dir: Path, upto: Optional[int] = None) -> dict[int, dict[str, 
                 text = str(e.get("cleaned") or "")
                 m = _TRAINER_RE.search(text)
                 if m:
-                    name = re.sub(r"\s+", " ", m.group(1)).strip().upper()
-                    tid = next((tid for n, tid in _OCR_TRAINERS.items() if n in name or name in n), None)
+                    words = re.sub(r"[^A-Z ]", " ", m.group(1).upper()).split()
+                    tid = next((_OCR_TRAINERS[w] for w in reversed(words) if w in _OCR_TRAINERS), None)
                     out[began] = {"kind": "trainer", "trainer_id": tid}
                 elif _WILD_RE.search(text) and began not in out:
                     out[began] = {"kind": "wild", "trainer_id": None}

@@ -243,6 +243,13 @@ class BattleTracker:
                 if hinted:
                     hinted[-1]["won"] = True
                     continue
+                # Likewise an UNIDENTIFIED closed attempt just before it: that
+                # fight is the one the flag rewards (backfill puts the flag on
+                # the savepoint turn, up to a window after the fight closed).
+                unnamed = [x for x in segs if x["kind"] == "trainer" and x["trainer_id"] is None and x["won"] is not True]
+                if unnamed:
+                    unnamed[-1]["trainer_id"] = tid; unnamed[-1]["won"] = True
+                    continue
                 seg = new_segment("trainer", turn); seg["closed_turn"] = turn
                 seg["trainer_id"] = tid; seg["won"] = True; seg["uncounted"] = True
                 segs.append(seg)

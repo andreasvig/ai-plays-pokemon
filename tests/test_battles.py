@@ -227,3 +227,15 @@ def test_referee_without_battle_reads_still_stamps_and_reports_unavailable(tmp_p
     assert "left_bedroom" in ref.stamps  # the gate latch is untouched by the failed battle reads
     assert not [t for t, _ in log.events if t == "referee_battle_state"]
     assert ref.scorecard()["battles"] == {"available": False}
+
+
+def test_a_flag_landing_after_an_unnamed_closed_attempt_rewards_that_attempt():
+    """Backfill: Liam's fight 135-139 had no OCR name; his flag lands on the
+    savepoint record 140, where Brock's fight is already opening. The flag
+    names the closed fight — no phantom zero-turn win."""
+    t = BattleTracker()
+    t.identity_hints = {140: 414}
+    _feed(t, [(134, False, 0, 0, 0, ()), (135, True, 1, 0, 1, ()), (136, True, 1, 0, 1, ()), (139, False, 1, 0, 1, ()),
+              (140, True, 2, 0, 2, (142,)), (141, True, 2, 0, 2, (142,))])
+    segs = [s for s in t.segments() if s["kind"] == "trainer"]
+    assert [(s["opened_turn"], s["trainer_id"], s["won"], s.get("uncounted")) for s in segs] == [(135, 142, True, None), (140, 414, False, None)]
