@@ -154,6 +154,50 @@ def test_projection_averages_output_tokens_per_turn_from_the_usage_events(tmp_pa
 
 
 
+def test_projection_clocks_each_gate_in_wall_seconds_and_dollars_without_the_gap_between_segments(tmp_path):
+    """gate_times_s / gate_costs_usd (2026-09-14, model pages). A gate stamped at
+    turn T is reached when turn T+1 starts; the last turn's gate at run_end. The
+    fixture is a continued run: segment one (turns 1-2, 100 s) ends, two days
+    pass, segment two (turns 3-4) plays 30 s more — the gap is not played time.
+    Cost is cumulative cost_usd over llm_request_usage up to the stamp turn;
+    turn_usage is the same event's older name and must not double it."""
+    gates = [
+        {"id": "left_bedroom", "type": "map", "turn": 1, "status": "done"},
+        {"id": "left_house", "type": "map", "turn": 2, "status": "done"},
+        {"id": "oaks_lab_entered", "type": "map", "turn": 4, "status": "done"},
+        {"id": "starter_chosen", "type": "flag", "turn": None, "status": "pending"},
+    ]
+    run = _run_dir(tmp_path, {"gates": gates, "furthest": "oaks_lab_entered", "termination_reason": None})
+    t0 = 1_700_000_000.0
+    events = [
+        {"type": "run_start", "timestamp": t0},
+        {"type": "turn_start", "timestamp": t0 + 10, "turn": 1},
+        {"type": "llm_request_usage", "timestamp": t0 + 12, "turn": 1, "cost_usd": 0.01},
+        {"type": "turn_usage", "timestamp": t0 + 12, "turn": 1, "cost_usd": 0.01},           # same call, legacy name
+        {"type": "turn_start", "timestamp": t0 + 40, "turn": 2},
+        {"type": "llm_request_usage", "timestamp": t0 + 41, "turn": 2, "cost_usd": 0.02},
+        {"type": "llm_request_usage", "timestamp": t0 + 45, "turn": 2, "cost_usd": 0.005},   # a retry counts
+        {"type": "run_end", "timestamp": t0 + 100},
+        {"type": "run_start", "timestamp": t0 + 200_000},
+        {"type": "turn_start", "timestamp": t0 + 200_000 + 5, "turn": 3},
+        {"type": "llm_request_usage", "timestamp": t0 + 200_000 + 6, "turn": 3, "cost_usd": 0.03},
+        {"type": "turn_start", "timestamp": t0 + 200_000 + 20, "turn": 4},
+        {"type": "llm_request_usage", "timestamp": t0 + 200_000 + 21, "turn": 4, "cost_usd": 0.04},
+        {"type": "run_end", "timestamp": t0 + 200_000 + 30},
+    ]
+    (run / "events.jsonl").write_text("\n".join(json.dumps(e) for e in events) + "\n")
+    s = project_run_dir(run)
+    assert s.gate_times_s == {"left_bedroom": 30.0, "left_house": 95.0, "oaks_lab_entered": 120.0}
+    assert s.gate_costs_usd == {"left_bedroom": 0.01, "left_house": 0.035, "oaks_lab_entered": 0.105}
+    # legacy file with only turn_usage: still costed
+    (run / "events.jsonl").write_text("\n".join(json.dumps(e) for e in events if e["type"] != "llm_request_usage") + "\n")
+    assert project_run_dir(run).gate_costs_usd == {"left_bedroom": 0.01, "left_house": 0.01, "oaks_lab_entered": 0.01}
+    # no events file → None, like gate_turns' own absence
+    (tmp_path / "bare").mkdir()
+    bare = project_run_dir(_run_dir(tmp_path / "bare", {"gates": gates, "furthest": "left_house", "termination_reason": None}))
+    assert bare.gate_times_s is None and bare.gate_costs_usd is None
+
+
 def test_projection_reads_battles_and_movement_from_the_backfill_files(tmp_path):
     """v7 (2026-09-14): battle counts from battle_backfill.json, per-turn states
     from state_backfill.json, movement efficiency over closed map legs. A run
@@ -171,6 +215,7 @@ def test_projection_reads_battles_and_movement_from_the_backfill_files(tmp_path)
     assert s.wild_battle_turns == 2 and s.battle_turn_share == 5 / 100
     assert [(g["name"], g["attempts"], g["turns"], g["won"], g["mandatory"]) for g in s.trainer_battles] == [("Rival (Oak's Lab)", 1, 3, True, True)]
     assert (s.shortest_steps, s.overworld_steps, s.steps_fidelity) == (21, 24, "bound") and round(s.movement_efficiency, 3) == round(21 / 24, 3)
+    assert [(l["node_id"], l["d_open"], l["steps"], l["status"]) for l in s.movement_legs] == [("left_bedroom", 9, 12, "closed"), ("left_house", 12, 12, "closed")]
     (tmp_path / "bare").mkdir()
     bare = project_run_dir(_run_dir(tmp_path / "bare", {"gates": _GATES, "furthest": "left_house", "termination_reason": None}))
-    assert bare.wild_battles is None and bare.battle_fidelity is None and bare.movement_efficiency is None
+    assert bare.wild_battles is None and bare.battle_fidelity is None and bare.movement_efficiency is None and bare.movement_legs is None

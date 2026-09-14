@@ -79,7 +79,8 @@ def repo(tmp_path):
 
 
 def make_run(root: Path, run_id: str = "2026-09-08_12-00-00_config-5.1__test-model-high", *,
-             status: str = "completed", kind: str = "official", video: bool = True, shots: int = 3) -> Path:
+             status: str = "completed", kind: str = "official", video: bool = True, shots: int = 3,
+             alias: str = "test-model(high)") -> Path:
     run = root / run_id
     (run / "screenshots").mkdir(parents=True)
     names = [f"{i:05d}_turn_{i}.png" for i in range(1, shots + 1)]
@@ -87,7 +88,7 @@ def make_run(root: Path, run_id: str = "2026-09-08_12-00-00_config-5.1__test-mod
         (run / "screenshots" / n).write_bytes(b"\x89PNG fake " + n.encode())
     summary = {
         "run_id": run_id, "kind": kind, "status": status,
-        "session": {"llm_alias": "test-model(high)", "llm_model": "test/model", "total_turns": shots,
+        "session": {"llm_alias": alias, "llm_model": "test/model", "total_turns": shots,
                     "duration_seconds": 12.5, "started_at": "2026-09-08T12:00:00"},
         "cost": {"total_usd": 0.01},
         "turns": [{"turn": i, "action": ["a"], "reasoning": f"turn {i} reasoning"} for i in range(1, shots + 1)],
@@ -324,7 +325,7 @@ def test_publish_end_to_end(world, tmp_path):
     shots = [k for k in s3.objects if "/screenshots/" in k]
     assert len(shots) == 3 and all(s3.objects[k]["content_type"] == "image/png" for k in shots)
     assert res.video_url == f"{PUBLIC}/runs/{run_id}/recording.mp4"
-    assert res.page_url == f"https://andreasvig.github.io/ai-plays-pokemon/history/{run_id}"
+    assert res.page_url == "https://andreasvig.github.io/ai-plays-pokemon/models/test-model"   # the model page, not the run
     assert res.committed is True
     # verify saw the video and one screenshot, both typed
     assert verified[0] == (res.video_url, "video/mp4")
@@ -370,7 +371,7 @@ def test_publish_without_video_and_no_video_flag(world, tmp_path):
     assert res.video_url is None and res.row["has_recording"] is False
     assert not any(k.endswith(".mp4") for k in world["s3"].objects)
     # a run WITH a video published with --no-video: same result
-    run2 = make_run(tmp_path / "runs", "2026-09-08_13-00-00_config-5.1__other-model")
+    run2 = make_run(tmp_path / "runs", "2026-09-08_13-00-00_config-5.1__other-model", alias="other-model(high)")
     res2 = pub.publish_run(run2, store=world["store"], pages=world["pages"], secrets=[], include_video=False)
     assert res2.video_url is None and res2.row["has_recording"] is False
     assert len(world["pages"].read_board()) == 2
@@ -491,7 +492,7 @@ def test_leak_audit_control_refuses_before_any_upload(world):
 def test_unpublish_removes_objects_row_and_files(world, tmp_path):
     _publish(world)
     run_id = world["run"].name
-    other = make_run(tmp_path / "runs", "2026-09-08_15-00-00_config-5.1__keep")
+    other = make_run(tmp_path / "runs", "2026-09-08_15-00-00_config-5.1__keep", alias="test-model(low)")   # another level of the same model: allowed
     pub.publish_run(other, store=world["store"], pages=world["pages"], secrets=[])
     assert len(world["s3"].objects) == 5   # 4 (trace publish) + the other run's video
     result = pub.unpublish_run(run_id, store=world["store"], pages=world["pages"], log=lambda m: None)
@@ -506,6 +507,74 @@ def test_unpublish_removes_objects_row_and_files(world, tmp_path):
     # unpublishing something never published is a clean no-op
     again = pub.unpublish_run("never-there", store=world["store"], pages=world["pages"], log=lambda m: None)
     assert again == {"r2_deleted": 0, "row_removed": False, "files_removed": False, "committed": False}
+
+
+CATALOG = [
+    {"model": "test-model", "openrouter_id": "test/model", "vendor": "test", "reasoning_type": "effort",
+     "thinking_levels": ["xhigh", "high", "low"], "released": "2026-01-01"},
+    {"model": "never-run", "openrouter_id": "x/never", "vendor": "x", "reasoning_type": "none", "thinking_levels": [], "released": None},
+]
+
+
+def test_publish_refuses_a_second_run_for_a_level_already_on_the_board(world, tmp_path):
+    """One run per model + thinking level (2026-09-14, model pages). A second run
+    for test-model(high) is refused BEFORE any upload, naming the run to
+    unpublish; after `unpublish` it goes up. The same run republishing itself is
+    still fine (its row is replaced, not doubled)."""
+    _publish(world)
+    first = world["run"].name
+    n_objects = len(world["s3"].objects)
+    second = make_run(tmp_path / "runs", "2026-09-09_09-00-00_config-5.1__test-model-high-again")
+    with pytest.raises(pub.PublishError) as exc:
+        pub.publish_run(second, store=world["store"], pages=world["pages"], secrets=[])
+    assert first in str(exc.value) and "already on the board" in str(exc.value) and f"pokemon unpublish {first}" in str(exc.value)
+    assert len(world["s3"].objects) == n_objects, "refused before the first upload"
+    assert [r["run_id"] for r in world["pages"].read_board()] == [first]
+    _publish(world)   # the same run again: allowed
+    assert len(world["pages"].read_board()) == 1
+    pub.unpublish_run(first, store=world["store"], pages=world["pages"], log=lambda m: None)
+    res = pub.publish_run(second, store=world["store"], pages=world["pages"], secrets=[])
+    assert [r["run_id"] for r in world["pages"].read_board()] == [res.run_id]
+    # the pure helper behind it
+    rows = [{"run_id": "a", "model": "m(high)"}, {"run_id": "b", "model": "m(low)"}]
+    assert pub.board_clash(rows, "m(high)", "a") is None and pub.board_clash(rows, "m(high)", "c") == "a"
+    assert pub.board_clash(rows, "m(medium)", "c") is None
+
+
+def test_dry_run_reports_a_board_clash_and_changes_nothing(world, tmp_path, capsys):
+    from types import SimpleNamespace
+
+    from src.cli.publish import _dry_run
+
+    _publish(world)
+    second = make_run(tmp_path / "runs", "2026-09-09_09-00-00_config-5.1__test-model-high-again")
+    args = SimpleNamespace(with_trace=False, video="full", no_video=False)
+    _dry_run(second, world["store"], world["pages"], [], args)
+    out = capsys.readouterr().out
+    assert "already on the board as " + world["run"].name in out and "publish would refuse" in out
+    assert [r["run_id"] for r in world["pages"].read_board()] == [world["run"].name]
+    _dry_run(world["run"], world["store"], world["pages"], [], args)   # the same run: no clash line
+    assert "already on the board" not in capsys.readouterr().out
+
+
+def test_models_json_lists_only_models_with_a_row_and_keeps_level_order(world, tmp_path):
+    """data/models.json (2026-09-14): the model page lists a model's thinking
+    levels from the registry so it can grey out the ones nobody ran. Only
+    models with at least one row are exported; the catalog's level order
+    (highest first) is kept; unpublishing the last run drops the model."""
+    _publish(world, models=CATALOG)
+    files = _clone_board(world["repo"], tmp_path)
+    models = json.loads(files["data/models.json"].read_text())
+    assert [m["model"] for m in models] == ["test-model"]
+    assert models[0]["thinking_levels"] == ["xhigh", "high", "low"] and models[0]["vendor"] == "test"
+    # publish_site rewrites it too (a catalog edit reaches the site with the next bundle)
+    build = lambda wt: None  # noqa: E731
+    pub.publish_site(pages=world["pages"], build_site=build, models=CATALOG + [{"model": "test-model-2", "thinking_levels": ["high"]}], log=lambda m: None)
+    assert [m["model"] for m in json.loads(world["pages"].data_dir.joinpath("models.json").read_text())] == ["test-model"]
+    pub.unpublish_run(world["run"].name, store=world["store"], pages=world["pages"], models=CATALOG, log=lambda m: None)
+    assert json.loads(world["pages"].data_dir.joinpath("models.json").read_text()) == []
+    # the pure helper: a reasoning_type none model is matched on its bare name
+    assert [m["model"] for m in pub.public_models(CATALOG, [{"model": "never-run"}])] == ["never-run"]
 
 
 def test_verify_public_url_sends_a_named_user_agent(monkeypatch):

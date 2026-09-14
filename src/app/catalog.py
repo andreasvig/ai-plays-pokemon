@@ -120,6 +120,34 @@ def list_models() -> list[dict[str, Any]]:
     return out
 
 
+def model_catalog() -> list[dict[str, Any]]:
+    """Every registry entry, retired ones included, in the shape the public
+    ``data/models.json`` carries (2026-09-14, model pages): ``model``,
+    ``openrouter_id``, ``vendor`` (the id's provider prefix), ``reasoning_type``,
+    ``thinking_levels`` (highest first; ``[]`` for type none, whose runs carry
+    the bare model name), ``released``. Retired entries stay in: a retired
+    model can still have a published run, and its page needs its level list.
+    ``publish.public_models`` narrows this to the models with a row.
+    """
+    registry = _load_models_registry()
+    release_dates = _load_release_dates()
+    out: list[dict[str, Any]] = []
+    for base in sorted(registry):
+        entry = registry.get(base)
+        if not isinstance(entry, dict):
+            continue
+        oid = entry.get("openrouter_id")
+        out.append({
+            "model": base,
+            "openrouter_id": oid,
+            "vendor": oid.split("/", 1)[0] if isinstance(oid, str) and "/" in oid else None,
+            "reasoning_type": entry.get("reasoning_type", "none"),
+            "thinking_levels": model_thinking_levels(entry),
+            "released": release_dates.get(base),
+        })
+    return out
+
+
 _CONFIG_STEM_RE = re.compile(r"^(config-\d+\.\d+)\.yaml$")
 
 

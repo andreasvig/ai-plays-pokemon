@@ -12,6 +12,7 @@ import sys
 from dotenv import load_dotenv
 
 from src.app import publish as pub
+from src.app.catalog import model_catalog
 from src.cli.publish import REPO_ROOT, _pages, _settings_and_store
 
 
@@ -23,7 +24,7 @@ def main() -> None:
     log = lambda msg: print(msg, file=sys.stderr)  # noqa: E731
     try:
         _settings, store = _settings_and_store()
-        result = pub.unpublish_run(args.run_id, store=store, pages=_pages(log), log=log)
+        result = pub.unpublish_run(args.run_id, store=store, pages=_pages(log), models=model_catalog(), log=log)
     except pub.PublishError as exc:
         sys.exit(f"ERROR: {exc}")
     print(f"unpublished {args.run_id}: {result['r2_deleted']} R2 object(s), row "

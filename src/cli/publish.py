@@ -90,10 +90,11 @@ def main() -> None:
         pages_url = pub.pages_base_url(pages.remote_url(), __import__("os").environ.get("PAGES_BASE_URL"))
 
         if args.dry_run:
-            _dry_run(run_dir, store, secrets, args)
+            _dry_run(run_dir, store, pages, secrets, args)
             return
 
         from src.app.benchmarks import benchmarks_payload
+        from src.app.catalog import model_catalog
 
         build = None
         if not args.no_build:
@@ -103,7 +104,7 @@ def main() -> None:
         verify = None if args.skip_verify else (lambda url, ctype: pub.verify_public_url(url, expect_type=ctype))
         result = pub.publish_run(
             run_dir, store=store, pages=pages, secrets=secrets, benchmarks=pub.public_benchmarks(benchmarks_payload()),
-            include_video=not args.no_video, include_trace=args.with_trace,
+            models=model_catalog(), include_video=not args.no_video, include_trace=args.with_trace,
             video_file="recording-simple.mp4" if args.video == "simple" else "recording.mp4",
             build_site=build, verify=verify, pages_url=pages_url, log=log,
         )
@@ -123,6 +124,7 @@ def _site_only(log, refresh_rows_from: Path | None = None) -> None:
     — unless ``--refresh-rows`` asks for the published rows to be re-projected
     from their local run dirs first (pub.refresh_rows)."""
     from src.app.benchmarks import benchmarks_payload
+    from src.app.catalog import model_catalog
 
     try:
         pages = _pages(log)
@@ -132,7 +134,8 @@ def _site_only(log, refresh_rows_from: Path | None = None) -> None:
             secrets = pub.secret_values(pub.read_env_file(REPO_ROOT / ".env"))
             refresh = lambda p: pub.refresh_rows(p, refresh_rows_from, secrets=secrets, log=log)  # noqa: E731
         build = lambda _wt: pub.build_static_site(WEB_DIR, WEB_DIR / pub.SITE_DIST_DIRNAME, pub.base_path(pages_url), log=log)  # noqa: E731
-        committed = pub.publish_site(pages=pages, build_site=build, benchmarks=pub.public_benchmarks(benchmarks_payload()), refresh=refresh, log=log)
+        committed = pub.publish_site(pages=pages, build_site=build, benchmarks=pub.public_benchmarks(benchmarks_payload()),
+                                     models=model_catalog(), refresh=refresh, log=log)
     except pub.PublishError as exc:
         sys.exit(f"ERROR: {exc}")
     print(f"site {'rebuilt and pushed' if committed else 'unchanged'}  {pages_url}")
@@ -140,7 +143,7 @@ def _site_only(log, refresh_rows_from: Path | None = None) -> None:
         print("  Pages picks up the push within ~1 minute.")
 
 
-def _dry_run(run_dir: Path, store: pub.R2Store, secrets: list[str], args) -> None:
+def _dry_run(run_dir: Path, store: pub.R2Store, pages: pub.PagesRepo, secrets: list[str], args) -> None:
     """Everything publish_run checks before its first side effect, then stop."""
     import json
     from src.app.projection import project_run_dir
@@ -149,6 +152,8 @@ def _dry_run(run_dir: Path, store: pub.R2Store, secrets: list[str], args) -> Non
     projected = project_run_dir(run_dir)
     if projected is None:
         raise pub.PublishError(f"{run_dir.name}: no readable run_summary.json")
+    pages.ensure()
+    clash = pub.board_clash(pages.read_board(), projected.model, run_dir.name)
     files = {"summary.json": pub.public_summary_text(run_dir / "run_summary.json")}
     shots: list[str] = []
     if args.with_trace:
@@ -157,6 +162,9 @@ def _dry_run(run_dir: Path, store: pub.R2Store, secrets: list[str], args) -> Non
     hits = pub.audit_files(files, secrets)
     video = run_dir / ("recording-simple.mp4" if args.video == "simple" else "recording.mp4")
     print(f"dry run for {run_dir.name} (status {projected.status.value})")
+    if clash:
+        print(f"  BOARD: {projected.model} is already on the board as {clash} — publish would refuse; "
+              f'run "pokemon unpublish {clash}" first')
     print(f"  video        {'yes, %.1f MB' % (video.stat().st_size / 1e6) if video.is_file() and not args.no_video else 'no'}")
     print(f"  trace        {'yes, %d screenshots' % len(shots) if args.with_trace else 'no (result + video only)'}")
     print(f"  json bytes   {sum(len(t) for t in files.values()):,}")

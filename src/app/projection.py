@@ -38,7 +38,7 @@ _DEFAULT_LADDER = Path("configs/checkpoints-firered-v1.yaml")
 #   1 — 2026-09-09: error / crash (why a crashed run ended).
 #   2 — 2026-09-09: record (the spec the run was recorded with, for continues).
 #   3 — 2026-09-11: open-leg fraction capped at OPEN_LEG_FRACTION_CAP.
-PROJECTION_VERSION = 7  # 7 (2026-09-14): battles + movement efficiency (battle_stats.py); 6: output tokens per turn; 5: inputs per turn
+PROJECTION_VERSION = 8  # 8 (2026-09-14): gate_times_s / gate_costs_usd / movement_legs (model pages); 7: battles + movement efficiency; 6: output tokens per turn
 
 # Status values the report treats as "cleared" for a gate (mirror report.py).
 _CLEARED_STATUSES = ("done", "auto")
@@ -177,6 +177,85 @@ def _output_token_stats(run_dir: Path, turns: int, cost: dict) -> tuple[float | 
             return None, None
         return total / turns, None
     return out / turns, (reasoning / out if saw_reasoning else None)
+
+
+def _gate_clock(run_dir: Path, gate_turns: dict[str, int] | None) -> tuple[dict[str, float] | None, dict[str, float] | None]:
+    """Wall time and money at each cleared gate, from ``events.jsonl``.
+
+    A gate stamped at turn T is reached when turn T's inputs have settled, which
+    is the moment turn T+1 starts — so time-at-gate is the elapsed wall clock at
+    ``turn_start`` of T+1 (the run's end when T was the last turn). Elapsed time
+    counts only the stretches between a segment's ``run_start`` and its
+    ``run_end``: a continued run's events file carries the source's segment and
+    then its own, two days apart, and the days between were not played. Cost is
+    the sum of ``cost_usd`` over every ``llm_request_usage`` up to and including
+    turn T (``turn_usage`` is the same event under its older name — read only
+    when the newer one is absent, never both). None without an events file or
+    without gate stamps.
+    """
+    if not gate_turns:
+        return None, None
+    path = run_dir / "events.jsonl"
+    if not path.is_file():
+        return None, None
+    start_at: dict[int, float] = {}          # turn → elapsed seconds at its first turn_start
+    cost_new: dict[int, float] = {}          # turn → Σ cost_usd (llm_request_usage)
+    cost_old: dict[int, float] = {}          # turn → Σ cost_usd (turn_usage, legacy name)
+    elapsed = 0.0
+    seg_start: float | None = None
+    last_ts: float | None = None
+    markers = ('"turn_start"', '"run_start"', '"run_end"', '"llm_request_usage"', '"turn_usage"')
+    try:
+        with path.open() as fh:
+            for line in fh:
+                if not any(m in line for m in markers):
+                    continue
+                try:
+                    e = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                kind = e.get("type")
+                ts = e.get("timestamp")
+                turn = e.get("turn")
+                if kind in ("llm_request_usage", "turn_usage"):
+                    c = e.get("cost_usd")
+                    if isinstance(c, (int, float)) and isinstance(turn, int):
+                        bucket = cost_new if kind == "llm_request_usage" else cost_old
+                        bucket[turn] = bucket.get(turn, 0.0) + float(c)
+                    continue
+                if not isinstance(ts, (int, float)):
+                    continue
+                if kind == "run_start":
+                    if seg_start is not None and last_ts is not None:   # a segment that never logged run_end
+                        elapsed += max(0.0, last_ts - seg_start)
+                    seg_start = float(ts)
+                elif kind == "run_end":
+                    if seg_start is not None:
+                        elapsed += max(0.0, ts - seg_start)
+                    seg_start = None
+                elif kind == "turn_start" and isinstance(turn, int) and turn not in start_at:
+                    start_at[turn] = elapsed + (max(0.0, ts - seg_start) if seg_start is not None else 0.0)
+                last_ts = float(ts)
+    except OSError:
+        return None, None
+    if seg_start is not None and last_ts is not None:
+        elapsed += max(0.0, last_ts - seg_start)
+    if not start_at:
+        return None, None
+    costs = cost_new or cost_old
+    times: dict[str, float] = {}
+    money: dict[str, float] = {}
+    last_turn = max(start_at)
+    for gate, t in gate_turns.items():
+        if not isinstance(t, int):
+            continue
+        if t + 1 in start_at:
+            times[gate] = round(start_at[t + 1] - start_at[min(start_at)], 3)
+        elif t >= last_turn:
+            times[gate] = round(elapsed - start_at[min(start_at)], 3)
+        if costs:
+            money[gate] = round(sum(v for k, v in costs.items() if k <= t), 6)
+    return (times or None), (money or None)
 
 
 def _battle_fields(battles: dict | None, fidelity: str | None, turns: int) -> dict:
@@ -345,6 +424,7 @@ def project_run_dir(run_dir: Path) -> RunSummary | None:
                 if g.get("id") == furthest_gate:
                     furthest_gate_turn = g.get("turn")
                     break
+    gate_times_s, gate_costs_usd = _gate_clock(run_dir, gate_turns)
 
     # Between-gate progress — ``referee.progress`` is the ProgressTracker's
     # summary (src/referee/progress.py). Absent on every run before 2026-09-09
@@ -395,6 +475,8 @@ def project_run_dir(run_dir: Path) -> RunSummary | None:
         gates_reached=gates_reached,
         total_gates=total_gates,
         gate_turns=gate_turns,
+        gate_times_s=gate_times_s,
+        gate_costs_usd=gate_costs_usd,
         avg_inputs_per_turn=avg_inputs_per_turn,
         input_counts=input_counts,
         avg_output_tokens_per_turn=avg_output_tokens_per_turn,
@@ -404,6 +486,7 @@ def project_run_dir(run_dir: Path) -> RunSummary | None:
         shortest_steps=move["shortest"] if move else None,
         movement_efficiency=move["efficiency"] if move else None,
         steps_fidelity=move["fidelity"] if move else None,
+        movement_legs=move["legs"] if move else None,
         progress=progress,
         leg_gate=leg_gate,
         leg_fraction=leg_fraction,

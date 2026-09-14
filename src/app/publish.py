@@ -444,6 +444,11 @@ class PagesRepo:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         _write_json(self.data_dir / "benchmarks.json", payload)
 
+    def write_models(self, payload: list[dict]) -> None:
+        """``data/models.json`` — the model catalog the model pages list levels from."""
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        _write_json(self.data_dir / "models.json", payload)
+
     # -- site bundle ---------------------------------------------------------
 
     def sync_site(self, dist: Path) -> None:
@@ -620,6 +625,36 @@ def public_benchmarks(payload: list[dict]) -> list[dict]:
     return [b for b in payload if b.get("id") in PUBLIC_BENCHMARKS]
 
 
+def public_models(catalog: list[dict], rows: list[dict]) -> list[dict]:
+    """The catalog entries the public site gets: models with at least one row.
+
+    The catalog (``src.app.catalog.model_catalog``) holds every model the
+    registry knows, run or not; the model page needs the full level list of a
+    model that HAS runs so it can grey out the levels nobody ran yet, and
+    nothing for a model without a row (there is no page to reach). Ordered by
+    the catalog, level order preserved (highest first).
+    """
+    from src.config import parse_model_alias
+
+    bases = {parse_model_alias(str(r.get("model") or ""))[0] for r in rows}
+    return [m for m in catalog if m.get("model") in bases]
+
+
+def board_clash(rows: list[dict], model: str, run_id: str) -> str | None:
+    """The run_id already on the board for this ``model(level)``, if another one is.
+
+    One run per model + thinking level is the board's identity rule (a
+    republish of the SAME run replaces its row, which is fine). Publishing a
+    second run for a level would put two bars for one identity on every card,
+    which is what happened with gemini-3.5-flash-lite(minimal) on 2026-09-12;
+    the caller refuses until the old run is unpublished.
+    """
+    for r in rows:
+        if r.get("model") == model and r.get("run_id") != run_id:
+            return str(r.get("run_id"))
+    return None
+
+
 def _now_iso(now: datetime | None = None) -> str:
     return (now or datetime.now(timezone.utc)).replace(microsecond=0).isoformat()
 
@@ -631,6 +666,7 @@ def publish_run(
     pages: PagesRepo,
     secrets: Iterable[str],
     benchmarks: list[dict] | None = None,
+    models: list[dict] | None = None,
     include_video: bool = True,
     video_file: str = "recording.mp4",
     include_trace: bool = False,
@@ -663,6 +699,15 @@ def publish_run(
         raise PublishError(f"{run_id}: kind is {projected.kind.value}; only official runs are published")
     if projected.status not in (RunStatus.completed, RunStatus.terminated):
         raise PublishError(f"{run_id}: status is {projected.status.value}; publish only completed or terminated runs")
+    # One run per model + thinking level: a second run for a level that is
+    # already up must wait for `pokemon unpublish <old>` (board_clash). The
+    # worktree is synced here, before the uploads, so the check reads the board
+    # as pushed (an orphan branch with no commit yet cannot be ensured twice).
+    pages.ensure()
+    other = board_clash(pages.read_board(), projected.model, run_id)
+    if other:
+        raise PublishError(f"{run_id}: {projected.model} is already on the board as {other} — run "
+                           f'"pokemon unpublish {other}" first')
 
     # -- assemble the outgoing files (in memory first: audit before any write)
     from src.app.trace_build import cached_run_trace
@@ -732,8 +777,7 @@ def publish_run(
         with ThreadPoolExecutor(max_workers=8) as pool:
             keys.extend(pool.map(_put, shot_names))
 
-    # -- gh-pages
-    pages.ensure()
+    # -- gh-pages (worktree synced by ensure() before the guard above)
     files = {"summary.json": summary_text}
     if trace_text is not None:
         files["trace.json"] = trace_text
@@ -746,6 +790,8 @@ def publish_run(
     pages.upsert_row(row)
     if benchmarks is not None:
         pages.write_benchmarks(benchmarks)
+    if models is not None:
+        pages.write_models(public_models(models, pages.read_board()))
     if build_site is not None:
         dist = build_site(pages.worktree)
         if dist is not None:
@@ -760,7 +806,9 @@ def publish_run(
         if shot_names:
             verify(f"{screenshots_base}/{shot_names[0]}", "image/png")
 
-    page = f"{pages_url}history/{run_id}" if pages_url else None
+    from src.config import parse_model_alias
+
+    page = f"{pages_url}models/{parse_model_alias(projected.model)[0]}" if pages_url else None
     return PublishResult(run_id=run_id, row=row, video_url=video_url, screenshots=shot_names,
                          page_url=page, committed=committed, r2_keys=keys)
 
@@ -817,6 +865,7 @@ def publish_site(
     pages: PagesRepo,
     build_site: Callable[[Path], Path],
     benchmarks: list[dict] | None = None,
+    models: list[dict] | None = None,
     refresh: Callable[[PagesRepo], int] | None = None,
     log: Callable[[str], None] = print,
 ) -> bool:
@@ -835,6 +884,8 @@ def publish_site(
     refreshed = refresh(pages) if refresh is not None else 0
     if benchmarks is not None:
         pages.write_benchmarks(benchmarks)
+    if models is not None:
+        pages.write_models(public_models(models, pages.read_board()))
     dist = build_site(pages.worktree)
     if dist is not None:
         pages.sync_site(Path(dist))
@@ -848,14 +899,20 @@ def unpublish_run(
     *,
     store: R2Store,
     pages: PagesRepo,
+    models: list[dict] | None = None,
     log: Callable[[str], None] = print,
 ) -> dict:
-    """Reverse a publish: R2 prefix delete, data files gone, row removed."""
+    """Reverse a publish: R2 prefix delete, data files gone, row removed.
+
+    ``models`` (the registry catalog) rewrites ``data/models.json`` too, so a
+    model whose last run went down leaves the catalog with it."""
     deleted = store.delete_prefix(f"runs/{run_id}/")
     log(f"R2: deleted {deleted} object(s) under runs/{run_id}/")
     pages.ensure()
     removed_files = pages.remove_run_files(run_id)
     removed_row = pages.remove_row(run_id)
+    if models is not None:
+        pages.write_models(public_models(models, pages.read_board()))
     committed = pages.commit_and_push(f"unpublish {run_id}")
     log("gh-pages: " + ("pushed" if committed else "nothing changed"))
     return {"r2_deleted": deleted, "row_removed": removed_row, "files_removed": removed_files,

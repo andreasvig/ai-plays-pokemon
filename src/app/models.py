@@ -147,6 +147,14 @@ class RunSummary(BaseModel):
     # field's mean turns per leg — that needs every run's per-gate stamps, not
     # just the furthest one. None on a run without a referee scorecard.
     gate_turns: dict[str, int] | None = None
+    # Wall seconds and dollars spent when each CLEARED gate was stamped
+    # (2026-09-14, model pages): gate id → seconds since the run's first turn
+    # began, with the gap between a continued run's segments left out, and gate
+    # id → cumulative cost over every LLM call up to and including the stamp
+    # turn. From events.jsonl (turn_start / run_start / run_end timestamps,
+    # llm_request_usage cost_usd); None without the events, like gate_turns.
+    gate_times_s: dict[str, float] | None = None
+    gate_costs_usd: dict[str, float] | None = None
     # Efficiency · inputs per turn (2026-09-14): mean game inputs (buttons,
     # waits) per accepted turn and the button mix, from turn_explanation events.
     # None for a run without them (older harness) — the board leaves it off.
@@ -175,6 +183,10 @@ class RunSummary(BaseModel):
     shortest_steps: int | None = None
     movement_efficiency: float | None = None
     steps_fidelity: str | None = None
+    # The map legs behind movement_efficiency, one per leg the figure counts:
+    # [{node_id, d_open, steps, source, status}] (battle_stats.movement). Lets a
+    # model page show the per-leg directness without recomputing it.
+    movement_legs: list[dict] | None = None
     # Between-gate progress (2026-09-09, artifacts/granular-progress/plan.md):
     # ``gates_reached`` plus the fraction of the CURRENT leg walked, where the
     # fraction is 1 - d_min/D on the FireRed walk graph (d_min = steps from the
