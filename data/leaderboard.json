@@ -1523,13 +1523,13 @@
         "mandatory": false
       },
       {
-        "group": "unknown",
-        "id": null,
-        "name": "Unknown trainer",
+        "group": "414",
+        "id": 414,
+        "name": "Leader Brock",
         "attempts": 1,
         "turns": 5,
-        "won": false,
-        "mandatory": false
+        "won": true,
+        "mandatory": true
       }
     ],
     "trainer_battle_turns": 23,
