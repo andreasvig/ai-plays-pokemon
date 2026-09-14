@@ -169,7 +169,7 @@
       {@const lx = rightSide ? cx - 9 : cx + 9}
       {@const ly = labelY.get(p.label) ?? cy + 3.3}
       {@const s = onFrontier(p) ? 11 : 9}
-      <g class="pt" class:oss={p.openSource} class:front={onFrontier(p)} class:hot={hovered === p} class:est={p.projected}
+      <g class="pt" class:oss={p.openSource} class:front={onFrontier(p)} class:hot={hovered === p} class:est={p.projected} class:faded={p.faded}
          onmouseenter={() => hovered = p} onmouseleave={() => hovered = null}
          onclick={() => onpick && onpick(p.slug)} onkeydown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && onpick) { e.preventDefault(); onpick(p.slug) } }} role="button" tabindex="0">
         {#if Math.abs(ly - (cy + 3.3)) > 4}
@@ -231,6 +231,9 @@
   .pt.est.oss rect { stroke: var(--oss); }
   .pt.est.hot rect { stroke: var(--text); stroke-width: 3; }
   .pt.hot .plabel { fill: var(--text); font-weight: 700; }
+  /* Faded: the field behind a model page's own points (2026-09-14). */
+  .pt.faded { opacity: .3; }
+  .pt.faded.hot { opacity: 1; }
 
   .tip {
     position: absolute; transform: translate(-50%, -116%); pointer-events: none;

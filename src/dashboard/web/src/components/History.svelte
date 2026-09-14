@@ -3,6 +3,8 @@
   import Icon from './Icon.svelte'
   import { STATIC } from '../lib/static.js'
   import { BENCH_VERSION } from '../lib/version.js'
+  import { recordingUrl } from '../lib/video.js'
+  import RunVideo from './RunVideo.svelte'
   let { runs = [], oninspect, oncontinue, ondelete } = $props()
 
   let kindFilter = $state('all')
@@ -29,10 +31,6 @@
   let watchVariant = $state('full')
   function watch(run, variant = 'full') { watchTarget = run; watchVariant = variant }
   function closeWatch() { watchTarget = null }
-  // A published row carries the R2 URL of its recording; a local row streams from the app.
-  const recordingUrl = (run, variant = 'full') => variant === 'simple'
-    ? `/api/runs/${encodeURIComponent(run.runId)}/recording-simple.mp4`
-    : (run.videoUrl ?? `/api/runs/${encodeURIComponent(run.runId)}/recording.mp4`)
 
   function askDelete(run) { confirmTarget = run; confirmText = ''; deleteError = ''; deleting = false }
   function cancelDelete() { confirmTarget = null; confirmText = ''; deleteError = ''; deleting = false }
@@ -172,8 +170,7 @@
           <a class="vdl" href={recordingUrl(watchTarget, watchVariant)} download title="Download the MP4"><Icon name="download" size={16} /></a>
           <button class="x" onclick={closeWatch} aria-label="Close"><Icon name="close" size={16} /></button>
         </header>
-        <!-- svelte-ignore a11y_media_has_caption -->
-        <video class="vplayer" src={recordingUrl(watchTarget, watchVariant)} controls autoplay playsinline></video>
+        <div class="vbox"><RunVideo run={watchTarget} variant={watchVariant} autoplay preload="auto" /></div>
       </div>
     </div>
   {/if}
@@ -285,7 +282,7 @@
      of one of them letterboxing inside a box shaped for the other. */
   .mini.alt { position: relative; }
   .vtag { position: absolute; right: -2px; bottom: -3px; font-size: 8px; font-weight: 800; letter-spacing: .02em; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 0 2px; line-height: 1.3; }
-  .vplayer { display: block; background: var(--dark); max-width: 88vw; max-height: 78vh; }
+  .vbox { max-width: 88vw; }
 
   /* Typed-DELETE confirmation modal */
   .modal-bg {

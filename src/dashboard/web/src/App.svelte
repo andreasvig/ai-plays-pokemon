@@ -2,7 +2,8 @@
   import TopBar from './components/TopBar.svelte'
   import Leaderboard from './components/Leaderboard.svelte'
   import Sections from './components/Sections.svelte'
-  import { collapseBest } from './lib/board.js'
+  import { collapseBest, baseModel } from './lib/board.js'
+  import ModelPage from './components/ModelPage.svelte'
   import History from './components/History.svelte'
   import QueueBar from './components/QueueBar.svelte'
   import Spectate from './components/Spectate.svelte'
@@ -19,14 +20,18 @@
   // route -> view + param
   const parts = $derived(router.path.split('/').filter(Boolean))
   // The published site has no live run to spectate; that route falls back to home.
+  // History and the Report are the local control center's (decision 7A,
+  // 2026-09-14); the published site reads a run on its model's page.
   const view = $derived(
     parts[0] === 'spectate' ? (STATIC ? 'home' : 'spectate')
     : parts[0] === 'about' ? 'about'
     : parts[0] === 'changelog' ? 'changelog'
     : parts[0] === 'methods' ? 'methods'
-    : parts[0] === 'history' ? (parts[1] ? 'report' : 'history')
+    : parts[0] === 'models' && parts[1] ? 'model'
+    : parts[0] === 'history' ? (STATIC ? 'home' : parts[1] ? 'report' : 'history')
     : 'home'
   )
+  const modelBase = $derived(view === 'model' ? decodeURIComponent(parts[1]) : '')
 
   let dialogOpen = $state(false)
   let dialogContinueFrom = $state(null)
@@ -50,6 +55,7 @@
   let models = $state([])          // alias list for the Add-run dialog
   let configs = $state([])         // casual config stems for the dialog
   let benchmarks = $state([])      // benchmark registry [{id,name,goal,...}]
+  let catalog = $state([])         // model catalog [{model, thinking_levels, …}] — the model pages' level lists
   let checkpoints = $state([])     // full ladder [{id,name,type}] — casual "Stop at"
   let roms = $state([])            // game registry [{id,name,benchmark_ok,on_disk}]
   let starts = $state([])          // choosable openings [{rom,label,name,default,exists}]
@@ -122,7 +128,7 @@
   }
   async function loadEmulator() { emulator = await api.fetchEmulatorStatus() }
   async function loadCatalog() {
-    const [m, c, b, k, r, s, pf] = await Promise.all([
+    const [m, c, b, k, r, s, pf, cat] = await Promise.all([
       api.fetchModels().catch(() => []),
       api.fetchConfigs().catch(() => []),
       api.fetchBenchmarks().catch(() => []),
@@ -130,8 +136,9 @@
       api.fetchRoms().catch(() => []),
       api.fetchStarts().catch(() => []),
       api.fetchProfiles().catch(() => ({ profiles: [], configs: [] })),
+      api.fetchModelCatalog().catch(() => []),
     ])
-    models = m; configs = c; benchmarks = b; checkpoints = k; roms = r; starts = s; profiles = pf
+    models = m; configs = c; benchmarks = b; checkpoints = k; roms = r; starts = s; profiles = pf; catalog = cat
     // Default the leaderboard filter to the registry-default benchmark (or the
     // first) once, without clobbering a selection the user already made.
     if (!benchmark && b.length) benchmark = (b.find((x) => x.default) ?? b[0]).id
@@ -192,7 +199,11 @@
   })
 
   const go = (p) => router.navigate(p)
-  function inspect(r) { go(`/history/${r.slug}`) }
+  // A bar or point on the board opens the run's MODEL page (decision 1A,
+  // 2026-09-14); History and the Report open the run itself (local only).
+  function inspect(r) { go(`/models/${encodeURIComponent(baseModel(r.model))}`) }
+  function inspectRun(r) { go(`/history/${r.slug}`) }
+  function pickSlug(slug) { const r = leaderboard.find((x) => x.slug === slug); if (r) inspect(r) }
   function openNew() { dialogContinueFrom = null; submitError = null; dialogOpen = true }
   function openContinue(r) { dialogContinueFrom = r; submitError = null; dialogOpen = true }
 
@@ -282,9 +293,12 @@
     {/if}
     <Leaderboard {cardRows} allRows={leaderboard} oninspect={inspect}
       {benchmarks} {benchmark} onbench={selectBenchmark} />
-    <Sections pool={leaderboard} oninspect={inspect} onpick={(slug) => go(`/history/${slug}`)} />
+    <Sections pool={leaderboard} oninspect={inspect} onpick={pickSlug} />
+  {:else if view === 'model'}
+    <ModelPage base={modelBase} rows={leaderboard} {catalog} {benchmarks} oninspect={inspect} onreport={STATIC ? null : inspectRun}
+      onback={() => go('/')} onmethods={() => go('/methods')} />
   {:else if view === 'history'}
-    <History {runs} oninspect={inspect} oncontinue={openContinue} ondelete={removeRun} />
+    <History {runs} oninspect={inspectRun} oncontinue={openContinue} ondelete={removeRun} />
   {:else if view === 'spectate'}
     <Spectate run={active} {activeRunId} muted={emulator.muted} ontogglemute={toggleMute} onnew={openNew} onback={() => go('/')}
       {recording} {forcedSimple} {forcedShow} />

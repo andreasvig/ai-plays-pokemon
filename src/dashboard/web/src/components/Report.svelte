@@ -13,6 +13,8 @@
   import Action, { actionTokens } from './Action.svelte'
   import Icon from './Icon.svelte'
   import ConversationDiagnostics from './ConversationDiagnostics.svelte'
+  import GateTable from './GateTable.svelte'
+  import RunVideo from './RunVideo.svelte'
   let { run = null, onback, oncontinue, benchmarks = [] } = $props()
   // The CURRENT per-leg caps of this run's benchmark, from the shared list the
   // ladder YAML feeds (/api/benchmarks, data/benchmarks.json when published).
@@ -142,7 +144,6 @@
   })
   // `auto` is a CLEARED status (the projection counts it), so it gets the tick —
   // a gate inside the header's "N/M cleared" must not draw a pending dot.
-  const stIcon = { done: '✓', auto: '✓', missed: '✗', failed: '✗', pending: '·', unmet: '·' }
 
   // two-level master→player trace (B1). Each group is a master/TaskMaster node
   // with its objective + rating + the screenshots it saw, nesting the player
@@ -435,21 +436,8 @@ where: {crash.where.join(' ← ')}{/if}</pre>
           <span class="cleared">{reachedN}/{totalN} cleared</span>
           <span class="verdict" class:fail={termination && (termination.startsWith('missed_gate:') || termination.startsWith('leg_cap:'))} class:win={reachedN >= totalN && totalN > 0}>{verdict()}</span>
         </div>
-        <div class="gtable">
-          {#each gateRows as g (g.id)}
-            <div class="grow {g.status}" class:grp={g.group}>
-              <span class="gst {g.status}">{stIcon[g.status] ?? '·'}</span>
-              <span class="gname">{g.name}</span>
-              <span class="gturn tnum">{g.turn != null ? 'T' + g.turn : '—'}</span>
-              <!-- leg: turns spent walking into this gate / its per-leg cap (v1.1). The
-                   cap shown is TODAY's, from the shared list (retroactive, 2026-09-10);
-                   when the run was judged under a different cap the tooltip says which.
-                   Cumulative deadlines are not shown (Andreas, 2026-09-09: "remove the
-                   old T limits such that we only have the per leg ones"). -->
-              <span class="gleg tnum" class:faint={g.status !== 'failed'} class:recap={g.capChanged} title={g.capChanged ? `turns on this leg / today's leg cap — the cap was ${g.capThen} when this run was judged` : 'turns on this leg / leg cap'}>{g.cap != null ? `${g.legTurns != null ? g.legTurns : '·'} / ${g.cap}` : ''}</span>
-            </div>
-          {/each}
-        </div>
+        <!-- The gate ladder (shared with a model page's expanded level, GateTable.svelte). -->
+        <GateTable rows={gateRows} />
         <!-- Between-gate table is the operator's view (walk-graph diagnostics:
              path vs walked, efficiency, tiles). Not on the public site — Andreas,
              2026-09-11: "remove this info from the online one". The gate table
@@ -488,7 +476,7 @@ where: {crash.where.join(' ← ')}{/if}</pre>
          byte ranges so the scrub bar seeks. Locally the player lives in History. -->
     {#if run.videoUrl}
       <section class="video">
-        <video src={run.videoUrl} controls preload="metadata" playsinline></video>
+        <RunVideo {run} />
       </section>
     {/if}
 
@@ -923,7 +911,6 @@ waited {Math.round(e.wait_s ?? 0)}s{/if}</pre>
   .observed { margin: 16px 2px 0; font-size: 12.5px; }
 
   .video { margin-top: 16px; border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); border: 1px solid var(--border); background: var(--dark); }
-  .video video { display: block; width: 100%; max-height: 78vh; }
   .score { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; box-shadow: var(--shadow); margin-top: 16px; }
   .score-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
   h3 { font-size: 15px; font-weight: 750; margin: 0; }
@@ -945,17 +932,6 @@ waited {Math.round(e.wait_s ?? 0)}s{/if}</pre>
   .trace-error pre { margin: 4px 0 0; white-space: pre-wrap; word-break: break-word; font-size: 11.5px; line-height: 1.45; }
   .verdict.fail { color: var(--red); }
   .verdict.win { color: var(--green); }
-  .gtable { display: flex; flex-direction: column; }
-  .grow { display: grid; grid-template-columns: 22px 1fr 60px 64px; gap: 10px; align-items: center; padding: 6px 8px; border-radius: var(--radius-sm); font-size: 12.5px; }
-  .grow.grp { padding-left: 18px; }
-  .grow.done { background: var(--green-soft); }
-  .grow.missed, .grow.failed { background: var(--red-soft); }
-  .gst { text-align: center; font-weight: 800; color: var(--faint); }
-  .gst.done { color: var(--green); } .gst.missed, .gst.failed { color: var(--red); }
-  .gname { font-weight: 550; }
-  .gturn { text-align: right; font-weight: 650; }
-  .gleg { text-align: right; font-size: 11.5px; }
-  .gleg.recap { text-decoration: underline dotted var(--faint); text-underline-offset: 3px; cursor: help; }
 
   .trace { margin-top: 24px; }
   .trace h3 .faint { font-weight: 500; font-size: 12px; }

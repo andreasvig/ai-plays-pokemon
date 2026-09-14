@@ -2,7 +2,8 @@
 //   /                          home (leaderboard + charts)
 //   /spectate                  live run + queue
 //   /history                   run list
-//   /history/<slug>            run detail (report)
+//   /history/<slug>            run detail (report)         (both local only since 2026-09-14)
+//   /models/<model>            one model, every thinking level (the public run view)
 //   /about                     about
 //   /methods                   estimation methods (runs × legs matrix)
 //

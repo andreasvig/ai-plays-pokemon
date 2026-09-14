@@ -21,7 +21,11 @@
   // cards open the section that holds their big version.
   // `narrowFrom`: bar count from which values print vertically — 9 fits a
   // third-width card, a full-width section card holds about twice as many.
-  let { title, subtitle = '', entries = [], line = null, picker = false, pickerRows = [], bars = 190, oninspect = () => {}, note = '', href = null, narrowFrom = 9 } = $props()
+  // `highlight`: (row) => boolean — when given, bars whose row fails it are
+  // FADED (a model page, 2026-09-14: this model's levels in colour, the rest
+  // of the field at low opacity, name kept, value dropped).
+  let { title, subtitle = '', entries = [], line = null, picker = false, pickerRows = [], bars = 190, oninspect = () => {}, note = '', href = null, narrowFrom = 9, highlight = null } = $props()
+  const faded = (e) => !!highlight && !highlight(e.row)
   // A bar shorter than this share of the area prints its value above instead.
   const INSIDE_MIN = 0.16
   // Past `narrowFrom` bars the value is printed vertically (reads bottom-to-top)
@@ -41,7 +45,7 @@
     <div class="plot" class:narrow style={`--bars:${bars}px; --linef:${line?.frac ?? 0}`}>
       {#if line}<div class="refline"><span>{line.label}</span></div>{/if}
       {#each entries as e (e.row.runId)}
-        <button class="bar" class:complete={e.complete} style={`--h:${(e.height * 100).toFixed(1)}%; --c:${vendorOf(e.row).color}`}
+        <button class="bar" class:complete={e.complete} class:faded={faded(e)} style={`--h:${(e.height * 100).toFixed(1)}%; --c:${vendorOf(e.row).color}`}
                 title={e.tip ?? `${e.row.model}: ${e.label}`} onclick={() => oninspect(e.row)}>
           {#if e.above}<span class="above tnum">{e.above}</span>{/if}
           <span class="fill" class:est={!e.complete} class:dots={e.partial}>
@@ -101,6 +105,12 @@
   .foot { position: absolute; top: calc(100% + 7px); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; }
   .name { position: absolute; top: 24px; right: 50%; transform-origin: top right; transform: rotate(-70deg) translateX(0);
     font-size: 10px; color: var(--muted); white-space: nowrap; line-height: 1; }
+  /* Faded: the field behind a model page's own bars. The bar and mark drop to
+     ~30 %, the value label goes, the name stays so the field is still readable. */
+  .bar.faded .fill, .bar.faded .above { opacity: .3; }
+  .bar.faded .val { visibility: hidden; }
+  .bar.faded .foot { opacity: .45; }
+  .bar.faded:hover .fill { opacity: .6; filter: none; }
   .empty { font-size: 12px; margin: 18px 0; }
   .note { font-size: 11px; margin: 4px 0 0; }
 </style>

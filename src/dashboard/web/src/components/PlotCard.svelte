@@ -9,10 +9,12 @@
   import { selection } from '../lib/selection.svelte.js'
   import { perTaskSeries, fmtUsd, fmtMinutes, PROJECT_FROM_GATE } from '../lib/board.js'
   import { GATES, gate } from '../lib/gates.js'
-  let { kind = 'cost', pool = [], onpick } = $props()
+  // `picker` false (a model page) shows `pool` as is; `highlight` fades the
+  // points whose row fails it (2026-09-14).
+  let { kind = 'cost', pool = [], onpick, picker = true, highlight = null } = $props()
 
   let mode = $state('all')
-  const rows = $derived(selection.apply(pool))
+  const rows = $derived(picker ? selection.apply(pool) : pool)
   const gateIds = $derived(GATES.slice(0, pool[0]?.totalGates || 12).map((g) => g.id))
   const series = $derived(perTaskSeries(rows, gateIds, pool))
   const nGates = $derived(gateIds.length)
@@ -30,7 +32,7 @@
     const r = s.row
     return {
       label: r.model, x: c.pick(s), y: r.perfScore, openSource: r.openSource, completed: r.completion >= 100,
-      projected: !s.complete, slug: r.slug, completion: r.completion, furthestGateName: r.furthestGateName,
+      projected: !s.complete, faded: !!highlight && !highlight(r), slug: r.slug, completion: r.completion, furthestGateName: r.furthestGateName,
       legGateName: r.legGateName, legFraction: r.legFraction,
       tip: [
         ['cost / task', fmtUsd(s.costPerTask)],
@@ -52,7 +54,7 @@
       <p class="faint">{c.blurb(nGates)} Hover for values; click to open the run.</p>
     </div>
     <div class="tools">
-      <ModelPicker rows={pool} />
+      {#if picker}<ModelPicker rows={pool} />{/if}
       <div class="segs">{#each MODES as [v, label]}<button class:on={mode === v} onclick={() => mode = v}>{label}</button>{/each}</div>
     </div>
   </header>

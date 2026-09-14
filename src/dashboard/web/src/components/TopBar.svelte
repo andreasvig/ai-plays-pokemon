@@ -46,7 +46,12 @@
         <Icon name={muted ? 'muted' : 'audio'} size={17} />
       </button>
     {/if}
-    <button class="btn ghost" class:active={view === 'history'} onclick={() => onnav('/history')}>History</button>
+    <!-- The public site has no run history: a run is read on its model's page
+         (/models/<model>, 2026-09-14). History stays in the local control center
+         (continue, delete, the full report). -->
+    {#if !STATIC}
+      <button class="btn ghost" class:active={view === 'history' || view === 'report'} onclick={() => onnav('/history')}>History</button>
+    {/if}
     <button class="btn ghost" class:active={view === 'methods'} onclick={() => onnav('/methods')}>Estimation methods</button>
     <button class="btn ghost" class:active={view === 'changelog'} onclick={() => onnav('/changelog')}>Changelog</button>
     <button class="btn ghost" class:active={view === 'about'} onclick={() => onnav('/about')}>About</button>

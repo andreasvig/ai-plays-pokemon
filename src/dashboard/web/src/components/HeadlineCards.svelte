@@ -12,7 +12,10 @@
   import { headlineSeries, vendorOf, PERF_LINE, PROJECT_FROM_GATE, fmtMinutes, fmtUsd } from '../lib/board.js'
   import { GATES, gate } from '../lib/gates.js'
   import BarCard from './BarCard.svelte'
-  let { rows = [], pool = rows, oninspect = () => {} } = $props()
+  // `highlight` (a model page, 2026-09-14): (row) => boolean; the rows that
+  // fail it are drawn faded, and the caller passes a field that holds every
+  // level of the page's model (lib/board.js modelField).
+  let { rows = [], pool = rows, oninspect = () => {}, highlight = null } = $props()
 
   // The ladder the board plays: the first `totalGates` ids of the flattened ladder.
   const gateIds = $derived(GATES.slice(0, rows[0]?.totalGates || 12).map((g) => g.id))
@@ -45,15 +48,15 @@
 {#if rows.length}
 <section class="cards" aria-label="Headline comparison">
   <BarCard title="Performance" subtitle="Gate completion · clears ranked by fewest turns above the line · Higher is better"
-    entries={performance} line={{ frac: PERF_LINE, label: '100%' }} href="#performance" {oninspect} />
+    entries={performance} line={{ frac: PERF_LINE, label: '100%' }} href="#performance" {oninspect} {highlight} />
   <BarCard title="Time per task" subtitle={`Minutes to beat Brock ÷ ${nGates} gates · partial runs projected · Lower is better`}
-    entries={time} href="#speed" {oninspect} />
+    entries={time} href="#speed" {oninspect} {highlight} />
   <BarCard title="Cost per task" subtitle={`USD to beat Brock ÷ ${nGates} gates · partial runs projected · Lower is better`}
-    entries={cost} href="#price" {oninspect} />
+    entries={cost} href="#price" {oninspect} {highlight} />
 
   <p class="legend faint">
     {#each vendors as v (v.key)}<span class="key" style={`--c:${v.color}`}></span>{v.label}{/each}
-    <span class="sep">·</span> one bar per model, its best thinking level
+    <span class="sep">·</span> {#if highlight}every thinking level of this model in colour; every other model faded, at its best level{:else}one bar per model, its best thinking level{/if}
     {#if projectedCount}<span class="sep">·</span><span class="key hatch"></span>projected from a full-run estimate: the run's pace on the gates it cleared, applied to the legs it never reached, the failed leg floored at the turns it spent{/if}
     {#if noProjection}<span class="sep">·</span>{noProjection} model{noProjection === 1 ? '' : 's'} left off these two cards: never reached {fromGate}, so nothing to project{/if}
   </p>

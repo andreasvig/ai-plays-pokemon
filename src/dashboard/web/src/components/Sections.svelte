@@ -10,9 +10,14 @@
   import { selection } from '../lib/selection.svelte.js'
   import BarCard from './BarCard.svelte'
   import PlotCard from './PlotCard.svelte'
-  let { pool = [], oninspect = () => {}, onpick = () => {} } = $props()
+  // A model page (2026-09-14) renders these same sections over its field with
+  // `picker` off (the field is fixed: every level of the model plus the best
+  // level of every other) and `highlight` marking the model's own rows; the
+  // eligibility rules below apply unchanged, so a level that has not reached
+  // far enough stays off a card there too.
+  let { pool = [], oninspect = () => {}, onpick = () => {}, picker = true, highlight = null } = $props()
 
-  const rows = $derived(selection.apply(pool))
+  const rows = $derived(picker ? selection.apply(pool) : pool)
   const gateIds = $derived(GATES.slice(0, pool[0]?.totalGates || 12).map((g) => g.id))
   const nGates = $derived(gateIds.length)
   const fromGate = $derived((gate(PROJECT_FROM_GATE)?.name ?? PROJECT_FROM_GATE).replace(/^Reached /, ''))
@@ -23,7 +28,7 @@
   // 2026-09-14): before it a run has too little play to say anything.
   const past1 = (s) => s.row.gateTurns != null && s.row.gateTurns.route1_reached != null
   const ROUTE1 = 'did not clear Route 1.'
-  const offNote = (n, why) => n ? `${n} selected model${n === 1 ? '' : 's'} not shown: ${why}` : ''
+  const offNote = (n, why) => n ? `${n} ${picker ? 'selected ' : ''}model${n === 1 ? '' : 's'} not shown: ${why}` : ''
   const early = $derived(rows.filter((r) => !(r.gateTurns != null && r.gateTurns.route1_reached != null)).length)
   const earlyNote = $derived(offNote(early, ROUTE1))
 
@@ -75,7 +80,7 @@
   const trainerNote = $derived([TRAINER_PROJ, earlyNote, offNote(bat.trainerTurns.filter((s) => !s.eligible && past1(s)).length, 'no trainer fought yet, or no per-turn battle state.')].filter(Boolean).join(' '))
   const TOKENS_BIAS = '* Models think more as the game gets harder: over the runs with 80+ turns, the last 40 turns cost a median 1.65× the output tokens of the first 40. A run that ended early (dotted) averaged over the cheap early game only, so its bar is low partly for that reason.'
   const tokensNote = $derived([TOKENS_BIAS, earlyNote, offNote(noTokens, 'the run recorded no token usage.')].filter(Boolean).join(' '))
-  const leftNote = $derived(leftOff ? `${leftOff} selected model${leftOff === 1 ? '' : 's'} not shown: never reached ${fromGate}, so nothing to project.` : '')
+  const leftNote = $derived(leftOff ? `${leftOff} ${picker ? 'selected ' : ''}model${leftOff === 1 ? '' : 's'} not shown: never reached ${fromGate}, so nothing to project.` : '')
 
   const SECTIONS = [
     { id: 'performance', label: 'Performance', color: 'var(--accent)', blurb: 'How far each model gets through the first-badge ladder, and how few turns a full clear takes.' },
@@ -114,30 +119,30 @@
         </header>
         {#if s.id === 'performance'}
           <BarCard title="Performance" subtitle="Gate completion · clears ranked by fewest turns above the line · Higher is better"
-            entries={performance} line={{ frac: PERF_LINE, label: '100%' }} picker pickerRows={pool} narrowFrom={18} bars={300} {oninspect} />
+            entries={performance} line={{ frac: PERF_LINE, label: '100%' }} {picker} pickerRows={pool} {highlight} narrowFrom={18} bars={300} {oninspect} />
         {:else if s.id === 'price'}
           <BarCard title="Cost per task" subtitle={`USD to beat Brock ÷ ${nGates} gates · partial runs projected (hatched) · Lower is better`}
-            entries={cost} picker pickerRows={pool} narrowFrom={18} bars={300} {oninspect} />
-          <PlotCard kind="cost" {pool} {onpick} />
-          <BarCard title="Cost per 10 turns" subtitle="Average USD for ten turns, all calls included · Lower is better" entries={cost10} picker pickerRows={pool} narrowFrom={18} bars={220} {oninspect} note={earlyNote} />
+            entries={cost} {picker} pickerRows={pool} {highlight} narrowFrom={18} bars={300} {oninspect} />
+          <PlotCard kind="cost" {pool} {onpick} {picker} {highlight} />
+          <BarCard title="Cost per 10 turns" subtitle="Average USD for ten turns, all calls included · Lower is better" entries={cost10} {picker} pickerRows={pool} {highlight} narrowFrom={18} bars={220} {oninspect} note={earlyNote} />
         {:else if s.id === 'speed'}
           <BarCard title="Time per task" subtitle={`Minutes to beat Brock ÷ ${nGates} gates · partial runs projected (hatched) · Lower is better`}
-            entries={time} picker pickerRows={pool} narrowFrom={18} bars={300} {oninspect} />
-          <PlotCard kind="time" {pool} {onpick} />
-          <BarCard title="Turns per minute" subtitle="Wall clock, all turns of the run · Higher is better" entries={speed} picker pickerRows={pool} narrowFrom={18} bars={220} {oninspect} note={earlyNote} />
+            entries={time} {picker} pickerRows={pool} {highlight} narrowFrom={18} bars={300} {oninspect} />
+          <PlotCard kind="time" {pool} {onpick} {picker} {highlight} />
+          <BarCard title="Turns per minute" subtitle="Wall clock, all turns of the run · Higher is better" entries={speed} {picker} pickerRows={pool} {highlight} narrowFrom={18} bars={220} {oninspect} note={earlyNote} />
         {:else}
           <BarCard title="Turns per task" subtitle={`Turns to beat Brock ÷ ${nGates} gates · partial runs projected (hatched) · Lower is better`}
-            entries={turnsPerTask} picker pickerRows={pool} narrowFrom={18} bars={300} {oninspect} note={leftNote} />
+            entries={turnsPerTask} {picker} pickerRows={pool} {highlight} narrowFrom={18} bars={300} {oninspect} note={leftNote} />
           <BarCard title="Inputs per turn" subtitle="Average game inputs (buttons and waits) one turn carries · hover for the button mix · more per turn = fewer turns, if the batch lands"
-            entries={inputsPerTurn} picker pickerRows={pool} narrowFrom={18} bars={220} {oninspect} note={inputsNote} />
+            entries={inputsPerTurn} {picker} pickerRows={pool} {highlight} narrowFrom={18} bars={220} {oninspect} note={inputsNote} />
           <BarCard title="Output tokens per turn*" subtitle="Average completion tokens one turn costs the model — thinking plus the reply, every call included · runs that did not finish dotted · hover for the thinking share · fewer first"
-            entries={outputTokens} picker pickerRows={pool} narrowFrom={18} bars={220} {oninspect} note={tokensNote} />
+            entries={outputTokens} {picker} pickerRows={pool} {highlight} narrowFrom={18} bars={220} {oninspect} note={tokensNote} />
           <BarCard title="Movement efficiency" subtitle="Shortest walk ÷ steps taken over the run's map legs, the unfinished leg credited only with the ground it gained · runs that did not finish dotted · hover for how the steps were counted · Higher is better"
-            entries={movement} picker pickerRows={pool} narrowFrom={18} bars={220} {oninspect} note={movementNote} />
+            entries={movement} {picker} pickerRows={pool} {highlight} narrowFrom={18} bars={220} {oninspect} note={movementNote} />
           <BarCard title="Turns per wild battle" subtitle="Turns that started inside a wild battle ÷ wild battles met · runs that cleared Route 1 · Lower is better"
-            entries={wildTurns} picker pickerRows={pool} narrowFrom={18} bars={220} {oninspect} note={wildNote} />
+            entries={wildTurns} {picker} pickerRows={pool} {highlight} narrowFrom={18} bars={220} {oninspect} note={wildNote} />
           <BarCard title="Turns per trainer battle*" subtitle="Average turns a trainer fight costs, every attempt counted · shown once the first trainer is fought · trainers the run did not fight are projected so every run is scored on the same roster · Lower is better"
-            entries={trainerTurns} picker pickerRows={pool} narrowFrom={18} bars={220} {oninspect} note={trainerNote} />
+            entries={trainerTurns} {picker} pickerRows={pool} {highlight} narrowFrom={18} bars={220} {oninspect} note={trainerNote} />
         {/if}
       </section>
     {/each}

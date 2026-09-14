@@ -459,6 +459,11 @@ export function levelOf(alias) {
   return m ? m[1] : null
 }
 
+/** A level for display: "high"; null (reasoning_type none) → "default". */
+export function levelLabel(level) {
+  return level == null ? 'default' : String(level)
+}
+
 /**
  * The field behind a model page's bars (decision 2A): every OTHER model at its
  * best-ranked level — the collapsed home board — plus every level of `base`,
