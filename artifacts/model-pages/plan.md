@@ -1,6 +1,6 @@
 # Model pages — plan (2026-09-14, evening)
 
-> Status: **DECIDED 2026-09-14 evening — build next.** Requested by Andreas 2026-09-14:
+> Status: **BUILT AND LIVE 2026-09-14 night** (commits 5f118be, 3a1b29b, 0f02cc3; gh-pages dcf6b4c) — see §9. Was: DECIDED 2026-09-14 evening. Requested by Andreas 2026-09-14:
 > "start working on the per model side … inspired by Artificial Analysis, except all thinking
 > levels share a side."
 
@@ -136,3 +136,41 @@ Defaults taken without asking: faded bars keep the model name and drop the value
 4. Publish, wait for the bundle, render two model pages live (one with every level benchmarked,
    one with greyed levels), check the faded field, the level order, an expanded level's gate table
    and video, and that a sub-Route-1 level is absent from the lower cards but present in the list.
+
+## 9. Built (2026-09-14 night)
+
+Live at `https://andreasvig.github.io/ai-plays-pokemon/models/<model>` — e.g. `/models/gemini-3.8-flash`
+(4 of 4 levels), `/models/claude-opus-5` (1 of 5, four greyed), `/models/gemini-3.5-flash-lite`
+(four levels listed, none on the lower cards: sub-Route-1).
+
+- **Publish side** (`src/app/projection.py` v8, `src/app/publish.py`, `src/app/catalog.py`,
+  `src/cli/publish.py`, `src/cli/unpublish.py`): `gate_times_s` = elapsed wall seconds at
+  `turn_start` of the stamp turn + 1 (run end for the last turn), the gap between a continued run's
+  segments (`run_start`/`run_end` pairs) excluded; `gate_costs_usd` = cumulative `cost_usd` over
+  `llm_request_usage` events to the stamp turn (`turn_usage` is the same event's older name — read
+  only when the newer is absent); `movement_legs` = `battle_stats.movement()["legs"]`.
+  `data/models.json` from `catalog.model_catalog()` narrowed by `publish.public_models()` to models
+  with a row, rewritten on publish, `--site-only` and unpublish. `board_clash()` refuses a second run
+  for a `model(level)` already up (checked before any upload; `--dry-run` prints a BOARD line).
+  Verified on the live board: the dry run of the 2026-09-12 flash-lite(minimal) run named the
+  continued run and refused. Duplicate resolved (6A): the 0-gate 2026-09-12 run unpublished, the
+  continued run at left_house kept.
+- **Frontend**: `board.js` `ofModel` / `levelOf` / `levelLabel` / `modelField` / `levelRows` /
+  `runGateRows`; `api.fetchModelCatalog()` (static: `data/models.json`; local: `/api/models`
+  reshaped); `toRun` carries `gateTimesS` / `gateCostsUsd` / `movementLegs`. Components
+  `ModelPage` → `HeadlineCards` (highlight) + `LevelList` → `LevelDetail` → shared `GateTable` +
+  `RunVideo` (lifted from Report / History) + `Sections` (`picker={false}`, `highlight`). `BarCard`,
+  `PlotCard`, `ScatterChart` take `highlight`; faded = opacity .3, name kept, value hidden. Route
+  `/models/<base>`; History/Report routes fall back to home when `STATIC`; TopBar hides History.
+  The expanded level's gate table is built from the row alone — no summary fetch.
+- **Tests**: Python 1024 pass (gate clock with two segments and the legacy usage name, duplicate
+  guard incl. dry run, models.json narrowing and level order); JS 67 pass (`modelField`,
+  `levelRows`, `runGateRows`).
+- **Checks run live** (headless, 12 assertions): bar click → model page; 12 lit / 32 faded headline
+  bars on gemini; levels high→minimal; highest benchmarked level expanded with a 13-row table (turn,
+  time, cost, leg/cap, walk) and the recording; second level expands alongside; lower sections
+  highlight; no picker; opus 5 levels with 4 greyed, max first; flash-lite listed but off the lower
+  cards; no History button; `/history` shows home.
+- **Not done**: the Estimation methods page's `oninspect` still opens the model page (was the
+  report) — intended; the `.md` changelog entry for v1.1 does not mention model pages (no benchmark
+  rule changed, so none needed).
