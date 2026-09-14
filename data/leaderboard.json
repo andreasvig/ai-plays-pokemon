@@ -1228,11 +1228,20 @@
     "wild_battle_turns": 78,
     "trainer_battles": [
       {
+        "group": "102",
+        "id": 102,
+        "name": "Bug Catcher Rick",
+        "attempts": 1,
+        "turns": 9,
+        "won": true,
+        "mandatory": false
+      },
+      {
         "group": "103",
         "id": 103,
         "name": "Bug Catcher Doug",
-        "attempts": 2,
-        "turns": 22,
+        "attempts": 1,
+        "turns": 13,
         "won": true,
         "mandatory": false
       },
@@ -1501,7 +1510,7 @@
         "name": "Bug Catcher Rick",
         "attempts": 1,
         "turns": 4,
-        "won": false,
+        "won": true,
         "mandatory": false
       },
       {
@@ -2148,7 +2157,7 @@
         "name": "Bug Catcher Rick",
         "attempts": 1,
         "turns": 7,
-        "won": false,
+        "won": true,
         "mandatory": false
       },
       {
