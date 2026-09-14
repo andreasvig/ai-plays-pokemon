@@ -25,19 +25,10 @@
   const vendor = $derived(mine.length ? vendorOf(mine[0]) : null)
   const bestRank = $derived(mine.length ? Math.min(...mine.map((r) => r.rank ?? Infinity)) : null)
 
-  // Expanded levels: the highest benchmarked one to begin with; a click on one
-  // of this model's own bars opens that level and scrolls to it.
+  // Expanded levels: all closed to begin with (Andreas 2026-09-14); a click on
+  // a level row or on one of this model's own bars opens that level.
   let open = $state(new Set())
-  let seeded = $state('')
-  $effect(() => {
-    // Wait for the rows: on a direct load `levels` is empty until the board
-    // arrives, and seeding then would leave every level collapsed.
-    const first = levels.find((l) => !l.absent)
-    if (seeded !== base && first) {
-      open = new Set([first.level ?? '_'])
-      seeded = base
-    }
-  })
+  $effect(() => { base; open = new Set() })   // a new model → everything closed again
   function toggle(k) { const next = new Set(open); if (next.has(k)) next.delete(k); else next.add(k); open = next }
   function inspect(r) {
     if (!highlight(r)) return oninspect(r)
