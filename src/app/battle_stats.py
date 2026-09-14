@@ -321,12 +321,21 @@ def load_steps_backfill(run_dir: Path) -> Optional[dict[int, int]]:
     return out or None
 
 
-def movement(referee: Optional[dict], video_steps: Optional[dict[int, int]]) -> Optional[dict[str, Any]]:
-    """Directness over the closed map legs (decision 4A), with fidelity.
+def movement(referee: Optional[dict], video_steps: Optional[dict[int, int]],
+             last_turn: Optional[int] = None) -> Optional[dict[str, Any]]:
+    """Directness over the map legs (decision 4A), with fidelity.
+
+    Closed legs credit their full shortest path. The leg the run ended on
+    (status "open") counts too — Andreas 2026-09-14: a run that burned 300
+    turns in Viridian Forest must not look direct because it never closed the
+    leg — credited with the ground it actually gained, ``d_open −
+    distance_now`` (never below 0), against every step it took there. Its
+    steps come from the video when turns ``opened+1..last_turn`` are covered,
+    else the referee's bound.
 
     Returns ``{shortest, steps, efficiency, legs, fidelity}`` or None when no
-    closed map leg has a shortest path. ``fidelity`` is "trace" / "video" /
-    "bound" when every leg used that source, else "mixed".
+    map leg has a shortest path. ``fidelity`` is "trace" / "video" / "bound"
+    when every leg used that source, else "mixed".
     """
     if not isinstance(referee, dict):
         return None
@@ -337,12 +346,18 @@ def movement(referee: Optional[dict], video_steps: Optional[dict[int, int]]) -> 
     used: list[dict[str, Any]] = []
     sources: set[str] = set()
     for leg in legs:
-        if not isinstance(leg, dict) or leg.get("status") != "closed" or kind.get(leg.get("node_id")) != "map":
+        if not isinstance(leg, dict) or leg.get("status") not in ("closed", "open") or kind.get(leg.get("node_id")) != "map":
             continue
         d = leg.get("d_open")
         if not isinstance(d, int) or d <= 0:
             continue
-        opened, closed = leg.get("opened_turn"), leg.get("closed_turn")
+        is_open = leg.get("status") == "open"
+        opened, closed = leg.get("opened_turn"), (leg.get("closed_turn") if not is_open else last_turn)
+        if is_open:
+            now = leg.get("distance_now")
+            if not isinstance(now, int):
+                continue
+            d = max(0, d - now)   # ground gained on the leg the run ended on
         src = "bound"
         s = leg.get("steps_walked")
         if video_steps and isinstance(opened, int) and isinstance(closed, int) and closed > opened \
@@ -358,7 +373,7 @@ def movement(referee: Optional[dict], video_steps: Optional[dict[int, int]]) -> 
         shortest += d
         steps += max(s, d)
         sources.add(src)
-        used.append({"node_id": leg.get("node_id"), "d_open": d, "steps": s, "source": src})
+        used.append({"node_id": leg.get("node_id"), "d_open": d, "steps": s, "source": src, "status": leg.get("status")})
     if not used or steps <= 0:
         return None
     fidelity = sources.pop() if len(sources) == 1 else "mixed"

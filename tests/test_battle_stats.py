@@ -141,21 +141,31 @@ def test_hints_decide_the_kind_when_segments_tie_and_a_long_fight_runs_past_the_
 
 
 REFEREE = {
-    "gates": [{"id": "left_bedroom", "type": "map"}, {"id": "starter_chosen", "type": "flag"}, {"id": "route1_reached", "type": "map"}],
+    "gates": [{"id": "left_bedroom", "type": "map"}, {"id": "starter_chosen", "type": "flag"}, {"id": "route1_reached", "type": "map"},
+              {"id": "viridian_reached", "type": "map"}],
     "progress": {"legs": [
         {"node_id": "left_bedroom", "status": "closed", "opened_turn": 0, "closed_turn": 3, "d_open": 9, "steps_walked": 9, "steps_source": "bound"},
         {"node_id": "starter_chosen", "status": "closed", "opened_turn": 3, "closed_turn": 8, "d_open": 1, "steps_walked": 6, "steps_source": "bound"},
         {"node_id": "route1_reached", "status": "closed", "opened_turn": 8, "closed_turn": 12, "d_open": 20, "steps_walked": 30, "steps_source": "trace"},
-        {"node_id": "viridian_reached", "status": "open", "opened_turn": 12, "closed_turn": None, "d_open": 52, "steps_walked": 5},
+        {"node_id": "viridian_reached", "status": "open", "opened_turn": 12, "closed_turn": None, "d_open": 52, "distance_now": 40, "steps_walked": 30},
     ]},
 }
 
 
-def test_movement_uses_closed_map_legs_only_and_reports_the_source_mix():
+def test_movement_uses_map_legs_and_credits_the_open_leg_with_ground_gained():
+    """The open leg opened 52 tiles out and ended 40 out after 30 steps: 12 gained ÷ 30 steps."""
     m = movement(REFEREE, None)
-    assert m["shortest"] == 29 and m["steps"] == 39 and round(m["efficiency"], 3) == round(29 / 39, 3)
-    assert [l["node_id"] for l in m["legs"]] == ["left_bedroom", "route1_reached"]  # flag gate and open leg excluded
+    assert m["shortest"] == 29 + 12 and m["steps"] == 39 + 30 and round(m["efficiency"], 3) == round(41 / 69, 3)
+    assert [l["node_id"] for l in m["legs"]] == ["left_bedroom", "route1_reached", "viridian_reached"]  # flag gate excluded
+    assert m["legs"][-1] == {"node_id": "viridian_reached", "d_open": 12, "steps": 30, "source": "bound", "status": "open"}
     assert m["fidelity"] == "mixed"
+    # No net progress on the open leg → 0 credit, the steps still count.
+    lost = {**REFEREE, "progress": {"legs": REFEREE["progress"]["legs"][:3] + [{**REFEREE["progress"]["legs"][3], "distance_now": 60}]}}
+    m2 = movement(lost, None)
+    assert m2["shortest"] == 29 and m2["steps"] == 39 + 30
+    # An open leg whose distance is unknown is left out.
+    blind = {**REFEREE, "progress": {"legs": REFEREE["progress"]["legs"][:3] + [{**REFEREE["progress"]["legs"][3], "distance_now": None}]}}
+    assert [l["node_id"] for l in movement(blind, None)["legs"]] == ["left_bedroom", "route1_reached"]
 
 
 def test_movement_prefers_video_steps_when_the_leg_is_fully_covered():
@@ -164,6 +174,10 @@ def test_movement_prefers_video_steps_when_the_leg_is_fully_covered():
     first = m["legs"][0]
     assert (first["steps"], first["source"]) == (9, "video")  # 3 turns × 3 steps
     assert m["legs"][1]["source"] == "trace" and m["fidelity"] == "mixed"
+    assert m["legs"][2]["source"] == "bound"                       # open leg: last_turn unknown → bound
+    full = {t: 2 for t in range(1, 21)}                           # video covers turns 1-20; the run ended at 20
+    m3 = movement(REFEREE, full, last_turn=20)
+    assert m3["legs"][2] == {"node_id": "viridian_reached", "d_open": 12, "steps": 16, "source": "video", "status": "open"}  # turns 13-20 × 2
     assert movement({"gates": [], "progress": {"legs": []}}, None) is None
 
 

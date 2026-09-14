@@ -267,7 +267,8 @@ def project_run_dir(run_dir: Path) -> RunSummary | None:
     avg_inputs_per_turn, input_counts = _input_stats(run_dir)
     avg_output_tokens_per_turn, thinking_share = _output_token_stats(run_dir, turns, cost)
     battles, battle_fidelity = battle_stats.battle_summary(run_dir, summary.get("referee"), turns)
-    move = battle_stats.movement(summary.get("referee"), battle_stats.load_steps_backfill(run_dir))
+    move = battle_stats.movement(summary.get("referee"), battle_stats.load_steps_backfill(run_dir),
+                                 (summary.get("session") or {}).get("total_turns"))
 
     # --- explicit-or-inferred top-level fields ---
     run_id = summary.get("run_id") or run_dir.name
