@@ -10,7 +10,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  baseModel, collapseBest, vendorOf, headlineSeries, secondarySeries, turnsPerMinute, costPer10, PERF_LINE,
+  baseModel, collapseBest, vendorOf, headlineSeries, secondarySeries, turnsPerMinute, costPer10, fmtTokens, PERF_LINE,
   legTurns, typicalTurnsPerLeg, projectRun, perTaskSeries, estimationMatrix, PROJECT_FROM_GATE, fmtMinutes,
 } from '../../src/dashboard/web/src/lib/board.js'
 
@@ -185,11 +185,20 @@ test('secondary strip keeps the per-turn measurements and adds turns per task', 
   assert.equal(inputsPerTurn[0].height, 1)
   assert.equal(inputsPerTurn.at(-1).row.model, 'gpt-6-astra(medium)')
   assert.equal(inputsPerTurn.at(-1).eligible, false)
+  // Output tokens per turn: fewest first; a row without usage data is ineligible and last.
+  const withTokens = RANKED.map((r, i) => ({ ...r, avgOutputTokensPerTurn: i === 0 ? null : 400 * i }))
+  const { outputTokens } = secondarySeries(withTokens, GATES, withTokens)
+  assert.equal(outputTokens[0].row.model, RANKED[1].model)
+  assert.equal(outputTokens[0].label, '400')
+  assert.equal(outputTokens.filter((s) => s.eligible).at(-1).height, 1)
+  assert.equal(outputTokens.at(-1).row.model, RANKED[0].model)
+  assert.equal(outputTokens.at(-1).eligible, false)
+  assert.deepEqual([fmtTokens(480), fmtTokens(1234), fmtTokens(12345), fmtTokens(null)], ['480', '1.2k', '12k', '—'])
 })
 
 test('empty board yields empty series without dividing by zero', () => {
   assert.deepEqual(headlineSeries([], GATES), { performance: [], time: [], cost: [] })
-  assert.deepEqual(secondarySeries([], GATES), { speed: [], cost10: [], turnsPerTask: [], inputsPerTurn: [] })
+  assert.deepEqual(secondarySeries([], GATES), { speed: [], cost10: [], turnsPerTask: [], inputsPerTurn: [], outputTokens: [] })
 })
 
 test('estimationMatrix: every run, every leg, ratios to the typical leg, estimates that sum to the projection', () => {

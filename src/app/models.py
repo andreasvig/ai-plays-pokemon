@@ -152,6 +152,12 @@ class RunSummary(BaseModel):
     # None for a run without them (older harness) — the board leaves it off.
     avg_inputs_per_turn: float | None = None
     input_counts: dict[str, int] | None = None
+    # Efficiency · output tokens per turn (2026-09-14): mean completion tokens
+    # (thinking + reply, every call) per turn and the thinking share of them,
+    # from llm_request_usage events. None without usage data — the board leaves
+    # the run off; the share alone is None when the route reports no reasoning.
+    avg_output_tokens_per_turn: float | None = None
+    thinking_share: float | None = None
     # Between-gate progress (2026-09-09, artifacts/granular-progress/plan.md):
     # ``gates_reached`` plus the fraction of the CURRENT leg walked, where the
     # fraction is 1 - d_min/D on the FireRed walk graph (d_min = steps from the

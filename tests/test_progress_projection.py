@@ -126,3 +126,29 @@ def test_projection_averages_game_inputs_per_turn_from_the_explanations(tmp_path
     bare = _run_dir(tmp_path / "bare", {"gates": _GATES, "furthest": "left_house", "termination_reason": None})
     assert project_run_dir(bare).avg_inputs_per_turn is None and project_run_dir(bare).input_counts is None
 
+
+def test_projection_averages_output_tokens_per_turn_from_the_usage_events(tmp_path):
+    """Efficiency · output tokens per turn (2026-09-14): completion tokens over
+    EVERY call (gameplay, compaction, retries) ÷ session turns, and the share
+    that was thinking. A run summary's cost total is the fallback without usage
+    events; neither → None, so the board leaves the run off."""
+    run = _run_dir(tmp_path, {"gates": _GATES, "furthest": "left_house", "termination_reason": None})
+    events = [
+        {"type": "llm_request_usage", "turn": 1, "phase": "gameplay", "attempt": 1, "response_tokens": 300, "reasoning_tokens": 200},
+        {"type": "llm_request_usage", "turn": 1, "phase": "gameplay", "attempt": 2, "response_tokens": 100, "reasoning_tokens": 50},   # a retry counts
+        {"type": "llm_request_usage", "turn": 2, "phase": "compaction", "attempt": 1, "response_tokens": 600, "reasoning_tokens": None},  # so does compaction
+        {"type": "turn_explanation", "turn": 2, "explanation": {"action": ["a"]}},
+    ]
+    (run / "events.jsonl").write_text("\n".join(json.dumps(e) for e in events) + "\n")
+    s = project_run_dir(run)
+    assert s.avg_output_tokens_per_turn == 1000 / 100        # 100 session turns in the fixture
+    assert s.thinking_share == 250 / 1000
+    (tmp_path / "bare").mkdir()
+    bare = _run_dir(tmp_path / "bare", {"gates": _GATES, "furthest": "left_house", "termination_reason": None})
+    assert project_run_dir(bare).avg_output_tokens_per_turn is None and project_run_dir(bare).thinking_share is None
+    summary = json.loads((bare / "run_summary.json").read_text())
+    summary["cost"]["total_output_tokens"] = 2500
+    (bare / "run_summary.json").write_text(json.dumps(summary))
+    fallback = project_run_dir(bare)
+    assert fallback.avg_output_tokens_per_turn == 25 and fallback.thinking_share is None
+

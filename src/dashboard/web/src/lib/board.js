@@ -212,6 +212,8 @@ export function headlineSeries(rows, gateIds = [], pool = rows) {
  * speed — turns per minute, fastest first, tallest = fastest.
  * cost10 — USD per 10 turns, cheapest first, tallest = dearest.
  * turnsPerTask — projected turns to beat Brock ÷ gates, fewest first.
+ * inputsPerTurn — mean game inputs per turn, most first.
+ * outputTokens — mean output tokens (thinking + reply) per turn, fewest first.
  */
 export function secondarySeries(rows, gateIds = [], pool = rows) {
   const speedVals = rows.map((r) => ({ row: r, value: turnsPerMinute(r.avgSPerTurn), eligible: true, complete: true }))
@@ -234,7 +236,15 @@ export function secondarySeries(rows, gateIds = [], pool = rows) {
   const inputMax = inputVals.length ? Math.max(...inputVals.map((s) => s.value)) || 1 : 1
   const inputsPerTurn = inputVals.map((s) => ({ ...s, height: s.value / inputMax, label: s.value.toFixed(1) }))
     .concat(rows.filter((r) => r.avgInputsPerTurn == null).map((r) => ({ row: r, value: null, eligible: false, complete: true, height: 0, label: '—' })))
-  return { speed, cost10, turnsPerTask, inputsPerTurn }
+  // Output tokens per turn (2026-09-14): thinking + reply, every call, fewest
+  // first. A row without usage data is ineligible and left off.
+  const tokVals = rows.filter((r) => r.avgOutputTokensPerTurn != null)
+    .map((r) => ({ row: r, value: r.avgOutputTokensPerTurn, eligible: true, complete: true }))
+    .sort((a, b) => a.value - b.value)
+  const tokMax = tokVals.length ? Math.max(...tokVals.map((s) => s.value)) || 1 : 1
+  const outputTokens = tokVals.map((s) => ({ ...s, height: s.value / tokMax, label: fmtTokens(s.value) }))
+    .concat(rows.filter((r) => r.avgOutputTokensPerTurn == null).map((r) => ({ row: r, value: null, eligible: false, complete: true, height: 0, label: '—' })))
+  return { speed, cost10, turnsPerTask, inputsPerTurn, outputTokens }
 }
 
 /**
@@ -286,6 +296,14 @@ export function estimationMatrix(pool, gateIds) {
 export function fmtTpm(v) {
   if (!(v > 0)) return '—'
   return v >= 10 ? String(Math.round(v)) : v.toFixed(1)
+}
+
+/** Token counts as "480" / "1.2k" / "12k". */
+export function fmtTokens(v) {
+  if (v == null || !(v >= 0)) return '—'
+  if (v >= 10000) return Math.round(v / 1000) + 'k'
+  if (v >= 1000) return (v / 1000).toFixed(1) + 'k'
+  return String(Math.round(v))
 }
 
 export function fmtUsd(n) {

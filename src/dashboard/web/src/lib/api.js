@@ -93,6 +93,8 @@ export function toRun(s) {
     gateTurns: s.gate_turns ?? null,
     avgInputsPerTurn: s.avg_inputs_per_turn ?? null,
     inputCounts: s.input_counts ?? null,
+    avgOutputTokensPerTurn: s.avg_output_tokens_per_turn ?? null,
+    thinkingShare: s.thinking_share ?? null,
     completion,
     progress,
     // the current leg: which gate it leads to, how much of it was walked

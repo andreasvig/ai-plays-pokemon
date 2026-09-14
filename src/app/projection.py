@@ -37,7 +37,7 @@ _DEFAULT_LADDER = Path("configs/checkpoints-firered-v1.yaml")
 #   1 — 2026-09-09: error / crash (why a crashed run ended).
 #   2 — 2026-09-09: record (the spec the run was recorded with, for continues).
 #   3 — 2026-09-11: open-leg fraction capped at OPEN_LEG_FRACTION_CAP.
-PROJECTION_VERSION = 5  # 5 (2026-09-14): avg_inputs_per_turn + input_counts (Efficiency · inputs per turn)
+PROJECTION_VERSION = 6  # 6 (2026-09-14): avg_output_tokens_per_turn + thinking_share (Efficiency · output tokens per turn); 5: inputs per turn
 
 # Status values the report treats as "cleared" for a gate (mirror report.py).
 _CLEARED_STATUSES = ("done", "auto")
@@ -132,6 +132,52 @@ def _input_stats(run_dir: Path) -> tuple[float | None, dict[str, int] | None]:
     return total / len(per_turn), dict(sorted(counts.items(), key=lambda kv: -kv[1]))
 
 
+def _output_token_stats(run_dir: Path, turns: int, cost: dict) -> tuple[float | None, float | None]:
+    """Mean output tokens per turn — thinking plus the reply, every call the run
+    made (gameplay and compaction, retries included, like cost per turn) — and
+    the share of them that was thinking. Summed from the ``llm_request_usage``
+    events: ``response_tokens`` is the provider's completion count, which
+    already contains ``reasoning_tokens`` on every route we play (checked over
+    the 25 published runs, 2026-09-14). Divided by ``session.total_turns`` so a
+    continued run averages over the whole run. Without usage events the
+    summary's ``cost.total_output_tokens`` still gives the mean (share None);
+    with neither, (None, None) and the board leaves the run off the card.
+    """
+    if not turns:
+        return None, None
+    out = 0
+    reasoning = 0
+    saw_reasoning = False
+    path = run_dir / "events.jsonl"
+    if path.is_file():
+        try:
+            with path.open() as fh:
+                for line in fh:
+                    if '"llm_request_usage"' not in line:
+                        continue
+                    try:
+                        e = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if e.get("type") != "llm_request_usage":
+                        continue
+                    r = e.get("response_tokens")
+                    if isinstance(r, (int, float)):
+                        out += r
+                    t = e.get("reasoning_tokens")
+                    if isinstance(t, (int, float)):
+                        reasoning += t
+                        saw_reasoning = True
+        except OSError:
+            out = 0
+    if out <= 0:
+        total = cost.get("total_output_tokens")
+        if not isinstance(total, (int, float)) or total <= 0:
+            return None, None
+        return total / turns, None
+    return out / turns, (reasoning / out if saw_reasoning else None)
+
+
 def _safe_div(numerator: float, denominator: float) -> float:
     """``numerator / denominator`` guarding divide-by-zero → 0.0."""
     if not denominator:
@@ -195,6 +241,7 @@ def project_run_dir(run_dir: Path) -> RunSummary | None:
     avg_cost_per_turn_usd = _safe_div(total_cost_usd, turns)
     avg_s_per_turn = _safe_div(duration_s, turns)
     avg_inputs_per_turn, input_counts = _input_stats(run_dir)
+    avg_output_tokens_per_turn, thinking_share = _output_token_stats(run_dir, turns, cost)
 
     # --- explicit-or-inferred top-level fields ---
     run_id = summary.get("run_id") or run_dir.name
@@ -323,6 +370,8 @@ def project_run_dir(run_dir: Path) -> RunSummary | None:
         gate_turns=gate_turns,
         avg_inputs_per_turn=avg_inputs_per_turn,
         input_counts=input_counts,
+        avg_output_tokens_per_turn=avg_output_tokens_per_turn,
+        thinking_share=thinking_share,
         progress=progress,
         leg_gate=leg_gate,
         leg_fraction=leg_fraction,
