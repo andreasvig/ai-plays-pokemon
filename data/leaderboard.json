@@ -412,8 +412,8 @@
         "group": "142",
         "id": 142,
         "name": "Camper Liam",
-        "attempts": 2,
-        "turns": 10,
+        "attempts": 1,
+        "turns": 7,
         "won": true,
         "mandatory": false
       },
@@ -431,7 +431,7 @@
         "id": 414,
         "name": "Leader Brock",
         "attempts": 1,
-        "turns": 0,
+        "turns": 3,
         "won": true,
         "mandatory": true
       },
@@ -2045,8 +2045,8 @@
         "group": "104",
         "id": 104,
         "name": "Bug Catcher Sammy",
-        "attempts": 2,
-        "turns": 5,
+        "attempts": 1,
+        "turns": 0,
         "won": true,
         "mandatory": false
       },
@@ -2055,7 +2055,7 @@
         "id": 142,
         "name": "Camper Liam",
         "attempts": 1,
-        "turns": 4,
+        "turns": 5,
         "won": true,
         "mandatory": false
       },
@@ -2073,7 +2073,7 @@
         "id": 414,
         "name": "Leader Brock",
         "attempts": 1,
-        "turns": 0,
+        "turns": 4,
         "won": true,
         "mandatory": true
       }
@@ -2296,8 +2296,8 @@
         "group": "104",
         "id": 104,
         "name": "Bug Catcher Sammy",
-        "attempts": 2,
-        "turns": 6,
+        "attempts": 1,
+        "turns": 0,
         "won": true,
         "mandatory": false
       },
@@ -2306,7 +2306,7 @@
         "id": 142,
         "name": "Camper Liam",
         "attempts": 1,
-        "turns": 10,
+        "turns": 6,
         "won": true,
         "mandatory": false
       },
@@ -2324,9 +2324,18 @@
         "id": 414,
         "name": "Leader Brock",
         "attempts": 1,
-        "turns": 0,
+        "turns": 10,
         "won": true,
         "mandatory": true
+      },
+      {
+        "group": "unknown",
+        "id": null,
+        "name": "Unknown trainer",
+        "attempts": 1,
+        "turns": 0,
+        "won": false,
+        "mandatory": false
       }
     ],
     "trainer_battle_turns": 26,
