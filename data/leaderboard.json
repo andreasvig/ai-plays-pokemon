@@ -32,6 +32,30 @@
       "pokedex_received": 134,
       "viridian_forest_reached": 182
     },
+    "gate_times_s": {
+      "left_bedroom": 183.602,
+      "left_house": 419.311,
+      "oaks_lab_entered": 748.261,
+      "starter_chosen": 1141.121,
+      "rival1_done": 2777.144,
+      "route1_reached": 2958.617,
+      "viridian_reached": 6248.718,
+      "parcel_delivered": 7824.663,
+      "pokedex_received": 9973.897,
+      "viridian_forest_reached": 12882.899
+    },
+    "gate_costs_usd": {
+      "left_bedroom": 0.019576,
+      "left_house": 0.043397,
+      "oaks_lab_entered": 0.075269,
+      "starter_chosen": 0.109978,
+      "rival1_done": 0.188201,
+      "route1_reached": 0.199944,
+      "viridian_reached": 0.527517,
+      "parcel_delivered": 0.663915,
+      "pokedex_received": 1.034998,
+      "viridian_forest_reached": 1.565939
+    },
     "avg_inputs_per_turn": 10.82780082987552,
     "input_counts": {
       "up": 1844,
@@ -73,13 +97,57 @@
     "shortest_steps": 362,
     "movement_efficiency": 0.19781420765027322,
     "steps_fidelity": "video",
+    "movement_legs": [
+      {
+        "node_id": "left_bedroom",
+        "d_open": 9,
+        "steps": 17,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "left_house",
+        "d_open": 11,
+        "steps": 35,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "route1_reached",
+        "d_open": 21,
+        "steps": 25,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_reached",
+        "d_open": 54,
+        "steps": 123,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_forest_reached",
+        "d_open": 186,
+        "steps": 203,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "pewter_reached",
+        "d_open": 81,
+        "steps": 1427,
+        "source": "video",
+        "status": "open"
+      }
+    ],
     "progress": 10.592814371257486,
     "leg_gate": "pewter_reached",
     "leg_fraction": 0.592814371257485,
     "leg_distance_min": 68,
     "leg_distance_open": 167,
     "termination_reason": "leg_cap:pewter_reached",
-    "projection_version": 7,
+    "projection_version": 8,
     "continued_from": "2026-09-12_05-47-17_config-5.1__deepseek-v4-1-flash-max",
     "resumed": true,
     "harness": "append_compact",
@@ -119,6 +187,20 @@
       "starter_chosen": 25,
       "rival1_done": 37
     },
+    "gate_times_s": {
+      "left_bedroom": 202.075,
+      "left_house": 271.296,
+      "oaks_lab_entered": 626.709,
+      "starter_chosen": 957.117,
+      "rival1_done": 1339.834
+    },
+    "gate_costs_usd": {
+      "left_bedroom": 0.104508,
+      "left_house": 0.16068,
+      "oaks_lab_entered": 0.377013,
+      "starter_chosen": 0.555793,
+      "rival1_done": 0.759923
+    },
     "avg_inputs_per_turn": 5.582089552238806,
     "input_counts": {
       "up": 82,
@@ -152,13 +234,36 @@
     "shortest_steps": 36,
     "movement_efficiency": 0.3956043956043956,
     "steps_fidelity": "video",
+    "movement_legs": [
+      {
+        "node_id": "left_bedroom",
+        "d_open": 9,
+        "steps": 24,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "left_house",
+        "d_open": 12,
+        "steps": 13,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "route1_reached",
+        "d_open": 15,
+        "steps": 54,
+        "source": "video",
+        "status": "open"
+      }
+    ],
     "progress": 5.68,
     "leg_gate": "route1_reached",
     "leg_fraction": 0.6799999999999999,
     "leg_distance_min": 8,
     "leg_distance_open": 25,
     "termination_reason": "leg_cap:route1_reached",
-    "projection_version": 7,
+    "projection_version": 8,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -202,6 +307,30 @@
       "parcel_delivered": 68,
       "pokedex_received": 80,
       "viridian_forest_reached": 115
+    },
+    "gate_times_s": {
+      "left_bedroom": 22.895,
+      "left_house": 53.42,
+      "oaks_lab_entered": 126.137,
+      "starter_chosen": 293.008,
+      "rival1_done": 580.395,
+      "route1_reached": 686.619,
+      "viridian_reached": 1506.169,
+      "parcel_delivered": 1853.615,
+      "pokedex_received": 2254.228,
+      "viridian_forest_reached": 3144.471
+    },
+    "gate_costs_usd": {
+      "left_bedroom": 0.017656,
+      "left_house": 0.034656,
+      "oaks_lab_entered": 0.062744,
+      "starter_chosen": 0.167042,
+      "rival1_done": 0.244412,
+      "route1_reached": 0.310675,
+      "viridian_reached": 0.768917,
+      "parcel_delivered": 0.991396,
+      "pokedex_received": 1.163303,
+      "viridian_forest_reached": 1.65249
     },
     "avg_inputs_per_turn": 11.421686746987952,
     "input_counts": {
@@ -254,13 +383,57 @@
     "shortest_steps": 291,
     "movement_efficiency": 0.13830798479087453,
     "steps_fidelity": "video",
+    "movement_legs": [
+      {
+        "node_id": "left_bedroom",
+        "d_open": 9,
+        "steps": 8,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "left_house",
+        "d_open": 12,
+        "steps": 13,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "route1_reached",
+        "d_open": 25,
+        "steps": 29,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_reached",
+        "d_open": 59,
+        "steps": 209,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_forest_reached",
+        "d_open": 186,
+        "steps": 204,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "pewter_reached",
+        "d_open": 0,
+        "steps": 1640,
+        "source": "video",
+        "status": "open"
+      }
+    ],
     "progress": 10.29940119760479,
     "leg_gate": "pewter_reached",
     "leg_fraction": 0.29940119760479045,
     "leg_distance_min": 117,
     "leg_distance_open": 167,
     "termination_reason": "leg_cap:pewter_reached",
-    "projection_version": 7,
+    "projection_version": 8,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -302,6 +475,24 @@
       "route1_reached": 65,
       "viridian_reached": 100
     },
+    "gate_times_s": {
+      "left_bedroom": 53.113,
+      "left_house": 86.921,
+      "oaks_lab_entered": 204.348,
+      "starter_chosen": 331.051,
+      "rival1_done": 671.213,
+      "route1_reached": 1033.571,
+      "viridian_reached": 1588.56
+    },
+    "gate_costs_usd": {
+      "left_bedroom": 0.004446,
+      "left_house": 0.007695,
+      "oaks_lab_entered": 0.016938,
+      "starter_chosen": 0.030381,
+      "rival1_done": 0.057893,
+      "route1_reached": 0.088415,
+      "viridian_reached": 0.13763
+    },
     "avg_inputs_per_turn": 6.12,
     "input_counts": {
       "up": 339,
@@ -335,13 +526,43 @@
     "shortest_steps": 93,
     "movement_efficiency": 0.45145631067961167,
     "steps_fidelity": "video",
+    "movement_legs": [
+      {
+        "node_id": "left_bedroom",
+        "d_open": 9,
+        "steps": 20,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "left_house",
+        "d_open": 6,
+        "steps": 11,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "route1_reached",
+        "d_open": 25,
+        "steps": 82,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_reached",
+        "d_open": 53,
+        "steps": 93,
+        "source": "video",
+        "status": "closed"
+      }
+    ],
     "progress": 7.0,
     "leg_gate": "parcel_delivered",
     "leg_fraction": null,
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": "leg_cap:parcel_delivered",
-    "projection_version": 7,
+    "projection_version": 8,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -382,6 +603,22 @@
       "rival1_done": 60,
       "route1_reached": 67
     },
+    "gate_times_s": {
+      "left_bedroom": 472.219,
+      "left_house": 545.286,
+      "oaks_lab_entered": 638.174,
+      "starter_chosen": 741.873,
+      "rival1_done": 1112.842,
+      "route1_reached": 1302.98
+    },
+    "gate_costs_usd": {
+      "left_bedroom": 0.066239,
+      "left_house": 0.074432,
+      "oaks_lab_entered": 0.083185,
+      "starter_chosen": 0.095231,
+      "rival1_done": 0.133983,
+      "route1_reached": 0.151474
+    },
     "avg_inputs_per_turn": 6.023952095808383,
     "input_counts": {
       "up": 321,
@@ -414,13 +651,43 @@
     "shortest_steps": 75,
     "movement_efficiency": 0.12437810945273632,
     "steps_fidelity": "video",
+    "movement_legs": [
+      {
+        "node_id": "left_bedroom",
+        "d_open": 9,
+        "steps": 66,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "left_house",
+        "d_open": 12,
+        "steps": 17,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "route1_reached",
+        "d_open": 25,
+        "steps": 41,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_reached",
+        "d_open": 29,
+        "steps": 479,
+        "source": "video",
+        "status": "open"
+      }
+    ],
     "progress": 6.620689655172414,
     "leg_gate": "viridian_reached",
     "leg_fraction": 0.6206896551724138,
     "leg_distance_min": 22,
     "leg_distance_open": 58,
     "termination_reason": "leg_cap:viridian_reached",
-    "projection_version": 7,
+    "projection_version": 8,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -466,6 +733,34 @@
       "viridian_forest_reached": 112,
       "pewter_reached": 252,
       "brock_defeated": 276
+    },
+    "gate_times_s": {
+      "left_bedroom": 42.009,
+      "left_house": 72.521,
+      "oaks_lab_entered": 155.166,
+      "starter_chosen": 276.775,
+      "rival1_done": 578.989,
+      "route1_reached": 842.048,
+      "viridian_reached": 2149.16,
+      "parcel_delivered": 2251.043,
+      "pokedex_received": 2723.975,
+      "viridian_forest_reached": 3619.241,
+      "pewter_reached": 8222.749,
+      "brock_defeated": 9138.479
+    },
+    "gate_costs_usd": {
+      "left_bedroom": 0.157585,
+      "left_house": 0.231427,
+      "oaks_lab_entered": 0.362513,
+      "starter_chosen": 0.5949,
+      "rival1_done": 0.903248,
+      "route1_reached": 1.545361,
+      "viridian_reached": 4.171673,
+      "parcel_delivered": 4.413089,
+      "pokedex_received": 5.436011,
+      "viridian_forest_reached": 7.072391,
+      "pewter_reached": 16.573254,
+      "brock_defeated": 18.420451
     },
     "avg_inputs_per_turn": 12.75,
     "input_counts": {
@@ -544,13 +839,57 @@
     "shortest_steps": 445,
     "movement_efficiency": 0.3092425295343989,
     "steps_fidelity": "bound",
+    "movement_legs": [
+      {
+        "node_id": "left_bedroom",
+        "d_open": 9,
+        "steps": 9,
+        "source": "bound",
+        "status": "closed"
+      },
+      {
+        "node_id": "left_house",
+        "d_open": 12,
+        "steps": 13,
+        "source": "bound",
+        "status": "closed"
+      },
+      {
+        "node_id": "route1_reached",
+        "d_open": 19,
+        "steps": 66,
+        "source": "bound",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_reached",
+        "d_open": 52,
+        "steps": 240,
+        "source": "bound",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_forest_reached",
+        "d_open": 186,
+        "steps": 228,
+        "source": "bound",
+        "status": "closed"
+      },
+      {
+        "node_id": "pewter_reached",
+        "d_open": 167,
+        "steps": 883,
+        "source": "bound",
+        "status": "closed"
+      }
+    ],
     "progress": 12.0,
     "leg_gate": null,
     "leg_fraction": null,
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": null,
-    "projection_version": 7,
+    "projection_version": 8,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -595,6 +934,30 @@
       "pokedex_received": 176,
       "viridian_forest_reached": 220
     },
+    "gate_times_s": {
+      "left_bedroom": 730.385,
+      "left_house": 892.135,
+      "oaks_lab_entered": 1041.14,
+      "starter_chosen": 1388.702,
+      "rival1_done": 2003.913,
+      "route1_reached": 2425.782,
+      "viridian_reached": 5042.992,
+      "parcel_delivered": 6385.028,
+      "pokedex_received": 10223.363,
+      "viridian_forest_reached": 13845.387
+    },
+    "gate_costs_usd": {
+      "left_bedroom": 0.532346,
+      "left_house": 0.658598,
+      "oaks_lab_entered": 0.82282,
+      "starter_chosen": 1.039458,
+      "rival1_done": 1.495086,
+      "route1_reached": 1.853356,
+      "viridian_reached": 3.869152,
+      "parcel_delivered": 5.005424,
+      "pokedex_received": 8.213556,
+      "viridian_forest_reached": 10.418136
+    },
     "avg_inputs_per_turn": 9.305769230769231,
     "input_counts": {
       "up": 1150,
@@ -637,13 +1000,57 @@
     "shortest_steps": 286,
     "movement_efficiency": 0.16493656286043828,
     "steps_fidelity": "video",
+    "movement_legs": [
+      {
+        "node_id": "left_bedroom",
+        "d_open": 9,
+        "steps": 72,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "left_house",
+        "d_open": 10,
+        "steps": 11,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "route1_reached",
+        "d_open": 25,
+        "steps": 49,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_reached",
+        "d_open": 56,
+        "steps": 180,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_forest_reached",
+        "d_open": 186,
+        "steps": 280,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "pewter_reached",
+        "d_open": 0,
+        "steps": 1142,
+        "source": "video",
+        "status": "open"
+      }
+    ],
     "progress": 10.335329341317365,
     "leg_gate": "pewter_reached",
     "leg_fraction": 0.33532934131736525,
     "leg_distance_min": 111,
     "leg_distance_open": 167,
     "termination_reason": "leg_cap:pewter_reached",
-    "projection_version": 7,
+    "projection_version": 8,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -685,6 +1092,24 @@
       "route1_reached": 64,
       "viridian_reached": 117
     },
+    "gate_times_s": {
+      "left_bedroom": 73.729,
+      "left_house": 127.927,
+      "oaks_lab_entered": 1261.543,
+      "starter_chosen": 1681.46,
+      "rival1_done": 2221.995,
+      "route1_reached": 2711.6,
+      "viridian_reached": 6497.746
+    },
+    "gate_costs_usd": {
+      "left_bedroom": 0.003202,
+      "left_house": 0.005204,
+      "oaks_lab_entered": 0.053024,
+      "starter_chosen": 0.069047,
+      "rival1_done": 0.088809,
+      "route1_reached": 0.106401,
+      "viridian_reached": 0.273265
+    },
     "avg_inputs_per_turn": 6.934131736526946,
     "input_counts": {
       "up": 565,
@@ -717,13 +1142,43 @@
     "shortest_steps": 103,
     "movement_efficiency": 0.64375,
     "steps_fidelity": "video",
+    "movement_legs": [
+      {
+        "node_id": "left_bedroom",
+        "d_open": 9,
+        "steps": 8,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "left_house",
+        "d_open": 12,
+        "steps": 15,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "route1_reached",
+        "d_open": 25,
+        "steps": 30,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_reached",
+        "d_open": 57,
+        "steps": 106,
+        "source": "video",
+        "status": "closed"
+      }
+    ],
     "progress": 7.0,
     "leg_gate": "parcel_delivered",
     "leg_fraction": null,
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": "leg_cap:parcel_delivered",
-    "projection_version": 7,
+    "projection_version": 8,
     "continued_from": "2026-09-12_17-31-29_config-5.1__qwen3-8-flash-thinking",
     "resumed": true,
     "harness": "append_compact",
@@ -769,6 +1224,34 @@
       "viridian_forest_reached": 151,
       "pewter_reached": 304,
       "brock_defeated": 369
+    },
+    "gate_times_s": {
+      "left_bedroom": 192.675,
+      "left_house": 230.469,
+      "oaks_lab_entered": 338.099,
+      "starter_chosen": 878.512,
+      "rival1_done": 1169.033,
+      "route1_reached": 1266.75,
+      "viridian_reached": 1619.921,
+      "parcel_delivered": 2288.448,
+      "pokedex_received": 2929.495,
+      "viridian_forest_reached": 4299.516,
+      "pewter_reached": 9364.204,
+      "brock_defeated": 11549.882
+    },
+    "gate_costs_usd": {
+      "left_bedroom": 0.35681,
+      "left_house": 0.451524,
+      "oaks_lab_entered": 0.626403,
+      "starter_chosen": 1.70694,
+      "rival1_done": 2.171107,
+      "route1_reached": 2.358736,
+      "viridian_reached": 2.870324,
+      "parcel_delivered": 4.343925,
+      "pokedex_received": 5.493214,
+      "viridian_forest_reached": 8.018099,
+      "pewter_reached": 17.432366,
+      "brock_defeated": 21.770522
     },
     "avg_inputs_per_turn": 7.37940379403794,
     "input_counts": {
@@ -848,13 +1331,57 @@
     "shortest_steps": 455,
     "movement_efficiency": 0.5118110236220472,
     "steps_fidelity": "video",
+    "movement_legs": [
+      {
+        "node_id": "left_bedroom",
+        "d_open": 9,
+        "steps": 16,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "left_house",
+        "d_open": 12,
+        "steps": 13,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "route1_reached",
+        "d_open": 25,
+        "steps": 29,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_reached",
+        "d_open": 56,
+        "steps": 60,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_forest_reached",
+        "d_open": 186,
+        "steps": 227,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "pewter_reached",
+        "d_open": 167,
+        "steps": 544,
+        "source": "video",
+        "status": "closed"
+      }
+    ],
     "progress": 12.0,
     "leg_gate": null,
     "leg_fraction": null,
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": null,
-    "projection_version": 7,
+    "projection_version": 8,
     "continued_from": "2026-09-12_14-17-37_config-5.1__claude-opus-5-high",
     "resumed": true,
     "harness": "append_compact",
@@ -888,6 +1415,8 @@
     "gates_reached": 0,
     "total_gates": 12,
     "gate_turns": {},
+    "gate_times_s": null,
+    "gate_costs_usd": null,
     "avg_inputs_per_turn": 3.3333333333333335,
     "input_counts": {
       "right": 48,
@@ -908,13 +1437,22 @@
     "shortest_steps": 3,
     "movement_efficiency": 0.09090909090909091,
     "steps_fidelity": "video",
+    "movement_legs": [
+      {
+        "node_id": "left_bedroom",
+        "d_open": 3,
+        "steps": 33,
+        "source": "video",
+        "status": "open"
+      }
+    ],
     "progress": 0.5555555555555556,
     "leg_gate": "left_bedroom",
     "leg_fraction": 0.5555555555555556,
     "leg_distance_min": 4,
     "leg_distance_open": 9,
     "termination_reason": "leg_cap:left_bedroom",
-    "projection_version": 7,
+    "projection_version": 8,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -956,6 +1494,24 @@
       "route1_reached": 44,
       "viridian_reached": 123
     },
+    "gate_times_s": {
+      "left_bedroom": 105.184,
+      "left_house": 147.474,
+      "oaks_lab_entered": 263.002,
+      "starter_chosen": 390.2,
+      "rival1_done": 807.717,
+      "route1_reached": 932.412,
+      "viridian_reached": 3219.804
+    },
+    "gate_costs_usd": {
+      "left_bedroom": 0.011056,
+      "left_house": 0.01428,
+      "oaks_lab_entered": 0.022375,
+      "starter_chosen": 0.028393,
+      "rival1_done": 0.04552,
+      "route1_reached": 0.053624,
+      "viridian_reached": 0.23112
+    },
     "avg_inputs_per_turn": 6.971098265895954,
     "input_counts": {
       "up": 478,
@@ -989,13 +1545,43 @@
     "shortest_steps": 101,
     "movement_efficiency": 0.28291316526610644,
     "steps_fidelity": "video",
+    "movement_legs": [
+      {
+        "node_id": "left_bedroom",
+        "d_open": 9,
+        "steps": 10,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "left_house",
+        "d_open": 12,
+        "steps": 13,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "route1_reached",
+        "d_open": 25,
+        "steps": 29,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_reached",
+        "d_open": 55,
+        "steps": 305,
+        "source": "video",
+        "status": "closed"
+      }
+    ],
     "progress": 7.0,
     "leg_gate": "parcel_delivered",
     "leg_fraction": null,
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": "leg_cap:parcel_delivered",
-    "projection_version": 7,
+    "projection_version": 8,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -1039,6 +1625,30 @@
       "parcel_delivered": 108,
       "pokedex_received": 162,
       "viridian_forest_reached": 219
+    },
+    "gate_times_s": {
+      "left_bedroom": 128.031,
+      "left_house": 175.327,
+      "oaks_lab_entered": 320.006,
+      "starter_chosen": 492.829,
+      "rival1_done": 862.408,
+      "route1_reached": 1110.194,
+      "viridian_reached": 1958.336,
+      "parcel_delivered": 3496.785,
+      "pokedex_received": 5019.974,
+      "viridian_forest_reached": 6986.373
+    },
+    "gate_costs_usd": {
+      "left_bedroom": 0.01184,
+      "left_house": 0.015171,
+      "oaks_lab_entered": 0.025425,
+      "starter_chosen": 0.037757,
+      "rival1_done": 0.049242,
+      "route1_reached": 0.062366,
+      "viridian_reached": 0.119147,
+      "parcel_delivered": 0.26311,
+      "pokedex_received": 0.379315,
+      "viridian_forest_reached": 0.544253
     },
     "avg_inputs_per_turn": 6.574181117533719,
     "input_counts": {
@@ -1100,13 +1710,57 @@
     "shortest_steps": 322,
     "movement_efficiency": 0.24864864864864866,
     "steps_fidelity": "video",
+    "movement_legs": [
+      {
+        "node_id": "left_bedroom",
+        "d_open": 9,
+        "steps": 19,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "left_house",
+        "d_open": 11,
+        "steps": 12,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "route1_reached",
+        "d_open": 25,
+        "steps": 31,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_reached",
+        "d_open": 57,
+        "steps": 87,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_forest_reached",
+        "d_open": 186,
+        "steps": 244,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "pewter_reached",
+        "d_open": 34,
+        "steps": 902,
+        "source": "video",
+        "status": "open"
+      }
+    ],
     "progress": 10.682634730538922,
     "leg_gate": "pewter_reached",
     "leg_fraction": 0.6826347305389222,
     "leg_distance_min": 53,
     "leg_distance_open": 167,
     "termination_reason": "leg_cap:pewter_reached",
-    "projection_version": 7,
+    "projection_version": 8,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -1152,6 +1806,34 @@
       "viridian_forest_reached": 145,
       "pewter_reached": 311,
       "brock_defeated": 368
+    },
+    "gate_times_s": {
+      "left_bedroom": 37.029,
+      "left_house": 54.717,
+      "oaks_lab_entered": 101.49,
+      "starter_chosen": 176.693,
+      "rival1_done": 402.672,
+      "route1_reached": 518.448,
+      "viridian_reached": 928.71,
+      "parcel_delivered": 1072.992,
+      "pokedex_received": 1575.235,
+      "viridian_forest_reached": 2406.47,
+      "pewter_reached": 5314.717,
+      "brock_defeated": 6584.025
+    },
+    "gate_costs_usd": {
+      "left_bedroom": 0.021923,
+      "left_house": 0.037188,
+      "oaks_lab_entered": 0.056572,
+      "starter_chosen": 0.094272,
+      "rival1_done": 0.129607,
+      "route1_reached": 0.190958,
+      "viridian_reached": 0.407623,
+      "parcel_delivered": 0.463361,
+      "pokedex_received": 0.740457,
+      "viridian_forest_reached": 1.145997,
+      "pewter_reached": 2.463553,
+      "brock_defeated": 3.140544
     },
     "avg_inputs_per_turn": 8.182065217391305,
     "input_counts": {
@@ -1239,13 +1921,57 @@
     "shortest_steps": 446,
     "movement_efficiency": 0.46701570680628274,
     "steps_fidelity": "video",
+    "movement_legs": [
+      {
+        "node_id": "left_bedroom",
+        "d_open": 9,
+        "steps": 15,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "left_house",
+        "d_open": 5,
+        "steps": 6,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "route1_reached",
+        "d_open": 25,
+        "steps": 40,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_reached",
+        "d_open": 54,
+        "steps": 110,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_forest_reached",
+        "d_open": 186,
+        "steps": 227,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "pewter_reached",
+        "d_open": 167,
+        "steps": 557,
+        "source": "video",
+        "status": "closed"
+      }
+    ],
     "progress": 12.0,
     "leg_gate": null,
     "leg_fraction": null,
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": null,
-    "projection_version": 7,
+    "projection_version": 8,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -1290,6 +2016,32 @@
       "pokedex_received": 63,
       "viridian_forest_reached": 95,
       "pewter_reached": 317
+    },
+    "gate_times_s": {
+      "left_bedroom": 47.488,
+      "left_house": 108.404,
+      "oaks_lab_entered": 319.264,
+      "starter_chosen": 402.505,
+      "rival1_done": 835.774,
+      "route1_reached": 913.245,
+      "viridian_reached": 1757.551,
+      "parcel_delivered": 2187.807,
+      "pokedex_received": 2829.896,
+      "viridian_forest_reached": 4126.854,
+      "pewter_reached": 12610.633
+    },
+    "gate_costs_usd": {
+      "left_bedroom": 0.034561,
+      "left_house": 0.096161,
+      "oaks_lab_entered": 0.170648,
+      "starter_chosen": 0.217961,
+      "rival1_done": 0.464376,
+      "route1_reached": 0.52406,
+      "viridian_reached": 1.261547,
+      "parcel_delivered": 1.676254,
+      "pokedex_received": 2.231411,
+      "viridian_forest_reached": 3.287605,
+      "pewter_reached": 10.568249
     },
     "avg_inputs_per_turn": 13.218225419664268,
     "input_counts": {
@@ -1377,13 +2129,57 @@
     "shortest_steps": 458,
     "movement_efficiency": 0.275737507525587,
     "steps_fidelity": "video",
+    "movement_legs": [
+      {
+        "node_id": "left_bedroom",
+        "d_open": 9,
+        "steps": 10,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "left_house",
+        "d_open": 12,
+        "steps": 13,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "route1_reached",
+        "d_open": 25,
+        "steps": 24,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_reached",
+        "d_open": 59,
+        "steps": 142,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_forest_reached",
+        "d_open": 186,
+        "steps": 227,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "pewter_reached",
+        "d_open": 167,
+        "steps": 1244,
+        "source": "video",
+        "status": "closed"
+      }
+    ],
     "progress": 11.95,
     "leg_gate": "brock_defeated",
     "leg_fraction": 0.95,
     "leg_distance_min": 0,
     "leg_distance_open": 60,
     "termination_reason": "leg_cap:brock_defeated",
-    "projection_version": 7,
+    "projection_version": 8,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -1429,6 +2225,34 @@
       "viridian_forest_reached": 84,
       "pewter_reached": 124,
       "brock_defeated": 145
+    },
+    "gate_times_s": {
+      "left_bedroom": 28.233,
+      "left_house": 52.894,
+      "oaks_lab_entered": 117.722,
+      "starter_chosen": 208.653,
+      "rival1_done": 424.527,
+      "route1_reached": 477.704,
+      "viridian_reached": 796.092,
+      "parcel_delivered": 971.155,
+      "pokedex_received": 1592.811,
+      "viridian_forest_reached": 2616.641,
+      "pewter_reached": 3830.961,
+      "brock_defeated": 4465.982
+    },
+    "gate_costs_usd": {
+      "left_bedroom": 0.103672,
+      "left_house": 0.169919,
+      "oaks_lab_entered": 0.24632,
+      "starter_chosen": 0.375302,
+      "rival1_done": 0.57864,
+      "route1_reached": 0.688146,
+      "viridian_reached": 1.267524,
+      "parcel_delivered": 1.586348,
+      "pokedex_received": 2.642551,
+      "viridian_forest_reached": 4.538408,
+      "pewter_reached": 6.794095,
+      "brock_defeated": 7.959183
     },
     "avg_inputs_per_turn": 7.575892857142857,
     "input_counts": {
@@ -1507,13 +2331,57 @@
     "shortest_steps": 453,
     "movement_efficiency": 0.8046181172291297,
     "steps_fidelity": "video",
+    "movement_legs": [
+      {
+        "node_id": "left_bedroom",
+        "d_open": 9,
+        "steps": 8,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "left_house",
+        "d_open": 12,
+        "steps": 13,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "route1_reached",
+        "d_open": 21,
+        "steps": 23,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_reached",
+        "d_open": 58,
+        "steps": 68,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_forest_reached",
+        "d_open": 186,
+        "steps": 219,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "pewter_reached",
+        "d_open": 167,
+        "steps": 231,
+        "source": "video",
+        "status": "closed"
+      }
+    ],
     "progress": 12.0,
     "leg_gate": null,
     "leg_fraction": null,
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": null,
-    "projection_version": 7,
+    "projection_version": 8,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -1550,6 +2418,14 @@
       "left_bedroom": 22,
       "left_house": 27
     },
+    "gate_times_s": {
+      "left_bedroom": 163.385,
+      "left_house": 197.765
+    },
+    "gate_costs_usd": {
+      "left_bedroom": 0.0686,
+      "left_house": 0.081041
+    },
     "avg_inputs_per_turn": 3.017543859649123,
     "input_counts": {
       "right": 48,
@@ -1571,13 +2447,29 @@
     "shortest_steps": 21,
     "movement_efficiency": 0.4666666666666667,
     "steps_fidelity": "video",
+    "movement_legs": [
+      {
+        "node_id": "left_bedroom",
+        "d_open": 9,
+        "steps": 32,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "left_house",
+        "d_open": 12,
+        "steps": 13,
+        "source": "video",
+        "status": "closed"
+      }
+    ],
     "progress": 2.0769230769230766,
     "leg_gate": "oaks_lab_entered",
     "leg_fraction": 0.07692307692307687,
     "leg_distance_min": 12,
     "leg_distance_open": 13,
     "termination_reason": "leg_cap:oaks_lab_entered",
-    "projection_version": 7,
+    "projection_version": 8,
     "continued_from": "2026-09-09_19-37-48_config-5.0__gemini-3-5-flash-lite-minimal",
     "resumed": true,
     "harness": "append_compact",
@@ -1615,6 +2507,16 @@
       "left_house": 24,
       "oaks_lab_entered": 32
     },
+    "gate_times_s": {
+      "left_bedroom": 143.571,
+      "left_house": 177.986,
+      "oaks_lab_entered": 299.189
+    },
+    "gate_costs_usd": {
+      "left_bedroom": 0.066427,
+      "left_house": 0.079564,
+      "oaks_lab_entered": 0.112053
+    },
     "avg_inputs_per_turn": 5.096774193548387,
     "input_counts": {
       "b": 117,
@@ -1637,13 +2539,29 @@
     "shortest_steps": 21,
     "movement_efficiency": 0.4883720930232558,
     "steps_fidelity": "video",
+    "movement_legs": [
+      {
+        "node_id": "left_bedroom",
+        "d_open": 9,
+        "steps": 30,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "left_house",
+        "d_open": 12,
+        "steps": 13,
+        "source": "video",
+        "status": "closed"
+      }
+    ],
     "progress": 3.95,
     "leg_gate": "starter_chosen",
     "leg_fraction": 0.95,
     "leg_distance_min": 0,
     "leg_distance_open": 1,
     "termination_reason": "leg_cap:starter_chosen",
-    "projection_version": 7,
+    "projection_version": 8,
     "continued_from": "2026-09-09_20-18-53_config-5.0__gemini-3-5-flash-lite-medium",
     "resumed": true,
     "harness": "append_compact",
@@ -1681,6 +2599,16 @@
       "left_house": 19,
       "oaks_lab_entered": 23
     },
+    "gate_times_s": {
+      "left_bedroom": 125.031,
+      "left_house": 170.776,
+      "oaks_lab_entered": 254.264
+    },
+    "gate_costs_usd": {
+      "left_bedroom": 0.058819,
+      "left_house": 0.079352,
+      "oaks_lab_entered": 0.096971
+    },
     "avg_inputs_per_turn": 5.849056603773585,
     "input_counts": {
       "b": 129,
@@ -1703,13 +2631,29 @@
     "shortest_steps": 21,
     "movement_efficiency": 0.45652173913043476,
     "steps_fidelity": "video",
+    "movement_legs": [
+      {
+        "node_id": "left_bedroom",
+        "d_open": 9,
+        "steps": 31,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "left_house",
+        "d_open": 12,
+        "steps": 15,
+        "source": "video",
+        "status": "closed"
+      }
+    ],
     "progress": 3.95,
     "leg_gate": "starter_chosen",
     "leg_fraction": 0.95,
     "leg_distance_min": 0,
     "leg_distance_open": 1,
     "termination_reason": "leg_cap:starter_chosen",
-    "projection_version": 7,
+    "projection_version": 8,
     "continued_from": "2026-09-09_21-20-50_config-5.1__gemini-3-5-flash-lite-high",
     "resumed": true,
     "harness": "append_compact",
@@ -1754,6 +2698,30 @@
       "pokedex_received": 116,
       "viridian_forest_reached": 157
     },
+    "gate_times_s": {
+      "left_bedroom": 67.151,
+      "left_house": 99.616,
+      "oaks_lab_entered": 187.84,
+      "starter_chosen": 359.14,
+      "rival1_done": 681.93,
+      "route1_reached": 830.077,
+      "viridian_reached": 1396.42,
+      "parcel_delivered": 1532.097,
+      "pokedex_received": 2205.974,
+      "viridian_forest_reached": 3052.832
+    },
+    "gate_costs_usd": {
+      "left_bedroom": 0.02855,
+      "left_house": 0.05512,
+      "oaks_lab_entered": 0.103631,
+      "starter_chosen": 0.178291,
+      "rival1_done": 0.28275,
+      "route1_reached": 0.312065,
+      "viridian_reached": 0.561679,
+      "parcel_delivered": 0.606092,
+      "pokedex_received": 0.885392,
+      "viridian_forest_reached": 1.302521
+    },
     "avg_inputs_per_turn": 7.49234135667396,
     "input_counts": {
       "up": 1047,
@@ -1795,13 +2763,57 @@
     "shortest_steps": 314,
     "movement_efficiency": 0.19661865998747652,
     "steps_fidelity": "video",
+    "movement_legs": [
+      {
+        "node_id": "left_bedroom",
+        "d_open": 9,
+        "steps": 22,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "left_house",
+        "d_open": 12,
+        "steps": 13,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "route1_reached",
+        "d_open": 25,
+        "steps": 25,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_reached",
+        "d_open": 59,
+        "steps": 138,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_forest_reached",
+        "d_open": 186,
+        "steps": 206,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "pewter_reached",
+        "d_open": 23,
+        "steps": 1193,
+        "source": "video",
+        "status": "open"
+      }
+    ],
     "progress": 10.137724550898204,
     "leg_gate": "pewter_reached",
     "leg_fraction": 0.13772455089820357,
     "leg_distance_min": 144,
     "leg_distance_open": 167,
     "termination_reason": "leg_cap:pewter_reached",
-    "projection_version": 7,
+    "projection_version": 8,
     "continued_from": "2026-09-09_16-04-56_config-5.0__gemini-3-8-flash-minimal_continued_from_turn_40",
     "resumed": true,
     "harness": "append_compact",
@@ -1838,6 +2850,14 @@
       "left_bedroom": 14,
       "left_house": 17
     },
+    "gate_times_s": {
+      "left_bedroom": 355.61,
+      "left_house": 417.689
+    },
+    "gate_costs_usd": {
+      "left_bedroom": 0.013896,
+      "left_house": 0.022068
+    },
     "avg_inputs_per_turn": 9.319148936170214,
     "input_counts": {
       "up": 106,
@@ -1860,13 +2880,29 @@
     "shortest_steps": 21,
     "movement_efficiency": 0.1891891891891892,
     "steps_fidelity": "video",
+    "movement_legs": [
+      {
+        "node_id": "left_bedroom",
+        "d_open": 9,
+        "steps": 96,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "left_house",
+        "d_open": 12,
+        "steps": 15,
+        "source": "video",
+        "status": "closed"
+      }
+    ],
     "progress": 2.4615384615384617,
     "leg_gate": "oaks_lab_entered",
     "leg_fraction": 0.46153846153846156,
     "leg_distance_min": 7,
     "leg_distance_open": 13,
     "termination_reason": "leg_cap:oaks_lab_entered",
-    "projection_version": 7,
+    "projection_version": 8,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -1911,6 +2947,30 @@
       "pokedex_received": 161,
       "viridian_forest_reached": 212
     },
+    "gate_times_s": {
+      "left_bedroom": 130.059,
+      "left_house": 285.887,
+      "oaks_lab_entered": 648.608,
+      "starter_chosen": 1130.385,
+      "rival1_done": 1733.372,
+      "route1_reached": 2220.047,
+      "viridian_reached": 3093.336,
+      "parcel_delivered": 3537.242,
+      "pokedex_received": 4363.59,
+      "viridian_forest_reached": 5635.614
+    },
+    "gate_costs_usd": {
+      "left_bedroom": 0.002749,
+      "left_house": 0.007497,
+      "oaks_lab_entered": 0.019513,
+      "starter_chosen": 0.031759,
+      "rival1_done": 0.041918,
+      "route1_reached": 0.054055,
+      "viridian_reached": 0.084185,
+      "parcel_delivered": 0.10154,
+      "pokedex_received": 0.12876,
+      "viridian_forest_reached": 0.169479
+    },
     "avg_inputs_per_turn": 8.162109375,
     "input_counts": {
       "up": 1260,
@@ -1944,13 +3004,57 @@
     "shortest_steps": 286,
     "movement_efficiency": 0.16793893129770993,
     "steps_fidelity": "video",
+    "movement_legs": [
+      {
+        "node_id": "left_bedroom",
+        "d_open": 9,
+        "steps": 26,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "left_house",
+        "d_open": 12,
+        "steps": 31,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "route1_reached",
+        "d_open": 25,
+        "steps": 64,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_reached",
+        "d_open": 54,
+        "steps": 131,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_forest_reached",
+        "d_open": 186,
+        "steps": 237,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "pewter_reached",
+        "d_open": 0,
+        "steps": 1214,
+        "source": "video",
+        "status": "open"
+      }
+    ],
     "progress": 10.053892215568862,
     "leg_gate": "pewter_reached",
     "leg_fraction": 0.053892215568862256,
     "leg_distance_min": 158,
     "leg_distance_open": 167,
     "termination_reason": "leg_cap:pewter_reached",
-    "projection_version": 7,
+    "projection_version": 8,
     "continued_from": "2026-09-11_10-29-29_config-5.1__glm-5-3-flash-high_continued_from_turn_412",
     "resumed": true,
     "harness": "append_compact",
@@ -1992,6 +3096,24 @@
       "route1_reached": 59,
       "viridian_reached": 94
     },
+    "gate_times_s": {
+      "left_bedroom": 175.827,
+      "left_house": 196.1,
+      "oaks_lab_entered": 444.997,
+      "starter_chosen": 618.23,
+      "rival1_done": 1211.003,
+      "route1_reached": 1381.954,
+      "viridian_reached": 2367.918
+    },
+    "gate_costs_usd": {
+      "left_bedroom": 0.07032,
+      "left_house": 0.078725,
+      "oaks_lab_entered": 0.172836,
+      "starter_chosen": 0.239941,
+      "rival1_done": 0.474312,
+      "route1_reached": 0.559546,
+      "viridian_reached": 0.948968
+    },
     "avg_inputs_per_turn": 8.159722222222221,
     "input_counts": {
       "up": 439,
@@ -2024,13 +3146,43 @@
     "shortest_steps": 103,
     "movement_efficiency": 0.4364406779661017,
     "steps_fidelity": "video",
+    "movement_legs": [
+      {
+        "node_id": "left_bedroom",
+        "d_open": 9,
+        "steps": 24,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "left_house",
+        "d_open": 10,
+        "steps": 11,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "route1_reached",
+        "d_open": 25,
+        "steps": 42,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_reached",
+        "d_open": 59,
+        "steps": 159,
+        "source": "video",
+        "status": "closed"
+      }
+    ],
     "progress": 7.0,
     "leg_gate": "parcel_delivered",
     "leg_fraction": null,
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": "leg_cap:parcel_delivered",
-    "projection_version": 7,
+    "projection_version": 8,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -2076,6 +3228,34 @@
       "viridian_forest_reached": 82,
       "pewter_reached": 135,
       "brock_defeated": 150
+    },
+    "gate_times_s": {
+      "left_bedroom": 18.113,
+      "left_house": 41.094,
+      "oaks_lab_entered": 125.875,
+      "starter_chosen": 170.8,
+      "rival1_done": 332.989,
+      "route1_reached": 376.369,
+      "viridian_reached": 699.216,
+      "parcel_delivered": 849.311,
+      "pokedex_received": 1282.453,
+      "viridian_forest_reached": 2182.143,
+      "pewter_reached": 3720.683,
+      "brock_defeated": 4139.531
+    },
+    "gate_costs_usd": {
+      "left_bedroom": 0.07433,
+      "left_house": 0.137658,
+      "oaks_lab_entered": 0.249462,
+      "starter_chosen": 0.335496,
+      "rival1_done": 0.532685,
+      "route1_reached": 0.638798,
+      "viridian_reached": 1.364348,
+      "parcel_delivered": 1.709847,
+      "pokedex_received": 2.56103,
+      "viridian_forest_reached": 4.515417,
+      "pewter_reached": 7.44871,
+      "brock_defeated": 8.36274
     },
     "avg_inputs_per_turn": 11.2,
     "input_counts": {
@@ -2145,13 +3325,57 @@
     "shortest_steps": 453,
     "movement_efficiency": 0.8162162162162162,
     "steps_fidelity": "video",
+    "movement_legs": [
+      {
+        "node_id": "left_bedroom",
+        "d_open": 9,
+        "steps": 8,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "left_house",
+        "d_open": 12,
+        "steps": 13,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "route1_reached",
+        "d_open": 21,
+        "steps": 23,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_reached",
+        "d_open": 58,
+        "steps": 67,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_forest_reached",
+        "d_open": 186,
+        "steps": 209,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "pewter_reached",
+        "d_open": 167,
+        "steps": 234,
+        "source": "video",
+        "status": "closed"
+      }
+    ],
     "progress": 12.0,
     "leg_gate": null,
     "leg_fraction": null,
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": null,
-    "projection_version": 7,
+    "projection_version": 8,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -2196,6 +3420,32 @@
       "pokedex_received": 158,
       "viridian_forest_reached": 205,
       "pewter_reached": 457
+    },
+    "gate_times_s": {
+      "left_bedroom": 147.275,
+      "left_house": 205.675,
+      "oaks_lab_entered": 423.918,
+      "starter_chosen": 1027.147,
+      "rival1_done": 1499.811,
+      "route1_reached": 1817.821,
+      "viridian_reached": 2590.932,
+      "parcel_delivered": 8189.16,
+      "pokedex_received": 16548.719,
+      "viridian_forest_reached": 21046.91,
+      "pewter_reached": 55751.35
+    },
+    "gate_costs_usd": {
+      "left_bedroom": 0.002843,
+      "left_house": 0.003929,
+      "oaks_lab_entered": 0.008506,
+      "starter_chosen": 0.026874,
+      "rival1_done": 0.037966,
+      "route1_reached": 0.046841,
+      "viridian_reached": 0.068287,
+      "parcel_delivered": 0.192586,
+      "pokedex_received": 0.429747,
+      "viridian_forest_reached": 0.601472,
+      "pewter_reached": 2.052266
     },
     "avg_inputs_per_turn": 9.08258527827648,
     "input_counts": {
@@ -2275,13 +3525,57 @@
     "shortest_steps": 454,
     "movement_efficiency": 0.3287472845763939,
     "steps_fidelity": "video",
+    "movement_legs": [
+      {
+        "node_id": "left_bedroom",
+        "d_open": 9,
+        "steps": 10,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "left_house",
+        "d_open": 12,
+        "steps": 14,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "route1_reached",
+        "d_open": 25,
+        "steps": 52,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_reached",
+        "d_open": 55,
+        "steps": 65,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_forest_reached",
+        "d_open": 186,
+        "steps": 222,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "pewter_reached",
+        "d_open": 167,
+        "steps": 1018,
+        "source": "video",
+        "status": "closed"
+      }
+    ],
     "progress": 11.95,
     "leg_gate": "brock_defeated",
     "leg_fraction": 0.95,
     "leg_distance_min": 0,
     "leg_distance_open": 55,
     "termination_reason": "leg_cap:brock_defeated",
-    "projection_version": 7,
+    "projection_version": 8,
     "continued_from": "2026-09-10_13-32-55_config-5.1__glm-5-3-flash-max_continued_from_turn_129",
     "resumed": true,
     "harness": "append_compact",
@@ -2327,6 +3621,34 @@
       "viridian_forest_reached": 103,
       "pewter_reached": 215,
       "brock_defeated": 237
+    },
+    "gate_times_s": {
+      "left_bedroom": 25.147,
+      "left_house": 79.239,
+      "oaks_lab_entered": 154.886,
+      "starter_chosen": 239.801,
+      "rival1_done": 612.484,
+      "route1_reached": 689.571,
+      "viridian_reached": 1027.111,
+      "parcel_delivered": 1549.861,
+      "pokedex_received": 2042.955,
+      "viridian_forest_reached": 3096.126,
+      "pewter_reached": 6425.083,
+      "brock_defeated": 7428.905
+    },
+    "gate_costs_usd": {
+      "left_bedroom": 0.01446,
+      "left_house": 0.06244,
+      "oaks_lab_entered": 0.099882,
+      "starter_chosen": 0.14983,
+      "rival1_done": 0.271358,
+      "route1_reached": 0.321923,
+      "viridian_reached": 0.510155,
+      "parcel_delivered": 0.861703,
+      "pokedex_received": 1.184937,
+      "viridian_forest_reached": 1.824139,
+      "pewter_reached": 3.525487,
+      "brock_defeated": 4.139049
     },
     "avg_inputs_per_turn": 11.143459915611814,
     "input_counts": {
@@ -2396,13 +3718,14 @@
     "shortest_steps": null,
     "movement_efficiency": null,
     "steps_fidelity": null,
+    "movement_legs": null,
     "progress": null,
     "leg_gate": null,
     "leg_fraction": null,
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": null,
-    "projection_version": 7,
+    "projection_version": 8,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
