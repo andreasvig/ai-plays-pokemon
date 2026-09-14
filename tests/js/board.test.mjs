@@ -10,7 +10,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  baseModel, collapseBest, vendorOf, headlineSeries, secondarySeries, battleSeries, trainerTypicals, trainerMatrix, MIN_BATTLE_OBSERVATIONS, turnsPerMinute, costPer10, fmtTokens, PERF_LINE,
+  baseModel, collapseBest, vendorOf, headlineSeries, secondarySeries, battleSeries, trainerTypicals, trainerMatrix, encounterRates, MIN_BATTLE_OBSERVATIONS, turnsPerMinute, costPer10, fmtTokens, PERF_LINE,
   legTurns, typicalTurnsPerLeg, projectRun, perTaskSeries, estimationMatrix, PROJECT_FROM_GATE, fmtMinutes,
 } from '../../src/dashboard/web/src/lib/board.js'
 
@@ -196,7 +196,7 @@ test('secondary strip keeps the per-turn measurements and adds turns per task', 
   assert.deepEqual([fmtTokens(480), fmtTokens(1234), fmtTokens(12345), fmtTokens(null)], ['480', '1.2k', '12k', '—'])
 })
 
-test('battle series: rule-A turn costs, means over ≥4 fights, mandatory trainers projected at pace × mean and hatched', () => {
+test('battle series: rule-A turn costs, means over ≥4 fights, trainers ahead projected at pace × mean × encounter rate, hatched', () => {
   const brock = (turns, attempts = 1) => ({ group: '414', id: 414, name: 'Leader Brock', attempts, turns, won: true, mandatory: true })
   const rival = (turns) => ({ group: 'rival_oaks_lab', id: 327, name: "Rival (Oak's Lab)", attempts: 1, turns, won: true, mandatory: true })
   const pool = RANKED.map((r, i) => ({ ...r,
@@ -243,6 +243,21 @@ test('battle series: rule-A turn costs, means over ≥4 fights, mandatory traine
   assert.ok(battleSeries(thin, thin).trainerTurns.every((s) => !s.projected))
   const four = pool.map((r, i) => ({ ...r, trainerBattles: i === 0 ? null : [rival(2), ...(i <= 4 ? [brock(4)] : [])] }))
   assert.ok(battleSeries(four, four).trainerTurns.some((s) => s.projected === 4))
+  // Optional trainers: rows 1..5 finished; 4 of them fought Rick (10 turns each) → usable, met by 80% of
+  // the runs past the forest. A run before Pewter that skipped Rick so far is charged 0.8 of a Rick fight
+  // at pace × 10; a finished run that never fought him, or one already past Pewter, is charged nothing.
+  const rick = (turns) => ({ group: '102', id: 102, name: 'Bug Catcher Rick', attempts: 1, turns, won: true, mandatory: false })
+  const withRick = pool.map((r, i) => ({ ...r, trainerBattles: i === 0 ? null : [rival(2), ...(i <= 5 ? [brock(4 + i)] : []), ...(i >= 2 && i <= 5 ? [rick(10)] : [])] }))
+  assert.deepEqual(encounterRates(withRick)['102'], { met: 4, passed: 5, rate: 0.8 })
+  const wm = trainerMatrix(withRick)
+  const early = wm.rows[6]                                   // luna(max): four gates, before the forest
+  const rickCell = early.cells.find((c) => c.group === '102')
+  assert.deepEqual([rickCell.kind, rickCell.rate, rickCell.turns], ['projected', 0.8, 10])
+  assert.ok(Math.abs(early.projectedWeight - 1.8) < 1e-9 && Math.abs(early.projected - (7 + 8)) < 1e-9)   // Brock 7 + 0.8 × Rick 10
+  assert.ok(Math.abs(early.avg - (2 + 15) / (1 + 1.8)) < 1e-9)
+  assert.equal(wm.rows[1].cells.find((c) => c.group === '102').kind, 'none')   // finished without Rick: dodged, not charged
+  const pastPewter = trainerMatrix(withRick, [{ ...withRick[6], gateTurns: withRick[2].gateTurns, completion: 90, trainerBattles: [rival(2)] }]).rows[0]
+  assert.deepEqual(pastPewter.cells.filter((c) => c.kind === 'projected').map((c) => c.group), [])   // past Pewter and Brock's gate → nothing ahead
 })
 
 test('empty board yields empty series without dividing by zero', () => {

@@ -304,43 +304,59 @@ export function fmtTpm(v) {
  * wildTurns — turns per wild battle (rule A: turns that STARTED in one), fewest first.
  * battleShare — share of the run's turns that started inside a battle, lowest first.
  * trainerTurns — turns spent in trainer battles (attempts summed per trainer) PLUS,
- *   for a run that never met a mandatory trainer, a projection built like the
- *   leg projection (projectRun): the run's PACE — its turns on the trainers it
+ *   for every trainer still ahead of the run, a projection built like the leg
+ *   projection (projectRun): the run's PACE — its turns on the trainers it
  *   fought ÷ the field's typical turns on those same trainers — times the
- *   field's typical turns for the missing trainer. A trainer's typical is the
- *   mean over the runs that fought it, used once ≥ MIN_BATTLE_OBSERVATIONS runs
- *   have (decision 1B, threshold cut to 4 by Andreas 2026-09-14). A bar with a
- *   projected part is not `complete` (hatched). Rows without the statistic are
+ *   field's typical turns for the missing trainer, weighted by how often runs
+ *   meet that trainer (optional trainers can be dodged; a mandatory one counts
+ *   fully). A trainer's typical is the mean over the runs that fought it, used
+ *   once ≥ MIN_BATTLE_OBSERVATIONS runs have (threshold 4 and optional
+ *   trainers projected: Andreas 2026-09-14). A bar with a projected part is not
+ *   `complete` (hatched). Rows without the statistic are
  *   ineligible and appended with height 0.
  */
 export const MIN_BATTLE_OBSERVATIONS = 4
-/** The first-badge trainer roster in encounter order (src/referee/battles.py TRAINER_GROUP). */
+/**
+ * The first-badge trainer roster in encounter order (src/referee/battles.py
+ * TRAINER_GROUP). `passGate` is the ladder gate after which the trainer is
+ * behind the run: a run that stamped it without fighting the trainer walked
+ * past (or dodged) them and is not charged a projection.
+ */
 export const TRAINER_ROSTER = [
-  { group: 'rival_oaks_lab', name: "Rival (Oak's Lab)", short: 'Rival 1', mandatory: true },
-  { group: 'rival_route22', name: 'Rival (Route 22)', short: 'Rival 22', mandatory: false },
-  { group: '102', name: 'Bug Catcher Rick', short: 'Rick', mandatory: false },
-  { group: '103', name: 'Bug Catcher Doug', short: 'Doug', mandatory: false },
-  { group: '104', name: 'Bug Catcher Sammy', short: 'Sammy', mandatory: false },
-  { group: '531', name: 'Bug Catcher Anthony', short: 'Anthony', mandatory: false },
-  { group: '532', name: 'Bug Catcher Charlie', short: 'Charlie', mandatory: false },
-  { group: '142', name: 'Camper Liam', short: 'Liam', mandatory: false },
-  { group: '414', name: 'Leader Brock', short: 'Brock', mandatory: true },
+  { group: 'rival_oaks_lab', name: "Rival (Oak's Lab)", short: 'Rival 1', mandatory: true, passGate: 'rival1_done' },
+  { group: 'rival_route22', name: 'Rival (Route 22)', short: 'Rival 22', mandatory: false, passGate: 'viridian_forest_reached' },
+  { group: '102', name: 'Bug Catcher Rick', short: 'Rick', mandatory: false, passGate: 'pewter_reached' },
+  { group: '103', name: 'Bug Catcher Doug', short: 'Doug', mandatory: false, passGate: 'pewter_reached' },
+  { group: '104', name: 'Bug Catcher Sammy', short: 'Sammy', mandatory: false, passGate: 'pewter_reached' },
+  { group: '531', name: 'Bug Catcher Anthony', short: 'Anthony', mandatory: false, passGate: 'pewter_reached' },
+  { group: '532', name: 'Bug Catcher Charlie', short: 'Charlie', mandatory: false, passGate: 'pewter_reached' },
+  { group: '142', name: 'Camper Liam', short: 'Liam', mandatory: false, passGate: 'brock_defeated' },
+  { group: '414', name: 'Leader Brock', short: 'Brock', mandatory: true, passGate: 'brock_defeated' },
 ]
+
+const hasPerTurn = (r) => r.battleFidelity === 'live' || r.battleFidelity === 'backfill'
+/** True once the run is past the trainer's spot on the ladder (or finished). */
+const passedGate = (r, gate) => r.completion >= 100 || (r.gateTurns != null && r.gateTurns[gate] != null)
 
 /**
  * Runs × trainers: turns spent on each trainer (attempts summed), the field's
  * typical (mean) turns per trainer once MIN_BATTLE_OBSERVATIONS runs fought it,
  * each run's pace over the trainers it fought, and the projected average the
- * card shows. The Estimation methods page renders it; battleSeries().trainerTurns
- * is built from the same numbers.
+ * card shows. A trainer the run has not fought and not yet walked past is
+ * projected at pace × typical, weighted by the share of runs that met that
+ * trainer among those who passed their spot (1 for a mandatory trainer). The
+ * Estimation methods page renders it; battleSeries().trainerTurns is built
+ * from the same numbers.
  */
 export function trainerMatrix(pool, rows = pool) {
   const typicals = trainerTypicals(pool)
+  const rates = encounterRates(pool)
   const columns = TRAINER_ROSTER.map((t) => ({ ...t, typical: typicals[t.group]?.typical ?? null, n: typicals[t.group]?.n ?? 0,
-    usable: (typicals[t.group]?.n ?? 0) >= MIN_BATTLE_OBSERVATIONS }))
+    usable: (typicals[t.group]?.n ?? 0) >= MIN_BATTLE_OBSERVATIONS,
+    rate: t.mandatory ? 1 : rates[t.group]?.rate ?? null, met: rates[t.group]?.met ?? 0, passed: rates[t.group]?.passed ?? 0 }))
   const col = Object.fromEntries(columns.map((c) => [c.group, c]))
   const out = rows.map((r) => {
-    const perTurn = r.battleFidelity === 'live' || r.battleFidelity === 'backfill'
+    const perTurn = hasPerTurn(r)
     const by = Object.fromEntries((r.trainerBattles || []).filter((g) => g.attempts > 0).map((g) => [g.group, g]))
     // Pace: own turns ÷ typical turns, summed over the fought trainers whose
     // typical is usable (same shape as paceOf for legs).
@@ -354,20 +370,22 @@ export function trainerMatrix(pool, rows = pool) {
       const g = by[t.group]
       const c = col[t.group]
       if (g) return { group: t.group, turns: perTurn ? g.turns : null, attempts: g.attempts, won: g.won, kind: 'fought',
-        ratio: perTurn && g.turns != null && c.typical > 0 ? g.turns / c.typical : null }
-      if (t.mandatory && !(r.completion >= 100) && c.usable && pace != null) {
-        return { group: t.group, turns: pace * c.typical, attempts: 1, kind: 'projected', ratio: pace }
+        ratio: perTurn && g.turns != null && c.typical > 0 ? g.turns / c.typical : null, rate: null }
+      if (c.usable && pace != null && c.rate > 0 && !passedGate(r, t.passGate)) {
+        return { group: t.group, turns: pace * c.typical, attempts: 0, kind: 'projected', ratio: pace, rate: c.rate }
       }
-      return { group: t.group, turns: null, attempts: 0, kind: 'none', ratio: null }
+      return { group: t.group, turns: null, attempts: 0, kind: 'none', ratio: null, rate: null }
     })
     const fought = cells.filter((c) => c.kind === 'fought')
     const projected = cells.filter((c) => c.kind === 'projected')
     const measured = perTurn ? fought.reduce((a, c) => a + (c.turns ?? 0), 0) : null
     const attempts = fought.reduce((a, c) => a + c.attempts, 0)
-    const projTurns = projected.reduce((a, c) => a + c.turns, 0)
+    const projTurns = projected.reduce((a, c) => a + c.turns * c.rate, 0)      // expected turns
+    const projectedWeight = projected.reduce((a, c) => a + c.rate, 0)          // expected fights
     const eligible = perTurn && attempts > 0   // the first trainer must have been fought
-    const avg = eligible ? (measured + projTurns) / (attempts + projected.length) : null
-    return { row: r, cells, measured, attempts, pace, projected: projTurns, projectedCount: projected.length, eligible, avg, complete: projected.length === 0 }
+    const avg = eligible ? (measured + projTurns) / (attempts + projectedWeight) : null
+    return { row: r, cells, measured, attempts, pace, projected: projTurns, projectedCount: projected.length, projectedWeight,
+      eligible, avg, complete: projected.length === 0 }
   })
   return { columns, rows: out }
 }
@@ -376,7 +394,7 @@ export function trainerMatrix(pool, rows = pool) {
 export function trainerTypicals(pool) {
   const turnsBy = new Map()
   for (const r of pool) {
-    if (r.battleFidelity !== 'live' && r.battleFidelity !== 'backfill') continue
+    if (!hasPerTurn(r)) continue
     for (const g of r.trainerBattles || []) {
       if (!(g.attempts > 0) || g.turns == null) continue
       if (!turnsBy.has(g.group)) turnsBy.set(g.group, { name: g.name, mandatory: !!g.mandatory, turns: [] })
@@ -388,6 +406,26 @@ export function trainerTypicals(pool) {
     const s = [...v.turns].sort((a, b) => a - b)
     const median = s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2
     out[group] = { name: v.name, mandatory: v.mandatory, n: s.length, typical: s.reduce((a, b) => a + b, 0) / s.length, median }
+  }
+  return out
+}
+
+/**
+ * How often runs meet each trainer: group → {met, passed, rate}, counting the
+ * runs with per-turn battle state that stamped the trainer's passGate (or
+ * finished) and, of those, the ones that fought them. The optional forest
+ * trainers can be dodged, so a projection for one is weighted by this rate.
+ */
+export function encounterRates(pool) {
+  const out = {}
+  for (const t of TRAINER_ROSTER) {
+    let met = 0, passed = 0
+    for (const r of pool) {
+      if (!hasPerTurn(r) || !passedGate(r, t.passGate)) continue
+      passed += 1
+      if ((r.trainerBattles || []).some((g) => g.group === t.group && g.attempts > 0)) met += 1
+    }
+    out[t.group] = { met, passed, rate: passed > 0 ? met / passed : null }
   }
   return out
 }
@@ -425,7 +463,7 @@ export function battleSeries(rows, pool = rows) {
   for (const r of rows) {
     const m = byId.get(r)
     if (!m || !m.eligible) { trainerOff.push(OFF(r)); continue }
-    trainerVals.push({ row: r, value: m.avg, measured: m.measured, attempts: m.attempts, projected: m.projected, pace: m.pace,
+    trainerVals.push({ row: r, value: m.avg, measured: m.measured, attempts: m.attempts, projected: m.projected, pace: m.pace, projectedWeight: m.projectedWeight,
       missing: m.cells.filter((c) => c.kind === 'projected').map((c) => ({ ...c, ...matrix.columns.find((x) => x.group === c.group) })),
       eligible: true, complete: m.complete })
   }
