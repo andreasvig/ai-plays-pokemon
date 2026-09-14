@@ -123,6 +123,19 @@ def test_an_unfinished_battle_and_an_unmatched_loss_stay_honest():
     assert g["id"] is None and g["name"] == "Unknown trainer" and g["won"] is False
 
 
+def test_two_flags_landing_together_identify_the_earlier_unflagged_trainer_too():
+    """Backfill windows are 10 turns wide, so Liam and Brock can close inside one
+    window with both flags arriving at once: the earlier segment is Liam (lower
+    id, met first), the closing one Brock — not two Liam attempts and a
+    zero-turn Brock."""
+    t = BattleTracker()
+    _feed(t, [(1, False, 0, 0, 0, ()), (2, True, 1, 0, 1, ()), (3, True, 1, 0, 1, ()), (4, False, 1, 0, 1, ()),
+              (5, True, 2, 0, 2, ()), (6, True, 2, 0, 2, ()), (7, False, 2, 0, 2, (142, 414))])
+    segs = [s for s in t.segments() if s["kind"] == "trainer"]
+    assert [(s["trainer_id"], s["turns"], s["won"]) for s in segs] == [(142, 2, True), (414, 2, True)]
+    assert [(g["name"], g["attempts"], g["turns"]) for g in t.summary()["trainers"]] == [("Camper Liam", 1, 2), ("Leader Brock", 1, 2)]
+
+
 def test_a_flag_without_a_counter_move_is_still_a_won_attempt():
     """gpt-6-astra(medium) ended with 6 defeated flags for 5 counted trainer battles."""
     t = BattleTracker()

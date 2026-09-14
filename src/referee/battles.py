@@ -189,6 +189,15 @@ class BattleTracker:
                     continue  # same battle, still going
                 open_seg["closed_turn"] = turn
                 if open_seg["kind"] == "trainer" and new_flags:
+                    # Several flags landing together (a coarse backfill window
+                    # holding back-to-back trainer fights) identify the earlier,
+                    # still-unidentified trainer segments too: earliest segment ↔
+                    # lowest id, which is the roster's encounter order on the
+                    # first-badge route. Leftover flags become zero-turn wins below.
+                    pending = [x for x in segs if x["kind"] == "trainer" and x["trainer_id"] is None]
+                    targets = pending[-(len(new_flags) - 1):] if len(new_flags) > 1 and pending else []
+                    for x in targets:
+                        x["trainer_id"] = new_flags.pop(0); x["won"] = True
                     open_seg["trainer_id"] = new_flags.pop(0)
                     open_seg["won"] = True
                 segs.append(open_seg)

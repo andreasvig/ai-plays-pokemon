@@ -1,7 +1,7 @@
 # Battle and movement fidelity — plan
 
 > Source: conversation 2026-09-14 (Andreas + Marvin). Probes run against the 25 published runs the same day.
-> Status: building (2026-09-14). Done: §3.1 referee battle state, §4.1 savepoint backfill, §4.2 screenshot classifier. In progress: §4.3 video pilot (Opus sub-agent), §3.2 trace, §3.3/§5 projection + cards.
+> Status: built 2026-09-14 except video. Done: §3.1 referee battle state, §3.2 per-input trace (live check pending — needs a run on the new bridge), §3.3 projection v7, §4.1 savepoint backfill, §4.2 screenshot classifier, §5 four Efficiency cards + methods text (live). In progress: §4.3 video pilot on gpt-5.6-luna(high) in an Opus sub-agent, then the remaining 23 runs.
 
 ## 0. Decisions already taken (Andreas, 2026-09-14)
 
