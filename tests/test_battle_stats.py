@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from src.app.battle_stats import battle_summary, cap_records, load_steps_backfill, movement, reconcile_with_gates, synthesize_records
+from src.app.battle_stats import battle_summary, cap_records, load_steps_backfill, movement, ocr_hints, reconcile_with_gates, synthesize_records
 from src.referee.battles import BattleTracker
 
 
@@ -103,6 +103,41 @@ def test_a_stamped_brock_gate_names_the_last_unknown_trainer_attempt():
     assert reconcile_with_gates({"available": True, "trainers": [unknown()]}, {"gates": [{"id": "brock_defeated", "turn": None}]})["trainers"][0]["group"] == "unknown"
     both = {"available": True, "trainers": [{"group": "414", "attempts": 1}, unknown()]}
     assert reconcile_with_gates(both, ref)["trainers"][1]["group"] == "unknown"
+
+
+def test_ocr_hints_read_the_battle_intro_of_the_previous_turn(tmp_path):
+    events = [
+        {"type": "ocr_flush", "turn": 184, "cleaned": "Come on! Let's battle 'em!\nBUG CATCHER RICK would like to battle!\nGo! Squirtle!"},
+        {"type": "ocr_flush", "turn": 197, "cleaned": "Wild CATERPIE appeared!"},
+        {"type": "ocr_flush", "turn": 201, "cleaned": "BUG CATCHER RICK would like to battle! Wild PIDGEY appeared!"},
+        {"type": "ocr_flush", "turn": 260, "cleaned": "LEADER BROCK would like to battle!"},
+        {"type": "ocr_flush", "turn": 300, "cleaned": "nothing here"},
+    ]
+    (tmp_path / "events.jsonl").write_text("\n".join(json.dumps(e) for e in events) + "\n")
+    h = ocr_hints(tmp_path)
+    assert h == {183: {"kind": "trainer", "trainer_id": 102}, 196: {"kind": "wild", "trainer_id": None},
+                 200: {"kind": "trainer", "trainer_id": 102}, 259: {"kind": "trainer", "trainer_id": 414}}
+    assert ocr_hints(tmp_path, upto=200) == {k: v for k, v in h.items() if k <= 200}
+
+
+def test_hints_decide_the_kind_when_segments_tie_and_a_long_fight_runs_past_the_window():
+    """Window (190, 200]: a one-turn wild Caterpie at 196 and Rick's fight opening
+    at 200 that runs to 204. Without hints both segments are one turn long in the
+    window; the look-ahead and the OCR both say the 200 one is the trainer."""
+    records = [[180, False, 0, 0, 0, []], [190, False, 0, 0, 0, []], [200, True, 2, 1, 1, []], [210, False, 2, 1, 1, [102]]]
+    states = {t: t in (197, 201, 202, 203, 204) for t in range(180, 212)}
+    for hints in (None, {196: {"kind": "wild", "trainer_id": None}, 200: {"kind": "trainer", "trainer_id": 102}}):
+        recs = synthesize_records(records, states, hints)
+        by = {r[0]: r for r in recs}
+        assert by[196] == (196, True, 1, 1, 0, ()), hints         # wild opened at 196
+        assert by[200][4] == 1 and by[200][1] is True, hints        # trainer opened at 200
+        t = BattleTracker()
+        if hints:
+            t.identity_hints = {200: 102}
+        for r in recs:
+            t.record(*r)
+        seg, = [s for s in t.segments() if s["kind"] == "trainer"]
+        assert (seg["opened_turn"], seg["turns"], seg["trainer_id"], seg["won"]) == (200, 4, 102, True), hints
 
 
 REFEREE = {

@@ -108,6 +108,11 @@ class BattleTracker:
 
     def __init__(self) -> None:
         self.records: list[Record] = []
+        # Optional: the turn a trainer battle began → trainer id, from a source
+        # other than the flags (the backfill reads it off the run's OCR text:
+        # "BUG CATCHER RICK would like to battle!"). Names a LOST attempt, which
+        # sets no flag, instead of guessing from the next win.
+        self.identity_hints: dict[int, int] = {}
 
     # --- input ----------------------------------------------------------------
 
@@ -188,7 +193,11 @@ class BattleTracker:
                     prev = rec
                     continue  # same battle, still going
                 open_seg["closed_turn"] = turn
-                if open_seg["kind"] == "trainer" and new_flags:
+                if open_seg["kind"] == "trainer" and new_flags and open_seg["trainer_id"] in new_flags:
+                    new_flags.remove(open_seg["trainer_id"]); open_seg["won"] = True  # hinted id confirmed by its flag
+                elif open_seg["kind"] == "trainer" and new_flags and open_seg["trainer_id"] is not None:
+                    open_seg["won"] = False  # hinted id, the flag that landed is someone else's
+                elif open_seg["kind"] == "trainer" and new_flags:
                     # Several flags landing together (a coarse backfill window
                     # holding back-to-back trainer fights) identify the earlier,
                     # still-unidentified trainer segments too: earliest segment ↔
@@ -216,13 +225,24 @@ class BattleTracker:
                     seg = new_segment("trainer", turn); seg["closed_turn"] = turn
                     if new_flags:
                         seg["trainer_id"] = new_flags.pop(0); seg["won"] = True
+                    elif turn in self.identity_hints:
+                        seg["trainer_id"] = self.identity_hints[turn]; seg["won"] = False
                     segs.append(seg)
                 if open_kind is not None:
                     open_seg = new_segment(open_kind, turn)
+                    if open_kind == "trainer" and turn in self.identity_hints:
+                        open_seg["trainer_id"] = self.identity_hints[turn]
             # A defeated-flag with no counter move (seen once: gpt-6-astra medium,
             # 6 flags for 5 counted trainer battles) is still a win: record it as a
             # zero-turn attempt rather than lose the trainer.
             for tid in new_flags:
+                # A flag landing after a HINTED attempt with that id (the backfill
+                # places flags at a savepoint, the OCR placed the fight) confirms
+                # that attempt as the win instead of adding a phantom one.
+                hinted = [x for x in segs if x["kind"] == "trainer" and x["trainer_id"] == tid and x["won"] is not True]
+                if hinted:
+                    hinted[-1]["won"] = True
+                    continue
                 seg = new_segment("trainer", turn); seg["closed_turn"] = turn
                 seg["trainer_id"] = tid; seg["won"] = True; seg["uncounted"] = True
                 segs.append(seg)
@@ -231,10 +251,13 @@ class BattleTracker:
             segs.append(open_seg)  # still fighting when the run ended
         # Attempts without a flag: attribute to the next identified trainer (a
         # loss then the rematch), else "unknown". Segments are in time order.
+        # A hinted attempt already has its id; without a flag it was lost.
         pending: list[dict[str, Any]] = []
         for seg in segs:
             if seg["kind"] != "trainer":
                 continue
+            if seg["trainer_id"] is not None and seg["won"] is None:
+                seg["won"] = False
             if seg["trainer_id"] is None:
                 seg["won"] = False
                 pending.append(seg)

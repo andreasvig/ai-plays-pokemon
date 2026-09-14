@@ -25,10 +25,57 @@ measurement.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Optional
 
-from src.referee.battles import BattleTracker, MANDATORY_TRAINERS  # noqa: F401  (re-exported for the projection)
+from src.referee.battles import BattleTracker, MANDATORY_TRAINERS, TRAINER_NAMES  # noqa: F401  (re-exported for the projection)
+
+# "BUG CATCHER RICK would like to battle!" → 102. Upper-cased game names; the
+# rival is left out (his id depends on the starter, and the flags always name him).
+_OCR_TRAINERS = {name.upper(): tid for tid, name in TRAINER_NAMES.items() if not name.startswith("Rival")}
+_TRAINER_RE = re.compile(r"([A-Z][A-Z .'-]{2,40}?)\s+would like to battle", re.I)
+_WILD_RE = re.compile(r"wild\s+[A-Z][A-Za-z'.\- ]{1,20}\s+appeared", re.I)
+
+
+def ocr_hints(run_dir: Path, upto: Optional[int] = None) -> dict[int, dict[str, Any]]:
+    """What the run's own OCR text says began during each turn: ``{turn: {"kind":
+    "trainer"|"wild", "trainer_id": id|None}}``. The ``ocr_flush`` of turn N is
+    the text captured while turn N-1's inputs ran, so a battle intro read at
+    flush N began during turn N-1. A trainer intro outranks a wild one in the
+    same window (both can occur; the trainer fight is the one that lasts)."""
+    path = run_dir / "events.jsonl"
+    out: dict[int, dict[str, Any]] = {}
+    if not path.is_file():
+        return out
+    try:
+        with path.open() as fh:
+            for line in fh:
+                if '"ocr_flush"' not in line:
+                    continue
+                try:
+                    e = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if e.get("type") != "ocr_flush":
+                    continue
+                try:
+                    began = int(e.get("turn")) - 1
+                except (TypeError, ValueError):
+                    continue
+                if began < 1 or (upto and began > upto):
+                    continue
+                text = str(e.get("cleaned") or "")
+                m = _TRAINER_RE.search(text)
+                if m:
+                    name = re.sub(r"\s+", " ", m.group(1)).strip().upper()
+                    tid = next((tid for n, tid in _OCR_TRAINERS.items() if n in name or name in n), None)
+                    out[began] = {"kind": "trainer", "trainer_id": tid}
+                elif _WILD_RE.search(text) and began not in out:
+                    out[began] = {"kind": "wild", "trainer_id": None}
+    except OSError:
+        return out
+    return out
 
 LIVE_MIN_COVERAGE = 0.9  # polls ÷ turns below this → the live series is too gappy; fall back
 
@@ -43,7 +90,7 @@ def _load_json(path: Path) -> Optional[dict]:
 
 # --- battles -------------------------------------------------------------------
 
-def synthesize_records(records: list, states: dict[int, bool]) -> list[tuple]:
+def synthesize_records(records: list, states: dict[int, bool], hints: Optional[dict[int, dict[str, Any]]] = None) -> list[tuple]:
     """Per-turn records from 10-turn savepoint records + per-turn start states.
 
     ``records`` — ``[turn, in_battle, total, wild, trainer, [ids]]`` at savepoint
@@ -120,14 +167,36 @@ def synthesize_records(records: list, states: dict[int, bool]) -> list[tuple]:
                 segs.remove(x)
         kept = [x for x in segs if not x[2]]
         carried_seg = next((x for x in segs if x[2]), None)
-        # kinds: the longest new segments are the trainer fights
-        kept.sort(key=lambda x: -(x[1] - x[0]))
+        # kinds: a segment the OCR says opened with a trainer intro is a trainer
+        # fight; then the longest segments, measured PAST the window end through
+        # the classifier states (a fight that runs into the next window is long
+        # even if only its first turn is in this one — a trainer battle cannot
+        # be fled, a one-turn wild one can).
+        hint_kind = lambda x: ((hints or {}).get(x[0]) or {}).get("kind")
+        def virtual_len(x):
+            end = x[1]
+            if end >= b:
+                t = b
+                while states.get(t + 2, False):
+                    t += 1
+                end = t
+            return end - x[0]
+        kept.sort(key=lambda x: (0 if hint_kind(x) == "trainer" else 2 if hint_kind(x) == "wild" else 1, -virtual_len(x)))
         kinds = ["trainer"] * min(d_trainer, len(kept)) + ["wild"] * max(len(kept) - min(d_trainer, len(kept)), 0)
         opens: dict[int, list[str]] = {}
         for s, k in zip(kept, kinds):
             opens.setdefault(s[0], []).append(k)
         contained_trainer = max(d_trainer - kinds.count("trainer"), 0)
         contained_wild = max(d_total - len(kept) - contained_trainer, 0)
+        # Contained battles land on the turn the OCR says they began when it says so.
+        seen_starts = {x[0] for x in kept}
+        hinted = [(t, h["kind"]) for t, h in sorted((hints or {}).items()) if a < t <= b and t not in seen_starts]
+        contained_at: dict[int, list[str]] = {}
+        for t, k in hinted:
+            if k == "trainer" and contained_trainer > 0:
+                contained_trainer -= 1; contained_at.setdefault(t, []).append("trainer")
+            elif k == "wild" and contained_wild > 0:
+                contained_wild -= 1; contained_at.setdefault(t, []).append("wild")
         new_flags = [f for f in flags if f not in p_flags]
         trainer_segs = [x for x, k in zip(kept, kinds) if k == "trainer"]
         if not trainer_segs and carried_seg is not None and carried_seg[1] < b:
@@ -138,7 +207,7 @@ def synthesize_records(records: list, states: dict[int, bool]) -> list[tuple]:
         cur_total, cur_wild, cur_trainer = p_total, p_wild, p_trainer
         cur_flags = list(p_flags)
         for t in turns:
-            for k in opens.get(t, []):
+            for k in opens.get(t, []) + contained_at.get(t, []):
                 cur_total += 1
                 if k == "trainer":
                     cur_trainer += 1
@@ -219,7 +288,9 @@ def battle_summary(run_dir: Path, referee: Optional[dict], turns: int) -> tuple[
             states[t] = bool(v)
     tracker = BattleTracker()
     if states:
-        for r in synthesize_records(records, states):
+        hints = ocr_hints(run_dir, turns)
+        tracker.identity_hints = {t: h["trainer_id"] for t, h in hints.items() if h.get("trainer_id") is not None}
+        for r in synthesize_records(records, states, hints):
             tracker.record(*r)
         return reconcile_with_gates(tracker.summary(), referee), "backfill"
     tracker.load_state({"battle_records": records})

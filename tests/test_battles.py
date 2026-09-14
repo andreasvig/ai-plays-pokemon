@@ -146,7 +146,22 @@ def test_a_flag_without_a_counter_move_is_still_a_won_attempt():
     assert (g["id"], g["attempts"], g["won"]) == (142, 1, True)
 
 
-def test_state_roundtrips_and_a_repoll_replaces_the_turn():
+def test_identity_hints_name_a_lost_attempt_and_a_late_flag_confirms_the_win():
+    """Backfill: the OCR says Rick's fight began at 183 (lost) and again at 200
+    (won); Rick's flag only lands at the next savepoint, 210. Two attempts, no
+    phantom third, and the loss keeps its name without guessing."""
+    t = BattleTracker()
+    t.identity_hints = {183: 102, 200: 102}
+    _feed(t, [(182, False, 0, 0, 0, ()), (183, True, 1, 0, 1, ()), (184, True, 1, 0, 1, ()), (185, False, 1, 0, 1, ()),
+              (199, False, 1, 0, 1, ()), (200, True, 2, 0, 2, ()), (201, True, 2, 0, 2, ()), (202, False, 2, 0, 2, ()),
+              (210, False, 2, 0, 2, (102,))])
+    segs = [s for s in t.segments() if s["kind"] == "trainer"]
+    assert [(s["trainer_id"], s["won"], s["turns"]) for s in segs] == [(102, False, 2), (102, True, 2)]
+    g, = t.summary()["trainers"]
+    assert (g["id"], g["attempts"], g["turns"], g["won"]) == (102, 2, 4, True)
+
+
+
     t = BattleTracker()
     _feed(t, [(1, False, 0, 0, 0, ()), (2, True, 1, 1, 0, ()), (2, False, 1, 1, 0, ())])
     assert len(t.records) == 2 and t.records[-1][1] is False
