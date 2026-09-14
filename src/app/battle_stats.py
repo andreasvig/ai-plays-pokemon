@@ -150,13 +150,34 @@ def cap_records(records: list, turns: int) -> list:
     return kept
 
 
+def reconcile_with_gates(summary: dict, referee: Optional[dict]) -> dict:
+    """The scorecard outranks a missing trainer flag: when ``brock_defeated`` is
+    stamped (adjudicated or live) but no Brock flag ever appeared, the run's
+    last unidentified trainer attempt IS the Brock fight (gpt-6-astra low,
+    2026-09-11: badge OCR'd at turn 145, flags never set). Relabels that group
+    in place; everything else untouched."""
+    if not isinstance(referee, dict) or not summary.get("available"):
+        return summary
+    stamped = any(isinstance(g, dict) and g.get("id") == "brock_defeated" and g.get("turn") is not None
+                  for g in referee.get("gates") or [])
+    groups = summary.get("trainers") or []
+    if not stamped or any(g.get("group") == "414" for g in groups):
+        return summary
+    unknown = [g for g in groups if g.get("group") == "unknown"]
+    if not unknown:
+        return summary
+    g = unknown[-1]
+    g.update({"group": "414", "id": 414, "name": "Leader Brock", "won": True, "mandatory": True, "reconciled": "brock_defeated gate"})
+    return summary
+
+
 def battle_summary(run_dir: Path, referee: Optional[dict], turns: int) -> tuple[Optional[dict], Optional[str]]:
     """``(BattleTracker.summary(), fidelity)`` — fidelity "live", "backfill",
     "savepoint" (counters only, no per-turn states) or ``(None, None)``.
     Backfill records and states past ``turns`` are dropped (:func:`cap_records`)."""
     live = (referee or {}).get("battles") if isinstance(referee, dict) else None
     if isinstance(live, dict) and live.get("available") and turns and (live.get("polls") or 0) >= LIVE_MIN_COVERAGE * turns:
-        return live, "live"
+        return reconcile_with_gates(live, referee), "live"
     bf = _load_json(run_dir / "battle_backfill.json")
     if not bf or not bf.get("records"):
         return None, None
@@ -174,9 +195,9 @@ def battle_summary(run_dir: Path, referee: Optional[dict], turns: int) -> tuple[
     if states:
         for r in synthesize_records(records, states):
             tracker.record(*r)
-        return tracker.summary(), "backfill"
+        return reconcile_with_gates(tracker.summary(), referee), "backfill"
     tracker.load_state({"battle_records": records})
-    return tracker.summary(), "savepoint"
+    return reconcile_with_gates(tracker.summary(), referee), "savepoint"
 
 
 # --- movement ------------------------------------------------------------------

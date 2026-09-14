@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from src.app.battle_stats import battle_summary, cap_records, load_steps_backfill, movement, synthesize_records
+from src.app.battle_stats import battle_summary, cap_records, load_steps_backfill, movement, reconcile_with_gates, synthesize_records
 from src.referee.battles import BattleTracker
 
 
@@ -87,6 +87,22 @@ def test_backfill_past_the_counted_turns_is_dropped_and_the_first_later_record_c
     s, fid = battle_summary(tmp_path, None, 145)
     assert fid == "backfill" and s["battles_total"] == 5 and s["wild"]["count"] == 3
     assert s["turns_started_in_battle"] == 2  # turns 142-143: the exact bit at 140 overrides the classifier for 141; nothing after 145
+
+
+def test_a_stamped_brock_gate_names_the_last_unknown_trainer_attempt():
+    """gpt-6-astra(low): the badge was adjudicated at turn 145 but the game never
+    set Brock's flag, so the tracker saw an unidentified lost attempt."""
+    unknown = lambda: {"group": "unknown", "id": None, "name": "Unknown trainer", "attempts": 1, "turns": 5, "won": False, "mandatory": False}
+    summary = {"available": True, "trainers": [
+        {"group": "rival_oaks_lab", "id": 327, "name": "Rival (Oak's Lab)", "attempts": 1, "turns": 2, "won": True, "mandatory": True}, unknown()]}
+    ref = {"gates": [{"id": "brock_defeated", "turn": 145}]}
+    out = reconcile_with_gates(summary, ref)
+    g = out["trainers"][1]
+    assert (g["group"], g["id"], g["name"], g["won"], g["mandatory"], g["turns"], g["reconciled"]) == ("414", 414, "Leader Brock", True, True, 5, "brock_defeated gate")
+    # Not stamped → untouched; Brock already identified → untouched.
+    assert reconcile_with_gates({"available": True, "trainers": [unknown()]}, {"gates": [{"id": "brock_defeated", "turn": None}]})["trainers"][0]["group"] == "unknown"
+    both = {"available": True, "trainers": [{"group": "414", "attempts": 1}, unknown()]}
+    assert reconcile_with_gates(both, ref)["trainers"][1]["group"] == "unknown"
 
 
 REFEREE = {
