@@ -176,7 +176,7 @@
   </p>
 
   <h3 class="tm-head">Trainers · turns spent on each</h3>
-  <p class="faint note tm-note">Turns that started inside a fight with that trainer, every attempt summed (attempts shown as ×n). Hatched cells are the projection a run that never met a mandatory trainer is charged. Typical = median over the runs that fought the trainer; a column is used for projection only past {MIN_BATTLE_OBSERVATIONS} fights. Dimmed runs have not fought their first trainer or have no per-turn battle state.</p>
+  <p class="faint note tm-note">Turns that started inside a fight with that trainer, every attempt summed. Under the number: the ratio to the trainer's typical turns (0.50× = half the typical), and "2 tries" when the run fought the trainer more than once. Hatched cells are the projection a run that never met a mandatory trainer is charged. Typical = median over the runs that fought the trainer; a column is used for projection only past {MIN_BATTLE_OBSERVATIONS} fights. Dimmed runs have not fought their first trainer or have no per-turn battle state.</p>
   <div class="scroll">
     <table class="m tm">
       <thead>
@@ -202,8 +202,11 @@
             </td>
             {#each t.cells as c}
               {#if c.kind === 'fought'}
-                <td class="cell" class:lost={c.won === false} title={`${r.model}: ${c.turns ?? '?'} turns${c.attempts > 1 ? ` over ${c.attempts} attempts` : ''}${c.won === false ? ' · not won' : ''}`}>
-                  <span class="t">{c.turns ?? '?'}</span>{#if c.attempts > 1}<span class="r">×{c.attempts}</span>{/if}
+                {@const typ = trainers.columns.find((k) => k.group === c.group)?.typical}
+                <td class="cell" class:lost={c.won === false} style={`--fill:${tint(typ > 0 && c.turns != null ? c.turns / typ : null)}`}
+                    title={`${r.model}: ${c.turns ?? '?'} turns${c.attempts > 1 ? ` over ${c.attempts} tries` : ''}${typ != null ? ` · typical ${typ}` : ''}${c.won === false ? ' · not won' : ''}`}>
+                  <span class="t">{c.turns ?? '?'}</span>
+                  <span class="r">{typ > 0 && c.turns != null ? x(c.turns / typ) : ''}{c.attempts > 1 ? `${typ > 0 ? ' · ' : ''}${c.attempts} tries` : ''}</span>
                 </td>
               {:else if c.kind === 'projected'}
                 <td class="cell est" title={`projected: typical ${c.turns} turns`}><span class="t">{c.turns}</span><span class="r">est</span></td>
