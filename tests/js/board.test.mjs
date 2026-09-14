@@ -12,6 +12,7 @@ import assert from 'node:assert/strict'
 import {
   baseModel, collapseBest, vendorOf, headlineSeries, secondarySeries, battleSeries, trainerTypicals, trainerMatrix, MIN_BATTLE_OBSERVATIONS, turnsPerMinute, costPer10, fmtTokens, PERF_LINE,
   legTurns, typicalTurnsPerLeg, projectRun, perTaskSeries, estimationMatrix, PROJECT_FROM_GATE, fmtMinutes,
+  ofModel, levelOf, modelField, levelRows, runGateRows,
 } from '../../src/dashboard/web/src/lib/board.js'
 
 const GATES = ['left_bedroom', 'left_house', 'oaks_lab_entered', 'starter_chosen', 'rival1_done', 'route1_reached',
@@ -311,4 +312,69 @@ test('estimationMatrix: every run, every leg, ratios to the typical leg, estimat
   assert.equal(astra.playedShare, 1)
   // Empty pool: no rows, no division by zero.
   assert.deepEqual(estimationMatrix([], GATES).rows, [])
+})
+
+// ───────────── model pages (2026-09-14) ─────────────
+
+test('modelField: every other model at its best level, every level of the page model, rank order kept', () => {
+  const field = modelField(RANKED, 'gemini-3.8-flash')
+  assert.deepEqual(field.map((r) => r.model), [
+    'gpt-6-astra(medium)', 'gemini-3.8-flash(medium)', 'gemini-3.8-flash(low)', 'claude-opus-5(high)', 'glm-5.3-flash(high)', 'qwen3.8-flash(thinking)', 'gpt-5.6-luna(max)',
+  ])
+  // Mutation control: for another model the second gemini level is collapsed away again.
+  assert.equal(modelField(RANKED, 'claude-opus-5').length, RANKED.length - 1)
+  assert.ok(modelField(RANKED, 'claude-opus-5').every((r) => r.model !== 'gemini-3.8-flash(low)'))
+  assert.equal(ofModel('gemini-3.8-flash')(RANKED[2]), true)
+  assert.equal(ofModel('gemini-3.8-flash')(RANKED[0]), false)
+})
+
+test('levelOf reads the parenthesised level; a bare alias has none', () => {
+  assert.equal(levelOf('gemini-3.8-flash(medium)'), 'medium')
+  assert.equal(levelOf('qwen3.8-flash(thinking)'), 'thinking')
+  assert.equal(levelOf('muse-spark-1.3'), null)
+})
+
+test('levelRows: catalog order highest first, unrun levels absent, unknown levels appended, no-level models one line', () => {
+  const entry = { model: 'gemini-3.8-flash', thinking_levels: ['high', 'medium', 'low', 'minimal'] }
+  const out = levelRows(RANKED, entry, 'gemini-3.8-flash')
+  assert.deepEqual(out.map((l) => [l.level, l.absent, l.row?.model ?? null]), [
+    ['high', true, null], ['medium', false, 'gemini-3.8-flash(medium)'], ['low', false, 'gemini-3.8-flash(low)'], ['minimal', true, null],
+  ])
+  // A level the catalog dropped still shows, after the known ones.
+  const renamed = levelRows(RANKED, { thinking_levels: ['high'] }, 'gemini-3.8-flash')
+  assert.deepEqual(renamed.map((l) => [l.level, l.absent]), [['high', true], ['medium', false], ['low', false]])
+  // No catalog entry: the board's own levels, rank order.
+  assert.deepEqual(levelRows(RANKED, null, 'gemini-3.8-flash').map((l) => l.level), ['medium', 'low'])
+  // reasoning_type none: one line under level null.
+  const bare = [row('muse-spark-1.3', 'meta/muse', 40, 40, 90, 10, 0.01, FOUR)]
+  assert.deepEqual(levelRows(bare, { thinking_levels: [] }, 'muse-spark-1.3').map((l) => [l.level, l.absent]), [[null, false]])
+  // A model with an entry and no rows: every level absent (the page is not reachable, but the helper is total).
+  assert.equal(levelRows(RANKED, entry, 'nobody').every((l) => l.absent), true)
+})
+
+test('runGateRows: stamps, time and cost at the stamp, the failed leg from the termination reason, leg efficiency from the legs', () => {
+  const gates = [
+    { id: 'left_bedroom', name: 'Left the bedroom', cap: 30 }, { id: 'left_house', name: 'Stepped outside', cap: 30 },
+    { id: 'oaks_lab_entered', name: "Entered Oak's Lab", cap: 30 }, { id: 'starter_chosen', name: 'Chose a starter', cap: 30 },
+  ]
+  const r = { turns: 40, status: 'terminated', terminationReason: 'leg_cap:oaks_lab_entered',
+    gateTurns: { left_bedroom: 3, left_house: 9 }, gateTimesS: { left_bedroom: 30, left_house: 95 }, gateCostsUsd: { left_bedroom: 0.01, left_house: 0.035 },
+    movementLegs: [{ node_id: 'left_bedroom', d_open: 9, steps: 12, source: 'video', status: 'closed' }, { node_id: 'left_house', d_open: 12, steps: 12, source: 'trace', status: 'closed' },
+                   { node_id: 'oaks_lab_entered', d_open: 4, steps: 31, source: 'bound', status: 'open' }] }
+  const out = runGateRows(r, gates)
+  assert.deepEqual(out.map((g) => [g.id, g.status, g.turn, g.legTurns, g.timeS, g.costUsd]), [
+    ['left_bedroom', 'done', 3, 3, 30, 0.01], ['left_house', 'done', 9, 6, 95, 0.035],
+    ['oaks_lab_entered', 'failed', null, 30, null, null],          // 40 − 9 = 31 turns on the leg, capped at 30
+    ['starter_chosen', 'pending', null, null, null, null],
+  ])
+  assert.ok(Math.abs(out[0].efficiency - 0.75) < 1e-9 && out[1].efficiency === 1 && Math.abs(out[2].efficiency - 4 / 31) < 1e-9 && out[3].efficiency === null)
+  assert.deepEqual(out.map((g) => g.stepsSource), ['video', 'trace', 'bound', null])
+  // A terminated run without a named gate fails the first uncleared one; a completed run fails nothing.
+  assert.equal(runGateRows({ ...r, terminationReason: null }, gates)[2].status, 'failed')
+  assert.equal(runGateRows({ ...r, status: 'completed', terminationReason: null }, gates)[2].status, 'pending')
+  // A stamp after a gap (a later gate stamped, an earlier one not) does not count: the chain stops at the gap.
+  assert.deepEqual(runGateRows({ turns: 20, status: 'terminated', gateTurns: { left_bedroom: 3, oaks_lab_entered: 9 } }, gates).map((g) => g.status), ['done', 'failed', 'pending', 'pending'])
+  // Missing time/cost/legs on an older row: nulls, never NaN.
+  const bare = runGateRows({ turns: 5, status: 'completed', gateTurns: { left_bedroom: 2 } }, gates.slice(0, 1))
+  assert.deepEqual([bare[0].timeS, bare[0].costUsd, bare[0].efficiency], [null, null, null])
 })

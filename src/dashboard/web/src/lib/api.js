@@ -91,6 +91,11 @@ export function toRun(s) {
     // Turn each cleared gate was stamped, gate id → turn (2026-09-13). The
     // headline cards project a partial run to a full clear from these.
     gateTurns: s.gate_turns ?? null,
+    // Wall seconds and USD at each cleared gate, and the map legs behind
+    // movement_efficiency (2026-09-14, model pages: the expanded level's table).
+    gateTimesS: s.gate_times_s ?? null,
+    gateCostsUsd: s.gate_costs_usd ?? null,
+    movementLegs: s.movement_legs ?? null,
     avgInputsPerTurn: s.avg_inputs_per_turn ?? null,
     inputCounts: s.input_counts ?? null,
     avgOutputTokensPerTurn: s.avg_output_tokens_per_turn ?? null,
@@ -185,6 +190,25 @@ export async function fetchModels() {
     multimodal: m.multimodal !== false,
     // "YYYY-MM-DD" or null — the picker's primary sort. Generated from
     // OpenRouter's catalog, not hand-kept in models.yaml.
+    released: m.released ?? null,
+  }))
+}
+
+/**
+ * The model catalog the model pages list thinking levels from: [{model,
+ * openrouter_id, vendor, reasoning_type, thinking_levels (highest first),
+ * released}]. On the published site this is data/models.json (every model
+ * with a row, written by pokemon publish); locally it is /api/models reshaped.
+ */
+export async function fetchModelCatalog() {
+  if (STATIC) return staticGet('/api/model-catalog')
+  const models = await getJSON('/api/models')
+  return models.map((m) => ({
+    model: m.model,
+    openrouter_id: m.openrouter_id ?? null,
+    vendor: typeof m.openrouter_id === 'string' && m.openrouter_id.includes('/') ? m.openrouter_id.split('/')[0] : null,
+    reasoning_type: m.reasoning_type ?? 'none',
+    thinking_levels: Array.isArray(m.levels) ? m.levels.map((l) => l.level) : [],
     released: m.released ?? null,
   }))
 }

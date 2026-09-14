@@ -9,6 +9,7 @@
 //
 //   data/leaderboard.json          one row per published run (RunSummary + video_url, …)
 //   data/benchmarks.json           the registry, for the board's benchmark tabs
+//   data/models.json               the model catalog (models with a row): thinking levels per model, for the model pages
 //   data/runs/<run_id>/summary.json  (run_summary.json minus its per-turn list)
 //   data/runs/<run_id>/trace.json    only when published with --with-trace; the
 //                                    default is result + video, and Report renders
@@ -88,6 +89,7 @@ export async function staticGet(path) {
   const p = url.pathname
   if (p in EMPTY) return EMPTY[p]
   if (p === '/api/benchmarks') return loadJSON('data/benchmarks.json').catch(() => [])
+  if (p === '/api/model-catalog') return loadJSON('data/models.json').catch(() => [])
   if (p === '/api/leaderboard') return rankBoard(await board(), url.searchParams.get('benchmark'))
   if (p === '/api/runs') return board()
   const m = p.match(/^\/api\/runs\/([^/]+)(?:\/(summary|trace))?$/)

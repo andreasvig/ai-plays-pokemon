@@ -443,6 +443,93 @@ export function battleSeries(rows, pool = rows) {
   return { movement, wildTurns, trainerTurns }
 }
 
+// ───────────── model pages (2026-09-14, artifacts/model-pages/plan.md) ─────────────
+//
+// One page per base model, every thinking level on it. The cards there draw
+// the whole field with this model's rows in full colour and the rest faded;
+// the level list joins the catalog's levels (data/models.json) with the rows
+// on the board so a level nobody ran yet still has a line.
+
+/** True for a row of `base`, whatever its thinking level. */
+export const ofModel = (base) => (r) => baseModel(r?.model) === base
+
+/** "gemini-3.8-flash(medium)" → "medium"; a bare alias (reasoning_type none) → null. */
+export function levelOf(alias) {
+  const m = /\(([^)]*)\)\s*$/.exec(String(alias ?? ''))
+  return m ? m[1] : null
+}
+
+/**
+ * The field behind a model page's bars (decision 2A): every OTHER model at its
+ * best-ranked level — the collapsed home board — plus every level of `base`,
+ * in rank order.
+ */
+export function modelField(rows, base) {
+  const mine = ofModel(base)
+  const keep = new Set(collapseBest(rows.filter((r) => !mine(r))).map((r) => r.runId))
+  return rows.filter((r) => mine(r) || keep.has(r.runId))
+}
+
+/**
+ * The level list of a model page: the catalog entry's `thinking_levels` in its
+ * order (highest first), each joined with the board row for it — `row` null
+ * and `absent` true reads "(not benchmarked yet)". A level a row carries that
+ * the catalog does not list (renamed, removed) follows in rank order; a model
+ * without levels (reasoning_type none) is one line under level null. `entry`
+ * is the catalog record for `base`, or null when the catalog has none.
+ */
+export function levelRows(rows, entry, base) {
+  const mine = rows.filter(ofModel(base))
+  const known = Array.isArray(entry?.thinking_levels) ? entry.thinking_levels : []
+  const byLevel = new Map(mine.map((r) => [levelOf(r.model), r]))
+  const out = known.map((level) => ({ level, row: byLevel.get(level) ?? null, absent: !byLevel.has(level) }))
+  for (const r of mine) {
+    const level = levelOf(r.model)
+    if (!known.includes(level)) out.push({ level, row: r, absent: false })
+  }
+  return out
+}
+
+/**
+ * One run's gate table from its board row alone (decision 3A — no summary
+ * fetch). `gates` is the ladder [{id, name, cap}]. Per gate: status (done /
+ * failed = the leg the run ended on / pending), the stamp turn, wall seconds
+ * and USD at the stamp (gateTimesS / gateCostsUsd), turns on the leg — the
+ * failed leg's are the turns played past the last stamp, capped at the leg
+ * cap — and the leg's movement efficiency (shortest ÷ steps, from
+ * movementLegs; the leg the run ended on is credited with the ground it
+ * gained). The failed gate is named by terminationReason ("leg_cap:<gate>",
+ * "missed_gate:<gate>"), else the first uncleared gate of a terminated run.
+ */
+export function runGateRows(row, gates) {
+  const stamps = row?.gateTurns || {}
+  const times = row?.gateTimesS || {}
+  const costs = row?.gateCostsUsd || {}
+  const legs = new Map((row?.movementLegs || []).map((l) => [l.node_id, l]))
+  const named = String(row?.terminationReason ?? '').split(':')[1] || null
+  let prev = 0, chain = true
+  return gates.map((g) => {
+    const turn = typeof stamps[g.id] === 'number' && chain ? stamps[g.id] : null
+    let status = 'pending', legTurns = null
+    if (turn != null) { status = 'done'; legTurns = turn - prev }
+    else if (chain && (named === g.id || (named == null && row?.status === 'terminated'))) {
+      status = 'failed'
+      legTurns = Math.max(0, (row?.turns ?? 0) - prev)
+      if (g.cap != null) legTurns = Math.min(legTurns, g.cap)
+    }
+    const leg = legs.get(g.id)
+    const out = {
+      id: g.id, name: g.name, status, turn, legTurns, cap: g.cap ?? null,
+      timeS: turn != null && typeof times[g.id] === 'number' ? times[g.id] : null,
+      costUsd: turn != null && typeof costs[g.id] === 'number' ? costs[g.id] : null,
+      efficiency: leg && leg.steps > 0 ? Math.min(1, leg.d_open / leg.steps) : null,
+      stepsSource: leg?.source ?? null,
+    }
+    if (turn != null) prev = turn; else chain = false
+    return out
+  })
+}
+
 /** Token counts as "480" / "1.2k" / "12k". */
 export function fmtTokens(v) {
   if (v == null || !(v >= 0)) return '—'
