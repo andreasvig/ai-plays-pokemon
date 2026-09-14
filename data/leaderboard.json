@@ -94,8 +94,8 @@
     "battle_turn_share": 0.2157676348547718,
     "battle_fidelity": "backfill",
     "overworld_steps": 2203,
-    "shortest_steps": 529,
-    "movement_efficiency": 0.2401270994098956,
+    "shortest_steps": 531,
+    "movement_efficiency": 0.2410349523377213,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -121,7 +121,7 @@
       },
       {
         "node_id": "starter_chosen",
-        "d_open": 1,
+        "d_open": 3,
         "steps": 19,
         "source": "video",
         "status": "closed"
@@ -182,7 +182,7 @@
     "leg_distance_min": 68,
     "leg_distance_open": 167,
     "termination_reason": "leg_cap:pewter_reached",
-    "projection_version": 9,
+    "projection_version": 10,
     "continued_from": "2026-09-12_05-47-17_config-5.1__deepseek-v4-1-flash-max",
     "resumed": true,
     "harness": "append_compact",
@@ -319,7 +319,7 @@
     "leg_distance_min": 8,
     "leg_distance_open": 25,
     "termination_reason": "leg_cap:route1_reached",
-    "projection_version": 9,
+    "projection_version": 10,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -436,8 +436,8 @@
     "battle_turn_share": 0.2819277108433735,
     "battle_fidelity": "backfill",
     "overworld_steps": 2363,
-    "shortest_steps": 448,
-    "movement_efficiency": 0.18958950486669487,
+    "shortest_steps": 451,
+    "movement_efficiency": 0.19085907744392722,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -463,7 +463,7 @@
       },
       {
         "node_id": "starter_chosen",
-        "d_open": 1,
+        "d_open": 4,
         "steps": 18,
         "source": "video",
         "status": "closed"
@@ -524,7 +524,7 @@
     "leg_distance_min": 117,
     "leg_distance_open": 167,
     "termination_reason": "leg_cap:pewter_reached",
-    "projection_version": 9,
+    "projection_version": 10,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -614,8 +614,8 @@
     "battle_turn_share": 0.20666666666666667,
     "battle_fidelity": "backfill",
     "overworld_steps": 484,
-    "shortest_steps": 115,
-    "movement_efficiency": 0.23760330578512398,
+    "shortest_steps": 119,
+    "movement_efficiency": 0.24586776859504134,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -641,7 +641,7 @@
       },
       {
         "node_id": "starter_chosen",
-        "d_open": 1,
+        "d_open": 5,
         "steps": 5,
         "source": "video",
         "status": "closed"
@@ -681,7 +681,7 @@
     "leg_distance_min": 7,
     "leg_distance_open": 38,
     "termination_reason": "leg_cap:parcel_delivered",
-    "projection_version": 9,
+    "projection_version": 10,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -827,7 +827,7 @@
     "leg_distance_min": 22,
     "leg_distance_open": 58,
     "termination_reason": "leg_cap:viridian_reached",
-    "projection_version": 9,
+    "projection_version": 10,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -976,8 +976,8 @@
     "battle_turn_share": 0.2971014492753623,
     "battle_fidelity": "backfill",
     "overworld_steps": 1768,
-    "shortest_steps": 667,
-    "movement_efficiency": 0.377262443438914,
+    "shortest_steps": 670,
+    "movement_efficiency": 0.37895927601809953,
     "steps_fidelity": "bound",
     "movement_legs": [
       {
@@ -1003,7 +1003,7 @@
       },
       {
         "node_id": "starter_chosen",
-        "d_open": 1,
+        "d_open": 4,
         "steps": 6,
         "source": "bound",
         "status": "closed"
@@ -1071,7 +1071,7 @@
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": null,
-    "projection_version": 9,
+    "projection_version": 10,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -1267,7 +1267,7 @@
     "leg_distance_min": 111,
     "leg_distance_open": 167,
     "termination_reason": "leg_cap:pewter_reached",
-    "projection_version": 9,
+    "projection_version": 10,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -1423,7 +1423,7 @@
     "leg_distance_min": 23,
     "leg_distance_open": 38,
     "termination_reason": "leg_cap:parcel_delivered",
-    "projection_version": 9,
+    "projection_version": 10,
     "continued_from": "2026-09-12_17-31-29_config-5.1__qwen3-8-flash-thinking",
     "resumed": true,
     "harness": "append_compact",
@@ -1573,8 +1573,8 @@
     "battle_turn_share": 0.25474254742547425,
     "battle_fidelity": "backfill",
     "overworld_steps": 1468,
-    "shortest_steps": 681,
-    "movement_efficiency": 0.46389645776566757,
+    "shortest_steps": 684,
+    "movement_efficiency": 0.4659400544959128,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -1600,7 +1600,7 @@
       },
       {
         "node_id": "starter_chosen",
-        "d_open": 1,
+        "d_open": 4,
         "steps": 32,
         "source": "video",
         "status": "closed"
@@ -1668,7 +1668,7 @@
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": null,
-    "projection_version": 9,
+    "projection_version": 10,
     "continued_from": "2026-09-12_14-17-37_config-5.1__claude-opus-5-high",
     "resumed": true,
     "harness": "append_compact",
@@ -1739,7 +1739,7 @@
     "leg_distance_min": 4,
     "leg_distance_open": 9,
     "termination_reason": "leg_cap:left_bedroom",
-    "projection_version": 9,
+    "projection_version": 10,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -1896,7 +1896,7 @@
     "leg_distance_min": 7,
     "leg_distance_open": 41,
     "termination_reason": "leg_cap:parcel_delivered",
-    "projection_version": 9,
+    "projection_version": 10,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -2110,7 +2110,7 @@
     "leg_distance_min": 53,
     "leg_distance_open": 167,
     "termination_reason": "leg_cap:pewter_reached",
-    "projection_version": 9,
+    "projection_version": 10,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -2268,8 +2268,8 @@
     "battle_turn_share": 0.36141304347826086,
     "battle_fidelity": "backfill",
     "overworld_steps": 1434,
-    "shortest_steps": 670,
-    "movement_efficiency": 0.46722454672245467,
+    "shortest_steps": 673,
+    "movement_efficiency": 0.46931659693165967,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -2295,7 +2295,7 @@
       },
       {
         "node_id": "starter_chosen",
-        "d_open": 1,
+        "d_open": 4,
         "steps": 4,
         "source": "video",
         "status": "closed"
@@ -2363,7 +2363,7 @@
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": null,
-    "projection_version": 9,
+    "projection_version": 10,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -2518,8 +2518,8 @@
     "battle_turn_share": 0.24700239808153476,
     "battle_fidelity": "backfill",
     "overworld_steps": 2519,
-    "shortest_steps": 628,
-    "movement_efficiency": 0.24930527987296547,
+    "shortest_steps": 632,
+    "movement_efficiency": 0.25089321159190153,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -2545,7 +2545,7 @@
       },
       {
         "node_id": "starter_chosen",
-        "d_open": 1,
+        "d_open": 5,
         "steps": 5,
         "source": "video",
         "status": "closed"
@@ -2613,7 +2613,7 @@
     "leg_distance_min": 0,
     "leg_distance_open": 60,
     "termination_reason": "leg_cap:brock_defeated",
-    "projection_version": 9,
+    "projection_version": 10,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -2762,8 +2762,8 @@
     "battle_turn_share": 0.2896551724137931,
     "battle_fidelity": "backfill",
     "overworld_steps": 938,
-    "shortest_steps": 681,
-    "movement_efficiency": 0.7260127931769723,
+    "shortest_steps": 683,
+    "movement_efficiency": 0.7281449893390192,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -2789,7 +2789,7 @@
       },
       {
         "node_id": "starter_chosen",
-        "d_open": 1,
+        "d_open": 3,
         "steps": 7,
         "source": "video",
         "status": "closed"
@@ -2857,7 +2857,7 @@
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": null,
-    "projection_version": 9,
+    "projection_version": 10,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -2952,7 +2952,7 @@
     "leg_distance_min": 12,
     "leg_distance_open": 13,
     "termination_reason": "leg_cap:oaks_lab_entered",
-    "projection_version": 9,
+    "projection_version": 10,
     "continued_from": "2026-09-09_19-37-48_config-5.0__gemini-3-5-flash-lite-minimal",
     "resumed": true,
     "harness": "append_compact",
@@ -3058,7 +3058,7 @@
     "leg_distance_min": 0,
     "leg_distance_open": 1,
     "termination_reason": "leg_cap:starter_chosen",
-    "projection_version": 9,
+    "projection_version": 10,
     "continued_from": "2026-09-09_20-18-53_config-5.0__gemini-3-5-flash-lite-medium",
     "resumed": true,
     "harness": "append_compact",
@@ -3164,7 +3164,7 @@
     "leg_distance_min": 0,
     "leg_distance_open": 1,
     "termination_reason": "leg_cap:starter_chosen",
-    "projection_version": 9,
+    "projection_version": 10,
     "continued_from": "2026-09-09_21-20-50_config-5.1__gemini-3-5-flash-lite-high",
     "resumed": true,
     "harness": "append_compact",
@@ -3271,8 +3271,8 @@
     "battle_turn_share": 0.2538293216630197,
     "battle_fidelity": "backfill",
     "overworld_steps": 1867,
-    "shortest_steps": 474,
-    "movement_efficiency": 0.25388323513658273,
+    "shortest_steps": 477,
+    "movement_efficiency": 0.25549009105516873,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -3298,7 +3298,7 @@
       },
       {
         "node_id": "starter_chosen",
-        "d_open": 1,
+        "d_open": 4,
         "steps": 16,
         "source": "video",
         "status": "closed"
@@ -3359,7 +3359,7 @@
     "leg_distance_min": 144,
     "leg_distance_open": 167,
     "termination_reason": "leg_cap:pewter_reached",
-    "projection_version": 9,
+    "projection_version": 10,
     "continued_from": "2026-09-09_16-04-56_config-5.0__gemini-3-8-flash-minimal_continued_from_turn_40",
     "resumed": true,
     "harness": "append_compact",
@@ -3455,7 +3455,7 @@
     "leg_distance_min": 7,
     "leg_distance_open": 13,
     "termination_reason": "leg_cap:oaks_lab_entered",
-    "projection_version": 9,
+    "projection_version": 10,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -3642,7 +3642,7 @@
     "leg_distance_min": 158,
     "leg_distance_open": 167,
     "termination_reason": "leg_cap:pewter_reached",
-    "projection_version": 9,
+    "projection_version": 10,
     "continued_from": "2026-09-11_10-29-29_config-5.1__glm-5-3-flash-high_continued_from_turn_412",
     "resumed": true,
     "harness": "append_compact",
@@ -3798,7 +3798,7 @@
     "leg_distance_min": 9,
     "leg_distance_open": 40,
     "termination_reason": "leg_cap:parcel_delivered",
-    "projection_version": 9,
+    "projection_version": 10,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -3938,8 +3938,8 @@
     "battle_turn_share": 0.32,
     "battle_fidelity": "backfill",
     "overworld_steps": 852,
-    "shortest_steps": 680,
-    "movement_efficiency": 0.7981220657276995,
+    "shortest_steps": 682,
+    "movement_efficiency": 0.8004694835680751,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -3965,7 +3965,7 @@
       },
       {
         "node_id": "starter_chosen",
-        "d_open": 1,
+        "d_open": 3,
         "steps": 3,
         "source": "video",
         "status": "closed"
@@ -4033,7 +4033,7 @@
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": null,
-    "projection_version": 9,
+    "projection_version": 10,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -4180,8 +4180,8 @@
     "battle_turn_share": 0.16696588868940754,
     "battle_fidelity": "backfill",
     "overworld_steps": 2585,
-    "shortest_steps": 673,
-    "movement_efficiency": 0.26034816247582204,
+    "shortest_steps": 677,
+    "movement_efficiency": 0.2618955512572534,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -4207,7 +4207,7 @@
       },
       {
         "node_id": "starter_chosen",
-        "d_open": 1,
+        "d_open": 5,
         "steps": 25,
         "source": "video",
         "status": "closed"
@@ -4275,7 +4275,7 @@
     "leg_distance_min": 0,
     "leg_distance_open": 55,
     "termination_reason": "leg_cap:brock_defeated",
-    "projection_version": 9,
+    "projection_version": 10,
     "continued_from": "2026-09-10_13-32-55_config-5.1__glm-5-3-flash-max_continued_from_turn_129",
     "resumed": true,
     "harness": "append_compact",
@@ -4425,7 +4425,7 @@
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": null,
-    "projection_version": 9,
+    "projection_version": 10,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
