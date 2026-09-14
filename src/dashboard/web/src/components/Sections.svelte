@@ -92,8 +92,8 @@
   const STEPS_FID = { trace: 'steps traced per input', video: 'steps counted from the recording', bound: 'steps are a lower bound between per-turn polls, so this is an upper bound', mixed: 'steps partly traced, partly bounded' }
   const BAT_FID = { live: 'battles polled every turn', backfill: 'battle counts from savepoints, turns from screenshots', savepoint: 'battle counts from savepoints' }
   const movement = $derived(bat.movement.filter((s) => s.eligible && past1(s)).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true, partial: s.row.completion < 100,
-    tip: `${s.row.model}: ${s.label} — shortest path ${s.row.shortestSteps} of ${s.row.overworldSteps} steps over its map legs (the unfinished leg credited with the ground it gained) · ${STEPS_FID[s.fidelity] || ''}${s.row.completion < 100 ? ` · run ended at ${Math.round(s.row.completion)}%` : ''}` })))
-  const movementNote = $derived([earlyNote, offNote(bat.movement.filter((s) => !s.eligible && past1(s)).length, 'no map leg to measure.')].filter(Boolean).join(' '))
+    tip: `${s.row.model}: ${s.label} — shortest path ${s.row.shortestSteps} of ${s.row.overworldSteps} steps over its legs (the unfinished leg credited with the ground it gained) · ${STEPS_FID[s.fidelity] || ''}${s.row.completion < 100 ? ` · run ended at ${Math.round(s.row.completion)}%` : ''}` })))
+  const movementNote = $derived([earlyNote, offNote(bat.movement.filter((s) => !s.eligible && past1(s)).length, 'no leg to measure.')].filter(Boolean).join(' '))
   const wildTurns = $derived(bat.wildTurns.filter((s) => s.eligible).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true, partial: false,
     tip: `${s.row.model}: ${s.row.wildBattleTurns} turns started inside ${s.row.wildBattles} wild battle${s.row.wildBattles === 1 ? '' : 's'} = ${s.label} per battle · ${BAT_FID[s.row.battleFidelity] || ''}` })))
   const wildNote = $derived([earlyNote, offNote(bat.wildTurns.filter((s) => !s.eligible && past1(s)).length, 'met no wild Pokémon, or has no per-turn battle state.')].filter(Boolean).join(' '))
@@ -160,7 +160,7 @@
             entries={inputsPerTurn} {picker} pickerRows={pool} {highlight} {pinned} narrowFrom={18} bars={220} {oninspect} dimmed={dimUnless('inputs')} note={inputsNote} />
           <BarCard title="Output tokens per turn*" subtitle="Average completion tokens one turn costs the model — thinking plus the reply, every call included · runs that did not finish dotted · hover for the thinking share · fewer first"
             entries={outputTokens} {picker} pickerRows={pool} {highlight} {pinned} narrowFrom={18} bars={220} {oninspect} dimmed={dimUnless('tokens')} note={tokensNote} />
-          <BarCard title="Movement efficiency" subtitle="Shortest walk ÷ steps taken over the run's map legs, the unfinished leg credited only with the ground it gained · runs that did not finish dotted · hover for how the steps were counted · Higher is better"
+          <BarCard title="Movement efficiency" subtitle="Shortest walk ÷ steps taken over the run's legs, the unfinished leg credited only with the ground it gained · runs that did not finish dotted · hover for how the steps were counted · Higher is better"
             entries={movement} {picker} pickerRows={pool} {highlight} {pinned} narrowFrom={18} bars={220} {oninspect} dimmed={dimUnless('movement')} note={movementNote} />
           <BarCard title="Turns per wild battle" subtitle="Turns that started inside a wild battle ÷ wild battles met · runs that cleared Route 1 · Lower is better"
             entries={wildTurns} {picker} pickerRows={pool} {highlight} {pinned} narrowFrom={18} bars={220} {oninspect} dimmed={dimUnless('wild')} note={wildNote} />

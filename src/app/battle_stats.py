@@ -336,7 +336,16 @@ def load_steps_backfill(run_dir: Path) -> Optional[dict[int, int]]:
 
 def movement(referee: Optional[dict], video_steps: Optional[dict[int, int]],
              last_turn: Optional[int] = None) -> Optional[dict[str, Any]]:
-    """Directness over the map legs (decision 4A), with fidelity.
+    """Directness over every leg with a shortest path (decision 4A, widened
+    2026-09-14 night: option A), with fidelity.
+
+    A leg counts whatever its gate's type — map, flag or var — as long as the
+    tracker recorded a shortest path when it opened (``d_open``): flag and var
+    gates have had a locus (the NPC or trigger tiles) since 2026-09-09, so the
+    leg to the starter, the rival, the Pokédex or Brock is as walkable as one
+    to a map edge. Until tonight only ``map`` legs counted, which dropped half
+    the ladder and the 900-step Brock leg with it. A leg with no recorded
+    distance (Oak's Parcel on some runs) stays out.
 
     Closed legs credit their full shortest path. The leg the run ended on
     (status "open") counts too — Andreas 2026-09-14: a run that burned 300
@@ -347,19 +356,17 @@ def movement(referee: Optional[dict], video_steps: Optional[dict[int, int]],
     else the referee's bound.
 
     Returns ``{shortest, steps, efficiency, legs, fidelity}`` or None when no
-    map leg has a shortest path. ``fidelity`` is "trace" / "video" / "bound"
+    leg has a shortest path. ``fidelity`` is "trace" / "video" / "bound"
     when every leg used that source, else "mixed".
     """
     if not isinstance(referee, dict):
         return None
-    gates = referee.get("gates") or []
-    kind = {g.get("id"): g.get("type") for g in gates if isinstance(g, dict)}
     legs = ((referee.get("progress") or {}).get("legs")) or []
     shortest = steps = 0
     used: list[dict[str, Any]] = []
     sources: set[str] = set()
     for leg in legs:
-        if not isinstance(leg, dict) or leg.get("status") not in ("closed", "open") or kind.get(leg.get("node_id")) != "map":
+        if not isinstance(leg, dict) or leg.get("status") not in ("closed", "open"):
             continue
         d = leg.get("d_open")
         if not isinstance(d, int) or d <= 0:

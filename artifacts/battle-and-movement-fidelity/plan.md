@@ -24,7 +24,7 @@ The live probe for the in-battle address is **not needed**: §2.3 found and veri
 
 Efficiency section, new cards (design: [[artifacts/online-leaderboard/plan.md]] §11 conventions — picker, dotted = measured on a partial run, hatched = projected).
 
-- **Movement efficiency** — Σ shortest path over closed map legs ÷ Σ overworld steps in those legs (4A). Exact for traced runs; for backfilled runs the source is stated (§4.4).
+- **Movement efficiency** — Σ shortest path over closed map legs ÷ Σ overworld steps in those legs (4A). Widened 2026-09-14 night (option A, Andreas): EVERY leg with a recorded shortest path counts, flag and var gates included (their locus gives the path); the map-only filter predated the loci and dropped half the ladder. Exact for traced runs; for backfilled runs the source is stated (§4.4).
 - **Wild battles** — count, turns spent (rule A: turns that *started* inside a wild battle), turns per wild battle. One category, no per-species split.
 - **Trainer battles** — by trainer id: fought or not, turns spent, outcome (counter − flags = losses or rematches). Mandatory two (Oak's Lab rival, Brock) projected when missing; optional ones (Route 22 rival, five Bug Catchers, Camper Liam) shown when fought, projected only past the ≥ 5 floor.
 - **Battle share** — fraction of the run's turns that started inside any battle.

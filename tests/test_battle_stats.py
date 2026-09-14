@@ -152,20 +152,26 @@ REFEREE = {
 }
 
 
-def test_movement_uses_map_legs_and_credits_the_open_leg_with_ground_gained():
-    """The open leg opened 52 tiles out and ended 40 out after 30 steps: 12 gained ÷ 30 steps."""
+def test_movement_uses_every_leg_with_a_path_and_credits_the_open_leg_with_ground_gained():
+    """Every leg with a shortest path counts, the flag gate's included (option A,
+    2026-09-14 night: until then only map legs did). The open leg opened 52 tiles
+    out and ended 40 out after 30 steps: 12 gained ÷ 30 steps."""
     m = movement(REFEREE, None)
-    assert m["shortest"] == 29 + 12 and m["steps"] == 39 + 30 and round(m["efficiency"], 3) == round(41 / 69, 3)
-    assert [l["node_id"] for l in m["legs"]] == ["left_bedroom", "route1_reached", "viridian_reached"]  # flag gate excluded
+    assert m["shortest"] == 9 + 1 + 20 + 12 and m["steps"] == 9 + 6 + 30 + 30 and round(m["efficiency"], 3) == round(42 / 75, 3)
+    assert [l["node_id"] for l in m["legs"]] == ["left_bedroom", "starter_chosen", "route1_reached", "viridian_reached"]
     assert m["legs"][-1] == {"node_id": "viridian_reached", "d_open": 12, "steps": 30, "source": "bound", "status": "open"}
     assert m["fidelity"] == "mixed"
+    # Mutation control: the flag leg is the one that used to be dropped — without it the figure was 41/69.
+    assert round(m["efficiency"], 3) != round(41 / 69, 3)
     # No net progress on the open leg → 0 credit, the steps still count.
     lost = {**REFEREE, "progress": {"legs": REFEREE["progress"]["legs"][:3] + [{**REFEREE["progress"]["legs"][3], "distance_now": 60}]}}
     m2 = movement(lost, None)
-    assert m2["shortest"] == 29 and m2["steps"] == 39 + 30
-    # An open leg whose distance is unknown is left out.
+    assert m2["shortest"] == 30 and m2["steps"] == 45 + 30
+    # An open leg whose distance is unknown is left out; so is any leg without a recorded path.
     blind = {**REFEREE, "progress": {"legs": REFEREE["progress"]["legs"][:3] + [{**REFEREE["progress"]["legs"][3], "distance_now": None}]}}
-    assert [l["node_id"] for l in movement(blind, None)["legs"]] == ["left_bedroom", "route1_reached"]
+    assert [l["node_id"] for l in movement(blind, None)["legs"]] == ["left_bedroom", "starter_chosen", "route1_reached"]
+    nopath = {**REFEREE, "progress": {"legs": [{**REFEREE["progress"]["legs"][1], "d_open": None}] + REFEREE["progress"]["legs"][2:3]}}
+    assert [l["node_id"] for l in movement(nopath, None)["legs"]] == ["route1_reached"]
 
 
 def test_movement_prefers_video_steps_when_the_leg_is_fully_covered():
@@ -173,11 +179,11 @@ def test_movement_prefers_video_steps_when_the_leg_is_fully_covered():
     m = movement(REFEREE, video)
     first = m["legs"][0]
     assert (first["steps"], first["source"]) == (9, "video")  # 3 turns × 3 steps
-    assert m["legs"][1]["source"] == "trace" and m["fidelity"] == "mixed"
-    assert m["legs"][2]["source"] == "bound"                       # open leg: last_turn unknown → bound
+    assert m["legs"][2]["source"] == "trace" and m["fidelity"] == "mixed"   # legs[1] is the starter (flag) leg, bound
+    assert m["legs"][3]["source"] == "bound"                       # open leg: last_turn unknown → bound
     full = {t: 2 for t in range(1, 21)}                           # video covers turns 1-20; the run ended at 20
     m3 = movement(REFEREE, full, last_turn=20)
-    assert m3["legs"][2] == {"node_id": "viridian_reached", "d_open": 12, "steps": 16, "source": "video", "status": "open"}  # turns 13-20 × 2
+    assert m3["legs"][3] == {"node_id": "viridian_reached", "d_open": 12, "steps": 16, "source": "video", "status": "open"}  # turns 13-20 × 2
     assert movement({"gates": [], "progress": {"legs": []}}, None) is None
 
 

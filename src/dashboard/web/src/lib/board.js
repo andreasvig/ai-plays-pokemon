@@ -300,7 +300,7 @@ export function fmtTpm(v) {
 
 /**
  * Battles + movement (2026-09-14, artifacts/battle-and-movement-fidelity/plan.md).
- * movement — shortest path ÷ overworld steps over closed map legs, best first.
+ * movement — shortest path ÷ overworld steps over every leg with a shortest path, best first.
  * wildTurns — turns per wild battle (rule A: turns that STARTED in one), fewest
  *   first; only runs that cleared Route 1 — before that no wild grass is
  *   reachable and a run has nothing to say (Andreas 2026-09-14).

@@ -172,7 +172,8 @@ class RunSummary(BaseModel):
     # only — turn figures None). Turn costs follow rule A (a turn belongs to the
     # state it started in). ``trainer_battles`` = [{group, id, name, attempts,
     # turns, won, mandatory}]. ``movement_efficiency`` = shortest path ÷ steps
-    # over closed map legs; ``steps_fidelity`` "trace" / "video" / "bound" / "mixed".
+    # over every leg with a shortest path (map, flag and var gates alike since
+    # 2026-09-14 night); ``steps_fidelity`` "trace" / "video" / "bound" / "mixed".
     wild_battles: int | None = None
     wild_battle_turns: int | None = None
     trainer_battles: list[dict] | None = None
@@ -183,7 +184,7 @@ class RunSummary(BaseModel):
     shortest_steps: int | None = None
     movement_efficiency: float | None = None
     steps_fidelity: str | None = None
-    # The map legs behind movement_efficiency, one per leg the figure counts:
+    # The legs behind movement_efficiency, one per leg the figure counts:
     # [{node_id, d_open, steps, source, status}] (battle_stats.movement). Lets a
     # model page show the per-leg directness without recomputing it.
     movement_legs: list[dict] | None = None

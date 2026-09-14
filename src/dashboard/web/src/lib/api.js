@@ -91,7 +91,7 @@ export function toRun(s) {
     // Turn each cleared gate was stamped, gate id → turn (2026-09-13). The
     // headline cards project a partial run to a full clear from these.
     gateTurns: s.gate_turns ?? null,
-    // Wall seconds and USD at each cleared gate, and the map legs behind
+    // Wall seconds and USD at each cleared gate, and the legs behind
     // movement_efficiency (2026-09-14, model pages: the expanded level's table).
     gateTimesS: s.gate_times_s ?? null,
     gateCostsUsd: s.gate_costs_usd ?? null,
