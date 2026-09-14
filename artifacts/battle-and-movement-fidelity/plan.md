@@ -1,7 +1,7 @@
 # Battle and movement fidelity — plan
 
 > Source: conversation 2026-09-14 (Andreas + Marvin). Probes run against the 25 published runs the same day.
-> Status: built 2026-09-14 except video. Done: §3.1 referee battle state, §3.2 per-input trace (live check pending — needs a run on the new bridge), §3.3 projection v7, §4.1 savepoint backfill, §4.2 screenshot classifier, §5 four Efficiency cards + methods text (live). In progress: §4.3 video pilot on gpt-5.6-luna(high) in an Opus sub-agent, then the remaining 23 runs.
+> Status: built 2026-09-14. §3.1 referee battle state and §3.2 per-input trace verified LIVE on a 60-turn casual run (gemini-3.5-flash-lite low, 16:11): every turn traced, traced steps equal the polled displacement, bumps counted as lost inputs, a door warp as one step; battle counters/bit read every poll (no battle occurred before the cap — a second run toward Route 1 is queued for that). Two live defects fixed on the way: the Lua sampler referenced `tohex` before its definition (every sample empty → recorded as 0 steps; a blind trace now leaves the bound), and a casual run without a stop-at has no referee so nobody drained the trace (fetch moved before the referee guard; Lua buffer capped). §3.3 v7, §4.1, §4.2, §5 live. §4.3 video: pilot passed, batch of 25 running in an Opus sub-agent.
 
 ## 0. Decisions already taken (Andreas, 2026-09-14)
 
