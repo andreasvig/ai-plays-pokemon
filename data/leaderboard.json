@@ -48,15 +48,6 @@
     "wild_battle_turns": 78,
     "trainer_battles": [
       {
-        "group": "102",
-        "id": 102,
-        "name": "Bug Catcher Rick",
-        "attempts": 1,
-        "turns": 20,
-        "won": false,
-        "mandatory": false
-      },
-      {
         "group": "rival_oaks_lab",
         "id": 328,
         "name": "Rival (Oak's Lab)",
@@ -70,7 +61,7 @@
         "id": 531,
         "name": "Bug Catcher Anthony",
         "attempts": 1,
-        "turns": 0,
+        "turns": 20,
         "won": true,
         "mandatory": false
       }
@@ -1526,7 +1517,7 @@
         "group": "142",
         "id": 142,
         "name": "Camper Liam",
-        "attempts": 2,
+        "attempts": 1,
         "turns": 4,
         "won": true,
         "mandatory": false
@@ -1850,9 +1841,9 @@
     "trainer_battle_turns": 26,
     "battle_turn_share": 0.2538293216630197,
     "battle_fidelity": "backfill",
-    "overworld_steps": 403,
+    "overworld_steps": 404,
     "shortest_steps": 291,
-    "movement_efficiency": 0.7220843672456576,
+    "movement_efficiency": 0.7202970297029703,
     "steps_fidelity": "video",
     "progress": 10.137724550898204,
     "leg_gate": "pewter_reached",
@@ -2209,9 +2200,9 @@
     "trainer_battle_turns": 28,
     "battle_turn_share": 0.32,
     "battle_fidelity": "backfill",
-    "overworld_steps": 553,
+    "overworld_steps": 555,
     "shortest_steps": 453,
-    "movement_efficiency": 0.8191681735985533,
+    "movement_efficiency": 0.8162162162162162,
     "steps_fidelity": "video",
     "progress": 12.0,
     "leg_gate": null,
@@ -2285,8 +2276,8 @@
         "group": "102",
         "id": 102,
         "name": "Bug Catcher Rick",
-        "attempts": 2,
-        "turns": 10,
+        "attempts": 1,
+        "turns": 7,
         "won": true,
         "mandatory": false
       },
@@ -2331,7 +2322,7 @@
         "id": 531,
         "name": "Bug Catcher Anthony",
         "attempts": 1,
-        "turns": 0,
+        "turns": 3,
         "won": true,
         "mandatory": false
       }
