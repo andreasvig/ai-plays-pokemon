@@ -187,7 +187,7 @@
           {/each}
           <th class="num" title="turns on fought trainers ÷ typical turns on the same trainers">Pace</th>
           <th class="num" title="turns over the trainer fights the run had">Fights</th>
-          <th class="num" title="measured turns in trainer battles">Turns</th>
+          <th class="num" title="measured turns in trainer battles, + the projected turns for trainers not fought">Turns</th>
           <th class="num" title="turns per trainer battle, projected trainers included">Per fight</th>
         </tr>
       </thead>
@@ -217,7 +217,7 @@
             {/each}
             <td class="num">{t.eligible ? x(t.pace) : '—'}</td>
             <td class="num" title={t.projectedCount ? `${t.attempts} fought + ${t.projectedCount} projected` : ''}>{t.attempts}{t.projectedCount ? ` +${t.projectedCount}` : ''}</td>
-            <td class="num">{t.measured ?? '—'}</td>
+            <td class="num" title={t.projectedCount ? `${t.measured} measured + ${t.projected.toFixed(1)} projected` : ''}>{t.measured ?? '—'}{t.projectedCount ? ` +${t.projected.toFixed(1)}` : ''}</td>
             <td class="num"><b>{t.avg == null ? '—' : t.avg.toFixed(1)}</b></td>
           </tr>
         {/each}
