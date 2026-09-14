@@ -6,6 +6,7 @@
   // the gate count. Same helpers as the cards (lib/board.js), so a cell here is
   // exactly what a card's bar is built from.
   import { estimationMatrix, vendorOf, fmtUsd, fmtMinutes, PROJECT_FROM_GATE, MIN_CLEARS_FOR_TYPICAL } from '../lib/board.js'
+  import { MIN_BATTLE_OBSERVATIONS } from '../lib/board.js'
   import { GATES, gate } from '../lib/gates.js'
   let { rows = [], oninspect = () => {} } = $props()
 
@@ -60,6 +61,14 @@
     <li><b>Missing legs.</b> Each leg the run never cleared is charged pace × typical. The leg it failed on is floored at the turns it actually burned there, so a run never gets credit for fewer turns than it spent.</li>
     <li><b>Eligibility.</b> Only runs that reached <b>{fromGate}</b> are projected; earlier legs are too short and too alike to say anything about pace. Others are shown here but left off the per-task cards.</li>
     <li><b>Time and cost.</b> The run's own total plus the estimated extra turns × its own seconds and USD per turn, then ÷ {nGates} for the per-task figure.</li>
+  </ol>
+
+  <h3>Battles and movement</h3>
+  <ol class="steps">
+    <li><b>What counts.</b> The game's own battle counters (wild, trainer) and the trainer-defeated flags are read from memory every turn; older runs get them from their save states every 10 turns, with the turn-by-turn battle state read off each turn's screenshot (97.7% agreement on 610 labelled frames).</li>
+    <li><b>Turn cost.</b> A turn belongs to the state it started in: a turn that began inside a battle is charged to that battle, a battle that began and ended inside one turn costs nothing. Losses and rematches are attempts, summed per trainer.</li>
+    <li><b>Projected trainers.</b> A run that never met a mandatory trainer (the rival in Oak's Lab, Brock) is charged the field's median turns for that trainer, but only once {MIN_BATTLE_OBSERVATIONS}+ runs have fought them. Optional trainers count when fought and are never projected.</li>
+    <li><b>Movement.</b> Shortest walk on the FireRed tile graph (ledges one-way, doors one step) from where a map leg opened to its gate, ÷ the overworld steps actually taken on that leg, summed over the map legs the run closed. Steps come from the per-input trace on new runs, from the recording on backfilled runs, else from the shortest path between per-turn polls, which is a lower bound — the card's tooltip says which.</li>
   </ol>
 
   <div class="toolbar">

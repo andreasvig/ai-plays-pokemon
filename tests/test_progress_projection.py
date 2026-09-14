@@ -152,3 +152,25 @@ def test_projection_averages_output_tokens_per_turn_from_the_usage_events(tmp_pa
     fallback = project_run_dir(bare)
     assert fallback.avg_output_tokens_per_turn == 25 and fallback.thinking_share is None
 
+
+
+def test_projection_reads_battles_and_movement_from_the_backfill_files(tmp_path):
+    """v7 (2026-09-14): battle counts from battle_backfill.json, per-turn states
+    from state_backfill.json, movement efficiency over closed map legs. A run
+    with neither file leaves every field None."""
+    referee = {"gates": _GATES, "furthest": "left_house", "termination_reason": None,
+               "progress": {"progress": 2.0, "gates_reached": 2, "legs": [
+                   {"node_id": "left_bedroom", "status": "closed", "opened_turn": 0, "closed_turn": 3, "d_open": 9, "steps_walked": 12, "steps_source": "bound"},
+                   {"node_id": "left_house", "status": "closed", "opened_turn": 3, "closed_turn": 4, "d_open": 12, "steps_walked": 12, "steps_source": "bound"},
+               ]}}
+    run = _run_dir(tmp_path, referee)
+    (run / "battle_backfill.json").write_text(json.dumps({"records": [[10, False, 0, 0, 0, []], [20, False, 2, 1, 1, [327]], [100, False, 2, 1, 1, [327]]]}))
+    (run / "state_backfill.json").write_text(json.dumps({"states": {str(t): t in (13, 14, 17, 18, 19) for t in range(1, 101)}}))
+    s = project_run_dir(run)
+    assert (s.wild_battles, s.trainer_battle_turns, s.battle_fidelity) == (1, 3, "backfill")
+    assert s.wild_battle_turns == 2 and s.battle_turn_share == 5 / 100
+    assert [(g["name"], g["attempts"], g["turns"], g["won"], g["mandatory"]) for g in s.trainer_battles] == [("Rival (Oak's Lab)", 1, 3, True, True)]
+    assert (s.shortest_steps, s.overworld_steps, s.steps_fidelity) == (21, 24, "bound") and round(s.movement_efficiency, 3) == round(21 / 24, 3)
+    (tmp_path / "bare").mkdir()
+    bare = project_run_dir(_run_dir(tmp_path / "bare", {"gates": _GATES, "furthest": "left_house", "termination_reason": None}))
+    assert bare.wild_battles is None and bare.battle_fidelity is None and bare.movement_efficiency is None

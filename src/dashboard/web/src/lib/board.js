@@ -298,6 +298,83 @@ export function fmtTpm(v) {
   return v >= 10 ? String(Math.round(v)) : v.toFixed(1)
 }
 
+/**
+ * Battles + movement (2026-09-14, artifacts/battle-and-movement-fidelity/plan.md).
+ * movement — shortest path ÷ overworld steps over closed map legs, best first.
+ * wildTurns — turns per wild battle (rule A: turns that STARTED in one), fewest first.
+ * battleShare — share of the run's turns that started inside a battle, lowest first.
+ * trainerTurns — turns spent in trainer battles (attempts summed per trainer) PLUS,
+ *   for a run that never met a mandatory trainer, the field's median turns for
+ *   that trainer once ≥ MIN_BATTLE_OBSERVATIONS runs have fought it (decision 1B);
+ *   a bar with a projected part is not `complete` (hatched). Rows without the
+ *   statistic are ineligible and appended with height 0.
+ */
+export const MIN_BATTLE_OBSERVATIONS = 5
+
+export function trainerMedians(pool) {
+  const turnsBy = new Map()
+  for (const r of pool) {
+    if (r.battleFidelity !== 'live' && r.battleFidelity !== 'backfill') continue
+    for (const g of r.trainerBattles || []) {
+      if (!(g.attempts > 0) || g.turns == null) continue
+      if (!turnsBy.has(g.group)) turnsBy.set(g.group, { name: g.name, mandatory: !!g.mandatory, turns: [] })
+      turnsBy.get(g.group).turns.push(g.turns)
+    }
+  }
+  const out = {}
+  for (const [group, v] of turnsBy) {
+    const s = [...v.turns].sort((a, b) => a - b)
+    const median = s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2
+    out[group] = { name: v.name, mandatory: v.mandatory, n: s.length, median }
+  }
+  return out
+}
+
+function rank(vals, fmt, { desc = false } = {}) {
+  vals.sort((a, b) => (desc ? b.value - a.value : a.value - b.value))
+  const max = vals.length ? Math.max(...vals.map((s) => s.value)) || 1 : 1
+  return vals.map((s) => ({ ...s, height: s.value / max, label: fmt(s.value) }))
+}
+const OFF = (r) => ({ row: r, value: null, eligible: false, complete: true, height: 0, label: '—' })
+
+export function battleSeries(rows, pool = rows) {
+  const movement = rank(rows.filter((r) => r.movementEfficiency != null)
+    .map((r) => ({ row: r, value: r.movementEfficiency, eligible: true, complete: true, fidelity: r.stepsFidelity })),
+    (v) => Math.round(v * 100) + '%', { desc: true })
+    .concat(rows.filter((r) => r.movementEfficiency == null).map(OFF))
+
+  const wildTurns = rank(rows.filter((r) => r.wildBattles > 0 && r.wildBattleTurns != null)
+    .map((r) => ({ row: r, value: r.wildBattleTurns / r.wildBattles, eligible: true, complete: true })),
+    (v) => v.toFixed(1))
+    .concat(rows.filter((r) => !(r.wildBattles > 0 && r.wildBattleTurns != null)).map(OFF))
+
+  const battleShare = rank(rows.filter((r) => r.battleTurnShare != null)
+    .map((r) => ({ row: r, value: r.battleTurnShare, eligible: true, complete: true })),
+    (v) => Math.round(v * 100) + '%')
+    .concat(rows.filter((r) => r.battleTurnShare == null).map(OFF))
+
+  const medians = trainerMedians(pool)
+  const trainerVals = []
+  const trainerOff = []
+  for (const r of rows) {
+    if (r.trainerBattleTurns == null || !r.trainerBattles) { trainerOff.push(OFF(r)); continue }
+    const fought = new Set((r.trainerBattles || []).filter((g) => g.attempts > 0).map((g) => g.group))
+    const missing = []
+    let projected = 0
+    if (!(r.completion >= 100)) {
+      for (const [group, m] of Object.entries(medians)) {
+        if (!m.mandatory || fought.has(group) || m.n < MIN_BATTLE_OBSERVATIONS) continue
+        missing.push({ group, name: m.name, median: m.median, n: m.n })
+        projected += m.median
+      }
+    }
+    trainerVals.push({ row: r, value: r.trainerBattleTurns + projected, measured: r.trainerBattleTurns, projected, missing,
+      eligible: true, complete: projected === 0 })
+  }
+  const trainerTurns = rank(trainerVals, (v) => String(Math.round(v))).concat(trainerOff)
+  return { movement, wildTurns, battleShare, trainerTurns }
+}
+
 /** Token counts as "480" / "1.2k" / "12k". */
 export function fmtTokens(v) {
   if (v == null || !(v >= 0)) return '—'

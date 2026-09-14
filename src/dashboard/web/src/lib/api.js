@@ -95,6 +95,17 @@ export function toRun(s) {
     inputCounts: s.input_counts ?? null,
     avgOutputTokensPerTurn: s.avg_output_tokens_per_turn ?? null,
     thinkingShare: s.thinking_share ?? null,
+    // Battles + movement (2026-09-14): counts exact; turn figures per rule A.
+    wildBattles: s.wild_battles ?? null,
+    wildBattleTurns: s.wild_battle_turns ?? null,
+    trainerBattles: s.trainer_battles ?? null,
+    trainerBattleTurns: s.trainer_battle_turns ?? null,
+    battleTurnShare: s.battle_turn_share ?? null,
+    battleFidelity: s.battle_fidelity ?? null,
+    overworldSteps: s.overworld_steps ?? null,
+    shortestSteps: s.shortest_steps ?? null,
+    movementEfficiency: s.movement_efficiency ?? null,
+    stepsFidelity: s.steps_fidelity ?? null,
     completion,
     progress,
     // the current leg: which gate it leads to, how much of it was walked

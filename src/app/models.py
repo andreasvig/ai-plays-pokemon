@@ -158,6 +158,23 @@ class RunSummary(BaseModel):
     # the run off; the share alone is None when the route reports no reasoning.
     avg_output_tokens_per_turn: float | None = None
     thinking_share: float | None = None
+    # Battles and movement (2026-09-14, artifacts/battle-and-movement-fidelity/
+    # plan.md). ``battle_fidelity``: "live" (referee polled every turn),
+    # "backfill" (savepoint counters + screenshot states), "savepoint" (counters
+    # only — turn figures None). Turn costs follow rule A (a turn belongs to the
+    # state it started in). ``trainer_battles`` = [{group, id, name, attempts,
+    # turns, won, mandatory}]. ``movement_efficiency`` = shortest path ÷ steps
+    # over closed map legs; ``steps_fidelity`` "trace" / "video" / "bound" / "mixed".
+    wild_battles: int | None = None
+    wild_battle_turns: int | None = None
+    trainer_battles: list[dict] | None = None
+    trainer_battle_turns: int | None = None
+    battle_turn_share: float | None = None
+    battle_fidelity: str | None = None
+    overworld_steps: int | None = None
+    shortest_steps: int | None = None
+    movement_efficiency: float | None = None
+    steps_fidelity: str | None = None
     # Between-gate progress (2026-09-09, artifacts/granular-progress/plan.md):
     # ``gates_reached`` plus the fraction of the CURRENT leg walked, where the
     # fraction is 1 - d_min/D on the FireRed walk graph (d_min = steps from the

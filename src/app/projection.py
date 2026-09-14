@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from src.app import battle_stats
 from src.app.models import RunKind, RunStatus, RunSummary
 from src.referee.progress import OPEN_LEG_FRACTION_CAP
 
@@ -37,7 +38,7 @@ _DEFAULT_LADDER = Path("configs/checkpoints-firered-v1.yaml")
 #   1 — 2026-09-09: error / crash (why a crashed run ended).
 #   2 — 2026-09-09: record (the spec the run was recorded with, for continues).
 #   3 — 2026-09-11: open-leg fraction capped at OPEN_LEG_FRACTION_CAP.
-PROJECTION_VERSION = 6  # 6 (2026-09-14): avg_output_tokens_per_turn + thinking_share (Efficiency · output tokens per turn); 5: inputs per turn
+PROJECTION_VERSION = 7  # 7 (2026-09-14): battles + movement efficiency (battle_stats.py); 6: output tokens per turn; 5: inputs per turn
 
 # Status values the report treats as "cleared" for a gate (mirror report.py).
 _CLEARED_STATUSES = ("done", "auto")
@@ -178,6 +179,29 @@ def _output_token_stats(run_dir: Path, turns: int, cost: dict) -> tuple[float | 
     return out / turns, (reasoning / out if saw_reasoning else None)
 
 
+def _battle_fields(battles: dict | None, fidelity: str | None, turns: int) -> dict:
+    """RunSummary battle fields from a BattleTracker summary. Counts are exact
+    for every fidelity; turn figures need per-turn states, so a
+    "savepoint"-only summary leaves them None."""
+    if not battles or not battles.get("available"):
+        return {}
+    per_turn = fidelity in ("live", "backfill")
+    trainers = [{k: g.get(k) for k in ("group", "id", "name", "attempts", "turns", "won", "mandatory")}
+                for g in battles.get("trainers") or []]
+    if not per_turn:
+        for g in trainers:
+            g["turns"] = None
+    started = battles.get("turns_started_in_battle")
+    return {
+        "wild_battles": _int((battles.get("wild") or {}).get("count")),
+        "wild_battle_turns": _int((battles.get("wild") or {}).get("turns")) if per_turn else None,
+        "trainer_battles": trainers,
+        "trainer_battle_turns": _int((battles.get("trainer") or {}).get("turns")) if per_turn else None,
+        "battle_turn_share": (started / turns) if per_turn and turns and isinstance(started, int) else None,
+        "battle_fidelity": fidelity,
+    }
+
+
 def _safe_div(numerator: float, denominator: float) -> float:
     """``numerator / denominator`` guarding divide-by-zero → 0.0."""
     if not denominator:
@@ -242,6 +266,8 @@ def project_run_dir(run_dir: Path) -> RunSummary | None:
     avg_s_per_turn = _safe_div(duration_s, turns)
     avg_inputs_per_turn, input_counts = _input_stats(run_dir)
     avg_output_tokens_per_turn, thinking_share = _output_token_stats(run_dir, turns, cost)
+    battles, battle_fidelity = battle_stats.battle_summary(run_dir, summary.get("referee"), turns)
+    move = battle_stats.movement(summary.get("referee"), battle_stats.load_steps_backfill(run_dir))
 
     # --- explicit-or-inferred top-level fields ---
     run_id = summary.get("run_id") or run_dir.name
@@ -372,6 +398,11 @@ def project_run_dir(run_dir: Path) -> RunSummary | None:
         input_counts=input_counts,
         avg_output_tokens_per_turn=avg_output_tokens_per_turn,
         thinking_share=thinking_share,
+        **_battle_fields(battles, battle_fidelity, turns),
+        overworld_steps=move["steps"] if move else None,
+        shortest_steps=move["shortest"] if move else None,
+        movement_efficiency=move["efficiency"] if move else None,
+        steps_fidelity=move["fidelity"] if move else None,
         progress=progress,
         leg_gate=leg_gate,
         leg_fraction=leg_fraction,

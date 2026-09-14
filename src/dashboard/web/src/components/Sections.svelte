@@ -5,7 +5,7 @@
   // section in view; a menu item is an anchor (#price) so a section can be
   // linked. Every chart here follows the shared model picker (decision 1a);
   // the headline three above stay on the whole board.
-  import { headlineSeries, secondarySeries, PERF_LINE, PROJECT_FROM_GATE, fmtMinutes, fmtUsd, fmtTokens } from '../lib/board.js'
+  import { headlineSeries, secondarySeries, battleSeries, MIN_BATTLE_OBSERVATIONS, PERF_LINE, PROJECT_FROM_GATE, fmtMinutes, fmtUsd, fmtTokens } from '../lib/board.js'
   import { GATES, gate } from '../lib/gates.js'
   import { selection } from '../lib/selection.svelte.js'
   import BarCard from './BarCard.svelte'
@@ -18,6 +18,7 @@
   const fromGate = $derived((gate(PROJECT_FROM_GATE)?.name ?? PROJECT_FROM_GATE).replace(/^Reached /, ''))
   const head = $derived(headlineSeries(rows, gateIds, pool))
   const sec = $derived(secondarySeries(rows, gateIds, pool))
+  const bat = $derived(battleSeries(rows, pool))
 
   const tip = (s, fmt) => {
     const base = `${s.row.model}: ${fmt(s.value)} per task`
@@ -52,6 +53,22 @@
   const outputTokens = $derived(sec.outputTokens.filter((s) => s.eligible).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true, partial: s.row.completion < 100,
     tip: `${s.row.model}: ${fmtTokens(s.value)} output tokens per turn on average (thinking + reply, all calls)${s.row.thinkingShare != null ? ` · ${Math.round(s.row.thinkingShare * 100)}% of them thinking` : ''}${s.row.completion >= 100 ? '' : ` · run ended at ${Math.round(s.row.completion)}%: averaged over the early game only`}` })))
   const noTokens = $derived(sec.outputTokens.filter((s) => !s.eligible).length)
+  // Battles + movement (2026-09-14). Fidelity words for the tooltips.
+  const STEPS_FID = { trace: 'steps traced per input', video: 'steps counted from the recording', bound: 'steps are a lower bound between per-turn polls, so this is an upper bound', mixed: 'steps partly traced, partly bounded' }
+  const BAT_FID = { live: 'battles polled every turn', backfill: 'battle counts from savepoints, turns from screenshots', savepoint: 'battle counts from savepoints' }
+  const offNote = (n, why) => n ? `${n} selected model${n === 1 ? '' : 's'} not shown: ${why}` : ''
+  const movement = $derived(bat.movement.filter((s) => s.eligible).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true, partial: s.row.completion < 100,
+    tip: `${s.row.model}: ${s.label} — shortest path ${s.row.shortestSteps} of ${s.row.overworldSteps} steps over the map legs it closed · ${STEPS_FID[s.fidelity] || ''}${s.row.completion < 100 ? ` · run ended at ${Math.round(s.row.completion)}%` : ''}` })))
+  const movementNote = $derived(offNote(bat.movement.filter((s) => !s.eligible).length, 'no closed map leg to measure.'))
+  const wildTurns = $derived(bat.wildTurns.filter((s) => s.eligible).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true, partial: s.row.completion < 100,
+    tip: `${s.row.model}: ${s.row.wildBattleTurns} turns started inside ${s.row.wildBattles} wild battle${s.row.wildBattles === 1 ? '' : 's'} = ${s.label} per battle · ${BAT_FID[s.row.battleFidelity] || ''}` })))
+  const wildNote = $derived(offNote(bat.wildTurns.filter((s) => !s.eligible).length, 'no wild battle, or no per-turn battle state.'))
+  const battleShare = $derived(bat.battleShare.filter((s) => s.eligible).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true, partial: s.row.completion < 100,
+    tip: `${s.row.model}: ${s.label} of its ${s.row.turns} turns started inside a battle · ${BAT_FID[s.row.battleFidelity] || ''}` })))
+  const shareNote = $derived(offNote(bat.battleShare.filter((s) => !s.eligible).length, 'no per-turn battle state.'))
+  const trainerTurns = $derived(bat.trainerTurns.filter((s) => s.eligible).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: s.complete, partial: s.complete && s.row.completion < 100,
+    tip: `${s.row.model}: ${s.measured} turns in trainer battles (${(s.row.trainerBattles || []).filter((g) => g.attempts > 0).map((g) => `${g.name} ${g.turns}T${g.attempts > 1 ? ` in ${g.attempts} attempts` : ''}${g.won ? '' : ', not won'}`).join('; ') || 'none'})${s.projected ? ` · projected +${Math.round(s.projected)} for ${s.missing.map((m) => `${m.name} (median of ${m.n})`).join(', ')}` : ''}` })))
+  const trainerNote = $derived(offNote(bat.trainerTurns.filter((s) => !s.eligible).length, 'no per-turn battle state.'))
   const TOKENS_BIAS = '* Models think more as the game gets harder: over the runs with 80+ turns, the last 40 turns cost a median 1.65× the output tokens of the first 40. A run that ended early (dotted) averaged over the cheap early game only, so its bar is low partly for that reason.'
   const tokensNote = $derived(TOKENS_BIAS + (noTokens ? ` ${noTokens} selected model${noTokens === 1 ? '' : 's'} not shown: the run recorded no token usage.` : ''))
   const leftNote = $derived(leftOff ? `${leftOff} selected model${leftOff === 1 ? '' : 's'} not shown: never reached ${fromGate}, so nothing to project.` : '')
@@ -60,7 +77,7 @@
     { id: 'performance', label: 'Performance', color: 'var(--accent)', blurb: 'How far each model gets through the first-badge ladder, and how few turns a full clear takes.' },
     { id: 'price', label: 'Price', color: 'var(--retry)', blurb: 'What a task costs: USD to finish the ladder ÷ gates, projected for partial runs, and the raw USD per ten turns behind it.' },
     { id: 'speed', label: 'Speed', color: 'var(--amber)', blurb: 'How long a task takes: wall-clock minutes to finish the ladder ÷ gates, projected for partial runs, and the turns per minute behind it.' },
-    { id: 'efficiency', label: 'Efficiency', color: 'var(--green)', blurb: 'How much a model gets out of each turn: turns per task, projected for partial runs, how many game inputs it batches into one turn, and how many output tokens (thinking and reply) a turn costs it.' },
+    { id: 'efficiency', label: 'Efficiency', color: 'var(--green)', blurb: 'How much a model gets out of each turn: turns per task, projected for partial runs, how many game inputs it batches into one turn, how many output tokens (thinking and reply) a turn costs it, how directly it walks, and what battles cost it in turns.' },
   ]
   // The section in view: the last one whose top has passed the sticky menu's
   // line. Cheaper and steadier than an intersection ratio for tall sections.
@@ -111,6 +128,14 @@
             entries={inputsPerTurn} picker pickerRows={pool} narrowFrom={18} bars={220} {oninspect} note={inputsNote} />
           <BarCard title="Output tokens per turn*" subtitle="Average completion tokens one turn costs the model — thinking plus the reply, every call included · runs that did not finish dotted · hover for the thinking share · fewer first"
             entries={outputTokens} picker pickerRows={pool} narrowFrom={18} bars={220} {oninspect} note={tokensNote} />
+          <BarCard title="Movement efficiency" subtitle="Shortest walk ÷ steps taken over the map legs the run closed · runs that did not finish dotted · hover for how the steps were counted · Higher is better"
+            entries={movement} picker pickerRows={pool} narrowFrom={18} bars={220} {oninspect} note={movementNote} />
+          <BarCard title="Turns per wild battle" subtitle="Turns that started inside a wild battle ÷ wild battles met · runs that did not finish dotted · Lower is better"
+            entries={wildTurns} picker pickerRows={pool} narrowFrom={18} bars={220} {oninspect} note={wildNote} />
+          <BarCard title="Battle share" subtitle="Share of all turns that started inside any battle, wild or trainer · runs that did not finish dotted · Lower is better"
+            entries={battleShare} picker pickerRows={pool} narrowFrom={18} bars={220} {oninspect} note={shareNote} />
+          <BarCard title="Trainer battle turns" subtitle={`Turns spent fighting trainers, every attempt summed per trainer · a mandatory trainer the run never met is projected (hatched) from the field's median once ${MIN_BATTLE_OBSERVATIONS}+ runs have fought them · Lower is better`}
+            entries={trainerTurns} picker pickerRows={pool} narrowFrom={18} bars={220} {oninspect} note={trainerNote} />
         {/if}
       </section>
     {/each}
