@@ -228,3 +228,35 @@ Custom domain; a YouTube cross-post from the publish command; `submit` for
 other people's runs (needs a backend, Supabase would be the step); a nightly
 Action that rebuilds the page from `data/` so the SPA build does not have to
 happen on the laptop.
+
+## 10. Board as a card strip (2026-09-14)
+
+> Andreas 2026-09-14, from an Artificial Analysis screenshot: "instead of having a
+> straight-up leaderboard, I would like to have this as my leaderboard … a model
+> selection view … a dropdown for model which is then shown at all views … the
+> only thing not affected by the picker is the top 3 views … small simple logos at
+> each bar chart." Decisions by letter: 1a, 2a, 3a, 4a, 5c.
+
+- **1a — the ranked table is removed.** The cards and the two scatter plots are
+  the board; the Estimation methods page (`/methods`) is the table view. What
+  survives of the old section is the local-only benchmark picker.
+- **2a — the picker selects model + thinking level**, one board row each, by
+  alias (`gpt-5.6-sol(high)`). Default = the best-ranked level per model
+  (`collapseBest`); other levels are added from the picker. Presets: best per
+  model, all levels, completed only, open-weights, none. Selection lives in the
+  URL as `?models=a,b` so a view can be linked; `lib/selection.js` is the pure
+  half (tested), `lib/selection.svelte.js` the one shared runes store.
+- **3a — real marks where simple-icons (CC0) has one** — Anthropic, Google,
+  Meta, DeepSeek, Alibaba (Qwen mark), Xiaomi, Moonshot (Kimi mark), MiniMax —
+  extracted once into `lib/logos.js`; OpenAI, xAI, Z.AI and Sakana get a letter
+  monogram in the vendor colour, same size and radius (`VendorMark.svelte`).
+- **4a — picker only** in a card's top-right; no link / image / table buttons.
+- **5c — the open-weights filter, max-price slider and "all levels" toggle are
+  dropped**; the picker's presets cover the first and last.
+- Every bar card is one component, `BarCard.svelte`: title + subtitle, optional
+  picker, bars in vendor colour with the value inside (above when too short),
+  a vendor mark under each bar and the alias angled 70° beneath it, hatched when
+  projected. The headline three (Performance, Time per task, Cost per task) take
+  the full board and no picker; Per-turn measurements and both scatter plots
+  follow the shared selection.
+

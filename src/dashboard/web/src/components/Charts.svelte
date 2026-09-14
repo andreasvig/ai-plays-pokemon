@@ -7,14 +7,18 @@
   // Projected points are drawn hollow; runs below the projection gate have no
   // value and are listed beside the plot instead of drawn (no ghost markers).
   import ScatterChart from './ScatterChart.svelte'
+  import ModelPicker from './ModelPicker.svelte'
+  import { selection } from '../lib/selection.svelte.js'
   import { perTaskSeries, fmtUsd, fmtMinutes, PROJECT_FROM_GATE } from '../lib/board.js'
   import { GATES, gate } from '../lib/gates.js'
-  let { rows = [], pool = rows, onpick } = $props()
+  // `pool` is every board row; the shared picker (lib/selection.svelte.js) chooses which are plotted.
+  let { pool = [], onpick } = $props()
+  const rows = $derived(selection.apply(pool))
 
   let costMode = $state('all')
   let speedMode = $state('all')
 
-  const gateIds = $derived(GATES.slice(0, rows[0]?.totalGates || 12).map((g) => g.id))
+  const gateIds = $derived(GATES.slice(0, pool[0]?.totalGates || 12).map((g) => g.id))
   const series = $derived(perTaskSeries(rows, gateIds, pool))
   const nGates = $derived(gateIds.length)
   const fromGate = $derived((gate(PROJECT_FROM_GATE)?.name ?? PROJECT_FROM_GATE).replace(/^Reached /, ''))
@@ -50,7 +54,10 @@
         <h3>Cost per task</h3>
         <p class="faint">Performance vs USD per task (log): cost to finish all {nGates} gates ÷ {nGates}, projected for runs that did not finish. Up = further / fewer turns; left = cheaper. Dashed = cost-performance frontier. Hollow = projected. Hover for values; click to open the run.</p>
       </div>
-      <div class="segs">{#each MODES as [v, label]}<button class:on={costMode === v} onclick={() => costMode = v}>{label}</button>{/each}</div>
+      <div class="tools">
+        <ModelPicker rows={pool} />
+        <div class="segs">{#each MODES as [v, label]}<button class:on={costMode === v} onclick={() => costMode = v}>{label}</button>{/each}</div>
+      </div>
     </header>
     <ScatterChart points={filt(pts((s) => s.costPerTask), costMode)} {left} leftTitle={`No projection yet · below ${fromGate}`}
       xLabel="Cost / task (USD)" xFormat={fmtUsd} xLog={true} {onpick} />
@@ -62,7 +69,10 @@
         <h3>Time per task</h3>
         <p class="faint">Performance vs minutes per task: wall-clock time to finish all {nGates} gates ÷ {nGates}, projected for runs that did not finish. Up = further / fewer turns; left = faster. Dashed = speed-performance frontier. Hollow = projected. Hover for values; click to open the run.</p>
       </div>
-      <div class="segs">{#each MODES as [v, label]}<button class:on={speedMode === v} onclick={() => speedMode = v}>{label}</button>{/each}</div>
+      <div class="tools">
+        <ModelPicker rows={pool} />
+        <div class="segs">{#each MODES as [v, label]}<button class:on={speedMode === v} onclick={() => speedMode = v}>{label}</button>{/each}</div>
+      </div>
     </header>
     <ScatterChart points={filt(pts((s) => s.minutesPerTask), speedMode)} {left} leftTitle={`No projection yet · below ${fromGate}`}
       xLabel="Minutes / task" xFormat={fmtMinutes} {onpick} />
@@ -84,6 +94,7 @@
   header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 8px; }
   h3 { font-size: 16px; font-weight: 750; margin: 0; }
   header p { font-size: 12px; margin: 2px 0 0; max-width: 460px; }
+  .tools { display: flex; align-items: center; gap: 10px; flex: none; }
   .segs { display: flex; background: var(--wash); border-radius: var(--radius); padding: 3px; gap: 2px; flex: none; }
   .segs button { border: none; background: none; padding: 5px 10px; border-radius: var(--radius-sm); font-size: 11.5px; font-weight: 600; color: var(--muted); white-space: nowrap; }
   .segs button.on { background: var(--surface); color: var(--text); box-shadow: inset 0 0 0 1px var(--border); }

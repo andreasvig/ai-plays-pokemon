@@ -71,20 +71,9 @@
   const emulatorUp = $derived(!!(emulator.process_up && emulator.connected))
 
   // shared leaderboard/chart filters (lifted so both views respect them)
-  let priceMax = $state(1)
-  let ossFilter = $state('all')
-  let maxPrice = $state(1)
-  const filteredRows = $derived(
-    leaderboard
-      .filter((r) => ossFilter === 'all' || r.openSource)
-      .filter((r) => r.avgCostPerTurn <= maxPrice + 1e-9)
-  )
-  // The board and the two charts show one row per model by default — its
-  // best-ranked thinking level — and every level when the toggle is on
-  // (Andreas 2026-09-12). The headline cards always take the collapsed view of
-  // the whole leaderboard, so the filters below them do not empty a card.
-  let allLevels = $state(false)
-  const boardRows = $derived(allLevels ? filteredRows : collapseBest(filteredRows))
+  // The board is the card strip (Andreas 2026-09-14, "1a": no ranked table).
+  // Every card gets the full `leaderboard`; the picker-bearing ones narrow it
+  // through the shared selection store, the headline three always show all.
   const cardRows = $derived(collapseBest(leaderboard))
 
   // name of the currently-selected benchmark (shown as the leaderboard chip)
@@ -92,8 +81,8 @@
 
   // stats chips (mockData exported these precomputed; derive from live rows)
   const stats = $derived({
-    modelsRanked: boardRows.length,
-    completers: boardRows.filter((r) => r.completion >= 100).length,
+    modelsRanked: cardRows.length,
+    completers: cardRows.filter((r) => r.completion >= 100).length,
     totalRuns: runs.length,
     benchmarkVersion: benchmarkName,
   })
@@ -101,11 +90,6 @@
   async function loadLeaderboard() {
     const rows = await api.fetchLeaderboard(benchmark || null)
     leaderboard = rows
-    const max = rows.length ? Math.max(...rows.map((r) => r.avgCostPerTurn)) : 1
-    // keep the slider pinned to "show all" unless the user has narrowed it
-    const wasAtMax = maxPrice >= priceMax - 1e-9
-    priceMax = max
-    if (wasAtMax) maxPrice = max
   }
   async function loadRuns() { runs = await api.fetchRuns() }
 
@@ -305,10 +289,9 @@
       <QueueBar {active} {queue} lastError={queueError} onkill={killRun} onremove={removeFromQueue} onreorder={reorder}
         onnew={openNew} onspectate={() => go('/spectate')} />
     {/if}
-    <Leaderboard rows={boardRows} {cardRows} allRows={leaderboard} {stats} oninspect={inspect}
-      {benchmarks} {benchmark} onbench={selectBenchmark}
-      bind:oss={ossFilter} bind:maxPrice={maxPrice} {priceMax} bind:allLevels />
-    <Charts rows={boardRows} pool={leaderboard} onpick={(slug) => go(`/history/${slug}`)} />
+    <Leaderboard {cardRows} allRows={leaderboard} {stats} oninspect={inspect}
+      {benchmarks} {benchmark} onbench={selectBenchmark} />
+    <Charts pool={leaderboard} onpick={(slug) => go(`/history/${slug}`)} />
   {:else if view === 'history'}
     <History {runs} oninspect={inspect} oncontinue={openContinue} ondelete={removeRun} />
   {:else if view === 'spectate'}
