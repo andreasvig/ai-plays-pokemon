@@ -45,10 +45,14 @@
   const inputsNote = $derived(noInputs ? `${noInputs} selected model${noInputs === 1 ? '' : 's'} not shown: the run predates per-turn input records.` : '')
   // Output tokens per turn: thinking + reply over every call; the tooltip gives
   // the thinking share where the route reports reasoning tokens.
-  const outputTokens = $derived(sec.outputTokens.filter((s) => s.eligible).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true,
-    tip: `${s.row.model}: ${fmtTokens(s.value)} output tokens per turn on average (thinking + reply, all calls)${s.row.thinkingShare != null ? ` · ${Math.round(s.row.thinkingShare * 100)}% of them thinking` : ''}` })))
+  // A run that did not finish is hatched (Andreas 2026-09-14): models think
+  // more as the game gets harder, so a run that ended early averaged over the
+  // cheap early game only — its bar is low partly for that reason.
+  const outputTokens = $derived(sec.outputTokens.filter((s) => s.eligible).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: s.row.completion >= 100,
+    tip: `${s.row.model}: ${fmtTokens(s.value)} output tokens per turn on average (thinking + reply, all calls)${s.row.thinkingShare != null ? ` · ${Math.round(s.row.thinkingShare * 100)}% of them thinking` : ''}${s.row.completion >= 100 ? '' : ` · run ended at ${Math.round(s.row.completion)}%: averaged over the early game only`}` })))
   const noTokens = $derived(sec.outputTokens.filter((s) => !s.eligible).length)
-  const tokensNote = $derived(noTokens ? `${noTokens} selected model${noTokens === 1 ? '' : 's'} not shown: the run recorded no token usage.` : '')
+  const TOKENS_BIAS = '* Models think more as the game gets harder: over the runs with 80+ turns, the last 40 turns cost a median 1.65× the output tokens of the first 40. A run that ended early (hatched) averaged over the cheap early game only, so its bar is low partly for that reason.'
+  const tokensNote = $derived(TOKENS_BIAS + (noTokens ? ` ${noTokens} selected model${noTokens === 1 ? '' : 's'} not shown: the run recorded no token usage.` : ''))
   const leftNote = $derived(leftOff ? `${leftOff} selected model${leftOff === 1 ? '' : 's'} not shown: never reached ${fromGate}, so nothing to project.` : '')
 
   const SECTIONS = [
@@ -104,7 +108,7 @@
             entries={turnsPerTask} picker pickerRows={pool} narrowFrom={18} bars={300} {oninspect} note={leftNote} />
           <BarCard title="Inputs per turn" subtitle="Average game inputs (buttons and waits) one turn carries · hover for the button mix · more per turn = fewer turns, if the batch lands"
             entries={inputsPerTurn} picker pickerRows={pool} narrowFrom={18} bars={220} {oninspect} note={inputsNote} />
-          <BarCard title="Output tokens per turn" subtitle="Average completion tokens one turn costs the model — thinking plus the reply, every call included · hover for the thinking share · fewer first"
+          <BarCard title="Output tokens per turn*" subtitle="Average completion tokens one turn costs the model — thinking plus the reply, every call included · runs that did not finish hatched · hover for the thinking share · fewer first"
             entries={outputTokens} picker pickerRows={pool} narrowFrom={18} bars={220} {oninspect} note={tokensNote} />
         {/if}
       </section>
