@@ -118,7 +118,11 @@ checkpoints:
     type: var
     signature: {var_id: 0x4057, min_value: 1}     # Mart pickup scene; 2 is after the Pokédex scene
     leg_cap_turns: 50
-    locus: {map_group: 5, map_num: 3, near: [[2,3]]}  # Viridian Mart clerk (CLERK object_event; pret map.json, 2026-09-09)
+    # The tile the player talks to the clerk FROM: (2,5), across the counter at
+    # (2,4). `near: [[2,3]]` (2026-09-09 → 2026-09-14) resolved to (1,3)/(2,2)
+    # BEHIND the counter, a component the player can never reach, so no run
+    # ever got a distance on this leg (17/17 published runs, d_open None).
+    locus: {map_group: 5, map_num: 3, tiles: [[2,5]]}  # Viridian Mart clerk at (2,3) behind the counter (CLERK object_event; pret map.json)
 
   - id: pokedex_received
     name: "Received the Pokédex"

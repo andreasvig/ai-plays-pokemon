@@ -38,7 +38,7 @@ _DEFAULT_LADDER = Path("configs/checkpoints-firered-v1.yaml")
 #   1 — 2026-09-09: error / crash (why a crashed run ended).
 #   2 — 2026-09-09: record (the spec the run was recorded with, for continues).
 #   3 — 2026-09-11: open-leg fraction capped at OPEN_LEG_FRACTION_CAP.
-PROJECTION_VERSION = 8  # 8 (2026-09-14): gate_times_s / gate_costs_usd / movement_legs (model pages); 7: battles + movement efficiency; 6: output tokens per turn
+PROJECTION_VERSION = 9  # 9 (2026-09-14): Oak's Parcel leg re-scored in every run_summary (scripts/backfill_parcel_leg.py) — cached rows must re-read it; 8: gate_times_s / gate_costs_usd / movement_legs; 7: battles + movement
 
 # Status values the report treats as "cleared" for a gate (mirror report.py).
 _CLEARED_STATUSES = ("done", "auto")
