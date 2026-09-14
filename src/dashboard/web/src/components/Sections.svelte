@@ -134,7 +134,7 @@
             entries={wildTurns} picker pickerRows={pool} narrowFrom={18} bars={220} {oninspect} note={wildNote} />
           <BarCard title="Battle share" subtitle="Share of all turns that started inside any battle, wild or trainer · runs that did not finish dotted · Lower is better"
             entries={battleShare} picker pickerRows={pool} narrowFrom={18} bars={220} {oninspect} note={shareNote} />
-          <BarCard title="Turns per trainer battle" subtitle={`Average turns a trainer fight costs, every attempt counted · shown once the first trainer is fought · trainers still ahead of the run are charged its pace × the field's mean turns for them, weighted by how often runs meet them (hatched), once ${MIN_BATTLE_OBSERVATIONS}+ runs have fought them · Lower is better`}
+          <BarCard title="Turns per trainer battle" subtitle={`Average turns a trainer fight costs, every attempt counted · shown once the first trainer is fought · trainers the run did not fight are charged its pace × the field's mean turns for them, weighted by how often runs meet them (hatched), so every run is scored on the same roster, once ${MIN_BATTLE_OBSERVATIONS}+ runs have fought them · Lower is better`}
             entries={trainerTurns} picker pickerRows={pool} narrowFrom={18} bars={220} {oninspect} note={trainerNote} />
         {/if}
       </section>

@@ -304,7 +304,7 @@ export function fmtTpm(v) {
  * wildTurns — turns per wild battle (rule A: turns that STARTED in one), fewest first.
  * battleShare — share of the run's turns that started inside a battle, lowest first.
  * trainerTurns — turns spent in trainer battles (attempts summed per trainer) PLUS,
- *   for every trainer still ahead of the run, a projection built like the leg
+ *   for every trainer the run did not fight, a projection built like the leg
  *   projection (projectRun): the run's PACE — its turns on the trainers it
  *   fought ÷ the field's typical turns on those same trainers — times the
  *   field's typical turns for the missing trainer, weighted by how often runs
@@ -319,8 +319,8 @@ export const MIN_BATTLE_OBSERVATIONS = 4
 /**
  * The first-badge trainer roster in encounter order (src/referee/battles.py
  * TRAINER_GROUP). `passGate` is the ladder gate after which the trainer is
- * behind the run: a run that stamped it without fighting the trainer walked
- * past (or dodged) them and is not charged a projection.
+ * behind the run; it defines the population the encounter rate is measured
+ * on (runs that got past the spot, so they could have met the trainer).
  */
 export const TRAINER_ROSTER = [
   { group: 'rival_oaks_lab', name: "Rival (Oak's Lab)", short: 'Rival 1', mandatory: true, passGate: 'rival1_done' },
@@ -342,7 +342,8 @@ const passedGate = (r, gate) => r.completion >= 100 || (r.gateTurns != null && r
  * Runs × trainers: turns spent on each trainer (attempts summed), the field's
  * typical (mean) turns per trainer once MIN_BATTLE_OBSERVATIONS runs fought it,
  * each run's pace over the trainers it fought, and the projected average the
- * card shows. A trainer the run has not fought and not yet walked past is
+ * card shows. EVERY trainer the run has not fought — finished runs included,
+ * so every run is scored on the same roster (Andreas 2026-09-14) — is
  * projected at pace × typical, weighted by the share of runs that met that
  * trainer among those who passed their spot (1 for a mandatory trainer). The
  * Estimation methods page renders it; battleSeries().trainerTurns is built
@@ -371,7 +372,7 @@ export function trainerMatrix(pool, rows = pool) {
       const c = col[t.group]
       if (g) return { group: t.group, turns: perTurn ? g.turns : null, attempts: g.attempts, won: g.won, kind: 'fought',
         ratio: perTurn && g.turns != null && c.typical > 0 ? g.turns / c.typical : null, rate: null }
-      if (c.usable && pace != null && c.rate > 0 && !passedGate(r, t.passGate)) {
+      if (c.usable && pace != null && c.rate > 0) {
         return { group: t.group, turns: pace * c.typical, attempts: 0, kind: 'projected', ratio: pace, rate: c.rate }
       }
       return { group: t.group, turns: null, attempts: 0, kind: 'none', ratio: null, rate: null }
