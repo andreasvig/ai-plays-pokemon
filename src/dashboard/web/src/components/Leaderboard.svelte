@@ -4,16 +4,13 @@
   import HeadlineCards from './HeadlineCards.svelte'
   import SecondaryCards from './SecondaryCards.svelte'
   let {
-    stats = {}, oninspect,
+    oninspect,
     cardRows = [],
     allRows = [],
     benchmarks = [], benchmark = '', onbench = () => {},
   } = $props()
 
   const selectedGoal = $derived(benchmarks.find((b) => b.id === benchmark)?.goal ?? '')
-  const selectedBench = $derived(benchmarks.find((b) => b.id === benchmark) ?? null)
-  const legCaps = $derived((selectedBench?.gates ?? []).filter((g) => g.leg_cap_turns != null))
-  const legCapTotal = $derived(selectedBench?.leg_cap_total ?? null)
 </script>
 
 <section class="hero">
@@ -38,28 +35,6 @@
       referee reads game memory out-of-band and stamps story gates; a turn cap on every leg
       between gates ends runs that get stuck on one section. Every run here is the same frozen append-and-compact harness
       (config-5.x), the same first-badge ladder and the same ROM — the model is the only variable.</p>
-  {/if}
-  <div class="chips">
-    <span class="chip"><b>{stats.completers}</b> models at 100%</span>
-    <span class="chip"><b>{stats.modelsRanked}</b> ranked</span>
-    <span class="chip mono">{stats.benchmarkVersion}</span>
-  </div>
-  {#if legCaps.length}
-    <!-- Leg caps, read from the ladder YAML through the benchmarks payload: one
-         cell per gate, the cap being the most turns a run may spend on the leg
-         INTO that gate. The total is the longest run the ladder allows. -->
-    <div class="caps" aria-label="Turn cap per leg">
-      <span class="caps-label">Turn cap per leg{#if legCapTotal != null}&nbsp;· <span class="tnum">{legCapTotal}</span> max{/if}</span>
-      <ol class="caps-list">
-        {#each legCaps as g, i (g.id)}
-          <li class="cap" title={`${g.name}: at most ${g.leg_cap_turns} turns on the leg into this gate`}>
-            <span class="cap-n tnum">{i + 1}</span>
-            <span class="cap-name">{g.name}</span>
-            <b class="cap-turns tnum">{g.leg_cap_turns}</b>
-          </li>
-        {/each}
-      </ol>
-    </div>
   {/if}
 </section>
 
@@ -90,18 +65,6 @@
   h1 { font-size: 31px; font-weight: 700; letter-spacing: .01em; margin: 0 0 10px; }
   .tagline { max-width: 680px; font-size: 15px; line-height: 1.6; color: var(--muted); margin: 0; }
   .tagline em { color: var(--text); font-style: italic; }
-  .chips { display: flex; gap: 8px; margin-top: 18px; flex-wrap: wrap; }
-  .chip { font-size: 12px; color: var(--muted); background: var(--surface); border: 1px solid var(--border); padding: 5px 10px; border-radius: var(--radius-sm); }
-  .chip b { color: var(--text); font-weight: 750; }
-  .caps { margin-top: 16px; }
-  .caps-label { display: block; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--faint); margin-bottom: 6px; }
-  .caps-label .tnum { color: var(--muted); }
-  .caps-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
-  .cap { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 4px 8px 4px 6px; }
-  .cap-n { font-size: 10px; color: var(--faint); min-width: 14px; text-align: right; }
-  .cap-name { white-space: nowrap; }
-  .cap-turns { color: var(--text); font-weight: 700; }
-
   .bench { max-width: var(--maxw); margin: 18px auto 0; padding: 0 24px; }
   .bench-tabs { display: inline-flex; background: var(--wash); border-radius: var(--radius); padding: 4px; gap: 3px; }
   .bench-tabs button {

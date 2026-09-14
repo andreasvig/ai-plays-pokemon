@@ -76,16 +76,7 @@
   // through the shared selection store, the headline three always show all.
   const cardRows = $derived(collapseBest(leaderboard))
 
-  // name of the currently-selected benchmark (shown as the leaderboard chip)
-  const benchmarkName = $derived(benchmarks.find((b) => b.id === benchmark)?.name ?? benchmark)
 
-  // stats chips (mockData exported these precomputed; derive from live rows)
-  const stats = $derived({
-    modelsRanked: cardRows.length,
-    completers: cardRows.filter((r) => r.completion >= 100).length,
-    totalRuns: runs.length,
-    benchmarkVersion: benchmarkName,
-  })
 
   async function loadLeaderboard() {
     const rows = await api.fetchLeaderboard(benchmark || null)
@@ -289,7 +280,7 @@
       <QueueBar {active} {queue} lastError={queueError} onkill={killRun} onremove={removeFromQueue} onreorder={reorder}
         onnew={openNew} onspectate={() => go('/spectate')} />
     {/if}
-    <Leaderboard {cardRows} allRows={leaderboard} {stats} oninspect={inspect}
+    <Leaderboard {cardRows} allRows={leaderboard} oninspect={inspect}
       {benchmarks} {benchmark} onbench={selectBenchmark} />
     <Charts pool={leaderboard} onpick={(slug) => go(`/history/${slug}`)} />
   {:else if view === 'history'}
