@@ -16,7 +16,7 @@
 | 7 | Video backfill order | **All 24 runs**, but pilot on ONE medium-sized run first to learn the method, then the rest. Video work runs in Opus-level sub-agents to save tokens. |
 | 8 | Trainer identity for lost fights (evening) | **Option A: read `gTrainerBattleOpponent_A` (EWRAM 0x020386AE)** at every poll and from every savepoint; names the fight at the counter step, won or lost. Chosen over coordinate estimation (B) and flag-only attribution (C). OCR identity hints stay only as a fallback for pre-opponent records. |
 | 9 | Trainer projection (evening) | Pace-based like legs: own turns ÷ field mean over fought trainers, × field mean for EVERY unfought trainer (finished runs included, one fight each, no encounter-rate weighting); threshold 4 fights per column; a fight against a trainer <4 runs met is shown but not counted; a flag with no counted battle is not a fight. |
-| 10 | Board scope (evening) | Every card but Performance shows only runs that cleared Route 1. Battle share card removed. Movement efficiency counts the open leg, credited with the ground gained. |
+| 10 | Board scope (evening) | Every card but Performance shows only runs that cleared Route 1 — amended 2026-09-14 night: Cost per 10 turns and Turns per minute show every run too (per-turn rates; excluding them "was an error on my part"). Battle share card removed. Movement efficiency counts the open leg, credited with the ground gained. |
 
 The live probe for the in-battle address is **not needed**: §2.3 found and verified it offline from savepoints.
 

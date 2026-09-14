@@ -24,8 +24,9 @@
   const head = $derived(headlineSeries(rows, gateIds, pool))
   const sec = $derived(secondarySeries(rows, gateIds, pool))
   const bat = $derived(battleSeries(rows, pool))
-  // Every card but Performance shows only runs that cleared Route 1 (Andreas
-  // 2026-09-14): before it a run has too little play to say anything.
+  // Every card but Performance, Cost per 10 turns and Turns per minute shows
+  // only runs that cleared Route 1 (Andreas 2026-09-14): before it a run has
+  // too little play to say anything about a task-level figure.
   const past1 = (s) => s.row.gateTurns != null && s.row.gateTurns.route1_reached != null
   const ROUTE1 = 'did not clear Route 1.'
   const offNote = (n, why) => n ? `${n} ${picker ? 'selected ' : ''}model${n === 1 ? '' : 's'} not shown: ${why}` : ''
@@ -41,8 +42,11 @@
     above: s.complete ? `${s.row.turns}T` : null, tip: `${s.row.model}: ${s.label}${s.complete ? `, cleared in ${s.row.turns} turns` : ''}` })))
   const cost = $derived(head.cost.filter((s) => s.eligible && past1(s)).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: s.complete, tip: tip(s, fmtUsd) })))
   const time = $derived(head.time.filter((s) => s.eligible && past1(s)).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: s.complete, tip: tip(s, fmtMinutes) })))
-  const cost10 = $derived(sec.cost10.filter(past1).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true, tip: `${s.row.model}: ${s.label} per 10 turns` })))
-  const speed = $derived(sec.speed.filter(past1).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true, tip: `${s.row.model}: ${s.label} turns/min (${s.row.avgSPerTurn.toFixed(1)}s per turn)` })))
+  // Cost per 10 turns and turns per minute are per-turn rates every run has
+  // from its first turn, so they show EVERY run (Andreas 2026-09-14: excluding
+  // them was a mistake); the Route 1 rule stays on the rest.
+  const cost10 = $derived(sec.cost10.map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true, tip: `${s.row.model}: ${s.label} per 10 turns` })))
+  const speed = $derived(sec.speed.map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true, tip: `${s.row.model}: ${s.label} turns/min (${s.row.avgSPerTurn.toFixed(1)}s per turn)` })))
   const turnsPerTask = $derived(sec.turnsPerTask.filter((s) => s.eligible && past1(s)).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: s.complete,
     tip: `${s.row.model}: ${s.label} turns per task${s.complete ? '' : ` · projected ${Math.round(s.projected)} turns to beat Brock`}` })))
   const leftOff = $derived(sec.turnsPerTask.filter((s) => !s.eligible).length)
@@ -124,12 +128,12 @@
           <BarCard title="Cost per task" subtitle={`USD to beat Brock ÷ ${nGates} gates · partial runs projected (hatched) · Lower is better`}
             entries={cost} {picker} pickerRows={pool} {highlight} narrowFrom={18} bars={300} {oninspect} />
           <PlotCard kind="cost" {pool} {onpick} {picker} {highlight} />
-          <BarCard title="Cost per 10 turns" subtitle="Average USD for ten turns, all calls included · Lower is better" entries={cost10} {picker} pickerRows={pool} {highlight} narrowFrom={18} bars={220} {oninspect} note={earlyNote} />
+          <BarCard title="Cost per 10 turns" subtitle="Average USD for ten turns, all calls included · Lower is better" entries={cost10} {picker} pickerRows={pool} {highlight} narrowFrom={18} bars={220} {oninspect} />
         {:else if s.id === 'speed'}
           <BarCard title="Time per task" subtitle={`Minutes to beat Brock ÷ ${nGates} gates · partial runs projected (hatched) · Lower is better`}
             entries={time} {picker} pickerRows={pool} {highlight} narrowFrom={18} bars={300} {oninspect} />
           <PlotCard kind="time" {pool} {onpick} {picker} {highlight} />
-          <BarCard title="Turns per minute" subtitle="Wall clock, all turns of the run · Higher is better" entries={speed} {picker} pickerRows={pool} {highlight} narrowFrom={18} bars={220} {oninspect} note={earlyNote} />
+          <BarCard title="Turns per minute" subtitle="Wall clock, all turns of the run · Higher is better" entries={speed} {picker} pickerRows={pool} {highlight} narrowFrom={18} bars={220} {oninspect} />
         {:else}
           <BarCard title="Turns per task" subtitle={`Turns to beat Brock ÷ ${nGates} gates · partial runs projected (hatched) · Lower is better`}
             entries={turnsPerTask} {picker} pickerRows={pool} {highlight} narrowFrom={18} bars={300} {oninspect} note={leftNote} />
