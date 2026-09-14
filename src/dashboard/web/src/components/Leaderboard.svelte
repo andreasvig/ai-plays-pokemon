@@ -2,7 +2,6 @@
   import { STATIC } from '../lib/static.js'
   import { BENCH_LABEL } from '../lib/version.js'
   import HeadlineCards from './HeadlineCards.svelte'
-  import SecondaryCards from './SecondaryCards.svelte'
   let {
     oninspect,
     cardRows = [],
@@ -55,10 +54,6 @@
 
 <HeadlineCards rows={cardRows} pool={allRows} {oninspect} />
 
-<!-- The per-turn measurements the cards used to lead with (Andreas 2026-09-13:
-     "the old measurements should still be there, it should just be below like
-     on Artificial Analysis"), plus average turns per task with projections. -->
-<SecondaryCards pool={allRows} {oninspect} />
 
 <style>
   .hero { max-width: var(--maxw); margin: 0 auto; padding: 40px 24px 8px; }

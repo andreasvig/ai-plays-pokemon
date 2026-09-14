@@ -45,11 +45,11 @@
 {#if rows.length}
 <section class="cards" aria-label="Headline comparison">
   <BarCard title="Performance" subtitle="Gate completion · clears ranked by fewest turns above the line · Higher is better"
-    entries={performance} line={{ frac: PERF_LINE, label: '100%' }} {oninspect} />
+    entries={performance} line={{ frac: PERF_LINE, label: '100%' }} href="#performance" {oninspect} />
   <BarCard title="Time per task" subtitle={`Minutes to beat Brock ÷ ${nGates} gates · partial runs projected · Lower is better`}
-    entries={time} {oninspect} />
+    entries={time} href="#speed" {oninspect} />
   <BarCard title="Cost per task" subtitle={`USD to beat Brock ÷ ${nGates} gates · partial runs projected · Lower is better`}
-    entries={cost} {oninspect} />
+    entries={cost} href="#price" {oninspect} />
 
   <p class="legend faint">
     {#each vendors as v (v.key)}<span class="key" style={`--c:${v.color}`}></span>{v.label}{/each}

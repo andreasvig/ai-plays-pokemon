@@ -260,3 +260,24 @@ happen on the laptop.
   the full board and no picker; Per-turn measurements and both scatter plots
   follow the shared selection.
 
+## 11. Sections with a sticky menu (2026-09-14, later)
+
+> Andreas: "below the 3 top level things I would like to mimic Artificial
+> Analysis, with a left-sided menu: performance, price, speed, efficiency,
+> where when you scroll down each gets highlighted and has a big header."
+> Decisions: 1a every section chart follows the picker (the headline three do
+> not); 2a Efficiency is Turns per task only for now; 3a the per-turn strip is
+> dissolved into the sections; 4a plain menu items, active one bold with a rule
+> in the section colour.
+
+- `Sections.svelte`: two columns, sticky menu of anchor links (`#price`) and
+  four sections, each with a big heading, square marker and one-line blurb.
+  The active item is the last section whose top passed the menu line; the URL
+  hash follows it (replaceState). Under 960px the menu is a sticky row.
+- Performance: the big performance bars. Price: cost per task, the cost plot,
+  cost per 10 turns. Speed: time per task, the time plot, turns per minute.
+  Efficiency: turns per task. Bars and plots are the same `BarCard` /
+  `PlotCard` components, grown; `Charts.svelte` and `SecondaryCards.svelte`
+  are gone.
+- The headline cards' titles link to their section.
+

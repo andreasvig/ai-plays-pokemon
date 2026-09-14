@@ -14,20 +14,22 @@
   import { vendorOf } from '../lib/board.js'
   import VendorMark from './VendorMark.svelte'
   import ModelPicker from './ModelPicker.svelte'
-  let { title, subtitle = '', entries = [], line = null, picker = false, pickerRows = [], bars = 190, oninspect = () => {}, note = '' } = $props()
+  // `href`: the title links to a board section (#price) — the headline strip's
+  // cards open the section that holds their big version.
+  // `narrowFrom`: bar count from which values print vertically — 9 fits a
+  // third-width card, a full-width section card holds about twice as many.
+  let { title, subtitle = '', entries = [], line = null, picker = false, pickerRows = [], bars = 190, oninspect = () => {}, note = '', href = null, narrowFrom = 9 } = $props()
   // A bar shorter than this share of the area prints its value above instead.
   const INSIDE_MIN = 0.16
-  // Past this many bars in a third-width card the bars are ~25px wide, so the
-  // value is printed vertically (reads bottom-to-top) instead of colliding with
-  // its neighbours.
-  const NARROW_FROM = 9
-  const narrow = $derived(entries.length >= NARROW_FROM)
+  // Past `narrowFrom` bars the value is printed vertically (reads bottom-to-top)
+  // instead of colliding with its neighbours.
+  const narrow = $derived(entries.length >= narrowFrom)
 </script>
 
 <div class="card">
   <header>
     <div class="head">
-      <h3>{title}</h3>
+      <h3>{#if href}<a {href}>{title}<span class="arrow" aria-hidden="true">↓</span></a>{:else}{title}{/if}</h3>
       {#if subtitle}<p class="faint">{subtitle}</p>{/if}
     </div>
     {#if picker}<ModelPicker rows={pickerRows} />{/if}
@@ -61,6 +63,9 @@
   .head { min-width: 0; }
   h3 { font-size: 16px; font-weight: 750; margin: 0; letter-spacing: -.01em; }
   header p { font-size: 11.5px; margin: 4px 0 0; line-height: 1.45; }
+  h3 a { color: inherit; text-decoration: none; }
+  h3 a:hover { text-decoration: underline; }
+  .arrow { font-size: 12px; color: var(--faint); margin-left: 6px; }
 
   /* --bars is the bar area, --lane the mark + angled alias under the baseline,
      --top headroom for a value printed above a short bar. The alias is rotated

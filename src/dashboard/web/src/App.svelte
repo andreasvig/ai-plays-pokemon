@@ -1,7 +1,7 @@
 <script>
   import TopBar from './components/TopBar.svelte'
   import Leaderboard from './components/Leaderboard.svelte'
-  import Charts from './components/Charts.svelte'
+  import Sections from './components/Sections.svelte'
   import { collapseBest } from './lib/board.js'
   import History from './components/History.svelte'
   import QueueBar from './components/QueueBar.svelte'
@@ -282,7 +282,7 @@
     {/if}
     <Leaderboard {cardRows} allRows={leaderboard} oninspect={inspect}
       {benchmarks} {benchmark} onbench={selectBenchmark} />
-    <Charts pool={leaderboard} onpick={(slug) => go(`/history/${slug}`)} />
+    <Sections pool={leaderboard} oninspect={inspect} onpick={(slug) => go(`/history/${slug}`)} />
   {:else if view === 'history'}
     <History {runs} oninspect={inspect} oncontinue={openContinue} ondelete={removeRun} />
   {:else if view === 'spectate'}
