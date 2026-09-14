@@ -41,6 +41,11 @@ import struct
 from pathlib import Path
 from typing import Any, Optional
 
+from src.referee.battles import (
+    GAME_STAT_TOTAL_BATTLES, GAME_STAT_TRAINER_BATTLES, GAME_STAT_WILD_BATTLES, GMAIN_IN_BATTLE_BYTE,
+    NUM_GAME_STATS, SB1_GAME_STATS, SB2_ENCRYPTION_KEY, BattleTracker, decode_game_stat, decode_trainer_flags,
+    in_battle_from_byte,
+)
 from src.referee.checkpoints import Checkpoint, MultiGate, Node
 from src.referee.progress import ProgressTracker
 from src.referee.walkgraph import DEFAULT_GRAPH_PATH, WalkGraph
@@ -49,7 +54,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # --- Verified address constants (FireRed BPRE-US v1.0 == v1.1) -----------------
 GSAVEBLOCK1_PTR = 0x03005008
-GSAVEBLOCK2_PTR = 0x0300500C  # noqa: F841 (read for tear/diagnostics symmetry)
+GSAVEBLOCK2_PTR = 0x0300500C  # its encryptionKey (+0xF20) decodes the battle counters
 
 SB1_PLAYER_X = 0x0000  # s16
 SB1_PLAYER_Y = 0x0002  # s16
@@ -74,7 +79,9 @@ EWRAM_BROAD_HI = 0x02040000
 # We must read enough of SaveBlock1 in one block to cover map + flags + the var
 # we care about. The vars array starts at +0x1000; ids run to 0x40FF, so the
 # array is 256*2 = 0x200 bytes. Read through the end of the vars array.
-_SB1_READ_LEN = SB1_VARS + 256 * 2  # 0x1200
+# 0x1300 since 2026-09-14: the read runs through gameStats[64] (battle counters,
+# src/referee/battles.py). Everything before 0x1200 is unchanged.
+_SB1_READ_LEN = SB1_GAME_STATS + NUM_GAME_STATS * 4  # 0x1300
 
 
 def _load_default_graph(path: Optional[Any] = None) -> Optional[WalkGraph]:
@@ -136,6 +143,8 @@ class Referee:
             walkgraph if walkgraph is not None else _load_default_graph(graph_path)
         )
         self.progress = ProgressTracker(self.walkgraph, self.nodes)
+        # Battle telemetry (plan: artifacts/battle-and-movement-fidelity/plan.md).
+        self.battles = BattleTracker()
         self.emulator = emulator
         self.logger = logger
         self.run_dir = Path(run_dir)
@@ -196,12 +205,14 @@ class Referee:
             # leg from them + the stamps (nothing derived is persisted).
             self.progress.load_state(data)
             self.progress.observe_stamps(self.stamps)
+            self.battles.load_state(data)
         except Exception:
             # Corrupt/partial state must never crash the run — start fresh.
             self.stamps = {}
             self.autofilled = set()
             self.progress.load_state({})
             self.progress.observe_stamps({})
+            self.battles.load_state({})
 
     def export_state(self) -> dict:
         """The referee latch as a plain dict — the unit a savepoint bundle stores.
@@ -217,6 +228,8 @@ class Referee:
             # input of the progress tracker; capped to the savepoint turn on
             # --continue exactly like the stamps (runner._restore_referee_state).
             "positions": self.progress.export_state()["positions"],
+            # Per-poll battle records ``[turn, in_battle, total, wild, trainer, [ids]]``.
+            "battle_records": self.battles.export_state()["battle_records"],
         }
 
     def stamped_events(self) -> list[dict]:
@@ -290,7 +303,18 @@ class Referee:
                 continue  # torn read — retry once
 
             party_count = self.emulator.read_memory(PLAYER_PARTY_COUNT, 1)[0]
-            return _MemorySnapshot(block, party_count)
+            # Battle telemetry reads. Best-effort: an emulator (or test fake)
+            # that cannot serve them leaves the battle fields None for this
+            # poll; the gate latch above must never depend on them.
+            key = in_battle_byte = None
+            try:
+                sb2_ptr = self._read_u32(GSAVEBLOCK2_PTR)
+                if self._in_ewram(sb2_ptr):
+                    key = self._read_u32(sb2_ptr + SB2_ENCRYPTION_KEY)
+                in_battle_byte = self.emulator.read_memory(GMAIN_IN_BATTLE_BYTE, 1)[0]
+            except Exception:
+                key = in_battle_byte = None
+            return _MemorySnapshot(block, party_count, key=key, in_battle_byte=in_battle_byte)
 
         # Pointer kept moving across both attempts — give up for this poll.
         return None
@@ -337,6 +361,13 @@ class Referee:
                 "next_gate": pos["next_gate"],
             },
         )
+        # Battle telemetry (2026-09-14): in-battle bit, the game's own battle
+        # counters, trainer-defeated flags. Skipped for a poll whose extra reads
+        # failed (counters None) so a bad read never fabricates a record.
+        battle = snap.battle_state()
+        if battle is not None:
+            meta = self.battles.record(turn_number, **battle)
+            self.logger.log_event("referee_battle_state", meta)
 
         for cp in self.checkpoints:
             if cp.id in self.stamps:
@@ -750,6 +781,8 @@ class Referee:
             # fraction of the current leg), per-leg stats, graph provenance.
             # Whole ProgressTracker.summary() dict — see src/referee/progress.py.
             "progress": self.progress.summary(),
+            # Battle telemetry — whole BattleTracker.summary() dict, see src/referee/battles.py.
+            "battles": self.battles.summary(),
         }
 
 
@@ -760,11 +793,26 @@ class _MemorySnapshot:
     decodes fields lazily on access. All multi-byte fields are little-endian.
     """
 
-    __slots__ = ("_block", "party_count")
+    __slots__ = ("_block", "party_count", "key", "in_battle_byte")
 
-    def __init__(self, block: bytes, party_count: int) -> None:
+    def __init__(self, block: bytes, party_count: int, key: Optional[int] = None,
+                 in_battle_byte: Optional[int] = None) -> None:
         self._block = block
         self.party_count = party_count
+        self.key = key  # SaveBlock2 encryptionKey; None when the read failed
+        self.in_battle_byte = in_battle_byte  # gMain byte holding inBattle; None when unread
+
+    def battle_state(self) -> Optional[dict]:
+        """Kwargs for ``BattleTracker.record`` or None when this poll cannot say."""
+        if self.key is None or self.in_battle_byte is None or len(self._block) < SB1_GAME_STATS + 4 * (GAME_STAT_TRAINER_BATTLES + 1):
+            return None
+        return {
+            "in_battle": in_battle_from_byte(self.in_battle_byte),
+            "total": decode_game_stat(self._block, GAME_STAT_TOTAL_BATTLES, self.key),
+            "wild": decode_game_stat(self._block, GAME_STAT_WILD_BATTLES, self.key),
+            "trainer": decode_game_stat(self._block, GAME_STAT_TRAINER_BATTLES, self.key),
+            "trainers": decode_trainer_flags(self._block, SB1_FLAGS),
+        }
 
     @property
     def map_group(self) -> int:
