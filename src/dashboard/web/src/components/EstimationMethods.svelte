@@ -68,7 +68,7 @@
   <ol class="steps">
     <li><b>What counts.</b> The game's own battle counters (wild, trainer) and the trainer-defeated flags are read from memory every turn; older runs get them from their save states every 10 turns, with the turn-by-turn battle state read off each turn's screenshot (97.7% agreement on 610 labelled frames).</li>
     <li><b>Turn cost.</b> A turn belongs to the state it started in: a turn that began inside a battle is charged to that battle, a battle that began and ended inside one turn costs nothing. Losses and rematches are attempts, summed per trainer.</li>
-    <li><b>Turns per trainer battle.</b> The card averages a run's turns over its trainer fights. A run enters once it has fought its first trainer. Every trainer the run did not fight — whether it stopped before them or walked past — is projected the way missing legs are, so every run is scored on the same roster: the run's <b>pace</b> — its turns on the trainers it did fight ÷ the field's typical turns on those same trainers — times the field's typical turns for that trainer. Typical = the mean over the runs that fought that trainer, used once {MIN_BATTLE_OBSERVATIONS}+ have. An optional trainer can be dodged, so their projection is weighted by the share of runs that met them among the runs that got past their spot; a mandatory trainer (the rival in Oak's Lab, Brock) counts fully. A projected trainer makes the bar hatched. The table below is the schema: every run, every trainer.</li>
+    <li><b>Turns per trainer battle.</b> The card averages a run's turns over its trainer fights. A run enters once it has fought its first trainer. Every trainer the run did not fight — whether it stopped before them or walked past — is projected the way missing legs are, so every run is scored on the same roster: the run's <b>pace</b> — its turns on the trainers it did fight ÷ the field's typical turns on those same trainers — times the field's typical turns for that trainer. Typical = the mean over the runs that fought that trainer, used once {MIN_BATTLE_OBSERVATIONS}+ have. Each projected trainer counts as one fight. A projected trainer makes the bar hatched. The table below is the schema: every run, every trainer.</li>
     <li><b>Movement.</b> Shortest walk on the FireRed tile graph (ledges one-way, doors one step) from where a map leg opened to its gate, ÷ the overworld steps actually taken on that leg, summed over the map legs the run closed. Steps come from the per-input trace on new runs, from the recording on backfilled runs, else from the shortest path between per-turn polls, which is a lower bound — the card's tooltip says which.</li>
   </ol>
 
@@ -176,7 +176,7 @@
   </p>
 
   <h3 class="tm-head">Trainers · turns spent on each</h3>
-  <p class="faint note tm-note">Turns that started inside a fight with that trainer, every attempt summed. Under the number: the ratio to the trainer's typical turns (0.50× = half the typical), and "2 tries" when the run fought the trainer more than once. Hatched cells are projections for trainers the run did not fight: the run's pace × the trainer's typical turns, and the share of runs that meet that trainer (an optional trainer can be dodged; the projection counts that share of a fight). Typical = mean over the runs that fought the trainer; a column counts toward pace and projection once {MIN_BATTLE_OBSERVATIONS}+ runs have fought it. Dimmed runs have not fought their first trainer or have no per-turn battle state.</p>
+  <p class="faint note tm-note">Turns that started inside a fight with that trainer, every attempt summed. Under the number: the ratio to the trainer's typical turns (0.50× = half the typical), and "2 tries" when the run fought the trainer more than once. Hatched cells are projections for trainers the run did not fight: one fight at the run's pace × the trainer's typical turns. Typical = mean over the runs that fought the trainer; a column counts toward pace and projection once {MIN_BATTLE_OBSERVATIONS}+ runs have fought it. Dimmed runs have not fought their first trainer or have no per-turn battle state.</p>
   <div class="scroll">
     <table class="m tm">
       <thead>
@@ -210,13 +210,13 @@
                   <span class="r">{typ > 0 && c.turns != null ? x(c.turns / typ) : ''}{c.attempts > 1 ? `${typ > 0 ? ' · ' : ''}${c.attempts} tries` : ''}</span>
                 </td>
               {:else if c.kind === 'projected'}
-                <td class="cell est" style={`--fill:${tint(c.ratio)}`} title={`projected: pace ${x(c.ratio)} × typical ${trainers.columns.find((k) => k.group === c.group)?.typical.toFixed(1)} turns${c.rate < 1 ? ` · ${Math.round(c.rate * 100)}% of runs past this spot met them` : ''}`}><span class="t">{c.turns.toFixed(1)}</span><span class="r">est{c.rate < 1 ? ` · ${Math.round(c.rate * 100)}%` : ''}</span></td>
+                <td class="cell est" style={`--fill:${tint(c.ratio)}`} title={`projected: pace ${x(c.ratio)} × typical ${trainers.columns.find((k) => k.group === c.group)?.typical.toFixed(1)} turns`}><span class="t">{c.turns.toFixed(1)}</span><span class="r">est</span></td>
               {:else}
                 <td class="none">·</td>
               {/if}
             {/each}
             <td class="num">{t.eligible ? x(t.pace) : '—'}</td>
-            <td class="num" title={t.projectedCount ? `${t.attempts} fought + ${t.projectedWeight.toFixed(1)} expected` : ''}>{t.attempts}{t.projectedCount ? ` +${t.projectedWeight.toFixed(1)}` : ''}</td>
+            <td class="num" title={t.projectedCount ? `${t.attempts} fought + ${t.projectedCount} projected` : ''}>{t.attempts}{t.projectedCount ? ` +${t.projectedCount}` : ''}</td>
             <td class="num">{t.measured ?? '—'}</td>
             <td class="num"><b>{t.avg == null ? '—' : t.avg.toFixed(1)}</b></td>
           </tr>
@@ -227,13 +227,6 @@
           <td class="run faint">typical (mean) · fights</td>
           {#each trainers.columns as c}
             <td class="num" class:faint={!c.usable} title={c.usable ? `mean over ${c.n} fights, used for pace and projection` : `${c.n} fight${c.n === 1 ? '' : 's'} — below ${MIN_BATTLE_OBSERVATIONS}, not used`}>{c.typical == null ? '—' : c.typical.toFixed(1)}<span class="r"> · {c.n}</span></td>
-          {/each}
-          <td class="num" colspan="4"></td>
-        </tr>
-        <tr class="ref">
-          <td class="run faint">met by runs past them</td>
-          {#each trainers.columns as c}
-            <td class="num" class:faint={!c.usable} title={c.mandatory ? 'mandatory — every run meets them' : `${c.met} of the ${c.passed} runs that got past this spot fought them`}>{c.mandatory ? '100%' : c.rate == null ? '—' : Math.round(c.rate * 100) + '%'}</td>
           {/each}
           <td class="num" colspan="4"></td>
         </tr>
