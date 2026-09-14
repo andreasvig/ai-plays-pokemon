@@ -42,6 +42,8 @@ TRACE_SPEC: list[str] = [
     f"*{GSAVEBLOCK1_PTR:#x}+{SB1_GAME_STATS + 4 * GAME_STAT_TOTAL_BATTLES:#x}:4",
 ]
 
+MAX_PLAUSIBLE_BATTLES = 10_000  # a torn read shows up as a huge number
+
 DIRECTIONS = {"U": "up", "D": "down", "L": "left", "R": "right", "UP": "up", "DOWN": "down", "LEFT": "left", "RIGHT": "right"}
 
 
@@ -59,7 +61,11 @@ def decode_samples(rows: list[tuple[str, list[bytes]]], key: Optional[int] = Non
         if len(batt) >= 1:
             d["in_battle"] = in_battle_from_byte(batt[0])
         if len(stat) >= 4 and key is not None:
-            d["battles_total"] = struct.unpack_from("<I", stat, 0)[0] ^ (key & 0xFFFFFFFF)
+            # A sample taken mid-warp (SaveBlock1 being relocated) can read the
+            # counter torn: live 2026-09-14 saw 1379579746 on a stair step.
+            # No run plays that many battles; drop the value, keep the tile.
+            v = struct.unpack_from("<I", stat, 0)[0] ^ (key & 0xFFFFFFFF)
+            d["battles_total"] = v if v <= MAX_PLAUSIBLE_BATTLES else None
         out.append(d)
     return out
 

@@ -37,6 +37,8 @@ def test_decode_reads_tile_bit_and_counter_and_tolerates_missing_ranges():
     assert out[1]["x"] is None and out[1]["in_battle"] is None and out[1]["battles_total"] is None
     assert out[2]["x"] == 6 and out[2]["in_battle"] is None
     assert trace.decode_samples(rows, None)[0]["battles_total"] is None  # no key → no counter
+    torn = [("D", [pos(10, 3), b"\x00", struct.pack("<I", 1379579746 ^ KEY)])]  # mid-warp torn counter (live 2026-09-14)
+    assert trace.decode_samples(torn, KEY)[0]["battles_total"] is None and trace.decode_samples(torn, KEY)[0]["x"] == 10
 
 
 def test_a_blind_trace_reports_no_steps_rather_than_zero():
