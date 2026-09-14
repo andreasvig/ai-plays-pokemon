@@ -91,6 +91,8 @@ export function toRun(s) {
     // Turn each cleared gate was stamped, gate id → turn (2026-09-13). The
     // headline cards project a partial run to a full clear from these.
     gateTurns: s.gate_turns ?? null,
+    avgInputsPerTurn: s.avg_inputs_per_turn ?? null,
+    inputCounts: s.input_counts ?? null,
     completion,
     progress,
     // the current leg: which gate it leads to, how much of it was walked

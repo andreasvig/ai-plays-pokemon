@@ -104,3 +104,25 @@ def test_projection_records_each_cleared_gates_turn_in_ladder_order(tmp_path):
     (bare / "run_summary.json").write_text(json.dumps({"run_id": bare.name, "kind": "official", "status": "completed",
                                                         "session": {"llm_alias": "x(high)", "total_turns": 5}, "cost": {"total_usd": 0}}))
     assert project_run_dir(bare).gate_turns is None
+
+
+def test_projection_averages_game_inputs_per_turn_from_the_explanations(tmp_path):
+    """Efficiency · inputs per turn (2026-09-14): mean length of the input list
+    over accepted turns (a retried turn keeps its last list) and the button mix,
+    most-pressed first. No events file → None, so the board leaves the run off."""
+    run = _run_dir(tmp_path, {"gates": _GATES, "furthest": "left_house", "termination_reason": None})
+    events = [
+        {"type": "turn_explanation", "turn": 1, "explanation": {"action": ["up", "up", "a"]}},
+        {"type": "turn_explanation", "turn": 2, "explanation": {"action": ["wait"]}},          # superseded by the retry below
+        {"type": "turn_explanation", "turn": 2, "explanation": {"action": ["A", "b", "up"]}},
+        {"type": "llm_output", "turn": 3, "args": {"inputs": ["left"]}},                        # not an explanation: ignored
+    ]
+    (run / "events.jsonl").write_text("\n".join(json.dumps(e) for e in events) + "\n")
+    s = project_run_dir(run)
+    assert s.avg_inputs_per_turn == 3.0
+    assert s.input_counts == {"up": 3, "a": 2, "b": 1}
+    assert list(s.input_counts) == ["up", "a", "b"]
+    (tmp_path / "bare").mkdir()
+    bare = _run_dir(tmp_path / "bare", {"gates": _GATES, "furthest": "left_house", "termination_reason": None})
+    assert project_run_dir(bare).avg_inputs_per_turn is None and project_run_dir(bare).input_counts is None
+

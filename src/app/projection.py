@@ -37,7 +37,7 @@ _DEFAULT_LADDER = Path("configs/checkpoints-firered-v1.yaml")
 #   1 — 2026-09-09: error / crash (why a crashed run ended).
 #   2 — 2026-09-09: record (the spec the run was recorded with, for continues).
 #   3 — 2026-09-11: open-leg fraction capped at OPEN_LEG_FRACTION_CAP.
-PROJECTION_VERSION = 4  # 4 (2026-09-13): gate_turns (per-gate stamps for the board's projections)
+PROJECTION_VERSION = 5  # 5 (2026-09-14): avg_inputs_per_turn + input_counts (Efficiency · inputs per turn)
 
 # Status values the report treats as "cleared" for a gate (mirror report.py).
 _CLEARED_STATUSES = ("done", "auto")
@@ -88,6 +88,48 @@ def _load_json(path: Path) -> dict | None:
             return json.load(f)
     except Exception:
         return None
+
+
+def _input_stats(run_dir: Path) -> tuple[float | None, dict[str, int] | None]:
+    """Average game inputs per accepted turn and the button mix, from the
+    ``turn_explanation`` events (one per settled turn, ``explanation.action`` is
+    the input list the emulator ran). A continued run's events.jsonl carries the
+    source's turns too, which is right here: the average is over the whole run,
+    like ``session.total_turns``. A retried turn keeps its last explanation.
+    (None, None) when the run has no events file or no explained turn — older
+    harnesses — so the board leaves the run off that card rather than drawing 0.
+    """
+    path = run_dir / "events.jsonl"
+    if not path.is_file():
+        return None, None
+    per_turn: dict[int, list] = {}
+    try:
+        with path.open() as fh:
+            for line in fh:
+                if '"turn_explanation"' not in line:
+                    continue
+                try:
+                    e = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if e.get("type") != "turn_explanation":
+                    continue
+                action = (e.get("explanation") or {}).get("action")
+                turn = e.get("turn")
+                if isinstance(action, list) and isinstance(turn, int):
+                    per_turn[turn] = action
+    except OSError:
+        return None, None
+    if not per_turn:
+        return None, None
+    counts: dict[str, int] = {}
+    total = 0
+    for action in per_turn.values():
+        total += len(action)
+        for a in action:
+            key = str(a).strip().lower()
+            counts[key] = counts.get(key, 0) + 1
+    return total / len(per_turn), dict(sorted(counts.items(), key=lambda kv: -kv[1]))
 
 
 def _safe_div(numerator: float, denominator: float) -> float:
@@ -152,6 +194,7 @@ def project_run_dir(run_dir: Path) -> RunSummary | None:
 
     avg_cost_per_turn_usd = _safe_div(total_cost_usd, turns)
     avg_s_per_turn = _safe_div(duration_s, turns)
+    avg_inputs_per_turn, input_counts = _input_stats(run_dir)
 
     # --- explicit-or-inferred top-level fields ---
     run_id = summary.get("run_id") or run_dir.name
@@ -278,6 +321,8 @@ def project_run_dir(run_dir: Path) -> RunSummary | None:
         gates_reached=gates_reached,
         total_gates=total_gates,
         gate_turns=gate_turns,
+        avg_inputs_per_turn=avg_inputs_per_turn,
+        input_counts=input_counts,
         progress=progress,
         leg_gate=leg_gate,
         leg_fraction=leg_fraction,

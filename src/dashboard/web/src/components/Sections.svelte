@@ -33,13 +33,23 @@
   const turnsPerTask = $derived(sec.turnsPerTask.filter((s) => s.eligible).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: s.complete,
     tip: `${s.row.model}: ${s.label} turns per task${s.complete ? '' : ` · projected ${Math.round(s.projected)} turns to beat Brock`}` })))
   const leftOff = $derived(sec.turnsPerTask.filter((s) => !s.eligible).length)
+  // Inputs per turn: the tooltip names the run's three most-pressed inputs.
+  const mix = (r) => {
+    const c = r.inputCounts || {}
+    const total = Object.values(c).reduce((a, b) => a + b, 0) || 1
+    return Object.entries(c).slice(0, 3).map(([k, n]) => `${k} ${Math.round(n / total * 100)}%`).join(', ')
+  }
+  const inputsPerTurn = $derived(sec.inputsPerTurn.filter((s) => s.eligible).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true,
+    tip: `${s.row.model}: ${s.label} inputs per turn on average${mix(s.row) ? ` · most pressed: ${mix(s.row)}` : ''}` })))
+  const noInputs = $derived(sec.inputsPerTurn.filter((s) => !s.eligible).length)
+  const inputsNote = $derived(noInputs ? `${noInputs} selected model${noInputs === 1 ? '' : 's'} not shown: the run predates per-turn input records.` : '')
   const leftNote = $derived(leftOff ? `${leftOff} selected model${leftOff === 1 ? '' : 's'} not shown: never reached ${fromGate}, so nothing to project.` : '')
 
   const SECTIONS = [
     { id: 'performance', label: 'Performance', color: 'var(--accent)', blurb: 'How far each model gets through the first-badge ladder, and how few turns a full clear takes.' },
     { id: 'price', label: 'Price', color: 'var(--retry)', blurb: 'What a task costs: USD to finish the ladder ÷ gates, projected for partial runs, and the raw USD per ten turns behind it.' },
     { id: 'speed', label: 'Speed', color: 'var(--amber)', blurb: 'How long a task takes: wall-clock minutes to finish the ladder ÷ gates, projected for partial runs, and the turns per minute behind it.' },
-    { id: 'efficiency', label: 'Efficiency', color: 'var(--green)', blurb: 'Turns per task: how many agent turns a gate costs, projected for partial runs.' },
+    { id: 'efficiency', label: 'Efficiency', color: 'var(--green)', blurb: 'How much a model gets out of each turn: turns per task, projected for partial runs, and how many game inputs it batches into one turn.' },
   ]
   // The section in view: the last one whose top has passed the sticky menu's
   // line. Cheaper and steadier than an intersection ratio for tall sections.
@@ -86,6 +96,8 @@
         {:else}
           <BarCard title="Turns per task" subtitle={`Turns to beat Brock ÷ ${nGates} gates · partial runs projected (hatched) · Lower is better`}
             entries={turnsPerTask} picker pickerRows={pool} narrowFrom={18} bars={300} {oninspect} note={leftNote} />
+          <BarCard title="Inputs per turn" subtitle="Average game inputs (buttons and waits) one turn carries · hover for the button mix · more per turn = fewer turns, if the batch lands"
+            entries={inputsPerTurn} picker pickerRows={pool} narrowFrom={18} bars={220} {oninspect} note={inputsNote} />
         {/if}
       </section>
     {/each}

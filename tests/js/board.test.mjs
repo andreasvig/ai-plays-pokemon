@@ -177,11 +177,19 @@ test('secondary strip keeps the per-turn measurements and adds turns per task', 
   assert.equal(turnsPerTask[0].row.model, 'gpt-6-astra(medium)')  // 150 / 12
   assert.equal(turnsPerTask[0].label, '12.5')
   assert.equal(turnsPerTask.at(-1).eligible, false)
+  // Inputs per turn: most first; a row without the statistic is ineligible and last.
+  const withInputs = RANKED.map((r, i) => ({ ...r, avgInputsPerTurn: i === 0 ? null : 2 + i }))
+  const { inputsPerTurn } = secondarySeries(withInputs, GATES, withInputs)
+  assert.equal(inputsPerTurn[0].row.model, 'gpt-5.6-luna(max)')
+  assert.equal(inputsPerTurn[0].label, '8.0')
+  assert.equal(inputsPerTurn[0].height, 1)
+  assert.equal(inputsPerTurn.at(-1).row.model, 'gpt-6-astra(medium)')
+  assert.equal(inputsPerTurn.at(-1).eligible, false)
 })
 
 test('empty board yields empty series without dividing by zero', () => {
   assert.deepEqual(headlineSeries([], GATES), { performance: [], time: [], cost: [] })
-  assert.deepEqual(secondarySeries([], GATES), { speed: [], cost10: [], turnsPerTask: [] })
+  assert.deepEqual(secondarySeries([], GATES), { speed: [], cost10: [], turnsPerTask: [], inputsPerTurn: [] })
 })
 
 test('estimationMatrix: every run, every leg, ratios to the typical leg, estimates that sum to the projection', () => {

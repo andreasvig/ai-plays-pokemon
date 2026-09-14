@@ -225,7 +225,16 @@ export function secondarySeries(rows, gateIds = [], pool = rows) {
   const cost10 = costVals.map((c) => ({ ...c, height: c.value / costMax, label: fmtUsd(c.value) }))
 
   const turnsPerTask = lowerIsBetter(perTaskSeries(rows, gateIds, pool), (s) => s.turnsPerTask, (v) => v.toFixed(1))
-  return { speed, cost10, turnsPerTask }
+
+  // Inputs per turn (2026-09-14): mean game inputs a turn carries, most first.
+  // A row without the statistic (older harness) is ineligible and left off.
+  const inputVals = rows.filter((r) => r.avgInputsPerTurn != null)
+    .map((r) => ({ row: r, value: r.avgInputsPerTurn, eligible: true, complete: true }))
+    .sort((a, b) => b.value - a.value)
+  const inputMax = inputVals.length ? Math.max(...inputVals.map((s) => s.value)) || 1 : 1
+  const inputsPerTurn = inputVals.map((s) => ({ ...s, height: s.value / inputMax, label: s.value.toFixed(1) }))
+    .concat(rows.filter((r) => r.avgInputsPerTurn == null).map((r) => ({ row: r, value: null, eligible: false, complete: true, height: 0, label: '—' })))
+  return { speed, cost10, turnsPerTask, inputsPerTurn }
 }
 
 /**
