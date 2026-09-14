@@ -245,6 +245,9 @@ test('battle series: rule-A turn costs, means over ≥4 fights, unfought trainer
   // One fight is not enough either (Andreas 2026-09-14: two before a projection is made); two is.
   const one = [{ ...pool[1], runId: 'one', model: 'one(high)', trainerBattles: [{ group: 'rival_oaks_lab', name: "Rival (Oak's Lab)", attempts: 1, turns: 5, won: true, mandatory: true }] }]
   assert.equal(battleSeries(one, pool).trainerTurns[0].eligible, false)
+  // …and nothing is projected for it either: the methods table shows only its fight (Andreas 2026-09-14).
+  const oneRow = trainerMatrix(pool, one).rows[0]
+  assert.deepEqual([oneRow.pace, oneRow.projectedCount, oneRow.cells.filter((c) => c.kind === 'projected').length], [null, 0, 0])
   const two = [{ ...one[0], trainerBattles: [{ ...one[0].trainerBattles[0], attempts: 2, turns: 9 }] }]
   assert.equal(battleSeries(two, pool).trainerTurns[0].eligible, true)
   // Fewer than 4 fights → nothing projected, even for a mandatory trainer; 4 is enough.

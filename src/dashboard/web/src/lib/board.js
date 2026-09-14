@@ -362,7 +362,12 @@ export function trainerMatrix(pool, rows = pool) {
       const g = by[t.group]
       if (perTurn && g && g.turns != null && col[t.group].usable) { mine += g.turns; typ += col[t.group].typical }
     }
-    const pace = typ > 0 ? mine / typ : null
+    // A run projects only once it has MIN_FIGHTS_FOR_PROJECTION counted fights
+    // behind it (Andreas 2026-09-14): below that its pace rests on one fight,
+    // so the table shows what it fought and nothing estimated.
+    const fightsSoFar = TRAINER_ROSTER.reduce((a, t) => a + ((by[t.group] && col[t.group].usable) ? by[t.group].attempts : 0), 0)
+    const canProject = perTurn && fightsSoFar >= MIN_FIGHTS_FOR_PROJECTION
+    const pace = canProject && typ > 0 ? mine / typ : null
     const cells = TRAINER_ROSTER.map((t) => {
       const g = by[t.group]
       const c = col[t.group]
@@ -380,7 +385,7 @@ export function trainerMatrix(pool, rows = pool) {
     const measured = perTurn ? fought.reduce((a, c) => a + (c.turns ?? 0), 0) : null
     const attempts = fought.reduce((a, c) => a + c.attempts, 0)
     const projTurns = projected.reduce((a, c) => a + c.turns, 0)
-    const eligible = perTurn && attempts >= MIN_FIGHTS_FOR_PROJECTION   // one fight is too little to set a pace from
+    const eligible = canProject && attempts > 0
     const avg = eligible ? (measured + projTurns) / (attempts + projected.length) : null
     return { row: r, cells, measured, attempts, pace, projected: projTurns, projectedCount: projected.length, uncounted, eligible, avg, complete: projected.length === 0 }
   })
