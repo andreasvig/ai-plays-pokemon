@@ -75,7 +75,9 @@
         <p class="faint">The board's sections with this model's levels in colour and every other model faded at its best level; the picker on each card changes the field, this model's levels stay. A level that has not reached far enough for a reliable figure is left off a card here exactly as on the board — see <button class="link" onclick={() => onmethods()}>Estimation methods</button>.</p>
       </header>
     </section>
-    <Sections pool={field} oninspect={inspect} onpick={(slug) => { const r = rows.find((x) => x.slug === slug); if (r) inspect(r) }} {highlight} pinned={highlight} />
+    <!-- The whole board, not the collapsed field: the picker must offer every
+         model at every level; the pinned rows keep this model's levels in. -->
+    <Sections pool={rows} oninspect={inspect} onpick={(slug) => { const r = rows.find((x) => x.slug === slug); if (r) inspect(r) }} {highlight} pinned={highlight} />
   {/if}
 </section>
 
