@@ -258,6 +258,13 @@ test('battle series: rule-A turn costs, means over ≥4 fights, unfought trainer
   const fr = finished.cells.find((c) => c.group === '102')
   assert.deepEqual([fr.kind, finished.complete, finished.projectedCount], ['projected', false, 1])
   assert.ok(Math.abs(finished.avg - (2 + 5 + finished.pace * 10) / 3) < 1e-9)
+  // A fight against a trainer only one run met (Charlie) is shown but not counted: the run's measured
+  // turns, fights and average ignore it, so it is scored on the same roster as everyone else.
+  const charlie = { group: '532', id: 532, name: 'Bug Catcher Charlie', attempts: 1, turns: 3, won: true, mandatory: false }
+  const solo = trainerMatrix(withRick, [{ ...withRick[1], trainerBattles: [...withRick[1].trainerBattles, charlie] }]).rows[0]
+  const cc = solo.cells.find((c) => c.group === '532')
+  assert.deepEqual([cc.kind, cc.counted, solo.measured, solo.attempts, solo.uncounted.length], ['fought', false, wm.rows[1].measured, wm.rows[1].attempts, 1])
+  assert.equal(solo.avg, wm.rows[1].avg)
   const pastPewter = trainerMatrix(withRick, [{ ...withRick[6], gateTurns: withRick[2].gateTurns, completion: 90, trainerBattles: [rival(2)] }]).rows[0]
   assert.deepEqual(pastPewter.cells.filter((c) => c.kind === 'projected').map((c) => c.group), ['102', '414'])   // past Pewter: still charged
 })

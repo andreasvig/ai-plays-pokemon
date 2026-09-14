@@ -232,9 +232,11 @@ class BattleTracker:
                     open_seg = new_segment(open_kind, turn)
                     if open_kind == "trainer" and turn in self.identity_hints:
                         open_seg["trainer_id"] = self.identity_hints[turn]
-            # A defeated-flag with no counter move (seen once: gpt-6-astra medium,
-            # 6 flags for 5 counted trainer battles) is still a win: record it as a
-            # zero-turn attempt rather than lose the trainer.
+            # A defeated-flag with no counter move is NOT a fight. Seen once,
+            # gpt-6-astra medium: Camper Liam's flag rose in the same window as
+            # Brock's with one counted battle, and the screenshots show the run
+            # walking past Liam straight to Brock. The segment is kept, marked
+            # `uncounted`, so the record explains the flag; summary() skips it.
             for tid in new_flags:
                 # A flag landing after a HINTED attempt with that id (the backfill
                 # places flags at a savepoint, the OCR placed the fight) confirms
@@ -286,8 +288,9 @@ class BattleTracker:
         last = self.records[-1]
         wild = [s for s in segs if s["kind"] == "wild"]
         trainers: dict[str, dict[str, Any]] = {}
+        flags_without_battle = [s["trainer_id"] for s in segs if s.get("uncounted")]
         for s in segs:
-            if s["kind"] != "trainer":
+            if s["kind"] != "trainer" or s.get("uncounted"):
                 continue
             g = trainers.setdefault(s["group"], {"group": s["group"], "id": s["trainer_id"], "name": s["name"],
                                                  "attempts": 0, "turns": 0, "won": False,
@@ -305,6 +308,7 @@ class BattleTracker:
             "trainer": {"count": last[4], "turns": sum(s["turns"] for s in segs if s["kind"] == "trainer"),
                         "defeated": list(last[5])},
             "trainers": sorted(trainers.values(), key=lambda g: (g["id"] is None, g["id"] or 0)),
+            "flags_without_battle": flags_without_battle,
             "turns_started_in_battle": started_in_battle,
             "turns_polled": len(self.records),
             "segments": segs,

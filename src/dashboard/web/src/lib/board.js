@@ -339,7 +339,8 @@ const hasPerTurn = (r) => r.battleFidelity === 'live' || r.battleFidelity === 'b
  * each run's pace over the trainers it fought, and the projected average the
  * card shows. EVERY trainer the run has not fought — finished runs included,
  * so every run is scored on the same roster (Andreas 2026-09-14) — is
- * projected as one fight at pace × typical. The
+ * projected as one fight at pace × typical; a fight against a trainer whose
+ * column is not usable is shown but left out of the average. The
  * Estimation methods page renders it; battleSeries().trainerTurns is built
  * from the same numbers.
  */
@@ -362,19 +363,23 @@ export function trainerMatrix(pool, rows = pool) {
     const cells = TRAINER_ROSTER.map((t) => {
       const g = by[t.group]
       const c = col[t.group]
-      if (g) return { group: t.group, turns: perTurn ? g.turns : null, attempts: g.attempts, won: g.won, kind: 'fought',
+      // A fight against a trainer too few runs have met (column not usable) is
+      // shown but not counted: nobody else gets that trainer projected, so
+      // counting it would score this run on a different roster.
+      if (g) return { group: t.group, turns: perTurn ? g.turns : null, attempts: g.attempts, won: g.won, kind: 'fought', counted: c.usable,
         ratio: perTurn && g.turns != null && c.typical > 0 ? g.turns / c.typical : null }
       if (c.usable && pace != null) return { group: t.group, turns: pace * c.typical, attempts: 1, kind: 'projected', ratio: pace }
       return { group: t.group, turns: null, attempts: 0, kind: 'none', ratio: null }
     })
-    const fought = cells.filter((c) => c.kind === 'fought')
+    const fought = cells.filter((c) => c.kind === 'fought' && c.counted)
+    const uncounted = cells.filter((c) => c.kind === 'fought' && !c.counted)
     const projected = cells.filter((c) => c.kind === 'projected')
     const measured = perTurn ? fought.reduce((a, c) => a + (c.turns ?? 0), 0) : null
     const attempts = fought.reduce((a, c) => a + c.attempts, 0)
     const projTurns = projected.reduce((a, c) => a + c.turns, 0)
     const eligible = perTurn && attempts > 0   // the first trainer must have been fought
     const avg = eligible ? (measured + projTurns) / (attempts + projected.length) : null
-    return { row: r, cells, measured, attempts, pace, projected: projTurns, projectedCount: projected.length, eligible, avg, complete: projected.length === 0 }
+    return { row: r, cells, measured, attempts, pace, projected: projTurns, projectedCount: projected.length, uncounted, eligible, avg, complete: projected.length === 0 }
   })
   return { columns, rows: out }
 }
@@ -433,6 +438,7 @@ export function battleSeries(rows, pool = rows) {
     const m = byId.get(r)
     if (!m || !m.eligible) { trainerOff.push(OFF(r)); continue }
     trainerVals.push({ row: r, value: m.avg, measured: m.measured, attempts: m.attempts, projected: m.projected, pace: m.pace,
+      uncounted: m.uncounted.map((c) => ({ ...c, ...matrix.columns.find((x) => x.group === c.group) })),
       missing: m.cells.filter((c) => c.kind === 'projected').map((c) => ({ ...c, ...matrix.columns.find((x) => x.group === c.group) })),
       eligible: true, complete: m.complete })
   }

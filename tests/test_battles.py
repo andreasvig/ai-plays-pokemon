@@ -136,14 +136,16 @@ def test_two_flags_landing_together_identify_the_earlier_unflagged_trainer_too()
     assert [(g["name"], g["attempts"], g["turns"]) for g in t.summary()["trainers"]] == [("Camper Liam", 1, 2), ("Leader Brock", 1, 2)]
 
 
-def test_a_flag_without_a_counter_move_is_still_a_won_attempt():
-    """gpt-6-astra(medium) ended with 6 defeated flags for 5 counted trainer battles."""
+def test_a_flag_without_a_counter_move_is_recorded_but_is_not_a_fight():
+    """gpt-6-astra(medium) ended with 6 defeated flags for 5 counted trainer
+    battles: Camper Liam's flag rose with Brock's, and the screenshots show the
+    run walked past Liam. The segment stays for the record; no attempt is scored."""
     t = BattleTracker()
     _feed(t, [(1, False, 0, 0, 0, ()), (2, False, 0, 0, 0, (142,))])
     seg, = t.segments()
     assert (seg["trainer_id"], seg["won"], seg["turns"], seg.get("uncounted")) == (142, True, 0, True)
-    g, = t.summary()["trainers"]
-    assert (g["id"], g["attempts"], g["won"]) == (142, 1, True)
+    summ = t.summary()
+    assert summ["trainers"] == [] and summ["flags_without_battle"] == [142] and summ["trainer"]["turns"] == 0
 
 
 def test_identity_hints_name_a_lost_attempt_and_a_late_flag_confirms_the_win():
