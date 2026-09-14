@@ -1,7 +1,11 @@
 <script>
-  import { usd, dur, perTurn, gateShort } from '../lib/format.js'
+  import { gateShort } from '../lib/format.js'
   // points: [{label, x, y, openSource, completed, slug, completion, furthestGateName, turns, avgCostPerTurn, avgSPerTurn}]
-  let { points = [], xLabel = '', xFormat = (v) => v, xLog = false, onpick } = $props()
+  // `left`: models with no x value at all ({label, slug, openSource}), listed
+  // beside the plot rather than drawn (no ghost markers). `tip`: per-point
+  // [label, value] rows for the tooltip, supplied by the caller. `projected`
+  // draws a hollow marker.
+  let { points = [], left = [], leftTitle = "Didn't clear checkpoint 1", xLabel = '', xFormat = (v) => v, xLog = false, onpick } = $props()
 
   const W = 760, H = 360
   const ML = 60, MR = 124, MT = 26, MB = 46
@@ -15,7 +19,7 @@
   // frontier only consider the points that actually scored.
   const cleared = (p) => (p.completion ?? p.y) > 0
   const plotted = $derived(points.filter(cleared))
-  const notCleared = $derived(points.filter((p) => !cleared(p)))
+  const notCleared = $derived([...left, ...points.filter((p) => !cleared(p))])
 
   // --- domains auto-fit to the plotted points (mode/filter aware) ---
   const xd = $derived((() => {
@@ -122,7 +126,7 @@
 <div class="wrap">
   {#if notCleared.length}
     <aside class="nolist">
-      <div class="nolist-h">Didn't clear<br />checkpoint 1</div>
+      <div class="nolist-h">{leftTitle}</div>
       <div class="nolist-items">
         {#each notCleared as p (p.label)}
           <button class="nolist-item" class:oss={p.openSource}
@@ -165,7 +169,7 @@
       {@const lx = rightSide ? cx - 9 : cx + 9}
       {@const ly = labelY.get(p.label) ?? cy + 3.3}
       {@const s = onFrontier(p) ? 11 : 9}
-      <g class="pt" class:oss={p.openSource} class:front={onFrontier(p)} class:hot={hovered === p}
+      <g class="pt" class:oss={p.openSource} class:front={onFrontier(p)} class:hot={hovered === p} class:est={p.projected}
          onmouseenter={() => hovered = p} onmouseleave={() => hovered = null}
          onclick={() => onpick && onpick(p.slug)} onkeydown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && onpick) { e.preventDefault(); onpick(p.slug) } }} role="button" tabindex="0">
         {#if Math.abs(ly - (cy + 3.3)) > 4}
@@ -184,9 +188,8 @@
       <div class="tip-row"><span>completion</span><b class:full={hovered.completion >= 100}>{hovered.completion}%</b></div>
       {#if hovered.completion < 100}<div class="tip-row"><span>last gate</span><b>{gateShort(hovered.furthestGateName)}</b></div>{/if}
       {#if hovered.completion < 100 && hovered.legGateName && hovered.legFraction != null}<div class="tip-row"><span>next gate</span><b>{Math.round(hovered.legFraction * 100)}% to {gateShort(hovered.legGateName)}</b></div>{/if}
-      <div class="tip-row"><span>turns</span><b class="tnum">{hovered.turns}</b></div>
-      <div class="tip-row"><span>cost / turn</span><b class="tnum">{usd(hovered.avgCostPerTurn)}</b></div>
-      <div class="tip-row"><span>sec / turn</span><b class="tnum">{perTurn(hovered.avgSPerTurn)}</b></div>
+      {#each hovered.tip ?? [] as [k, v]}<div class="tip-row"><span>{k}</span><b class="tnum">{v}</b></div>{/each}
+      {#if hovered.projected}<div class="tip-note">projected from the gates it cleared, at its own pace and rates</div>{/if}
       <div class="tip-go">click to open run →</div>
     </div>
   {/if}
@@ -223,6 +226,10 @@
   /* No radius to grow on a rect, so a hot marker gains a printed halo
      instead — a second square drawn by the stroke. */
   .pt.hot rect { stroke: var(--text); stroke-width: 3; }
+  /* A projected point is hollow: the plot's own ground, edged in the marker colour. */
+  .pt.est rect { fill: var(--surface); stroke: var(--accent); stroke-width: 2; }
+  .pt.est.oss rect { stroke: var(--oss); }
+  .pt.est.hot rect { stroke: var(--text); stroke-width: 3; }
   .pt.hot .plabel { fill: var(--text); font-weight: 700; }
 
   .tip {
@@ -235,5 +242,6 @@
   .tip-row span { color: var(--dark-faint); }
   .tip-row b { font-weight: 650; }
   .tip-row b.full { color: var(--dark-green); }
+  .tip-note { font-size: 10px; color: var(--dark-faint); margin-top: 4px; max-width: 190px; line-height: 1.4; }
   .tip-go { font-size: 10px; color: var(--dark-accent); margin-top: 6px; font-weight: 600; }
 </style>

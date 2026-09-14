@@ -308,7 +308,7 @@
     <Leaderboard rows={boardRows} {cardRows} allRows={leaderboard} {stats} oninspect={inspect}
       {benchmarks} {benchmark} onbench={selectBenchmark}
       bind:oss={ossFilter} bind:maxPrice={maxPrice} {priceMax} bind:allLevels />
-    <Charts rows={boardRows} onpick={(slug) => go(`/history/${slug}`)} />
+    <Charts rows={boardRows} pool={leaderboard} onpick={(slug) => go(`/history/${slug}`)} />
   {:else if view === 'history'}
     <History {runs} oninspect={inspect} oncontinue={openContinue} ondelete={removeRun} />
   {:else if view === 'spectate'}
