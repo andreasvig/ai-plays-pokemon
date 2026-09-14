@@ -24,7 +24,7 @@
   // `highlight`: (row) => boolean — when given, bars whose row fails it are
   // FADED (a model page, 2026-09-14: this model's levels in colour, the rest
   // of the field at low opacity, name kept, value dropped).
-  let { title, subtitle = '', entries = [], line = null, picker = false, pickerRows = [], bars = 190, oninspect = () => {}, note = '', href = null, narrowFrom = 9, highlight = null } = $props()
+  let { title, subtitle = '', entries = [], line = null, picker = false, pickerRows = [], bars = 190, oninspect = () => {}, note = '', href = null, narrowFrom = 9, highlight = null, pinned = null } = $props()
   const faded = (e) => !!highlight && !highlight(e.row)
   // A bar shorter than this share of the area prints its value above instead.
   const INSIDE_MIN = 0.16
@@ -39,7 +39,7 @@
       <h3>{#if href}<a {href}>{title}<span class="arrow" aria-hidden="true">↓</span></a>{:else}{title}{/if}</h3>
       {#if subtitle}<p class="faint">{subtitle}</p>{/if}
     </div>
-    {#if picker}<ModelPicker rows={pickerRows} />{/if}
+    {#if picker}<ModelPicker rows={pickerRows} {pinned} />{/if}
   </header>
   {#if entries.length}
     <div class="plot" class:narrow style={`--bars:${bars}px; --linef:${line?.frac ?? 0}`}>

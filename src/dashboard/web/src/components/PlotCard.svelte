@@ -11,10 +11,15 @@
   import { GATES, gate } from '../lib/gates.js'
   // `picker` false (a model page) shows `pool` as is; `highlight` fades the
   // points whose row fails it (2026-09-14).
-  let { kind = 'cost', pool = [], onpick, picker = true, highlight = null } = $props()
+  let { kind = 'cost', pool = [], onpick, picker = true, highlight = null, pinned = null } = $props()
 
   let mode = $state('all')
-  const rows = $derived(picker ? selection.apply(pool) : pool)
+  // Pinned rows (a model page's own levels) stay in whatever the picker says.
+  const rows = $derived.by(() => {
+    if (!picker) return pool
+    const chosen = new Set(selection.apply(pool).map((r) => r.model))
+    return pool.filter((r) => chosen.has(r.model) || (pinned && pinned(r)))
+  })
   const gateIds = $derived(GATES.slice(0, pool[0]?.totalGates || 12).map((g) => g.id))
   const series = $derived(perTaskSeries(rows, gateIds, pool))
   const nGates = $derived(gateIds.length)
@@ -54,7 +59,7 @@
       <p class="faint">{c.blurb(nGates)} Hover for values; click to open the run.</p>
     </div>
     <div class="tools">
-      {#if picker}<ModelPicker rows={pool} />{/if}
+      {#if picker}<ModelPicker rows={pool} {pinned} />{/if}
       <div class="segs">{#each MODES as [v, label]}<button class:on={mode === v} onclick={() => mode = v}>{label}</button>{/each}</div>
     </div>
   </header>

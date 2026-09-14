@@ -8,12 +8,15 @@
   import { presets } from '../lib/selection.js'
   import { searchModels } from '../lib/modelSearch.js'
   import VendorMark from './VendorMark.svelte'
-  let { rows = [] } = $props()
+  // `pinned`: (row) => boolean — rows that are always in and cannot be unticked
+  // (a model page keeps its own levels in every card, Andreas 2026-09-14).
+  let { rows = [], pinned = null } = $props()
+  const isPinned = (r) => !!pinned && pinned(r)
 
   let open = $state(false)
   let query = $state('')
   let root = $state(null)
-  const chosen = $derived(new Set(selection.apply(rows).map((r) => r.model)))
+  const chosen = $derived(new Set(rows.filter((r) => isPinned(r)).concat(selection.apply(rows)).map((r) => r.model)))
   const shown = $derived(searchModels(rows, query))
   const options = $derived(presets(rows))
   const isPreset = (p) => {
@@ -42,8 +45,8 @@
       <ul class="list" role="listbox" aria-multiselectable="true">
         {#each shown as r (r.model)}
           <li>
-            <label class="opt" class:on={chosen.has(r.model)}>
-              <input type="checkbox" checked={chosen.has(r.model)} onchange={() => selection.toggle(r.model, rows)} />
+            <label class="opt" class:on={chosen.has(r.model)} class:pinned={isPinned(r)} title={isPinned(r) ? 'always shown on this page' : ''}>
+              <input type="checkbox" checked={chosen.has(r.model)} disabled={isPinned(r)} onchange={() => selection.toggle(r.model, rows)} />
               <VendorMark row={r} size={14} />
               <span class="alias mono">{r.model}</span>
               <span class="pct tnum" class:full={r.completion >= 100}>{r.completion}%</span>
@@ -73,6 +76,8 @@
   .opt { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: var(--radius-sm); cursor: pointer; font-size: 11.5px; color: var(--muted); }
   .opt:hover { background: var(--wash); }
   .opt.on { color: var(--text); }
+  .opt.pinned { cursor: default; }
+  .opt.pinned input { accent-color: var(--faint); }
   .opt input { margin: 0; accent-color: var(--accent); }
   .alias { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pct { font-size: 10.5px; color: var(--faint); }
