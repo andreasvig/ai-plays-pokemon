@@ -8,7 +8,10 @@
   // entries: [{row, height (0–1), label, complete, above?, tip?}] — `height`
   // is the bar's share of the bar area, `label` the value inside it, `above`
   // an optional short text printed over the bar, `tip` the hover title.
-  // A bar for a projected (not completed) run is hatched.
+  // A bar for a projected (not completed) run is hatched. `partial: true`
+  // dots the bar instead: a MEASURED value from a run that ended early (the
+  // output-tokens card, Andreas 2026-09-14) — a different claim from a
+  // projection, so a different fill.
   // line: optional {frac, label} — a dashed reference line at `frac` of the
   // bar area (the performance card's 100%).
   import { vendorOf } from '../lib/board.js'
@@ -41,7 +44,7 @@
         <button class="bar" class:complete={e.complete} style={`--h:${(e.height * 100).toFixed(1)}%; --c:${vendorOf(e.row).color}`}
                 title={e.tip ?? `${e.row.model}: ${e.label}`} onclick={() => oninspect(e.row)}>
           {#if e.above}<span class="above tnum">{e.above}</span>{/if}
-          <span class="fill" class:est={!e.complete}>
+          <span class="fill" class:est={!e.complete} class:dots={e.partial}>
             <span class="val tnum" class:outside={e.height < INSIDE_MIN}>{e.label}</span>
           </span>
           <span class="foot">
@@ -84,6 +87,9 @@
   .bar.complete .fill { box-shadow: inset 0 0 0 1px rgba(0,0,0,.08); }
   /* A projected bar is hatched in the vendor colour (Andreas 2026-09-13). */
   .fill.est { background: repeating-linear-gradient(135deg, var(--c) 0 4px, color-mix(in srgb, var(--c) 30%, var(--surface)) 4px 8px); }
+  /* A dotted bar: measured, but over a run that ended early (Andreas 2026-09-14). */
+  .fill.dots { background: radial-gradient(circle at 2.5px 2.5px, var(--c) 1.6px, transparent 1.9px) 0 0 / 5px 5px, color-mix(in srgb, var(--c) 22%, var(--surface)); }
+  .fill.dots .val:not(.outside) { color: var(--text); text-shadow: 0 0 3px var(--surface), 0 0 3px var(--surface), 0 0 1px var(--surface); }
   .val { color: #fff; font-size: 11px; font-weight: 750; padding-bottom: 6px; text-shadow: 0 0 2px rgba(0,0,0,.35); white-space: nowrap; }
   /* Over a hatched (projected) bar white text has no solid ground: use ink with a paper halo. */
   .fill.est .val:not(.outside) { color: var(--text); text-shadow: 0 0 3px var(--surface), 0 0 3px var(--surface), 0 0 1px var(--surface); }
