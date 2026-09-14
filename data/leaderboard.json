@@ -93,9 +93,9 @@
     "trainer_battle_turns": 26,
     "battle_turn_share": 0.2157676348547718,
     "battle_fidelity": "backfill",
-    "overworld_steps": 1830,
-    "shortest_steps": 362,
-    "movement_efficiency": 0.19781420765027322,
+    "overworld_steps": 2066,
+    "shortest_steps": 490,
+    "movement_efficiency": 0.2371732817037754,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -113,6 +113,27 @@
         "status": "closed"
       },
       {
+        "node_id": "oaks_lab_entered",
+        "d_open": 16,
+        "steps": 48,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "starter_chosen",
+        "d_open": 1,
+        "steps": 19,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "rival1_done",
+        "d_open": 4,
+        "steps": 15,
+        "source": "video",
+        "status": "closed"
+      },
+      {
         "node_id": "route1_reached",
         "d_open": 21,
         "steps": 25,
@@ -123,6 +144,13 @@
         "node_id": "viridian_reached",
         "d_open": 54,
         "steps": 123,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "pokedex_received",
+        "d_open": 107,
+        "steps": 154,
         "source": "video",
         "status": "closed"
       },
@@ -230,9 +258,9 @@
     "trainer_battle_turns": 7,
     "battle_turn_share": 0.1044776119402985,
     "battle_fidelity": "backfill",
-    "overworld_steps": 91,
-    "shortest_steps": 36,
-    "movement_efficiency": 0.3956043956043956,
+    "overworld_steps": 133,
+    "shortest_steps": 54,
+    "movement_efficiency": 0.40601503759398494,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -246,6 +274,27 @@
         "node_id": "left_house",
         "d_open": 12,
         "steps": 13,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "oaks_lab_entered",
+        "d_open": 13,
+        "steps": 36,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "starter_chosen",
+        "d_open": 1,
+        "steps": 1,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "rival1_done",
+        "d_open": 4,
+        "steps": 5,
         "source": "video",
         "status": "closed"
       },
@@ -379,9 +428,9 @@
     "trainer_battle_turns": 30,
     "battle_turn_share": 0.2819277108433735,
     "battle_fidelity": "backfill",
-    "overworld_steps": 2104,
-    "shortest_steps": 291,
-    "movement_efficiency": 0.13830798479087453,
+    "overworld_steps": 2253,
+    "shortest_steps": 416,
+    "movement_efficiency": 0.1846426986240568,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -399,6 +448,27 @@
         "status": "closed"
       },
       {
+        "node_id": "oaks_lab_entered",
+        "d_open": 13,
+        "steps": 13,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "starter_chosen",
+        "d_open": 1,
+        "steps": 18,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "rival1_done",
+        "d_open": 5,
+        "steps": 7,
+        "source": "video",
+        "status": "closed"
+      },
+      {
         "node_id": "route1_reached",
         "d_open": 25,
         "steps": 29,
@@ -409,6 +479,13 @@
         "node_id": "viridian_reached",
         "d_open": 59,
         "steps": 209,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "pokedex_received",
+        "d_open": 106,
+        "steps": 111,
         "source": "video",
         "status": "closed"
       },
@@ -522,9 +599,9 @@
     "trainer_battle_turns": 12,
     "battle_turn_share": 0.20666666666666667,
     "battle_fidelity": "backfill",
-    "overworld_steps": 206,
-    "shortest_steps": 93,
-    "movement_efficiency": 0.45145631067961167,
+    "overworld_steps": 237,
+    "shortest_steps": 115,
+    "movement_efficiency": 0.48523206751054854,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -538,6 +615,27 @@
         "node_id": "left_house",
         "d_open": 6,
         "steps": 11,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "oaks_lab_entered",
+        "d_open": 13,
+        "steps": 18,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "starter_chosen",
+        "d_open": 1,
+        "steps": 5,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "rival1_done",
+        "d_open": 8,
+        "steps": 8,
         "source": "video",
         "status": "closed"
       },
@@ -647,9 +745,9 @@
     "trainer_battle_turns": 16,
     "battle_turn_share": 0.20958083832335328,
     "battle_fidelity": "backfill",
-    "overworld_steps": 603,
-    "shortest_steps": 75,
-    "movement_efficiency": 0.12437810945273632,
+    "overworld_steps": 621,
+    "shortest_steps": 93,
+    "movement_efficiency": 0.1497584541062802,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -663,6 +761,27 @@
         "node_id": "left_house",
         "d_open": 12,
         "steps": 17,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "oaks_lab_entered",
+        "d_open": 13,
+        "steps": 13,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "starter_chosen",
+        "d_open": 1,
+        "steps": 1,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "rival1_done",
+        "d_open": 4,
+        "steps": 4,
         "source": "video",
         "status": "closed"
       },
@@ -835,9 +954,9 @@
     "trainer_battle_turns": 25,
     "battle_turn_share": 0.2971014492753623,
     "battle_fidelity": "backfill",
-    "overworld_steps": 1439,
-    "shortest_steps": 445,
-    "movement_efficiency": 0.3092425295343989,
+    "overworld_steps": 1732,
+    "shortest_steps": 631,
+    "movement_efficiency": 0.3643187066974596,
     "steps_fidelity": "bound",
     "movement_legs": [
       {
@@ -851,6 +970,27 @@
         "node_id": "left_house",
         "d_open": 12,
         "steps": 13,
+        "source": "bound",
+        "status": "closed"
+      },
+      {
+        "node_id": "oaks_lab_entered",
+        "d_open": 13,
+        "steps": 40,
+        "source": "bound",
+        "status": "closed"
+      },
+      {
+        "node_id": "starter_chosen",
+        "d_open": 1,
+        "steps": 6,
+        "source": "bound",
+        "status": "closed"
+      },
+      {
+        "node_id": "rival1_done",
+        "d_open": 5,
+        "steps": 12,
         "source": "bound",
         "status": "closed"
       },
@@ -869,6 +1009,13 @@
         "status": "closed"
       },
       {
+        "node_id": "pokedex_received",
+        "d_open": 107,
+        "steps": 109,
+        "source": "bound",
+        "status": "closed"
+      },
+      {
         "node_id": "viridian_forest_reached",
         "d_open": 186,
         "steps": 228,
@@ -879,6 +1026,13 @@
         "node_id": "pewter_reached",
         "d_open": 167,
         "steps": 883,
+        "source": "bound",
+        "status": "closed"
+      },
+      {
+        "node_id": "brock_defeated",
+        "d_open": 60,
+        "steps": 126,
         "source": "bound",
         "status": "closed"
       }
@@ -996,9 +1150,9 @@
     "trainer_battle_turns": 23,
     "battle_turn_share": 0.2903846153846154,
     "battle_fidelity": "backfill",
-    "overworld_steps": 1734,
-    "shortest_steps": 286,
-    "movement_efficiency": 0.16493656286043828,
+    "overworld_steps": 2151,
+    "shortest_steps": 411,
+    "movement_efficiency": 0.1910739191073919,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -1016,6 +1170,27 @@
         "status": "closed"
       },
       {
+        "node_id": "oaks_lab_entered",
+        "d_open": 13,
+        "steps": 15,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "starter_chosen",
+        "d_open": 1,
+        "steps": 1,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "rival1_done",
+        "d_open": 4,
+        "steps": 14,
+        "source": "video",
+        "status": "closed"
+      },
+      {
         "node_id": "route1_reached",
         "d_open": 25,
         "steps": 49,
@@ -1026,6 +1201,13 @@
         "node_id": "viridian_reached",
         "d_open": 56,
         "steps": 180,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "pokedex_received",
+        "d_open": 107,
+        "steps": 387,
         "source": "video",
         "status": "closed"
       },
@@ -1138,9 +1320,9 @@
     "trainer_battle_turns": 7,
     "battle_turn_share": 0.16167664670658682,
     "battle_fidelity": "backfill",
-    "overworld_steps": 160,
-    "shortest_steps": 103,
-    "movement_efficiency": 0.64375,
+    "overworld_steps": 282,
+    "shortest_steps": 121,
+    "movement_efficiency": 0.42907801418439717,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -1154,6 +1336,27 @@
         "node_id": "left_house",
         "d_open": 12,
         "steps": 15,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "oaks_lab_entered",
+        "d_open": 13,
+        "steps": 115,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "starter_chosen",
+        "d_open": 1,
+        "steps": 1,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "rival1_done",
+        "d_open": 4,
+        "steps": 6,
         "source": "video",
         "status": "closed"
       },
@@ -1327,9 +1530,9 @@
     "trainer_battle_turns": 43,
     "battle_turn_share": 0.25474254742547425,
     "battle_fidelity": "backfill",
-    "overworld_steps": 889,
-    "shortest_steps": 455,
-    "movement_efficiency": 0.5118110236220472,
+    "overworld_steps": 1375,
+    "shortest_steps": 640,
+    "movement_efficiency": 0.46545454545454545,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -1343,6 +1546,27 @@
         "node_id": "left_house",
         "d_open": 12,
         "steps": 13,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "oaks_lab_entered",
+        "d_open": 13,
+        "steps": 19,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "starter_chosen",
+        "d_open": 1,
+        "steps": 32,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "rival1_done",
+        "d_open": 5,
+        "steps": 6,
         "source": "video",
         "status": "closed"
       },
@@ -1361,6 +1585,13 @@
         "status": "closed"
       },
       {
+        "node_id": "pokedex_received",
+        "d_open": 107,
+        "steps": 109,
+        "source": "video",
+        "status": "closed"
+      },
+      {
         "node_id": "viridian_forest_reached",
         "d_open": 186,
         "steps": 227,
@@ -1371,6 +1602,13 @@
         "node_id": "pewter_reached",
         "d_open": 167,
         "steps": 544,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "brock_defeated",
+        "d_open": 59,
+        "steps": 320,
         "source": "video",
         "status": "closed"
       }
@@ -1541,9 +1779,9 @@
     "trainer_battle_turns": 7,
     "battle_turn_share": 0.11560693641618497,
     "battle_fidelity": "backfill",
-    "overworld_steps": 357,
-    "shortest_steps": 101,
-    "movement_efficiency": 0.28291316526610644,
+    "overworld_steps": 382,
+    "shortest_steps": 119,
+    "movement_efficiency": 0.31151832460732987,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -1557,6 +1795,27 @@
         "node_id": "left_house",
         "d_open": 12,
         "steps": 13,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "oaks_lab_entered",
+        "d_open": 13,
+        "steps": 20,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "starter_chosen",
+        "d_open": 1,
+        "steps": 1,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "rival1_done",
+        "d_open": 4,
+        "steps": 4,
         "source": "video",
         "status": "closed"
       },
@@ -1706,9 +1965,9 @@
     "trainer_battle_turns": 43,
     "battle_turn_share": 0.2524084778420039,
     "battle_fidelity": "backfill",
-    "overworld_steps": 1295,
-    "shortest_steps": 322,
-    "movement_efficiency": 0.24864864864864866,
+    "overworld_steps": 1509,
+    "shortest_steps": 447,
+    "movement_efficiency": 0.2962226640159046,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -1726,6 +1985,27 @@
         "status": "closed"
       },
       {
+        "node_id": "oaks_lab_entered",
+        "d_open": 13,
+        "steps": 13,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "starter_chosen",
+        "d_open": 1,
+        "steps": 1,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "rival1_done",
+        "d_open": 4,
+        "steps": 4,
+        "source": "video",
+        "status": "closed"
+      },
+      {
         "node_id": "route1_reached",
         "d_open": 25,
         "steps": 31,
@@ -1736,6 +2016,13 @@
         "node_id": "viridian_reached",
         "d_open": 57,
         "steps": 87,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "pokedex_received",
+        "d_open": 107,
+        "steps": 196,
         "source": "video",
         "status": "closed"
       },
@@ -1917,9 +2204,9 @@
     "trainer_battle_turns": 55,
     "battle_turn_share": 0.36141304347826086,
     "battle_fidelity": "backfill",
-    "overworld_steps": 955,
-    "shortest_steps": 446,
-    "movement_efficiency": 0.46701570680628274,
+    "overworld_steps": 1383,
+    "shortest_steps": 630,
+    "movement_efficiency": 0.455531453362256,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -1933,6 +2220,27 @@
         "node_id": "left_house",
         "d_open": 5,
         "steps": 6,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "oaks_lab_entered",
+        "d_open": 13,
+        "steps": 41,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "starter_chosen",
+        "d_open": 1,
+        "steps": 4,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "rival1_done",
+        "d_open": 5,
+        "steps": 5,
         "source": "video",
         "status": "closed"
       },
@@ -1951,6 +2259,13 @@
         "status": "closed"
       },
       {
+        "node_id": "pokedex_received",
+        "d_open": 107,
+        "steps": 133,
+        "source": "video",
+        "status": "closed"
+      },
+      {
         "node_id": "viridian_forest_reached",
         "d_open": 186,
         "steps": 227,
@@ -1961,6 +2276,13 @@
         "node_id": "pewter_reached",
         "d_open": 167,
         "steps": 557,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "brock_defeated",
+        "d_open": 58,
+        "steps": 245,
         "source": "video",
         "status": "closed"
       }
@@ -2125,9 +2447,9 @@
     "trainer_battle_turns": 30,
     "battle_turn_share": 0.24700239808153476,
     "battle_fidelity": "backfill",
-    "overworld_steps": 1661,
-    "shortest_steps": 458,
-    "movement_efficiency": 0.275737507525587,
+    "overworld_steps": 2431,
+    "shortest_steps": 589,
+    "movement_efficiency": 0.24228712464006583,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -2141,6 +2463,27 @@
         "node_id": "left_house",
         "d_open": 12,
         "steps": 13,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "oaks_lab_entered",
+        "d_open": 15,
+        "steps": 15,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "starter_chosen",
+        "d_open": 1,
+        "steps": 5,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "rival1_done",
+        "d_open": 8,
+        "steps": 21,
         "source": "video",
         "status": "closed"
       },
@@ -2159,6 +2502,13 @@
         "status": "closed"
       },
       {
+        "node_id": "pokedex_received",
+        "d_open": 107,
+        "steps": 143,
+        "source": "video",
+        "status": "closed"
+      },
+      {
         "node_id": "viridian_forest_reached",
         "d_open": 186,
         "steps": 227,
@@ -2171,6 +2521,13 @@
         "steps": 1244,
         "source": "video",
         "status": "closed"
+      },
+      {
+        "node_id": "brock_defeated",
+        "d_open": 0,
+        "steps": 586,
+        "source": "video",
+        "status": "open"
       }
     ],
     "progress": 11.95,
@@ -2327,9 +2684,9 @@
     "trainer_battle_turns": 22,
     "battle_turn_share": 0.2896551724137931,
     "battle_fidelity": "backfill",
-    "overworld_steps": 563,
-    "shortest_steps": 453,
-    "movement_efficiency": 0.8046181172291297,
+    "overworld_steps": 887,
+    "shortest_steps": 643,
+    "movement_efficiency": 0.7249154453213078,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -2343,6 +2700,27 @@
         "node_id": "left_house",
         "d_open": 12,
         "steps": 13,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "oaks_lab_entered",
+        "d_open": 13,
+        "steps": 39,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "starter_chosen",
+        "d_open": 1,
+        "steps": 7,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "rival1_done",
+        "d_open": 6,
+        "steps": 10,
         "source": "video",
         "status": "closed"
       },
@@ -2361,6 +2739,13 @@
         "status": "closed"
       },
       {
+        "node_id": "pokedex_received",
+        "d_open": 107,
+        "steps": 140,
+        "source": "video",
+        "status": "closed"
+      },
+      {
         "node_id": "viridian_forest_reached",
         "d_open": 186,
         "steps": 219,
@@ -2371,6 +2756,13 @@
         "node_id": "pewter_reached",
         "d_open": 167,
         "steps": 231,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "brock_defeated",
+        "d_open": 63,
+        "steps": 128,
         "source": "video",
         "status": "closed"
       }
@@ -2443,9 +2835,9 @@
     "trainer_battle_turns": 0,
     "battle_turn_share": 0.0,
     "battle_fidelity": "backfill",
-    "overworld_steps": 45,
+    "overworld_steps": 79,
     "shortest_steps": 21,
-    "movement_efficiency": 0.4666666666666667,
+    "movement_efficiency": 0.26582278481012656,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -2461,6 +2853,13 @@
         "steps": 13,
         "source": "video",
         "status": "closed"
+      },
+      {
+        "node_id": "oaks_lab_entered",
+        "d_open": 0,
+        "steps": 34,
+        "source": "video",
+        "status": "open"
       }
     ],
     "progress": 2.0769230769230766,
@@ -2535,9 +2934,9 @@
     "trainer_battle_turns": 0,
     "battle_turn_share": 0.0,
     "battle_fidelity": "backfill",
-    "overworld_steps": 43,
-    "shortest_steps": 21,
-    "movement_efficiency": 0.4883720930232558,
+    "overworld_steps": 91,
+    "shortest_steps": 34,
+    "movement_efficiency": 0.37362637362637363,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -2553,6 +2952,20 @@
         "steps": 13,
         "source": "video",
         "status": "closed"
+      },
+      {
+        "node_id": "oaks_lab_entered",
+        "d_open": 13,
+        "steps": 22,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "starter_chosen",
+        "d_open": 0,
+        "steps": 26,
+        "source": "video",
+        "status": "open"
       }
     ],
     "progress": 3.95,
@@ -2627,9 +3040,9 @@
     "trainer_battle_turns": 0,
     "battle_turn_share": 0.0,
     "battle_fidelity": "backfill",
-    "overworld_steps": 46,
-    "shortest_steps": 21,
-    "movement_efficiency": 0.45652173913043476,
+    "overworld_steps": 79,
+    "shortest_steps": 34,
+    "movement_efficiency": 0.43037974683544306,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -2645,6 +3058,20 @@
         "steps": 15,
         "source": "video",
         "status": "closed"
+      },
+      {
+        "node_id": "oaks_lab_entered",
+        "d_open": 13,
+        "steps": 19,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "starter_chosen",
+        "d_open": 0,
+        "steps": 14,
+        "source": "video",
+        "status": "open"
       }
     ],
     "progress": 3.95,
@@ -2759,9 +3186,9 @@
     "trainer_battle_turns": 26,
     "battle_turn_share": 0.2538293216630197,
     "battle_fidelity": "backfill",
-    "overworld_steps": 1597,
-    "shortest_steps": 314,
-    "movement_efficiency": 0.19661865998747652,
+    "overworld_steps": 1814,
+    "shortest_steps": 440,
+    "movement_efficiency": 0.24255788313120177,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -2779,6 +3206,27 @@
         "status": "closed"
       },
       {
+        "node_id": "oaks_lab_entered",
+        "d_open": 13,
+        "steps": 19,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "starter_chosen",
+        "d_open": 1,
+        "steps": 16,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "rival1_done",
+        "d_open": 5,
+        "steps": 6,
+        "source": "video",
+        "status": "closed"
+      },
+      {
         "node_id": "route1_reached",
         "d_open": 25,
         "steps": 25,
@@ -2789,6 +3237,13 @@
         "node_id": "viridian_reached",
         "d_open": 59,
         "steps": 138,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "pokedex_received",
+        "d_open": 107,
+        "steps": 176,
         "source": "video",
         "status": "closed"
       },
@@ -2876,9 +3331,9 @@
     "trainer_battle_turns": 0,
     "battle_turn_share": 0.0,
     "battle_fidelity": "backfill",
-    "overworld_steps": 111,
+    "overworld_steps": 245,
     "shortest_steps": 21,
-    "movement_efficiency": 0.1891891891891892,
+    "movement_efficiency": 0.08571428571428572,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -2894,6 +3349,13 @@
         "steps": 15,
         "source": "video",
         "status": "closed"
+      },
+      {
+        "node_id": "oaks_lab_entered",
+        "d_open": 0,
+        "steps": 134,
+        "source": "video",
+        "status": "open"
       }
     ],
     "progress": 2.4615384615384617,
@@ -3000,9 +3462,9 @@
     "trainer_battle_turns": 8,
     "battle_turn_share": 0.17578125,
     "battle_fidelity": "backfill",
-    "overworld_steps": 1703,
-    "shortest_steps": 286,
-    "movement_efficiency": 0.16793893129770993,
+    "overworld_steps": 1983,
+    "shortest_steps": 419,
+    "movement_efficiency": 0.21129601613716592,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -3020,6 +3482,27 @@
         "status": "closed"
       },
       {
+        "node_id": "oaks_lab_entered",
+        "d_open": 13,
+        "steps": 53,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "starter_chosen",
+        "d_open": 9,
+        "steps": 58,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "rival1_done",
+        "d_open": 4,
+        "steps": 4,
+        "source": "video",
+        "status": "closed"
+      },
+      {
         "node_id": "route1_reached",
         "d_open": 25,
         "steps": 64,
@@ -3030,6 +3513,13 @@
         "node_id": "viridian_reached",
         "d_open": 54,
         "steps": 131,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "pokedex_received",
+        "d_open": 107,
+        "steps": 165,
         "source": "video",
         "status": "closed"
       },
@@ -3142,9 +3632,9 @@
     "trainer_battle_turns": 11,
     "battle_turn_share": 0.14583333333333334,
     "battle_fidelity": "backfill",
-    "overworld_steps": 236,
-    "shortest_steps": 103,
-    "movement_efficiency": 0.4364406779661017,
+    "overworld_steps": 305,
+    "shortest_steps": 121,
+    "movement_efficiency": 0.39672131147540984,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -3158,6 +3648,27 @@
         "node_id": "left_house",
         "d_open": 10,
         "steps": 11,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "oaks_lab_entered",
+        "d_open": 13,
+        "steps": 39,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "starter_chosen",
+        "d_open": 1,
+        "steps": 5,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "rival1_done",
+        "d_open": 4,
+        "steps": 25,
         "source": "video",
         "status": "closed"
       },
@@ -3321,9 +3832,9 @@
     "trainer_battle_turns": 28,
     "battle_turn_share": 0.32,
     "battle_fidelity": "backfill",
-    "overworld_steps": 555,
-    "shortest_steps": 453,
-    "movement_efficiency": 0.8162162162162162,
+    "overworld_steps": 799,
+    "shortest_steps": 642,
+    "movement_efficiency": 0.8035043804755945,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -3337,6 +3848,27 @@
         "node_id": "left_house",
         "d_open": 12,
         "steps": 13,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "oaks_lab_entered",
+        "d_open": 13,
+        "steps": 13,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "starter_chosen",
+        "d_open": 1,
+        "steps": 3,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "rival1_done",
+        "d_open": 6,
+        "steps": 10,
         "source": "video",
         "status": "closed"
       },
@@ -3355,6 +3887,13 @@
         "status": "closed"
       },
       {
+        "node_id": "pokedex_received",
+        "d_open": 107,
+        "steps": 109,
+        "source": "video",
+        "status": "closed"
+      },
+      {
         "node_id": "viridian_forest_reached",
         "d_open": 186,
         "steps": 209,
@@ -3365,6 +3904,13 @@
         "node_id": "pewter_reached",
         "d_open": 167,
         "steps": 234,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "brock_defeated",
+        "d_open": 62,
+        "steps": 109,
         "source": "video",
         "status": "closed"
       }
@@ -3521,9 +4067,9 @@
     "trainer_battle_turns": 33,
     "battle_turn_share": 0.16696588868940754,
     "battle_fidelity": "backfill",
-    "overworld_steps": 1381,
-    "shortest_steps": 454,
-    "movement_efficiency": 0.3287472845763939,
+    "overworld_steps": 2348,
+    "shortest_steps": 637,
+    "movement_efficiency": 0.2712947189097104,
     "steps_fidelity": "video",
     "movement_legs": [
       {
@@ -3537,6 +4083,27 @@
         "node_id": "left_house",
         "d_open": 12,
         "steps": 14,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "oaks_lab_entered",
+        "d_open": 14,
+        "steps": 22,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "starter_chosen",
+        "d_open": 1,
+        "steps": 25,
+        "source": "video",
+        "status": "closed"
+      },
+      {
+        "node_id": "rival1_done",
+        "d_open": 6,
+        "steps": 7,
         "source": "video",
         "status": "closed"
       },
@@ -3555,6 +4122,13 @@
         "status": "closed"
       },
       {
+        "node_id": "pokedex_received",
+        "d_open": 107,
+        "steps": 325,
+        "source": "video",
+        "status": "closed"
+      },
+      {
         "node_id": "viridian_forest_reached",
         "d_open": 186,
         "steps": 222,
@@ -3567,6 +4141,13 @@
         "steps": 1018,
         "source": "video",
         "status": "closed"
+      },
+      {
+        "node_id": "brock_defeated",
+        "d_open": 55,
+        "steps": 588,
+        "source": "video",
+        "status": "open"
       }
     ],
     "progress": 11.95,
