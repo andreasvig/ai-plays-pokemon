@@ -449,8 +449,10 @@ class PagesRepo:
     def sync_site(self, dist: Path) -> None:
         """Copy a Vite build into the worktree root, replacing the old bundle.
 
-        Only the bundle is replaced (``index.html``, ``404.html``, ``assets/``);
-        ``data/`` is never touched by a build.
+        The bundle is replaced (``index.html``, ``404.html``, ``assets/``) and so
+        is every other top-level directory the build emits — Vite copies
+        ``public/`` (``logos/``, since 2026-09-14) to the dist root; ``data/`` is
+        never touched by a build.
         """
         dist = Path(dist)
         index = dist / "index.html"
@@ -467,9 +469,17 @@ class PagesRepo:
         # of a GitHub error page.
         shutil.copy2(index, self.worktree / "404.html")
         for extra in dist.iterdir():
-            if extra.name in ("index.html", "assets") or extra.is_dir():
+            if extra.name in ("index.html", "assets", "data"):
                 continue
-            shutil.copy2(extra, self.worktree / extra.name)
+            dst = self.worktree / extra.name
+            if extra.is_dir():
+                # A static folder from public/ (logos/): replace it whole so a
+                # renamed or removed file does not linger on the site.
+                if dst.is_dir():
+                    shutil.rmtree(dst)
+                shutil.copytree(extra, dst)
+            else:
+                shutil.copy2(extra, dst)
 
     # -- commit + push -------------------------------------------------------
 

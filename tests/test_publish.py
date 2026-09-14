@@ -594,3 +594,27 @@ def test_refresh_rows_reprojects_published_rows_and_keeps_publish_only_keys(tmp_
     assert next(r for r in board.rows if r["run_id"] == gone["run_id"]) == gone
     # Nothing to change → nothing written.
     assert pub.refresh_rows(board, runs, log=lambda m: None) == 0 and board.writes == 1
+
+
+def test_sync_site_copies_static_folders_and_never_data(world, tmp_path):
+    """public/ folders (logos/) ride along with the bundle and are replaced
+    whole; a data/ folder in dist would never overwrite the published rows.
+    2026-09-14: the vendor marks were built into dist/logos/ and 404'd live
+    because only assets/ was synced."""
+    pages = world["pages"]
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "logos").mkdir()
+    (dist / "data").mkdir()
+    (dist / "index.html").write_text("<html>v1</html>")
+    (dist / "logos" / "openai.svg").write_text("<svg/>")
+    (dist / "logos" / "stale.svg").write_text("<svg/>")
+    (dist / "data" / "leaderboard.json").write_text("[]")
+    pages.sync_site(dist)
+    assert (pages.worktree / "logos" / "openai.svg").read_text() == "<svg/>"
+    assert not (pages.worktree / "data" / "leaderboard.json").exists() or (pages.worktree / "data" / "leaderboard.json").read_text() != "[]"
+    # Second build without the stale file: it is gone from the site too.
+    (dist / "logos" / "stale.svg").unlink()
+    pages.sync_site(dist)
+    assert sorted(p.name for p in (pages.worktree / "logos").iterdir()) == ["openai.svg"]
+
