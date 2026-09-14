@@ -88,8 +88,8 @@
   /* A projected bar is hatched in the vendor colour (Andreas 2026-09-13). */
   .fill.est { background: repeating-linear-gradient(135deg, var(--c) 0 4px, color-mix(in srgb, var(--c) 30%, var(--surface)) 4px 8px); }
   /* A dotted bar: measured, but over a run that ended early (Andreas 2026-09-14). */
-  .fill.dots { background: radial-gradient(circle at 2.5px 2.5px, var(--c) 1.6px, transparent 1.9px) 0 0 / 5px 5px, color-mix(in srgb, var(--c) 22%, var(--surface)); }
-  .fill.dots .val:not(.outside) { color: var(--text); text-shadow: 0 0 3px var(--surface), 0 0 3px var(--surface), 0 0 1px var(--surface); }
+  .fill.dots { background: radial-gradient(circle at 3px 3px, var(--c) 1.3px, transparent 1.6px) 0 0 / 6px 6px, color-mix(in srgb, var(--c) 14%, var(--surface)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 55%, var(--surface)); }
+  .fill.dots .val:not(.outside) { color: var(--text); text-shadow: 0 0 4px var(--surface), 0 0 4px var(--surface), 0 0 2px var(--surface), 0 0 1px var(--surface); }
   .val { color: #fff; font-size: 11px; font-weight: 750; padding-bottom: 6px; text-shadow: 0 0 2px rgba(0,0,0,.35); white-space: nowrap; }
   /* Over a hatched (projected) bar white text has no solid ground: use ink with a paper halo. */
   .fill.est .val:not(.outside) { color: var(--text); text-shadow: 0 0 3px var(--surface), 0 0 3px var(--surface), 0 0 1px var(--surface); }
