@@ -45,14 +45,14 @@
     "avg_output_tokens_per_turn": 8537.948132780082,
     "thinking_share": 0.9303876688185598,
     "wild_battles": 47,
-    "wild_battle_turns": 74,
+    "wild_battle_turns": 78,
     "trainer_battles": [
       {
         "group": "rival_oaks_lab",
         "id": 328,
         "name": "Rival (Oak's Lab)",
-        "attempts": 2,
-        "turns": 1,
+        "attempts": 1,
+        "turns": 6,
         "won": true,
         "mandatory": true
       },
@@ -60,14 +60,14 @@
         "group": "531",
         "id": 531,
         "name": "Bug Catcher Anthony",
-        "attempts": 2,
+        "attempts": 1,
         "turns": 20,
         "won": true,
         "mandatory": false
       }
     ],
-    "trainer_battle_turns": 21,
-    "battle_turn_share": 0.1970954356846473,
+    "trainer_battle_turns": 26,
+    "battle_turn_share": 0.2157676348547718,
     "battle_fidelity": "backfill",
     "overworld_steps": 392,
     "shortest_steps": 281,
@@ -139,14 +139,14 @@
         "group": "rival_oaks_lab",
         "id": 328,
         "name": "Rival (Oak's Lab)",
-        "attempts": 2,
-        "turns": 1,
+        "attempts": 1,
+        "turns": 7,
         "won": true,
         "mandatory": true
       }
     ],
-    "trainer_battle_turns": 1,
-    "battle_turn_share": 0.08955223880597014,
+    "trainer_battle_turns": 7,
+    "battle_turn_share": 0.1044776119402985,
     "battle_fidelity": "backfill",
     "overworld_steps": 38,
     "shortest_steps": 21,
@@ -217,13 +217,13 @@
     "avg_output_tokens_per_turn": 438.6385542168675,
     "thinking_share": 0.5329524541983685,
     "wild_battles": 64,
-    "wild_battle_turns": 81,
+    "wild_battle_turns": 87,
     "trainer_battles": [
       {
         "group": "102",
         "id": 102,
         "name": "Bug Catcher Rick",
-        "attempts": 2,
+        "attempts": 1,
         "turns": 12,
         "won": true,
         "mandatory": false
@@ -248,7 +248,7 @@
       }
     ],
     "trainer_battle_turns": 30,
-    "battle_turn_share": 0.2674698795180723,
+    "battle_turn_share": 0.2819277108433735,
     "battle_fidelity": "backfill",
     "overworld_steps": 420,
     "shortest_steps": 291,
@@ -316,24 +316,24 @@
     "avg_output_tokens_per_turn": 408.9066666666667,
     "thinking_share": 0.5520249119603495,
     "wild_battles": 5,
-    "wild_battle_turns": 15,
+    "wild_battle_turns": 19,
     "trainer_battles": [
       {
         "group": "rival_oaks_lab",
         "id": 326,
         "name": "Rival (Oak's Lab)",
-        "attempts": 2,
-        "turns": 6,
+        "attempts": 1,
+        "turns": 12,
         "won": true,
         "mandatory": true
       }
     ],
-    "trainer_battle_turns": 6,
-    "battle_turn_share": 0.16,
+    "trainer_battle_turns": 12,
+    "battle_turn_share": 0.20666666666666667,
     "battle_fidelity": "backfill",
-    "overworld_steps": 208,
+    "overworld_steps": 206,
     "shortest_steps": 93,
-    "movement_efficiency": 0.44711538461538464,
+    "movement_efficiency": 0.45145631067961167,
     "steps_fidelity": "video",
     "progress": 7.0,
     "leg_gate": "parcel_delivered",
@@ -401,14 +401,14 @@
         "group": "rival_oaks_lab",
         "id": 328,
         "name": "Rival (Oak's Lab)",
-        "attempts": 2,
-        "turns": 1,
+        "attempts": 1,
+        "turns": 16,
         "won": true,
         "mandatory": true
       }
     ],
-    "trainer_battle_turns": 1,
-    "battle_turn_share": 0.15568862275449102,
+    "trainer_battle_turns": 16,
+    "battle_turn_share": 0.20958083832335328,
     "battle_fidelity": "backfill",
     "overworld_steps": 128,
     "shortest_steps": 46,
@@ -480,7 +480,7 @@
     "avg_output_tokens_per_turn": 523.8369565217391,
     "thinking_share": 0.433728273124036,
     "wild_battles": 30,
-    "wild_battle_turns": 52,
+    "wild_battle_turns": 57,
     "trainer_battles": [
       {
         "group": "102",
@@ -514,7 +514,7 @@
         "id": 327,
         "name": "Rival (Oak's Lab)",
         "attempts": 1,
-        "turns": 1,
+        "turns": 3,
         "won": true,
         "mandatory": true
       },
@@ -537,8 +537,8 @@
         "mandatory": false
       }
     ],
-    "trainer_battle_turns": 23,
-    "battle_turn_share": 0.2717391304347826,
+    "trainer_battle_turns": 25,
+    "battle_turn_share": 0.2971014492753623,
     "battle_fidelity": "backfill",
     "overworld_steps": 1439,
     "shortest_steps": 445,
@@ -609,14 +609,14 @@
     "avg_output_tokens_per_turn": 1976.1173076923078,
     "thinking_share": 0.8570516582147782,
     "wild_battles": 83,
-    "wild_battle_turns": 120,
+    "wild_battle_turns": 128,
     "trainer_battles": [
       {
         "group": "102",
         "id": 102,
         "name": "Bug Catcher Rick",
-        "attempts": 2,
-        "turns": 9,
+        "attempts": 1,
+        "turns": 19,
         "won": true,
         "mandatory": false
       },
@@ -624,14 +624,14 @@
         "group": "rival_oaks_lab",
         "id": 328,
         "name": "Rival (Oak's Lab)",
-        "attempts": 2,
+        "attempts": 1,
         "turns": 4,
         "won": true,
         "mandatory": true
       }
     ],
-    "trainer_battle_turns": 13,
-    "battle_turn_share": 0.2653846153846154,
+    "trainer_battle_turns": 23,
+    "battle_turn_share": 0.2903846153846154,
     "battle_fidelity": "backfill",
     "overworld_steps": 555,
     "shortest_steps": 286,
@@ -698,20 +698,20 @@
     "avg_output_tokens_per_turn": 2547.994011976048,
     "thinking_share": 0.8488020398810853,
     "wild_battles": 6,
-    "wild_battle_turns": 14,
+    "wild_battle_turns": 20,
     "trainer_battles": [
       {
         "group": "rival_oaks_lab",
         "id": 328,
         "name": "Rival (Oak's Lab)",
-        "attempts": 2,
-        "turns": 2,
+        "attempts": 1,
+        "turns": 7,
         "won": true,
         "mandatory": true
       }
     ],
-    "trainer_battle_turns": 2,
-    "battle_turn_share": 0.10179640718562874,
+    "trainer_battle_turns": 7,
+    "battle_turn_share": 0.16167664670658682,
     "battle_fidelity": "backfill",
     "overworld_steps": 154,
     "shortest_steps": 103,
@@ -784,14 +784,14 @@
     "avg_output_tokens_per_turn": 909.9972899728997,
     "thinking_share": 0.6621330657049517,
     "wild_battles": 19,
-    "wild_battle_turns": 38,
+    "wild_battle_turns": 51,
     "trainer_battles": [
       {
         "group": "102",
         "id": 102,
         "name": "Bug Catcher Rick",
-        "attempts": 3,
-        "turns": 12,
+        "attempts": 2,
+        "turns": 15,
         "won": true,
         "mandatory": false
       },
@@ -808,7 +808,7 @@
         "group": "142",
         "id": 142,
         "name": "Camper Liam",
-        "attempts": 2,
+        "attempts": 1,
         "turns": 9,
         "won": true,
         "mandatory": false
@@ -835,14 +835,14 @@
         "group": "531",
         "id": 531,
         "name": "Bug Catcher Anthony",
-        "attempts": 2,
+        "attempts": 1,
         "turns": 6,
         "won": true,
         "mandatory": false
       }
     ],
-    "trainer_battle_turns": 40,
-    "battle_turn_share": 0.21680216802168023,
+    "trainer_battle_turns": 43,
+    "battle_turn_share": 0.25474254742547425,
     "battle_fidelity": "backfill",
     "overworld_steps": 1002,
     "shortest_steps": 455,
@@ -1035,14 +1035,14 @@
         "group": "rival_oaks_lab",
         "id": 328,
         "name": "Rival (Oak's Lab)",
-        "attempts": 2,
-        "turns": 2,
+        "attempts": 1,
+        "turns": 7,
         "won": true,
         "mandatory": true
       }
     ],
-    "trainer_battle_turns": 2,
-    "battle_turn_share": 0.08670520231213873,
+    "trainer_battle_turns": 7,
+    "battle_turn_share": 0.11560693641618497,
     "battle_fidelity": "backfill",
     "overworld_steps": 339,
     "shortest_steps": 101,
@@ -1113,7 +1113,7 @@
     "avg_output_tokens_per_turn": 3036.9845857418113,
     "thinking_share": 0.8787002877182074,
     "wild_battles": 38,
-    "wild_battle_turns": 103,
+    "wild_battle_turns": 105,
     "trainer_battles": [
       {
         "group": "102",
@@ -1146,14 +1146,14 @@
         "group": "531",
         "id": 531,
         "name": "Bug Catcher Anthony",
-        "attempts": 2,
+        "attempts": 1,
         "turns": 13,
         "won": true,
         "mandatory": false
       }
     ],
     "trainer_battle_turns": 26,
-    "battle_turn_share": 0.2504816955684008,
+    "battle_turn_share": 0.2524084778420039,
     "battle_fidelity": "backfill",
     "overworld_steps": 384,
     "shortest_steps": 288,
@@ -1231,8 +1231,8 @@
         "group": "103",
         "id": 103,
         "name": "Bug Catcher Doug",
-        "attempts": 3,
-        "turns": 20,
+        "attempts": 2,
+        "turns": 22,
         "won": true,
         "mandatory": false
       },
@@ -1240,7 +1240,7 @@
         "group": "104",
         "id": 104,
         "name": "Bug Catcher Sammy",
-        "attempts": 2,
+        "attempts": 1,
         "turns": 3,
         "won": true,
         "mandatory": false
@@ -1249,7 +1249,7 @@
         "group": "142",
         "id": 142,
         "name": "Camper Liam",
-        "attempts": 2,
+        "attempts": 1,
         "turns": 9,
         "won": true,
         "mandatory": false
@@ -1259,7 +1259,7 @@
         "id": 327,
         "name": "Rival (Oak's Lab)",
         "attempts": 1,
-        "turns": 2,
+        "turns": 6,
         "won": true,
         "mandatory": true
       },
@@ -1276,14 +1276,14 @@
         "group": "531",
         "id": 531,
         "name": "Bug Catcher Anthony",
-        "attempts": 2,
+        "attempts": 1,
         "turns": 9,
         "won": true,
         "mandatory": false
       }
     ],
-    "trainer_battle_turns": 49,
-    "battle_turn_share": 0.3451086956521739,
+    "trainer_battle_turns": 55,
+    "battle_turn_share": 0.36141304347826086,
     "battle_fidelity": "backfill",
     "overworld_steps": 771,
     "shortest_steps": 446,
@@ -1354,14 +1354,14 @@
     "avg_output_tokens_per_turn": 5445.697841726619,
     "thinking_share": 0.9148448866859017,
     "wild_battles": 67,
-    "wild_battle_turns": 67,
+    "wild_battle_turns": 73,
     "trainer_battles": [
       {
         "group": "102",
         "id": 102,
         "name": "Bug Catcher Rick",
-        "attempts": 2,
-        "turns": 5,
+        "attempts": 1,
+        "turns": 8,
         "won": true,
         "mandatory": false
       },
@@ -1397,7 +1397,7 @@
         "id": 326,
         "name": "Rival (Oak's Lab)",
         "attempts": 1,
-        "turns": 1,
+        "turns": 3,
         "won": true,
         "mandatory": true
       },
@@ -1411,8 +1411,8 @@
         "mandatory": false
       }
     ],
-    "trainer_battle_turns": 25,
-    "battle_turn_share": 0.22062350119904076,
+    "trainer_battle_turns": 30,
+    "battle_turn_share": 0.24700239808153476,
     "battle_fidelity": "backfill",
     "overworld_steps": 1749,
     "shortest_steps": 458,
@@ -1484,13 +1484,13 @@
     "avg_output_tokens_per_turn": 227.91034482758621,
     "thinking_share": 0.001573516506793355,
     "wild_battles": 10,
-    "wild_battle_turns": 17,
+    "wild_battle_turns": 19,
     "trainer_battles": [
       {
         "group": "104",
         "id": 104,
         "name": "Bug Catcher Sammy",
-        "attempts": 2,
+        "attempts": 1,
         "turns": 3,
         "won": true,
         "mandatory": false
@@ -1517,7 +1517,7 @@
         "group": "531",
         "id": 531,
         "name": "Bug Catcher Anthony",
-        "attempts": 3,
+        "attempts": 2,
         "turns": 9,
         "won": true,
         "mandatory": false
@@ -1533,7 +1533,7 @@
       }
     ],
     "trainer_battle_turns": 23,
-    "battle_turn_share": 0.27586206896551724,
+    "battle_turn_share": 0.2896551724137931,
     "battle_fidelity": "backfill",
     "overworld_steps": 563,
     "shortest_steps": 453,
@@ -1814,19 +1814,19 @@
         "group": "rival_oaks_lab",
         "id": 327,
         "name": "Rival (Oak's Lab)",
-        "attempts": 2,
-        "turns": 3,
+        "attempts": 1,
+        "turns": 9,
         "won": true,
         "mandatory": true
       }
     ],
-    "trainer_battle_turns": 14,
-    "battle_turn_share": 0.24070021881838075,
+    "trainer_battle_turns": 20,
+    "battle_turn_share": 0.2538293216630197,
     "battle_fidelity": "backfill",
-    "overworld_steps": 366,
+    "overworld_steps": 403,
     "shortest_steps": 291,
-    "movement_efficiency": 0.7950819672131147,
-    "steps_fidelity": "bound",
+    "movement_efficiency": 0.7220843672456576,
+    "steps_fidelity": "video",
     "progress": 10.137724550898204,
     "leg_gate": "pewter_reached",
     "leg_fraction": 0.13772455089820357,
@@ -1957,20 +1957,20 @@
     "avg_output_tokens_per_turn": 765.638671875,
     "thinking_share": 0.6523531467550324,
     "wild_battles": 29,
-    "wild_battle_turns": 66,
+    "wild_battle_turns": 82,
     "trainer_battles": [
       {
         "group": "rival_oaks_lab",
         "id": 328,
         "name": "Rival (Oak's Lab)",
-        "attempts": 2,
-        "turns": 3,
+        "attempts": 1,
+        "turns": 8,
         "won": true,
         "mandatory": true
       }
     ],
-    "trainer_battle_turns": 3,
-    "battle_turn_share": 0.140625,
+    "trainer_battle_turns": 8,
+    "battle_turn_share": 0.17578125,
     "battle_fidelity": "backfill",
     "overworld_steps": 477,
     "shortest_steps": 286,
@@ -2043,14 +2043,14 @@
         "group": "rival_oaks_lab",
         "id": 328,
         "name": "Rival (Oak's Lab)",
-        "attempts": 2,
-        "turns": 1,
+        "attempts": 1,
+        "turns": 11,
         "won": true,
         "mandatory": true
       }
     ],
-    "trainer_battle_turns": 1,
-    "battle_turn_share": 0.08333333333333333,
+    "trainer_battle_turns": 11,
+    "battle_turn_share": 0.14583333333333334,
     "battle_fidelity": "backfill",
     "overworld_steps": 208,
     "shortest_steps": 103,
@@ -2122,14 +2122,14 @@
     "avg_output_tokens_per_turn": 176.69333333333333,
     "thinking_share": 0.008715665559915485,
     "wild_battles": 11,
-    "wild_battle_turns": 17,
+    "wild_battle_turns": 19,
     "trainer_battles": [
       {
         "group": "103",
         "id": 103,
         "name": "Bug Catcher Doug",
-        "attempts": 3,
-        "turns": 18,
+        "attempts": 1,
+        "turns": 11,
         "won": true,
         "mandatory": false
       },
@@ -2138,7 +2138,7 @@
         "id": 104,
         "name": "Bug Catcher Sammy",
         "attempts": 1,
-        "turns": 0,
+        "turns": 5,
         "won": true,
         "mandatory": false
       },
@@ -2147,7 +2147,7 @@
         "id": 142,
         "name": "Camper Liam",
         "attempts": 1,
-        "turns": 5,
+        "turns": 7,
         "won": true,
         "mandatory": false
       },
@@ -2155,7 +2155,7 @@
         "group": "rival_oaks_lab",
         "id": 328,
         "name": "Rival (Oak's Lab)",
-        "attempts": 2,
+        "attempts": 1,
         "turns": 2,
         "won": true,
         "mandatory": true
@@ -2171,12 +2171,12 @@
       }
     ],
     "trainer_battle_turns": 29,
-    "battle_turn_share": 0.30666666666666664,
+    "battle_turn_share": 0.32,
     "battle_fidelity": "backfill",
-    "overworld_steps": 552,
+    "overworld_steps": 553,
     "shortest_steps": 453,
-    "movement_efficiency": 0.8206521739130435,
-    "steps_fidelity": "bound",
+    "movement_efficiency": 0.8191681735985533,
+    "steps_fidelity": "video",
     "progress": 12.0,
     "leg_gate": null,
     "leg_fraction": null,
@@ -2249,7 +2249,7 @@
         "group": "102",
         "id": 102,
         "name": "Bug Catcher Rick",
-        "attempts": 2,
+        "attempts": 1,
         "turns": 7,
         "won": true,
         "mandatory": false
@@ -2267,8 +2267,8 @@
         "group": "142",
         "id": 142,
         "name": "Camper Liam",
-        "attempts": 2,
-        "turns": 1,
+        "attempts": 1,
+        "turns": 6,
         "won": true,
         "mandatory": false
       },
@@ -2295,13 +2295,13 @@
         "id": null,
         "name": "Unknown trainer",
         "attempts": 1,
-        "turns": 10,
+        "turns": 12,
         "won": false,
         "mandatory": false
       }
     ],
-    "trainer_battle_turns": 26,
-    "battle_turn_share": 0.15439856373429084,
+    "trainer_battle_turns": 33,
+    "battle_turn_share": 0.16696588868940754,
     "battle_fidelity": "backfill",
     "overworld_steps": 1325,
     "shortest_steps": 454,
@@ -2373,14 +2373,14 @@
     "avg_output_tokens_per_turn": 2301.253164556962,
     "thinking_share": 0.9011454041734737,
     "wild_battles": 19,
-    "wild_battle_turns": 25,
+    "wild_battle_turns": 33,
     "trainer_battles": [
       {
         "group": "102",
         "id": 102,
         "name": "Bug Catcher Rick",
-        "attempts": 3,
-        "turns": 8,
+        "attempts": 1,
+        "turns": 7,
         "won": true,
         "mandatory": false
       },
@@ -2389,7 +2389,7 @@
         "id": 104,
         "name": "Bug Catcher Sammy",
         "attempts": 1,
-        "turns": 0,
+        "turns": 6,
         "won": true,
         "mandatory": false
       },
@@ -2398,7 +2398,7 @@
         "id": 142,
         "name": "Camper Liam",
         "attempts": 1,
-        "turns": 6,
+        "turns": 1,
         "won": true,
         "mandatory": false
       },
@@ -2407,7 +2407,7 @@
         "id": 327,
         "name": "Rival (Oak's Lab)",
         "attempts": 1,
-        "turns": 2,
+        "turns": 5,
         "won": true,
         "mandatory": true
       },
@@ -2430,8 +2430,8 @@
         "mandatory": false
       }
     ],
-    "trainer_battle_turns": 26,
-    "battle_turn_share": 0.21518987341772153,
+    "trainer_battle_turns": 29,
+    "battle_turn_share": 0.2616033755274262,
     "battle_fidelity": "backfill",
     "overworld_steps": null,
     "shortest_steps": null,
