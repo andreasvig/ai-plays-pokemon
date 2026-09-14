@@ -68,6 +68,15 @@ def test_derive_leaves_the_first_step_uncounted_when_the_start_is_unknown_and_a_
     assert d2["overworld_steps"] == 3
 
 
+def test_a_counter_step_marks_the_battle_start_even_before_the_bit_rises():
+    """Live 2026-09-14, rival fight: the last input's sample read battles_total
+    1 with in_battle still 0; the referee's poll a second later read the bit.
+    The counter move is the start signal."""
+    rows = [row("L", 7, 7, total=0), row("D", 6, 8, total=0), row("B", 6, 8, total=0), row("B", 6, 8, in_battle=False, total=1)]
+    d = trace.derive(trace.decode_samples(rows, KEY), start_tile=(3, 0, 8, 7), start_in_battle=False)
+    assert (d["battle_started_at"], d["battle_inputs"], d["end_in_battle"], d["overworld_steps"]) == (3, 1, True, 2)
+
+
 def test_a_turn_that_starts_in_battle_charges_no_steps_until_it_is_over():
     rows = [row("A", 3, 0, in_battle=True), row("A", 3, 0, in_battle=False), row("L", 2, 0), row("L", 1, 0)]
     d = trace.derive(trace.decode_samples(rows, KEY), start_tile=(3, 0, 3, 0), start_in_battle=True)

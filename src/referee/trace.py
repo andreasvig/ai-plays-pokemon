@@ -87,8 +87,18 @@ def derive(samples: list[dict[str, Any]], start_tile: Optional[tuple[int, int, i
     steps = lost = battle_inputs = 0
     battle_started_at: Optional[int] = None
     prev_tile, prev_batt = start_tile, start_in_battle
+    prev_total: Optional[int] = None
     for d in samples:
         tile, batt = _tile(d), d.get("in_battle")
+        # The battle counter moves at the START of a battle, a few frames before
+        # gMain.inBattle is raised (live 2026-09-14: the rival fight's last sample
+        # read counter 1, bit 0; the poll a second later read the bit set). A
+        # counter step therefore marks the input the battle began on.
+        total = d.get("battles_total")
+        if total is not None and prev_total is not None and total > prev_total:
+            batt = True
+        if total is not None:
+            prev_total = total
         if batt:
             battle_inputs += 1
             if battle_started_at is None and not prev_batt:
