@@ -42,7 +42,24 @@ def test_restore_caps_stamps_to_savepoint_turn(tmp_path):
     _restore_referee_state(sp, new_run, up_to_turn=20)
 
     restored = json.loads((new_run / "referee_state.json").read_text())
-    assert restored == {"stamps": {"a": 10}, "autofilled": [], "positions": []}
+    assert restored == {"stamps": {"a": 10}, "autofilled": [], "positions": [], "battle_records": [], "traced_steps": {}}
+
+
+def test_restore_caps_battle_records_and_traced_steps_to_savepoint_turn(tmp_path):
+    """Battle records and traced steps (2026-09-14) ride in the bundle under the
+    same cap as stamps and positions: a record polled after the savepoint turn
+    describes game state the resumed run has not reached."""
+    sp = tmp_path / "sp"; sp.mkdir()
+    (sp / "referee_state.json").write_text(json.dumps({
+        "stamps": {}, "autofilled": [], "positions": [],
+        "battle_records": [[9, False, 1, 1, 0, []], [10, True, 2, 2, 0, []], [11, False, 2, 2, 0, [327]], "junk"],
+        "traced_steps": {"9": 4, "10": 2, "11": 6, "x": 1},
+    }))
+    new_run = tmp_path / "new"; new_run.mkdir()
+    _restore_referee_state(sp, new_run, 10)
+    restored = json.loads((new_run / "referee_state.json").read_text())
+    assert restored["battle_records"] == [[9, False, 1, 1, 0, []], [10, True, 2, 2, 0, []]]
+    assert restored["traced_steps"] == {"9": 4, "10": 2}
 
 
 def test_restored_latch_is_what_a_fresh_referee_loads(tmp_path):

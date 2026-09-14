@@ -82,6 +82,10 @@ class EmulatorClient:
         self._lock = threading.RLock()
         # Protocol bookkeeping — read by tests and the resync log line.
         self.notifications_skipped = 0   # QUEUED:/SEQUENCE_DONE consumed off-path
+        # Per-input trace spec (src/referee/trace.py TRACE_SPEC): raw memory
+        # ranges the Lua bridge samples after every input. Set by the owner
+        # before ``connect``; None = no tracing. The bridge stays dumb.
+        self.trace_spec: Optional[list[str]] = None
         self.stale_replies_skipped = 0   # leftovers from an earlier desync
         self.resyncs = 0
 
@@ -131,6 +135,9 @@ class EmulatorClient:
         self._recv_line()
         self._send(f"CONFIG:ab_gap_frames={self.ab_gap_frames}")
         self._recv_line()
+        if self.trace_spec:
+            self._send("TRACESPEC:" + ";".join(self.trace_spec))
+            self._recv_line()
 
         print(f"mGBA connected from {addr[0]}:{addr[1]}")
         print(f"  Timing: hold={self.hold_frames}f gap={self.gap_frames}f | A/B hold={self.ab_hold_frames}f gap={self.ab_gap_frames}f")
@@ -235,6 +242,28 @@ class EmulatorClient:
         with self._lock:
             self._request(f"SEQ:{seq_str}", "QUEUED:", timeout=seq_timeout)
             self._recv_expected("SEQUENCE_DONE", timeout=seq_timeout, notifications=False)
+
+    def fetch_trace(self) -> list[tuple[str, list[bytes]]]:
+        """Collect (and clear) the per-input samples the bridge kept since the
+        last call: ``[(input name, [bytes per spec entry]), ...]``. Empty when
+        no TRACESPEC is set or nothing was pressed. A range the bridge could
+        not read comes back as ``b""``."""
+        response = self._request("TRACE", "TRACE:")
+        body = response[len("TRACE:"):]
+        rows: list[tuple[str, list[bytes]]] = []
+        if not body:
+            return rows
+        for row in body.split("/"):
+            name, _, samples = row.partition("|")
+            parts = samples.split(";") if samples else []
+            decoded = []
+            for hx in parts:
+                try:
+                    decoded.append(bytes.fromhex(hx))
+                except ValueError:
+                    decoded.append(b"")
+            rows.append((name, decoded))
+        return rows
 
     def save_state(self, filepath: str) -> None:
         """Save emulator state to a file."""

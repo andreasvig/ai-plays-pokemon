@@ -141,6 +141,7 @@ from src.cli.slots import get_slot
 from src.config import default_config_stem, example_model_aliases, load_config
 from src.core import RunLogger, StateManager
 from src.emulator import EmulatorClient, VisionPipeline, OCRRunner
+from src.referee.trace import TRACE_SPEC
 from src.agent import TurnManager
 
 
@@ -594,6 +595,8 @@ def run_prepare_phase(config: dict, saves_dir: Path) -> dict:
     paths["lua"] = str(slot_cfg["lua_path"])
 
     emu = EmulatorClient(config)
+    # Per-input trace of tile + in-battle bit after every button (src/referee/trace.py).
+    emu.trace_spec = list(TRACE_SPEC)
     emu.start_server()
 
     rom_path = config["emulator"]["rom_path"]
@@ -1112,10 +1115,24 @@ def _restore_referee_state(savepoint_dir, new_run_dir: Path, up_to_turn: int) ->
         and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in p)
         and int(p[0]) <= up_to_turn
     ]
+    # Battle records ``[turn, in_battle, total, wild, trainer, [ids]]`` and the
+    # per-turn traced steps (2026-09-14) ride along under the same cap.
+    records = data.get("battle_records", []) if isinstance(data, dict) else []
+    kept_records = [
+        r for r in (records if isinstance(records, list) else [])
+        if isinstance(r, (list, tuple)) and len(r) == 6
+        and isinstance(r[0], (int, float)) and not isinstance(r[0], bool) and int(r[0]) <= up_to_turn
+    ]
+    traced = data.get("traced_steps", {}) if isinstance(data, dict) else {}
+    kept_traced = {
+        str(int(t)): int(n) for t, n in (traced.items() if isinstance(traced, dict) else [])
+        if str(t).lstrip("-").isdigit() and int(t) <= up_to_turn and isinstance(n, (int, float))
+    }
     try:
         (Path(new_run_dir) / "referee_state.json").write_text(
             json.dumps(
-                {"stamps": kept, "autofilled": autofilled, "positions": kept_positions},
+                {"stamps": kept, "autofilled": autofilled, "positions": kept_positions,
+                 "battle_records": kept_records, "traced_steps": kept_traced},
                 indent=2,
             )
         )

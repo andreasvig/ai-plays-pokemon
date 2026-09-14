@@ -60,7 +60,7 @@ class _Leg:
     __slots__ = (
         "index", "node_id", "name", "status", "opened_turn", "closed_turn",
         "scored", "targets", "d_open", "d_min", "distance_now", "steps_walked",
-        "tiles", "off_graph", "prev_node",
+        "tiles", "off_graph", "prev_node", "traced_turns", "bound_turns",
     )
 
     def __init__(self, index: int, node_id: str, name: str, *, scored: bool,
@@ -80,6 +80,10 @@ class _Leg:
         self.tiles: set[tuple[int, int, int, int]] = set()
         self.off_graph = 0
         self.prev_node: Optional[int] = None  # last on-graph node in this leg
+        # How many of this leg's turn steps came from the per-input trace
+        # (exact) vs the shortest-path bound between polls (2026-09-14).
+        self.traced_turns = 0
+        self.bound_turns = 0
 
     def fraction(self) -> Optional[float]:
         if not self.scored or self.d_open is None or self.d_min is None:
@@ -115,6 +119,11 @@ class _Leg:
             "tiles_seen": len(self.tiles),
             "off_graph": self.off_graph,
             "efficiency": self.efficiency(),
+            # "trace" = every stepped turn traced, "bound" = none, else "mixed".
+            "steps_source": ("trace" if self.traced_turns and not self.bound_turns else
+                             "bound" if self.bound_turns and not self.traced_turns else
+                             "mixed" if self.traced_turns else None),
+            "traced_turns": self.traced_turns,
         }
 
 
@@ -131,6 +140,9 @@ class ProgressTracker:
         self.nodes: list[Node] = list(nodes)
         self.positions: list[Position] = []
         self.stamps: dict[str, int] = {}
+        # Exact overworld steps per turn from the per-input trace
+        # (src/referee/trace.py); replaces the between-poll bound for that turn.
+        self.traced_steps: dict[int, int] = {}
         self._steps_cache: dict[tuple[int, int], Optional[int]] = {}
         # Per-member resolved loci, computed once: node index -> gate id -> tiles.
         self._member_targets: list[dict[str, frozenset[int]]] = []
@@ -180,8 +192,15 @@ class ProgressTracker:
         self.stamps = known
         self._rebuild()
 
+    def record_traced_steps(self, turn: int, steps: int) -> None:
+        """Exact overworld steps for ``turn`` — call BEFORE that turn's ``record``."""
+        self.traced_steps[int(turn)] = max(int(steps), 0)
+
     def export_state(self) -> dict[str, Any]:
-        return {"positions": [list(p) for p in self.positions]}
+        out: dict[str, Any] = {"positions": [list(p) for p in self.positions]}
+        if self.traced_steps:  # only runs with a per-input trace carry the key
+            out["traced_steps"] = {str(t): s for t, s in sorted(self.traced_steps.items())}
+        return out
 
     def load_state(self, data: Any) -> None:
         """Restore ``positions`` (everything else is recomputed). Tolerant of junk."""
@@ -195,6 +214,14 @@ class ProgressTracker:
             except (TypeError, ValueError):
                 continue
         self.positions = positions
+        traced: dict[int, int] = {}
+        raw_t = data.get("traced_steps") if isinstance(data, dict) else None
+        for t, s in (raw_t or {}).items():
+            try:
+                traced[int(t)] = int(s)
+            except (TypeError, ValueError):
+                continue
+        self.traced_steps = traced
         self._rebuild()
 
     def summary(self) -> dict[str, Any]:
@@ -404,9 +431,15 @@ class ProgressTracker:
             leg.off_graph += 1
             return None, None
         if leg.prev_node is not None and leg.steps_walked is not None:
-            step = self._steps(leg.prev_node, node)
-            if step is not None:
-                leg.steps_walked += step
+            traced = self.traced_steps.get(pos[0])
+            if traced is not None:
+                leg.steps_walked += traced
+                leg.traced_turns += 1
+            else:
+                step = self._steps(leg.prev_node, node)
+                if step is not None:
+                    leg.steps_walked += step
+                    leg.bound_turns += 1
         leg.prev_node = node
         d = self._distance(leg, node)
         if d is not None:

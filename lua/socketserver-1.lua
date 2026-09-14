@@ -36,6 +36,34 @@ local queue_ab_gap_frames = 20  -- ~330ms gap for A/B — wait for next dialogue
 local queue_frame_counter = 0
 local queue_state = "idle" -- "idle", "pressing", "waiting"
 
+-- Per-input trace (src/referee/trace.py): Python sets a TRACESPEC of raw
+-- memory ranges; after each input's gap the ranges are sampled and kept as
+-- "name|hex;hex" rows until TRACE collects them. The bridge stays dumb — it
+-- never knows what the bytes mean.
+local trace_spec = {}   -- { {ptr=<u32 addr or nil>, off=<int>, addr=<int>, len=<int>}, ... }
+local trace_rows = {}
+local queue_last_name = nil
+
+local function sample_range(entry)
+    local base = entry.addr
+    if entry.ptr ~= nil then
+        local p = emu:read32(entry.ptr)
+        if p < 0x02000000 or p >= 0x02040000 then return "" end
+        base = p + entry.off
+    end
+    return tohex(emu:readRange(base, entry.len))
+end
+
+local function trace_sample(name)
+    if #trace_spec == 0 then return end
+    local parts = {}
+    for i, entry in ipairs(trace_spec) do
+        local ok, hex = pcall(sample_range, entry)
+        parts[i] = ok and hex or ""
+    end
+    table.insert(trace_rows, (name or "?") .. "|" .. table.concat(parts, ";"))
+end
+
 -- Single press state
 local press_key = nil
 local press_frames_remaining = 0
@@ -107,7 +135,7 @@ local function execute_command(cmd)
                 respond("ERROR:Unknown button in sequence: " .. btn)
                 return
             end
-            table.insert(input_queue, key)
+            table.insert(input_queue, {key = key, name = btn})
         end
         queue_frame_counter = 0
         queue_state = "idle"
@@ -130,6 +158,28 @@ local function execute_command(cmd)
         else
             respond("ERROR:Failed to load state from " .. filepath)
         end
+
+    elseif cmd:sub(1, 10) == "TRACESPEC:" then
+        -- TRACESPEC:<entry>;<entry>…  entry = <addr>:<len> | *<ptr>+<off>:<len>
+        trace_spec = {}
+        for item in string.gmatch(cmd:sub(11), "([^;]+)") do
+            local ptr_s, off_s, len_s = item:match("^%*([^%+]+)%+([^:]+):(.+)$")
+            if ptr_s then
+                table.insert(trace_spec, {ptr = tonumber(ptr_s), off = tonumber(off_s), len = tonumber(len_s)})
+            else
+                local addr_s, l_s = item:match("^([^:]+):(.+)$")
+                if addr_s then
+                    table.insert(trace_spec, {addr = tonumber(addr_s), off = 0, len = tonumber(l_s)})
+                end
+            end
+        end
+        trace_rows = {}
+        respond("OK:tracespec=" .. #trace_spec)
+
+    elseif cmd == "TRACE" then
+        -- Rows since the last TRACE, "/"-joined; cleared on read.
+        respond("TRACE:" .. table.concat(trace_rows, "/"))
+        trace_rows = {}
 
     elseif cmd:sub(1, 8) == "READMEM:" then
         -- READMEM:<addr>:<len> — addr/len decimal or 0x-prefixed hex.
@@ -178,12 +228,12 @@ end
 
 -- Process one frame of the input queue
 local function process_queue()
-    if #input_queue == 0 then
+    if #input_queue == 0 and queue_state ~= "waiting" then
         return
     end
 
     if queue_state == "idle" then
-        local key = input_queue[1]
+        local key = input_queue[1].key
         local is_ab = (key == BUTTONS.A or key == BUTTONS.B)
         queue_current_hold = is_ab and queue_ab_hold_frames or queue_hold_frames
         emu:addKey(key)
@@ -192,23 +242,28 @@ local function process_queue()
     elseif queue_state == "pressing" then
         queue_frame_counter = queue_frame_counter + 1
         if queue_frame_counter >= (queue_current_hold or queue_hold_frames) then
-            local key = table.remove(input_queue, 1)
-            emu:clearKey(key)
-            -- Use longer gap after A/B presses (wait for next dialogue box)
-            local is_ab = (key == BUTTONS.A or key == BUTTONS.B)
+            local item = table.remove(input_queue, 1)
+            emu:clearKey(item.key)
+            queue_last_name = item.name
+            -- Use longer gap after A/B presses (wait for next dialogue box).
+            -- The LAST input waits its gap too (2026-09-14): the walk animation
+            -- (~16 frames) must finish before the trace samples the tile, and
+            -- SEQUENCE_DONE moves to the end of that gap — inside the sleep the
+            -- Python side already computes from hold+gap per button.
+            local is_ab = (item.key == BUTTONS.A or item.key == BUTTONS.B)
             local gap = is_ab and queue_ab_gap_frames or queue_gap_frames
             queue_state = "waiting"
             queue_frame_counter = 0
             queue_current_gap = gap
-            if #input_queue == 0 then
-                queue_state = "idle"
-                respond("SEQUENCE_DONE")
-            end
         end
     elseif queue_state == "waiting" then
         queue_frame_counter = queue_frame_counter + 1
         if queue_frame_counter >= (queue_current_gap or queue_gap_frames) then
+            trace_sample(queue_last_name)
             queue_state = "idle"
+            if #input_queue == 0 then
+                respond("SEQUENCE_DONE")
+            end
         end
     end
 end

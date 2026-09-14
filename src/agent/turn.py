@@ -1898,6 +1898,17 @@ class TurnManager:
         # run is terminated short of 100%. The summary's total_turns uses the
         # same player+master sum, so the two always agree.
         total_turns = self.turn_number + self.task_master_turns
+        # Per-input trace (2026-09-14): the tile and in-battle bit after every
+        # button of this turn, kept by the Lua bridge since the last fetch.
+        # Folded in BEFORE the poll so the poll's position uses the exact step
+        # count instead of the between-poll bound. Best-effort: a bridge or fake
+        # without tracing leaves the bound in place.
+        fetch = getattr(self.emulator, "fetch_trace", None)
+        if fetch is not None:
+            try:
+                self.referee.record_trace(total_turns, fetch())
+            except Exception as e:  # never let telemetry stop a run
+                self.logger.log_custom("trace_error", {"turn": self.turn_number, "error": str(e)[:200]})
         try:
             if bool(self.referee.poll(total_turns)):
                 reason = self.referee.termination_reason

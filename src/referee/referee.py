@@ -47,6 +47,7 @@ from src.referee.battles import (
     in_battle_from_byte,
 )
 from src.referee.checkpoints import Checkpoint, MultiGate, Node
+from src.referee import trace
 from src.referee.progress import ProgressTracker
 from src.referee.walkgraph import DEFAULT_GRAPH_PATH, WalkGraph
 
@@ -145,6 +146,7 @@ class Referee:
         self.progress = ProgressTracker(self.walkgraph, self.nodes)
         # Battle telemetry (plan: artifacts/battle-and-movement-fidelity/plan.md).
         self.battles = BattleTracker()
+        self.last_encryption_key: Optional[int] = None  # decodes the per-input trace's battle counter
         self.emulator = emulator
         self.logger = logger
         self.run_dir = Path(run_dir)
@@ -230,6 +232,8 @@ class Referee:
             "positions": self.progress.export_state()["positions"],
             # Per-poll battle records ``[turn, in_battle, total, wild, trainer, [ids]]``.
             "battle_records": self.battles.export_state()["battle_records"],
+            # Exact overworld steps per traced turn (src/referee/trace.py).
+            "traced_steps": self.progress.export_state().get("traced_steps", {}),
         }
 
     def stamped_events(self) -> list[dict]:
@@ -314,6 +318,8 @@ class Referee:
                 in_battle_byte = self.emulator.read_memory(GMAIN_IN_BATTLE_BYTE, 1)[0]
             except Exception:
                 key = in_battle_byte = None
+            if key is not None:
+                self.last_encryption_key = key
             return _MemorySnapshot(block, party_count, key=key, in_battle_byte=in_battle_byte)
 
         # Pointer kept moving across both attempts — give up for this poll.
@@ -397,6 +403,21 @@ class Referee:
             self._check_deadlines(turn_number)
 
         return self.should_terminate()
+
+    def record_trace(self, turn_number: int, rows: list) -> Optional[dict]:
+        """Fold one turn's per-input trace (``EmulatorClient.fetch_trace`` rows)
+        in BEFORE that turn's ``poll``: exact overworld steps replace the
+        between-poll bound for the turn, and the derived figures are logged as
+        ``turn_input_trace``. Returns the derived dict (None for an empty trace)."""
+        if not rows:
+            return None
+        samples = trace.decode_samples(rows, self.last_encryption_key)
+        start_tile = tuple(self.progress.positions[-1][1:]) if self.progress.positions else None
+        start_in_battle = self.battles.records[-1][1] if self.battles.records else (False if turn_number <= 1 else None)
+        derived = trace.derive(samples, start_tile, start_in_battle)
+        self.progress.record_traced_steps(turn_number, derived["overworld_steps"])
+        self.logger.log_event("turn_input_trace", {"turn": turn_number, **derived, "samples": samples})
+        return derived
 
     def _stamp(self, cp: Checkpoint, turn_number: int, *, auto: bool = False) -> None:
         """Latch a checkpoint's first-seen turn and emit its event.
