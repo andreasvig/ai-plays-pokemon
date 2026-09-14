@@ -6,6 +6,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+from src.referee.progress import OPEN_LEG_FRACTION_CAP
 from src.referee.walkgraph import DEFAULT_GRAPH_PATH, WalkGraph
 
 spec = importlib.util.spec_from_file_location("bpl", Path("scripts/backfill_parcel_leg.py"))
@@ -44,3 +45,74 @@ def test_the_corrected_locus_is_reachable_from_viridian_and_the_leg_rescores():
     assert prog["legs"][0] == {"node_id": "viridian_reached", "d_open": 5}   # other legs untouched
     # Idempotent: a leg that already has a distance is not rescored.
     assert bpl.rescore_summary(summary, positions, graph, targets, "parcel_delivered") is False
+
+
+def test_score_to_reached_rebases_the_starter_leg_to_the_ball_actually_taken():
+    """``--leg starter_chosen --score-to reached``: the three Pokéballs are three
+    valid finishes, so a CLOSED leg's D is the walk to the ball the run took, not
+    to the nearest one. The ball row y=4 is impassable between (7,4) and (11,4),
+    so from the lab's west side the far ball costs 5 steps where the near one
+    costs 1 — nearest-tile scoring charged that legitimate choice as a detour."""
+    graph = WalkGraph.load(DEFAULT_GRAPH_PATH)
+    ladder = Path("configs/checkpoints-firered-firstbadge.yaml")
+    targets = bpl.leg_targets(graph, ladder, "starter_chosen")
+    assert bpl.leg_score_to(ladder, "starter_chosen") == "reached"
+    assert bpl.leg_score_to(ladder, "parcel_delivered") == "nearest"   # the parcel leg is untouched by the new rule
+    assert {graph.nodes[i] for i in targets} == {(4, 3, 7, 4), (4, 3, 11, 4), (4, 3, 8, 3), (4, 3, 9, 3),
+                                                (4, 3, 10, 3), (4, 3, 8, 5), (4, 3, 9, 5), (4, 3, 10, 5)}
+    west = graph.node_id(4, 3, 6, 4)                 # where the leg opens, one step from the NEAREST ball
+    assert graph.distance_to(targets, west) == 1
+    assert graph.steps_between(west, graph.node_id(4, 3, 10, 3)) == 5    # ... and five from the far one
+
+    leg = {"node_id": "starter_chosen", "status": "closed", "scored": True, "opened_turn": 10, "closed_turn": 11,
+           "d_open": 1, "d_min": 0, "distance_now": 0, "fraction": 1.0, "steps_walked": 8, "efficiency": 0.125}
+    far = [[9, 4, 3, 6, 12], [10, 4, 3, 6, 4], [11, 4, 3, 10, 3]]        # T9 predates the leg and must not seed it
+    # (a) the FAR ball: D grows 1 -> 5 and efficiency rises with it; d_min / distance_now are 0.
+    out = bpl.rescore_leg_reached(leg, far, graph, targets, last_turn=11)
+    assert (out["d_open"], out["d_min"], out["distance_now"], out["fraction"]) == (5, 0, 0, 1.0)
+    assert out["efficiency"] == 5 / 8 > leg["efficiency"]
+    assert out["steps_walked"] == 8                                      # steps are left as recorded
+    assert bpl.rescore_leg(leg, far, graph, targets, 11)["d_open"] == 1   # the OLD rule, for contrast
+    # The NEAR ball scores the same under both rules: nothing is given away.
+    near = [[10, 4, 3, 6, 4], [11, 4, 3, 7, 4]]
+    assert bpl.rescore_leg_reached(leg, near, graph, targets, 11)["d_open"] == 1
+    assert bpl.rescore_leg_reached(leg, near, graph, targets, 11) == bpl.rescore_leg(leg, near, graph, targets, 11)
+
+    # (b) an OPEN leg (the run died before picking) keeps nearest-tile scoring, cap included.
+    still_open = {**leg, "status": "open", "closed_turn": None, "steps_walked": 24, "efficiency": None}
+    #  ... stood ON a ball's tile at T11 without taking one, then wandered off.
+    walking = [[10, 4, 3, 6, 4], [11, 4, 3, 7, 4], [12, 4, 3, 4, 4]]
+    opened = bpl.rescore_leg_reached(still_open, walking, graph, targets, last_turn=12)
+    assert opened == bpl.rescore_leg(still_open, walking, graph, targets, 12)
+    assert (opened["d_open"], opened["d_min"], opened["distance_now"]) == (1, 0, 3)
+    assert opened["fraction"] == OPEN_LEG_FRACTION_CAP and opened["efficiency"] is None
+    # A rebase would have measured to the last tile walked instead — it must not happen while open.
+    assert graph.steps_between(west, graph.node_id(4, 3, 4, 4)) == 2 != opened["d_open"]
+
+    # (c) idempotent, and a leg that already has a d_open needs --rescore-scored.
+    assert bpl.rescore_leg_reached(out, far, graph, targets, 11) == out
+    summary = {"session": {"total_turns": 11},
+               "referee": {"progress": {"progress": 4.0, "gates_reached": 3, "current_leg": None,
+                                        "legs": [{"node_id": "oaks_lab_entered", "d_open": 15}, dict(leg)]}}}
+    assert bpl.rescore_summary(summary, far, graph, targets, "starter_chosen", "reached") is False
+    assert bpl.rescore_summary(summary, far, graph, targets, "starter_chosen", "reached", force=True) is True
+    assert summary["referee"]["progress"]["legs"][1]["d_open"] == 5
+    assert summary["referee"]["progress"]["legs"][0] == {"node_id": "oaks_lab_entered", "d_open": 15}
+    assert bpl.rescore_summary(summary, far, graph, targets, "starter_chosen", "reached", force=True) is False
+
+
+def test_score_to_reached_matches_the_tracker_on_a_replayed_run():
+    """The oracle the backfill is checked against: the real ProgressTracker,
+    replaying the same positions and stamps, lands on the same numbers."""
+    graph = WalkGraph.load(DEFAULT_GRAPH_PATH)
+    ladder = Path("configs/checkpoints-firered-firstbadge.yaml")
+    targets = bpl.leg_targets(graph, ladder, "starter_chosen")
+    state = {"positions": [[1, 4, 1, 6, 6], [2, 4, 0, 5, 8], [3, 3, 0, 12, 1], [4, 4, 3, 6, 4], [5, 4, 3, 10, 3]],
+             "stamps": {"left_bedroom": 1, "left_house": 2, "oaks_lab_entered": 4, "starter_chosen": 5}}
+    ref = bpl.tracker_leg(state, graph, ladder, "starter_chosen")
+    assert ref["status"] == "closed" and ref["d_open"] == 5              # rebased to the far ball
+    leg = {**ref, "d_open": 1, "d_min": 0, "distance_now": 0, "fraction": 1.0, "efficiency": None}
+    out = bpl.rescore_leg_reached(leg, state["positions"], graph, targets)
+    assert bpl.oracle_disagreement(out, ref) == []
+    assert all(out[f] == ref[f] for f in bpl.ORACLE_FIELDS)
+    assert bpl.oracle_disagreement({**out, "d_open": 4}, ref) == ["d_open: backfill=4 tracker=5"]
