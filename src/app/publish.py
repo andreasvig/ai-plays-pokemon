@@ -41,7 +41,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
 from src.app.models import RunKind, RunStatus
-from src.app import route
+from src.app import replay, route
 from src.app.projection import project_run_dir
 
 # The User-Agent every anonymous probe sends. Cloudflare answers 403 to
@@ -622,10 +622,22 @@ def route_json(run_dir: Path) -> str | None:
 
 
 def public_summary_text(summary_path: Path) -> str:
-    """``run_summary.json`` minus its per-turn list — the result, not the reasoning."""
-    data = json.loads(Path(summary_path).read_text())
+    """``run_summary.json`` minus its per-turn list — the result, not the reasoning.
+
+    The referee block is REPLAYED from ``events.jsonl`` first, exactly as the
+    leaderboard row is (``projection.project_run_dir``). Without it the report
+    page and the board read two different numbers off the same run: the mark
+    run's stored legs carry 2858 steps, 596 of them phantom blackout warps the
+    replay rules out, against the row's 2262. A run with no per-input trace
+    keeps its stored block untouched.
+    """
+    summary_path = Path(summary_path)
+    data = json.loads(summary_path.read_text())
     for k in SUMMARY_PRIVATE_KEYS:
         data.pop(k, None)
+    replayed = replay.referee_view(summary_path.parent, data.get("referee"))
+    if replayed is not None:
+        data["referee"] = replayed
     return json.dumps(data, indent=2, ensure_ascii=False)
 
 
@@ -880,6 +892,24 @@ def refresh_rows(pages: PagesRepo, runs_root: Path, *, secrets: Iterable[str] = 
             if not target.is_file() or target.read_text() != route_text:
                 pages.write_run_files(str(run_id), {"route.json": route_text})
                 log(f"route written: {run_id}")
+        # summary.json is what the REPORT page reads, and its referee block is
+        # replayed from the same events as the row. Refreshing the row without
+        # it left the two disagreeing (2026-09-15): the report showed the
+        # pre-replay leg steps while the board showed the corrected ones.
+        summary_path = run_dir / "run_summary.json"
+        if summary_path.is_file():
+            try:
+                summary_text = public_summary_text(summary_path)
+            except (OSError, ValueError) as exc:
+                log(f"summary unreadable, left as published: {run_id} ({exc})")
+                continue
+            target = pages.run_dir(str(run_id)) / "summary.json"
+            if not target.is_file() or target.read_text() != summary_text:
+                hits = audit_files({f"{run_id}/summary.json": summary_text}, secrets)
+                if hits:
+                    raise PublishError(f"{run_id}: refreshed summary failed the leak audit: {hits[0]}")
+                pages.write_run_files(str(run_id), {"summary.json": summary_text})
+                log(f"summary refreshed: {run_id}")
     if changed:
         pages.write_board(out)
     return changed

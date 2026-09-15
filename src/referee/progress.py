@@ -65,7 +65,7 @@ class _Leg:
         "index", "node_id", "name", "status", "opened_turn", "closed_turn",
         "scored", "targets", "d_open", "d_min", "distance_now", "steps_walked",
         "tiles", "off_graph", "prev_node", "traced_turns", "bound_turns",
-        "open_node", "score_to",
+        "open_node", "score_to", "walls_hit",
     )
 
     def __init__(self, index: int, node_id: str, name: str, *, scored: bool,
@@ -89,6 +89,11 @@ class _Leg:
         # (exact) vs the shortest-path bound between polls (2026-09-14).
         self.traced_turns = 0
         self.bound_turns = 0
+        # Direction presses into a wall while already facing it, from the
+        # per-input trace. Kept OUT of steps_walked so the pure-path number
+        # survives a reweighting; efficiency charges it (plan W4,
+        # artifacts/wasted-inputs/plan.md).
+        self.walls_hit = 0
         # The first on-graph node of the leg (where D was measured from) and
         # the node's scoring rule — "reached" re-bases D at close (see module doc).
         self.open_node: Optional[int] = None
@@ -104,12 +109,22 @@ class _Leg:
             frac = min(frac, OPEN_LEG_FRACTION_CAP)
         return frac
 
+    def charged_steps(self) -> Optional[int]:
+        """Steps efficiency is measured against: every tile actually walked plus
+        one for every press into a wall. A bump burns the same frames as a step
+        and buys nothing, so leaving it free let a run headbutt a ledge at no
+        cost (live 2026-09-15: 577 of gemini-3.8-flash(high)'s presses)."""
+        if self.steps_walked is None:
+            return None
+        return self.steps_walked + self.walls_hit
+
     def efficiency(self) -> Optional[float]:
         if self.status != "closed" or self.d_open is None or self.d_open <= 0:
             return None
-        if self.steps_walked is None:
+        charged = self.charged_steps()
+        if charged is None:
             return None
-        return self.d_open / max(self.steps_walked, self.d_open)
+        return self.d_open / max(charged, self.d_open)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -125,6 +140,8 @@ class _Leg:
             "distance_now": self.distance_now,
             "fraction": self.fraction(),
             "steps_walked": self.steps_walked,
+            "walls_hit": self.walls_hit,
+            "charged_steps": self.charged_steps(),
             "tiles_seen": len(self.tiles),
             "off_graph": self.off_graph,
             "efficiency": self.efficiency(),
@@ -157,6 +174,7 @@ class ProgressTracker:
         # the old tile and the poll a second later the settled one; the steps
         # between them belong to the turn (2026-09-15, plan R3).
         self.traced_end: dict[int, tuple[int, int, int, int]] = {}
+        self.traced_walls: dict[int, int] = {}
         self._steps_cache: dict[tuple[int, int], Optional[int]] = {}
         # Per-member resolved loci, computed once: node index -> gate id -> tiles.
         self._member_targets: list[dict[str, frozenset[int]]] = []
@@ -207,11 +225,18 @@ class ProgressTracker:
         self._rebuild()
 
     def record_traced_steps(self, turn: int, steps: int,
-                            end_tile: Optional[tuple[int, int, int, int]] = None) -> None:
+                            end_tile: Optional[tuple[int, int, int, int]] = None,
+                            walls: int = 0) -> None:
         """Exact overworld steps for ``turn`` — call BEFORE that turn's ``record``.
         ``end_tile`` is the trace's last sampled tile; the poll's tile may lie a
-        warp or a door step further, which ``_fold`` adds to the turn."""
+        warp or a door step further, which ``_fold`` adds to the turn.
+        ``walls`` is the turn's presses into a wall, folded into the leg's
+        ``walls_hit`` and charged by :meth:`_Leg.efficiency`."""
         self.traced_steps[int(turn)] = max(int(steps), 0)
+        if walls:
+            self.traced_walls[int(turn)] = max(int(walls), 0)
+        else:
+            self.traced_walls.pop(int(turn), None)
         if end_tile is not None and len(end_tile) == 4:
             self.traced_end[int(turn)] = tuple(int(v) for v in end_tile)  # type: ignore[assignment]
         else:
@@ -223,6 +248,8 @@ class ProgressTracker:
             out["traced_steps"] = {str(t): s for t, s in sorted(self.traced_steps.items())}
         if self.traced_end:
             out["traced_end"] = {str(t): list(c) for t, c in sorted(self.traced_end.items())}
+        if self.traced_walls:
+            out["traced_walls"] = {str(t): w for t, w in sorted(self.traced_walls.items())}
         return out
 
     def load_state(self, data: Any) -> None:
@@ -253,6 +280,13 @@ class ProgressTracker:
             except (TypeError, ValueError):
                 continue
         self.traced_end = ends
+        walls: dict[int, int] = {}
+        for t, w in ((data.get("traced_walls") if isinstance(data, dict) else None) or {}).items():
+            try:
+                walls[int(t)] = int(w)
+            except (TypeError, ValueError):
+                continue
+        self.traced_walls = walls
         self._rebuild()
 
     def summary(self) -> dict[str, Any]:
@@ -487,6 +521,7 @@ class ProgressTracker:
             if traced is not None:
                 leg.steps_walked += traced
                 leg.traced_turns += 1
+                leg.walls_hit += self.traced_walls.get(pos[0], 0)
                 # Movement the poll saw after the last sample (a warp that was
                 # still fading, the auto-step out of a door) — plan R3.
                 end = self.traced_end.get(pos[0])

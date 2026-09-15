@@ -389,6 +389,9 @@ def test_publish_writes_the_route_file_for_a_traced_run_and_refresh_backfills_it
     pages.ensure()
     assert pub.refresh_rows(pages, run.parent, secrets=[], log=lambda m: None) == 1
     assert json.loads((pages.run_dir(run.name) / "route.json").read_text())["visits"] == route["visits"]
+    # and the report's own file is refreshed with it, so the two cannot drift
+    refreshed = json.loads((pages.run_dir(run.name) / "summary.json").read_text())
+    assert refreshed["referee"]["inputs"]["inputs"] == 3
 
 
 def test_republish_is_one_row_and_idempotent_uploads(world, tmp_path):
@@ -687,11 +690,19 @@ def test_refresh_rows_reprojects_published_rows_and_keeps_publish_only_keys(tmp_
     gone = {"run_id": "2026-09-01_00-00-00_config-5.1__gone", "model": "gone(high)", "turns": 7, "video_url": None}
 
     class Board:
-        def __init__(self): self.rows = [stale, gone]; self.writes = 0
+        """Minimal PagesRepo: refresh_rows also (re)writes each run's route.json
+        and summary.json, so the stub has to carry a run dir."""
+        def __init__(self, root): self.rows = [stale, gone]; self.writes = 0; self.root = root
         def read_board(self): return [dict(r) for r in self.rows]
         def write_board(self, rows): self.rows = rows; self.writes += 1
+        def run_dir(self, run_id):
+            d = self.root / "data" / "runs" / run_id
+            d.mkdir(parents=True, exist_ok=True)
+            return d
+        def write_run_files(self, run_id, files):
+            for name, text in files.items(): (self.run_dir(run_id) / name).write_text(text)
 
-    board = Board()
+    board = Board(tmp_path / "pages")
     assert pub.refresh_rows(board, runs, secrets=["sekrit"], log=lambda m: None) == 1
     assert board.writes == 1
     fresh = next(r for r in board.rows if r["run_id"] == run.name)
@@ -725,3 +736,36 @@ def test_sync_site_copies_static_folders_and_never_data(world, tmp_path):
     pages.sync_site(dist)
     assert sorted(p.name for p in (pages.worktree / "logos").iterdir()) == ["openai.svg"]
 
+
+
+def test_the_published_summary_replays_the_referee_so_the_report_matches_the_board(world, tmp_path):
+    """2026-09-15: the report page reads summary.json and the board reads the
+    row. Both must come off the same replay — before this, the mark run's
+    published summary carried 2858 leg steps (596 of them phantom blackout
+    warps) against the row's 2262, and the wasted-input census never shipped
+    at all. artifacts/wasted-inputs/plan.md."""
+    run = world["run"]
+    # Pallet Town (6,9) south: a real step, then three presses into the wall the
+    # player is already facing, then an A that changes nothing.
+    events = [
+        {"type": "referee_position", "turn": 0, "map_group": 3, "map_num": 19, "x": 14, "y": 19},
+        {"type": "turn_input_trace", "turn": 1, "samples": [
+            {"i": i, "input": inp, "map_group": 3, "map_num": 19, "x": 14, "y": y,
+             "in_battle": False, "battles_total": 0}
+            for i, (inp, y) in enumerate([("U", 18), ("U", 17), ("U", 17), ("U", 17), ("U", 17), ("A", 17)])]},
+        {"type": "referee_position", "turn": 1, "map_group": 3, "map_num": 19, "x": 14, "y": 17},
+    ]
+    (run / "events.jsonl").write_text("\n".join(json.dumps(e) for e in events) + "\n")
+    _publish(world)
+    files = _clone_board(world["repo"], tmp_path)
+    ref = json.loads(files[f"data/runs/{run.name}/summary.json"].read_text())["referee"]
+    census = ref["inputs"]
+    assert census["walls_hit"] == 3 and census["idle_ab"] == 1
+    assert census["turns_to_face"] == 0        # the first U moved, so it set the facing
+    assert census["overworld_steps"] == 2
+    row = json.loads(files["data/leaderboard.json"].read_text())[0]
+    assert row["walls_hit"] == sum(l.get("walls_hit", 0) for l in ref["progress"]["legs"])
+    assert row["wall_rate"] == census["wall_rate"]
+    # the row's steps and the summary's legs are the SAME replay
+    assert row["overworld_steps"] is not None
+    assert row["charged_steps"] == row["overworld_steps"] + row["walls_hit"]

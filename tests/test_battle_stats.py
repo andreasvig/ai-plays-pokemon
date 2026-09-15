@@ -159,7 +159,11 @@ def test_movement_uses_every_leg_with_a_path_and_credits_the_open_leg_with_groun
     m = movement(REFEREE, None)
     assert m["shortest"] == 9 + 1 + 20 + 12 and m["steps"] == 9 + 6 + 30 + 30 and round(m["efficiency"], 3) == round(42 / 75, 3)
     assert [l["node_id"] for l in m["legs"]] == ["left_bedroom", "starter_chosen", "route1_reached", "viridian_reached"]
-    assert m["legs"][-1] == {"node_id": "viridian_reached", "d_open": 12, "steps": 30, "source": "bound", "status": "open"}
+    assert m["legs"][-1] == {"node_id": "viridian_reached", "d_open": 12, "steps": 30, "walls": 0,
+                             "source": "bound", "status": "open"}
+    # No leg carried a walls_hit key: this run has no per-input trace, so the
+    # charge is UNMEASURED, not zero (plan W7).
+    assert m["walls"] is None and m["charged"] is None
     assert m["fidelity"] == "mixed"
     # Mutation control: the flag leg is the one that used to be dropped — without it the figure was 41/69.
     assert round(m["efficiency"], 3) != round(41 / 69, 3)
@@ -183,7 +187,8 @@ def test_movement_prefers_video_steps_when_the_leg_is_fully_covered():
     assert m["legs"][3]["source"] == "bound"                       # open leg: last_turn unknown → bound
     full = {t: 2 for t in range(1, 21)}                           # video covers turns 1-20; the run ended at 20
     m3 = movement(REFEREE, full, last_turn=20)
-    assert m3["legs"][3] == {"node_id": "viridian_reached", "d_open": 12, "steps": 16, "source": "video", "status": "open"}  # turns 13-20 × 2
+    assert m3["legs"][3] == {"node_id": "viridian_reached", "d_open": 12, "steps": 16, "walls": 0,
+                             "source": "video", "status": "open"}  # turns 13-20 × 2
     assert movement({"gates": [], "progress": {"legs": []}}, None) is None
 
 
@@ -228,3 +233,19 @@ def test_synthesis_leaves_the_first_of_two_fights_in_a_window_unnamed_rather_tha
     segs = [x for x in t.segments() if x["kind"] == "trainer"]
     # Sammy named by the savepoint at 20; the first Pewter fight named by Liam's flag; Brock still open at the end.
     assert [(x["opened_turn"], x["trainer_id"], x["won"]) for x in segs] == [(14, 104, True), (22, 142, True), (26, 414, False)]
+
+
+def test_a_wall_press_lowers_efficiency_by_exactly_one_step():
+    """Mutation control for plan W4: the SAME leg, with and without the walls,
+    and nothing else changed. Before this rule a bump cost the run nothing."""
+    def leg(walls):
+        return {"node_id": "route1_reached", "status": "closed", "scored": True,
+                "d_open": 20, "d_min": 0, "opened_turn": 1, "closed_turn": 9,
+                "steps_walked": 30, "walls_hit": walls, "steps_source": "trace"}
+    free = movement({"progress": {"legs": [leg(0)]}}, None)
+    charged = movement({"progress": {"legs": [leg(10)]}}, None)
+    assert free["steps"] == charged["steps"] == 30        # same ground walked
+    assert free["charged"] == 30 and charged["charged"] == 40
+    assert free["efficiency"] == 20 / 30
+    assert charged["efficiency"] == 20 / 40
+    assert charged["legs"][0]["walls"] == 10

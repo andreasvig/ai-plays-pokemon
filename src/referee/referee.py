@@ -429,9 +429,13 @@ class Referee:
             na, nb = graph.node_id(*a), graph.node_id(*b)
             return graph.steps_between(na, nb) if na is not None and nb is not None else None
 
-        derived = trace.derive(samples, start_tile, start_in_battle, distance=_distance)
+        def _passable(tile: tuple, direction: str) -> Optional[bool]:
+            return None if graph is None else graph.passable_in(*tile, direction)
+
+        derived = trace.derive(samples, start_tile, start_in_battle, distance=_distance, passable=_passable)
         if derived["overworld_steps"] is not None:  # a blind trace leaves the between-poll bound in place
-            self.progress.record_traced_steps(turn_number, derived["overworld_steps"], end_tile=derived["end_tile"])
+            self.progress.record_traced_steps(turn_number, derived["overworld_steps"],
+                                              end_tile=derived["end_tile"], walls=derived["walls_hit"])
         self.logger.log_event("turn_input_trace", {"turn": turn_number, **derived, "samples": samples})
         return derived
 

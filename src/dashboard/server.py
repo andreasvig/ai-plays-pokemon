@@ -32,6 +32,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from src.app import replay as app_replay
 from src.app.recording_name import recording_filename
 from src.app.trace_build import cached_run_trace
 from src.dashboard.event_bridge import EventBridge
@@ -1773,8 +1774,10 @@ async def api_run_summary(run_id: str):
     Unlike ``/api/runs/{id}`` (the FLAT index projection for lists), the SPA's
     Report view needs the full nested document — ``{session, cost:{…, per_turn},
     turns, referee:{gates, furthest, termination_reason}}`` — to render the gate
-    scorecard + per-turn trace. We serve the on-disk JSON as-is. 404 when the run
-    dir or summary file is absent.
+    scorecard + per-turn trace. The referee block is replayed from events.jsonl
+    (``replay.referee_view``) so this page and the leaderboard cannot disagree;
+    everything else is served as-is. 404 when the run dir or summary file is
+    absent.
     """
     _queue, executor, _index = _require_control()
     run_dir = Path(executor.runs_root) / run_id
@@ -1790,6 +1793,11 @@ async def api_run_summary(run_id: str):
         raise HTTPException(
             status_code=500, detail=f"could not read run_summary.json: {exc}"
         )
+    if isinstance(summary, dict) and "referee" in summary:
+        try:
+            summary["referee"] = app_replay.referee_view(run_dir, summary["referee"])
+        except Exception:  # a replay must never take the report down
+            pass
     return JSONResponse(summary)
 
 

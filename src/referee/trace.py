@@ -20,8 +20,27 @@ Samples per input, in spec order:
 Derived per turn (rule set of the plan, decision 2B recorded alongside 2A):
 - ``overworld_steps`` — inputs after which the tile changed while no battle was
   on before or after (a warp counts as one step, like the walk graph).
-- ``inputs_lost`` — direction inputs that moved nothing outside a battle:
-  bumps, facing turns, presses eaten by dialogue.
+- ``inputs_lost`` — direction inputs that moved nothing outside a battle. Kept
+  as the total; the four buckets below say WHY each one moved nothing.
+- ``moved_inputs`` — presses after which the player stood somewhere else. NOT
+  ``overworld_steps``, which counts TILES: one scripted B press can move 8.
+- ``battle_edge`` — the press a battle ended on. It is neither a battle input
+  nor an overworld one, and no tile comparison across the boundary is safe.
+- ``unclassified`` — no tile to compare against (the first press of a blind
+  turn, a sample the bridge could not read).
+- ``walls_hit`` — the player was already facing that way and the walk graph
+  gives the target no edge. The only bucket charged against efficiency
+  (plan W2/W4, ``artifacts/wasted-inputs/plan.md``).
+- ``turns_to_face`` — first press in a new direction. In FireRed that only
+  turns the player, and turning to face a sign or an NPC is a necessary input,
+  so it is never charged.
+- ``blocked_by_actor`` — the tile is open but nothing moved: a textbox, an NPC
+  or a script ate the press. Measured, not charged — model error and bad luck
+  are indistinguishable without a textbox flag in the spec.
+- ``blocked_unknown`` — off-graph, or a tile the graph gives a cross-map (warp)
+  edge, where a door approach is indistinguishable from a wall. Never charged.
+- ``idle_ab`` — an A or B outside a battle after which nothing moved. Whether it
+  advanced a dialogue box or hit nothing is not in the spec; measured only.
 - ``battle_inputs`` — inputs pressed while a battle was on.
 - ``battle_started_at`` — index of the first input after which a battle was on
   (None when none).
@@ -91,10 +110,14 @@ def _tile(d: dict[str, Any]) -> Optional[tuple[int, int, int, int]]:
 
 
 Distance = Callable[[tuple[int, int, int, int], tuple[int, int, int, int]], Optional[int]]
+# ``passable(tile, "U") -> True`` open, ``False`` a wall, ``None`` cannot say
+# (off-graph, or a tile with a warp edge — see plan W3).
+Passable = Callable[[tuple[int, int, int, int], str], Optional[bool]]
 
 
 def derive(samples: list[dict[str, Any]], start_tile: Optional[tuple[int, int, int, int]],
-           start_in_battle: Optional[bool], distance: Optional[Distance] = None) -> dict[str, Any]:
+           start_in_battle: Optional[bool], distance: Optional[Distance] = None,
+           passable: Optional[Passable] = None) -> dict[str, Any]:
     """Turn-level figures from the per-input samples.
 
     ``start_tile`` / ``start_in_battle`` are the referee's last poll before this
@@ -111,11 +134,22 @@ def derive(samples: list[dict[str, Any]], start_tile: Optional[tuple[int, int, i
     (a blackout warp), not a walk: one step, counted in ``relocations``.
     ``end_tile`` is the last tile sampled — the referee compares it with the
     poll that follows: a warp still fading at sample time shows the old tile.
+
+    ``passable(tile, dir)`` — is there a way off ``tile`` in that direction —
+    splits a press that moved nothing into the four buckets the docstring at
+    the top of this module describes. Facing is INFERRED: every direction press
+    leaves the player facing that way whether or not it moved, and an A/B press
+    drops the inference back to unknown, since a dialogue or cutscene between
+    presses can turn the player. The inference can therefore only UNDER-charge:
+    an unknown facing makes the press a ``turns_to_face``, which is free.
     """
     steps = lost = battle_inputs = scripted = relocations = 0
+    walls = faces = blocked = unknown = idle_ab = 0
+    moved_inputs = battle_edge = unclassified = 0
     battle_started_at: Optional[int] = None
     prev_tile, prev_batt = start_tile, start_in_battle
     prev_total: Optional[int] = None
+    facing: Optional[str] = None
     for d in samples:
         tile, batt = _tile(d), d.get("in_battle")
         # The battle counter moves at the START of a battle, a few frames before
@@ -132,8 +166,15 @@ def derive(samples: list[dict[str, Any]], start_tile: Optional[tuple[int, int, i
             if battle_started_at is None and not prev_batt:
                 battle_started_at = d["i"]
         quiet = (prev_batt is False) and (batt is False)
+        if batt:
+            pass                       # already counted in battle_inputs
+        elif not quiet:
+            battle_edge += 1           # the press a battle ended on: neither
+        elif tile is None or prev_tile is None:
+            unclassified += 1          # nothing to compare this press against
         if quiet and tile is not None and prev_tile is not None:
             if tile != prev_tile:
+                moved_inputs += 1
                 moved = distance(prev_tile, tile) if distance is not None else None
                 moved = moved if isinstance(moved, int) and moved > 0 else 1
                 if moved > MAX_TILES_PER_INPUT:  # the game moved the player, not the player
@@ -141,8 +182,26 @@ def derive(samples: list[dict[str, Any]], start_tile: Optional[tuple[int, int, i
                     moved = 1
                 steps += moved
                 scripted += moved - 1
-            elif str(d.get("input", "")).upper() in DIRECTIONS:
+            elif (key := str(d.get("input", "")).upper()) in DIRECTIONS:
                 lost += 1
+                if facing != key:
+                    faces += 1              # only turned to face — a legal input
+                else:
+                    open_ = passable(tile, key) if passable is not None else None
+                    if open_ is False:
+                        walls += 1          # facing a wall and pressed into it
+                    elif open_ is True:
+                        blocked += 1        # a textbox, an NPC or a script ate it
+                    else:
+                        unknown += 1        # off-graph or a warp tile
+            else:
+                idle_ab += 1
+        # Every OVERWORLD direction press leaves the player facing that way,
+        # moved or not. An A/B drops the inference (a dialogue or cutscene
+        # between presses can turn the player) and so does a battle, where a
+        # direction press moves a menu cursor and not the player.
+        pressed = str(d.get("input", "")).upper()
+        facing = pressed if (quiet and pressed in DIRECTIONS) else None
         if tile is not None:
             prev_tile = tile
         if batt is not None:
@@ -160,8 +219,27 @@ def derive(samples: list[dict[str, Any]], start_tile: Optional[tuple[int, int, i
         "end_in_battle": prev_batt,
         "scripted_tiles": scripted,
         "relocations": relocations,
+        # Every input lands in EXACTLY ONE of the buckets below, so a report
+        # that lists them can state a total that adds up. Guarded by
+        # tests/test_trace.py::test_the_buckets_partition_every_input.
+        "moved_inputs": moved_inputs,
+        "battle_edge": battle_edge,
+        "unclassified": unclassified,
+        "walls_hit": walls,
+        "turns_to_face": faces,
+        "blocked_by_actor": blocked,
+        "blocked_unknown": unknown,
+        "idle_ab": idle_ab,
         "end_tile": None if blind else prev_tile,
     }
 
 
-__all__ = ["TRACE_SPEC", "MAX_TILES_PER_INPUT", "decode_samples", "derive"]
+# The buckets a turn's trace splits its inputs into — a PARTITION of the turn's
+# inputs, so they sum to ``inputs`` — and the one charged against movement
+# efficiency. ``src/app/replay.py`` sums these over a run.
+INPUT_BUCKETS = ("moved_inputs", "battle_inputs", "battle_edge", "walls_hit", "turns_to_face",
+                 "blocked_by_actor", "blocked_unknown", "idle_ab", "unclassified")
+CHARGED_BUCKET = "walls_hit"
+
+__all__ = ["TRACE_SPEC", "MAX_TILES_PER_INPUT", "INPUT_BUCKETS", "CHARGED_BUCKET",
+           "decode_samples", "derive"]

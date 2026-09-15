@@ -134,3 +134,58 @@ def test_missing_or_unreadable_events_never_raise(tmp_path, firered):
     run = tmp_path / "junk"; run.mkdir()
     (run / "events.jsonl").write_text('{"type": "referee_position"\n{"type": "turn_input_trace", "turn": 1}\n')
     assert replay.replay_referee(run, firered) is None
+
+
+# --- the input census and the wall charge (artifacts/wasted-inputs/plan.md) ---
+
+def test_replay_counts_wall_presses_and_charges_them_to_the_leg(tmp_path, firered):
+    """Route 1 (14,17) has no edge north — the ledge. Facing it and pressing U
+    again is a wall; the FIRST U only turns the player and is free."""
+    events = [
+        poll_ev(0, 3, 19, 14, 18),
+        trace_ev(1, [sample(0, "U", 3, 19, 14, 17),          # a real step
+                     sample(1, "U", 3, 19, 14, 17),          # facing north: wall
+                     sample(2, "U", 3, 19, 14, 17),          # wall
+                     sample(3, "A", 3, 19, 14, 17)]),        # idle A/B
+        poll_ev(1, 3, 19, 14, 17),
+        battle_ev(0), battle_ev(1),
+    ]
+    out = replay.replay_referee(write(tmp_path / "r", events), firered)
+    inputs = out["inputs"]
+    assert inputs["inputs"] == 4 and inputs["overworld_steps"] == 1
+    assert inputs["walls_hit"] == 2 and inputs["turns_to_face"] == 0
+    assert inputs["idle_ab"] == 1 and inputs["blocked_by_actor"] == 0
+    assert inputs["overworld_inputs"] == 4 and inputs["wall_rate"] == 0.5
+    assert inputs["worst_turns"][0] == {"turn": 1, "walls": 2, "inputs": 4}
+    leg = out["progress"]["legs"][0]
+    # steps_walked stays the tiles actually covered; the charge rides beside it.
+    assert leg["walls_hit"] == 2 and leg["charged_steps"] == leg["steps_walked"] + 2
+
+
+def test_a_run_with_no_trace_gets_no_census_at_all(tmp_path, firered):
+    """Not a zeroed census: 23 of the 25 rows published on 2026-09-15 predate
+    the per-input trace and must render as unmeasured, not as clean runs."""
+    events = [poll_ev(0, 4, 1, 5, 6), poll_ev(1, 4, 1, 4, 5), battle_ev(0), battle_ev(1)]
+    assert replay.replay_referee(write(tmp_path / "r", events), firered) is None
+
+
+def test_the_wall_charge_lowers_efficiency_and_leaves_steps_walked_alone(tmp_path, firered):
+    """The whole point of W4: a bump used to be free."""
+    from src.app import battle_stats
+    # Walk up to the ledge tile (14,17), where U is a wall, then bump it.
+    clean = [poll_ev(0, 3, 19, 14, 19),
+             trace_ev(1, [sample(0, "U", 3, 19, 14, 18), sample(1, "U", 3, 19, 14, 17)]),
+             poll_ev(1, 3, 19, 14, 17), battle_ev(0), battle_ev(1)]
+    bumpy = clean[:1] + [trace_ev(1, clean[1]["samples"] + [sample(2, "U", 3, 19, 14, 17)] * 3)] + clean[2:]
+    a = replay.replay_referee(write(tmp_path / "a", clean), firered)
+    b = replay.replay_referee(write(tmp_path / "b", bumpy), firered)
+    la, lb = a["progress"]["legs"][0], b["progress"]["legs"][0]
+    assert la["steps_walked"] == lb["steps_walked"]      # same ground covered
+    assert la["walls_hit"] == 0 and lb["walls_hit"] == 3
+    assert lb["charged_steps"] > la["charged_steps"]
+    # and it reaches the aggregate the row is built from, not just the leg dict
+    ma = battle_stats.movement({"progress": a["progress"]}, None)
+    mb = battle_stats.movement({"progress": b["progress"]}, None)
+    assert mb["steps"] == ma["steps"]                    # walked: unchanged
+    assert mb["walls"] == 3 and ma["walls"] == 0
+    assert mb["charged"] == ma["charged"] + 3            # the denominator moved

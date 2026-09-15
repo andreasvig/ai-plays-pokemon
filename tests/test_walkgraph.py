@@ -173,3 +173,33 @@ def test_firered_viridian_to_pewter_goes_through_the_forest(firered):
     south = {g.node_id(*forest, x, 62) for x in (28, 29, 30)} - {None}
     north = {g.node_id(*forest, x, 9) for x in (4, 5, 6)} - {None}
     assert min(g.distance_to(north, s) for s in south) > 100
+
+
+# --- passable_in: the rule behind walls_hit (artifacts/wasted-inputs/plan.md) --
+
+def test_passable_in_calls_the_route1_ledge_a_wall_from_below(firered):
+    """The tile gemini-3.8-flash(high) pressed U into 46 times on 2026-09-15."""
+    g = firered
+    route1 = _gn(g, "Route1")
+    assert g.passable_in(*route1, 14, 17, "U") is False
+    assert g.passable_in(*route1, 14, 17, "D") is True
+    assert g.passable_in(*route1, 14, 17, "L") is True
+
+
+def test_passable_in_accepts_a_ledge_hop_which_moves_two_tiles(firered):
+    """A ledge edge targets the tile TWO away, so an adjacent-only test called
+    it a wall — 4 of 1467 observed moves in the 2026-09-15 control."""
+    g = firered
+    route1 = _gn(g, "Route1")
+    assert g.passable_in(*route1, 13, 30, "D") is True
+    assert g.node_id(*route1, 13, 31) is None  # the tile between is not walkable
+
+
+def test_passable_in_refuses_to_judge_a_tile_a_warp_leaves(firered):
+    """A door's target is on another map, so the same-map neighbour set is
+    empty that way and a legitimate door approach read as a wall (9 presses in
+    the 2026-09-15 control). None means "cannot say", and nothing is charged."""
+    g = firered
+    assert g.passable_in(*_gn(g, "PalletTown"), 16, 13, "U") is None
+    assert g.passable_in(999, 999, 0, 0, "U") is None       # off-graph
+    assert g.passable_in(*_gn(g, "Route1"), 14, 17, "A") is None  # not a direction

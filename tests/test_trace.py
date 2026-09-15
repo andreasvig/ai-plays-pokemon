@@ -58,7 +58,10 @@ def test_derive_counts_steps_only_outside_battle_and_names_lost_inputs():
     d = trace.derive(trace.decode_samples(rows, KEY), start_tile=(3, 0, 0, 0), start_in_battle=False)
     assert d == {"inputs": 6, "blind": False, "overworld_steps": 2, "inputs_lost": 1, "battle_inputs": 3,
                  "battle_started_at": 3, "end_in_battle": True, "scripted_tiles": 0, "relocations": 0,
-                 "end_tile": (3, 0, 3, 0)}
+                 "moved_inputs": 2, "battle_edge": 0, "unclassified": 0,
+                 # no passable() here, so the lost press cannot be attributed
+                 "walls_hit": 0, "turns_to_face": 0, "blocked_by_actor": 0, "blocked_unknown": 1,
+                 "idle_ab": 0, "end_tile": (3, 0, 3, 0)}
 
 
 def test_a_multi_tile_displacement_counts_its_graph_distance_when_one_is_known():
@@ -187,3 +190,94 @@ def test_referee_folds_the_trace_in_before_the_poll_and_logs_it(tmp_path):
     assert ref.record_trace(3, []) is None
     blind = ref.record_trace(3, [("U", [b"", b"", b""])])
     assert blind["blind"] and "3" not in ref.export_state()["traced_steps"]  # the bound stands for a blind turn
+
+
+# --- wasted-input buckets (artifacts/wasted-inputs/plan.md) -------------------
+
+def _wall_at(tile, direction):
+    """passable() stub: (3,0,5,5) is walled to the north, open everywhere else."""
+    return False if (tuple(tile) == (3, 0, 5, 5) and direction == "U") else True
+
+
+def test_first_press_in_a_direction_is_a_turn_to_face_and_the_repeats_are_walls():
+    # Facing is inferred from the previous direction press: the first U only
+    # turns the player (a legal input — that is how you face a sign), every U
+    # after it is a bump. Three turns of walking into a wall must therefore
+    # read as the presses they were, not as three turns.
+    rows = [row("R", 5, 5)] + [row("U", 5, 5) for _ in range(4)]
+    d = trace.derive(trace.decode_samples(rows, KEY), (3, 0, 4, 5), False, passable=_wall_at)
+    assert d["inputs_lost"] == 4
+    assert d["turns_to_face"] == 1 and d["walls_hit"] == 3
+    assert d["blocked_by_actor"] == 0 and d["blocked_unknown"] == 0
+
+
+def test_a_press_on_an_open_tile_that_moved_nothing_is_blocked_not_a_wall():
+    # Same shape, but the graph says the tile ahead is reachable — a textbox,
+    # an NPC or a script ate the press. Measured, never charged (plan W5).
+    rows = [row("L", 5, 5), row("L", 5, 5), row("L", 5, 5)]
+    d = trace.derive(trace.decode_samples(rows, KEY), (3, 0, 6, 5), False, passable=_wall_at)
+    # The first L moved (6,5)->(5,5), which also leaves the player facing L, so
+    # both presses after it are attributable and neither is a turn-to-face.
+    assert d["overworld_steps"] == 1
+    assert d["walls_hit"] == 0 and d["blocked_by_actor"] == 2 and d["turns_to_face"] == 0
+
+
+def test_ab_presses_are_counted_separately_and_never_as_lost_movement():
+    rows = [row("A", 5, 5), row("B", 5, 5), row("U", 5, 5), row("U", 5, 5)]
+    d = trace.derive(trace.decode_samples(rows, KEY), (3, 0, 5, 5), False, passable=_wall_at)
+    assert d["idle_ab"] == 2
+    assert d["inputs_lost"] == 2          # direction presses only
+    # The B reset the facing inference, so the first U is a turn-to-face again.
+    assert d["turns_to_face"] == 1 and d["walls_hit"] == 1
+
+
+def test_an_unknown_facing_under_charges_rather_than_guessing():
+    # Without a preceding direction press the facing is unknown, so a press
+    # into a wall is booked as a turn-to-face and costs the run nothing.
+    d = trace.derive(trace.decode_samples([row("U", 5, 5)], KEY), (3, 0, 5, 5), False, passable=_wall_at)
+    assert d["walls_hit"] == 0 and d["turns_to_face"] == 1
+
+
+def test_without_a_passable_callable_no_press_is_charged():
+    rows = [row("U", 5, 5), row("U", 5, 5), row("U", 5, 5)]
+    d = trace.derive(trace.decode_samples(rows, KEY), (3, 0, 5, 5), False)
+    assert d["inputs_lost"] == 3 and d["walls_hit"] == 0 and d["blocked_unknown"] == 2
+
+
+def test_a_direction_press_inside_a_battle_drops_the_facing_inference():
+    # A direction in battle moves a menu cursor, not the player: it must not
+    # seed the facing and make the next overworld press look like a bump.
+    rows = [row("U", 5, 5, in_battle=True), row("U", 5, 5), row("U", 5, 5), row("U", 5, 5)]
+    d = trace.derive(trace.decode_samples(rows, KEY), (3, 0, 5, 5), True, passable=_wall_at)
+    assert d["battle_inputs"] == 1
+    # Press 2 ends the battle and is classified as neither; press 3 re-seeds the
+    # facing as a turn-to-face, and only press 4 is charged.
+    assert d["turns_to_face"] == 1 and d["walls_hit"] == 1
+
+
+def test_the_buckets_partition_every_input():
+    """The report lists the buckets and states a total. If they did not sum to
+    `inputs` the total would be a lie — and the first draft was one: it showed
+    overworld_steps (TILES) in the row labelled "moved" (PRESSES), and lost the
+    press a battle ends on entirely."""
+    rows = [
+        row("U", 5, 5),                       # moved onto the walled tile
+        row("U", 5, 5),                       # wall (facing north already)
+        row("A", 5, 5),                       # idle A/B
+        row("D", 5, 5, in_battle=True),       # in battle
+        row("D", 5, 5),                       # the press the battle ended on
+        row("L", 4, 5),                       # moved
+    ]
+    d = trace.derive(trace.decode_samples(rows, KEY), (3, 0, 5, 6), False, passable=_wall_at)
+    assert sum(d[k] for k in trace.INPUT_BUCKETS) == d["inputs"] == 6
+    assert d["moved_inputs"] == 2 and d["battle_edge"] == 1 and d["battle_inputs"] == 1
+    assert d["walls_hit"] == 1 and d["idle_ab"] == 1
+
+
+def test_moved_inputs_counts_presses_while_overworld_steps_counts_tiles():
+    """One scripted B press can move the player eight tiles (Oak's escort)."""
+    rows = [row("B", 4, 5), row("B", 4, 1)]
+    d = trace.derive(trace.decode_samples(rows, KEY), (3, 0, 4, 6), False,
+                     distance=lambda a, b: abs(a[3] - b[3]))
+    assert d["moved_inputs"] == 2 and d["overworld_steps"] == 5
+    assert sum(d[k] for k in trace.INPUT_BUCKETS) == d["inputs"] == 2

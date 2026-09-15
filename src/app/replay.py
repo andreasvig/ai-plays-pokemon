@@ -108,7 +108,7 @@ def read_raw(run_dir: Path) -> dict[str, Any]:
 
 def replay_referee(run_dir: Path, graph: Optional[WalkGraph] = None,
                    ladder: Optional[Path] = None) -> Optional[dict[str, Any]]:
-    """``{"progress", "battles"}`` rebuilt from the raw events, or None.
+    """``{"progress", "battles", "inputs"}`` rebuilt from the raw events, or None.
 
     None when the run recorded no per-input trace (every run before
     2026-09-14): there is nothing to re-derive that the stored summary does not
@@ -130,9 +130,17 @@ def replay_referee(run_dir: Path, graph: Optional[WalkGraph] = None,
         na, nb = graph.node_id(*a), graph.node_id(*b)
         return graph.steps_between(na, nb) if na is not None and nb is not None else None
 
+    def passable(tile: tuple, direction: str) -> Optional[bool]:
+        return graph.passable_in(*tile, direction)
+
     progress = ProgressTracker(graph, nodes)
     battles = BattleTracker()
     defeated: set[int] = set()
+    # Run-level input census. Every bucket is re-derived here, so a rule change
+    # is a PROJECTION_VERSION bump and never a back-fill (plan R8).
+    inputs: dict[str, int] = {k: 0 for k in
+                              ("inputs", "overworld_steps", "inputs_lost", *trace.INPUT_BUCKETS)}
+    worst: list[tuple[int, int, int]] = []  # (walls, inputs, turn)
     for turn in sorted(set(raw["polls"]) | set(raw["samples"])):
         # The trace is folded in BEFORE the poll, exactly as Referee.poll does,
         # so the turn's exact step count replaces the between-poll bound.
@@ -141,9 +149,17 @@ def replay_referee(run_dir: Path, graph: Optional[WalkGraph] = None,
             start_tile = tuple(raw["polls"][max(before)][1:]) if before else None
             prev = battles.records[-1] if battles.records else None
             start_in_battle = prev[1] if prev else (False if turn <= 1 else None)
-            d = trace.derive(raw["samples"][turn], start_tile, start_in_battle, distance=distance)
+            d = trace.derive(raw["samples"][turn], start_tile, start_in_battle,
+                             distance=distance, passable=passable)
             if d["overworld_steps"] is not None:
-                progress.record_traced_steps(turn, d["overworld_steps"], end_tile=d["end_tile"])
+                progress.record_traced_steps(turn, d["overworld_steps"], end_tile=d["end_tile"],
+                                             walls=d["walls_hit"])
+            for k in inputs:
+                v = d.get(k)
+                if isinstance(v, int):
+                    inputs[k] += v
+            if d["walls_hit"]:
+                worst.append((d["walls_hit"], d["inputs"], turn))
         if turn in raw["polls"]:
             progress.record(*raw["polls"][turn])
         b = raw["battles"].get(turn)
@@ -155,7 +171,16 @@ def replay_referee(run_dir: Path, graph: Optional[WalkGraph] = None,
                            int(b.get("wild_battles") or 0), int(b.get("trainer_battles") or 0),
                            sorted(defeated), b.get("opponent"))
     progress.observe_stamps(raw["stamps"])
-    return {"progress": progress.summary(), "battles": battles.summary()}
+    inputs["traced_turns"] = len(raw["samples"])
+    # Presses that could have moved the player: everything outside a battle.
+    # The rate is what the board column shows, so its denominator must exclude
+    # battle inputs — menu presses are not movement and cannot hit a wall.
+    overworld = inputs["inputs"] - inputs["battle_inputs"]
+    inputs["overworld_inputs"] = overworld
+    inputs["wall_rate"] = round(inputs["walls_hit"] / overworld, 6) if overworld > 0 else None
+    worst.sort(reverse=True)
+    inputs["worst_turns"] = [{"turn": t, "walls": w, "inputs": n} for w, n, t in worst[:10]]
+    return {"progress": progress.summary(), "battles": battles.summary(), "inputs": inputs}
 
 
 def referee_view(run_dir: Path, stored: Any, graph: Optional[WalkGraph] = None) -> Any:
@@ -164,11 +189,15 @@ def referee_view(run_dir: Path, stored: Any, graph: Optional[WalkGraph] = None) 
 
     Gates, checkpoints and the termination reason stay as recorded — they are
     decisions the referee made during the run, not derivations.
+
+    A run with raw events but no stored block gets the replay on its own: the
+    derivations are as good either way, and returning nothing would leave the
+    report with no movement at all.
     """
-    if not isinstance(stored, dict):
-        return stored
     fresh = replay_referee(run_dir, graph)
-    return {**stored, **fresh} if fresh else stored
+    if fresh is None:
+        return stored
+    return {**stored, **fresh} if isinstance(stored, dict) else fresh
 
 
 __all__ = ["replay_referee", "referee_view", "read_raw", "ladder_path", "DEFAULT_LADDER"]

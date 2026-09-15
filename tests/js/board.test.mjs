@@ -284,7 +284,7 @@ test('battle series: rule-A turn costs, means over ≥4 fights, unfought trainer
 test('empty board yields empty series without dividing by zero', () => {
   assert.deepEqual(headlineSeries([], GATES), { performance: [], time: [], cost: [] })
   assert.deepEqual(secondarySeries([], GATES), { speed: [], cost10: [], turnsPerTask: [], inputsPerTurn: [], outputTokens: [] })
-  assert.deepEqual(battleSeries([]), { movement: [], wildTurns: [], trainerTurns: [] })
+  assert.deepEqual(battleSeries([]), { movement: [], walls: [], wildTurns: [], trainerTurns: [] })
 })
 
 test('estimationMatrix: every run, every leg, ratios to the typical leg, estimates that sum to the projection', () => {
@@ -386,4 +386,28 @@ test('runGateRows: stamps, time and cost at the stamp, the failed leg from the t
   // Missing time/cost/legs on an older row: nulls, never NaN.
   const bare = runGateRows({ turns: 5, status: 'completed', gateTurns: { left_bedroom: 2 } }, gates.slice(0, 1))
   assert.deepEqual([bare[0].timeS, bare[0].costUsd, bare[0].efficiency], [null, null, null])
+})
+
+test('the wall card omits a run that has no per-input trace, and never draws it as zero', () => {
+  // artifacts/wasted-inputs/plan.md W7: 23 of the 25 rows published on
+  // 2026-09-15 predate the trace. A 0% bar would claim they hit no walls.
+  const traced = { model: 'a', wallRate: 0.2, wallsHit: 40, overworldSteps: 100, chargedSteps: 140 }
+  const untraced = { model: 'b', wallRate: null, wallsHit: null }
+  const { walls } = battleSeries([traced, untraced])
+  const on = walls.filter((s) => s.eligible)
+  assert.equal(on.length, 1)
+  assert.equal(on[0].row.model, 'a')
+  assert.equal(on[0].label, '20%')
+  const off = walls.filter((s) => !s.eligible)
+  assert.equal(off.length, 1)
+  assert.equal(off[0].value, null)     // not 0
+  assert.equal(off[0].label, '—')
+})
+
+test('the wall card ranks fewest walls first', () => {
+  const { walls } = battleSeries([
+    { model: 'sloppy', wallRate: 0.3, wallsHit: 30 },
+    { model: 'tidy', wallRate: 0.05, wallsHit: 5 },
+  ])
+  assert.deepEqual(walls.filter((s) => s.eligible).map((s) => s.row.model), ['tidy', 'sloppy'])
 })

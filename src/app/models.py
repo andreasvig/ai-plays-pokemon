@@ -195,6 +195,19 @@ class RunSummary(BaseModel):
     # every step of the run is on record). None for runs without a trace.
     route_points: int | None = None
     route_coverage: float | None = None
+    # Wasted-input accounting (2026-09-15, artifacts/wasted-inputs/plan.md).
+    # ``walls_hit`` = direction presses into a wall while already facing it,
+    # summed over the legs movement_efficiency counts. ``overworld_steps``
+    # keeps holding only tiles WALKED; ``charged_steps`` is what efficiency
+    # divides by, and the two differ by exactly ``walls_hit``.
+    # ``wall_rate`` = walls ÷ every input pressed outside a battle.
+    # ``input_breakdown`` = the full per-run census for the report. All three
+    # are None for a run with no per-input trace (the trace went live
+    # 2026-09-14); the board must omit those rows, not draw them as zero.
+    charged_steps: int | None = None
+    walls_hit: int | None = None
+    wall_rate: float | None = None
+    input_breakdown: dict | None = None
     # Between-gate progress (2026-09-09, artifacts/granular-progress/plan.md):
     # ``gates_reached`` plus the fraction of the CURRENT leg walked, where the
     # fraction is 1 - d_min/D on the FireRed walk graph (d_min = steps from the

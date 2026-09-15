@@ -90,6 +90,35 @@
   const currentLeg = $derived(progress?.current_leg ?? null)
   const pctOf = (x) => (x == null ? '—' : `${Math.round(x * 100)}%`)
 
+  // Per-input census (artifacts/wasted-inputs/plan.md). Present only for a run
+  // played after the per-input trace went live on 2026-09-14; a run without one
+  // renders NOTHING here rather than a row of zeroes it never measured.
+  const inputs = $derived(summary?.referee?.inputs ?? null)
+  const buckets = $derived(
+    !inputs?.inputs
+      ? []
+      : [
+          { key: 'moved', label: 'Moved the player', n: inputs.moved_inputs,
+            note: `${inputs.overworld_steps.toLocaleString()} tiles — a scripted press can move several` },
+          { key: 'battle', label: 'Pressed in a battle', n: inputs.battle_inputs, note: 'menus and attacks' },
+          { key: 'wall', label: 'Walked into a wall', n: inputs.walls_hit, charged: true,
+            note: 'already facing it, and the map has no way through' },
+          { key: 'face', label: 'Turned to face', n: inputs.turns_to_face,
+            note: 'first press in a new direction — how you face a sign or an NPC' },
+          { key: 'eaten', label: 'Eaten by a textbox or an NPC', n: inputs.blocked_by_actor,
+            note: 'the tile ahead is open, but nothing moved' },
+          { key: 'unknown', label: 'Could not attribute', n: inputs.blocked_unknown,
+            note: 'a door tile or a tile off the walk graph' },
+          { key: 'ab', label: 'A or B, nothing moved', n: inputs.idle_ab,
+            note: 'advancing dialogue and pressing at nothing look identical here' },
+          { key: 'edge', label: 'On a battle boundary', n: inputs.battle_edge,
+            note: 'the press a battle ended on — neither an overworld press nor a battle one' },
+          { key: 'none', label: 'Nothing to compare', n: inputs.unclassified,
+            note: 'the bridge read no tile for this press' },
+        ].filter((b) => typeof b.n === 'number' && b.n > 0)
+  )
+  const bucketMax = $derived(Math.max(1, ...buckets.map((b) => b.n)))
+
   // Was anything actually GATED on the ladder? Casual and calibration runs run
   // the referee observe-only (`referee.enforce: false`) — the ladder is still
   // scored into run_summary.json, but no deadline was armed and no run was
@@ -468,6 +497,36 @@ where: {crash.where.join(' ← ')}{/if}</pre>
             </div>
           </div>
         {/if}
+      </section>
+    {/if}
+
+    <!-- What every button press bought (artifacts/wasted-inputs/plan.md). Public,
+         unlike the between-gates table above: the board shows the wall rate, so
+         hiding what it is made of would leave the number unexplainable. -->
+    {#if buckets.length}
+      <section class="inputs">
+        <div class="score-head">
+          <h3>Where the inputs went</h3>
+          <span class="cleared">{buckets.reduce((a, b) => a + b.n, 0).toLocaleString()} presses over {inputs.traced_turns} turns</span>
+          <span class="verdict" class:fail={inputs.wall_rate > 0.15}>{pctOf(inputs.wall_rate)} into walls</span>
+        </div>
+        <div class="btable">
+          {#each buckets as b (b.key)}
+            <div class="brow" class:charged={b.charged}>
+              <span class="blabel">{b.label}{#if b.charged}<em>charged</em>{/if}</span>
+              <span class="bbar"><i style="width:{(b.n / bucketMax) * 100}%"></i></span>
+              <span class="bn tnum">{b.n.toLocaleString()}</span>
+              <span class="bnote faint">{b.note}</span>
+            </div>
+          {/each}
+        </div>
+        <p class="bfoot faint">
+          A press into a wall burns the same frames as a step and gains no ground, so each one is
+          charged against movement efficiency like a walked step. The rate is measured against the
+          {inputs.overworld_inputs.toLocaleString()} presses made outside a battle. Turning to face,
+          presses an actor ate, and A/B are measured but never charged — the trace records the
+          player's tile, not what was on screen, so they cannot be attributed.
+        </p>
       </section>
     {/if}
 
@@ -912,6 +971,22 @@ waited {Math.round(e.wait_s ?? 0)}s{/if}</pre>
 
   .video { margin-top: 16px; border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); border: 1px solid var(--border); background: var(--dark); }
   .score { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; box-shadow: var(--shadow); margin-top: 16px; }
+  /* Where the inputs went — same card as the scorecard, one bar per bucket. */
+  .inputs { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; box-shadow: var(--shadow); margin-top: 16px; }
+  .btable { display: flex; flex-direction: column; gap: 4px; }
+  .brow { display: grid; grid-template-columns: minmax(190px, 1fr) minmax(80px, 200px) 64px minmax(0, 1.6fr); gap: 10px; align-items: center; font-size: 12px; }
+  .blabel { font-weight: 600; }
+  .blabel em { font-style: normal; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; font-weight: 700; color: var(--bad, #b3261e); margin-left: 6px; }
+  .bbar { background: var(--border); border-radius: 3px; height: 8px; overflow: hidden; }
+  .bbar i { display: block; height: 100%; background: var(--muted); border-radius: 3px; }
+  .brow.charged .bbar i { background: var(--bad, #b3261e); }
+  .bn { text-align: right; font-weight: 650; }
+  .bnote { font-size: 11px; }
+  .bfoot { font-size: 11px; margin: 10px 0 0; line-height: 1.5; max-width: 72ch; }
+  @media (max-width: 720px) {
+    .brow { grid-template-columns: 1fr 56px; }
+    .brow .bbar, .brow .bnote { display: none; }
+  }
   .score-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
   h3 { font-size: 15px; font-weight: 750; margin: 0; }
   .cleared { font-size: 12px; font-weight: 650; color: var(--muted); }

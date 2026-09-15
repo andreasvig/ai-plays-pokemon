@@ -36,7 +36,7 @@
     const set = (series, extra = () => true) => new Set(series.filter((x) => x.eligible && extra(x.row)).map((x) => x.row.model))
     return {
       perTask: set(h.cost, p1), turns: set(s2.turnsPerTask, p1), inputs: set(s2.inputsPerTurn, p1), tokens: set(s2.outputTokens, p1),
-      movement: set(b.movement, p1), wild: set(b.wildTurns), trainer: set(b.trainerTurns, p1),
+      movement: set(b.movement, p1), walls: set(b.walls, p1), wild: set(b.wildTurns), trainer: set(b.trainerTurns, p1),
     }
   })
   const dimUnless = (key) => (r) => !canShow[key].has(r.model)
@@ -93,7 +93,23 @@
   const BAT_FID = { live: 'battles polled every turn', backfill: 'battle counts from savepoints, turns from screenshots', savepoint: 'battle counts from savepoints' }
   const movement = $derived(bat.movement.filter((s) => s.eligible && past1(s)).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true, partial: s.row.completion < 100,
     tip: `${s.row.model}: ${s.label} — shortest path ${s.row.shortestSteps} of ${s.row.overworldSteps} steps over its legs (the unfinished leg credited with the ground it gained) · ${STEPS_FID[s.fidelity] || ''}${s.row.completion < 100 ? ` · run ended at ${Math.round(s.row.completion)}%` : ''}` })))
-  const movementNote = $derived([earlyNote, offNote(bat.movement.filter((s) => !s.eligible && past1(s)).length, 'no leg to measure.')].filter(Boolean).join(' '))
+  // The wall charge only exists for runs with a per-input trace, so this bar
+  // mixes two scoring rules until every row has one. Say so on the bar rather
+  // than let a charged run look worse than an unmeasured one for free.
+  const movementCharged = $derived(bat.movement.filter((s) => s.eligible && s.row.wallsHit != null).length)
+  const movementUncharged = $derived(bat.movement.filter((s) => s.eligible && s.row.wallsHit == null).length)
+  const CHARGE_MIX = $derived(
+    movementCharged && movementUncharged
+      ? `* ${movementCharged} of ${movementCharged + movementUncharged} runs also pay for presses into walls; the other ${movementUncharged} were played before the per-input trace went live on 2026-09-14 and could not be measured, so their bars are scored on walked steps alone and read slightly high.`
+      : ''
+  )
+  const movementNote = $derived([CHARGE_MIX, earlyNote, offNote(bat.movement.filter((s) => !s.eligible && past1(s)).length, 'no leg to measure.')].filter(Boolean).join(' '))
+  // Wasted inputs (2026-09-15). A wall press is charged into movement efficiency
+  // above; this card says how much of the efficiency gap is bumping into scenery.
+  const walls = $derived(bat.walls.filter((s) => s.eligible && past1(s)).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true, partial: s.row.completion < 100,
+    tip: `${s.row.model}: ${s.row.wallsHit} of its presses walked into a wall while already facing it — ${s.label} of every press it made outside a battle. Each one is charged against movement efficiency like a walked step (${s.row.overworldSteps} walked + ${s.row.wallsHit} = ${s.row.chargedSteps} charged).` })))
+  const WALLS_ELIGIBLE = '* Only runs played after the per-input trace went live on 2026-09-14 can be measured: a wall press is only distinguishable from turning to face when every button is sampled.'
+  const wallsNote = $derived([WALLS_ELIGIBLE, earlyNote, offNote(bat.walls.filter((s) => !s.eligible && past1(s)).length, 'no per-input trace, so its presses were never classified.')].filter(Boolean).join(' '))
   const wildTurns = $derived(bat.wildTurns.filter((s) => s.eligible).map((s) => ({ row: s.row, height: s.height, label: s.label, complete: true, partial: false,
     tip: `${s.row.model}: ${s.row.wildBattleTurns} turns started inside ${s.row.wildBattles} wild battle${s.row.wildBattles === 1 ? '' : 's'} = ${s.label} per battle · ${BAT_FID[s.row.battleFidelity] || ''}` })))
   const wildNote = $derived([earlyNote, offNote(bat.wildTurns.filter((s) => !s.eligible && past1(s)).length, 'met no wild Pokémon, or has no per-turn battle state.')].filter(Boolean).join(' '))
@@ -160,8 +176,10 @@
             entries={inputsPerTurn} {picker} pickerRows={pool} {highlight} {pinned} narrowFrom={18} bars={220} {oninspect} dimmed={dimUnless('inputs')} note={inputsNote} />
           <BarCard title="Output tokens per turn*" subtitle="Average completion tokens one turn costs the model — thinking plus the reply, every call included · runs that did not finish dotted · hover for the thinking share · fewer first"
             entries={outputTokens} {picker} pickerRows={pool} {highlight} {pinned} narrowFrom={18} bars={220} {oninspect} dimmed={dimUnless('tokens')} note={tokensNote} />
-          <BarCard title="Movement efficiency" subtitle="Shortest walk ÷ steps taken over the run's legs, the unfinished leg credited only with the ground it gained · runs that did not finish dotted · hover for how the steps were counted · Higher is better"
+          <BarCard title="Movement efficiency*" subtitle="Shortest walk ÷ steps taken over the run's legs, each press into a wall charged as a step, the unfinished leg credited only with the ground it gained · runs that did not finish dotted · hover for how the steps were counted · Higher is better"
             entries={movement} {picker} pickerRows={pool} {highlight} {pinned} narrowFrom={18} bars={220} {oninspect} dimmed={dimUnless('movement')} note={movementNote} />
+          <BarCard title="Presses into a wall*" subtitle="Direction presses that hit scenery the player was already facing ÷ every press made outside a battle · charged against movement efficiency above · Lower is better"
+            entries={walls} {picker} pickerRows={pool} {highlight} {pinned} narrowFrom={18} bars={220} {oninspect} dimmed={dimUnless('walls')} note={wallsNote} />
           <BarCard title="Turns per wild battle" subtitle="Turns that started inside a wild battle ÷ wild battles met · runs that cleared Route 1 · Lower is better"
             entries={wildTurns} {picker} pickerRows={pool} {highlight} {pinned} narrowFrom={18} bars={220} {oninspect} dimmed={dimUnless('wild')} note={wildNote} />
           <BarCard title="Turns per trainer battle*" subtitle={`Average turns a trainer fight costs, every attempt counted · shown once ${MIN_FIGHTS_FOR_PROJECTION} trainer fights are done · trainers the run did not fight are projected so every run is scored on the same roster · Lower is better`}

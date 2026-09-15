@@ -110,6 +110,11 @@ export function toRun(s) {
     overworldSteps: s.overworld_steps ?? null,
     shortestSteps: s.shortest_steps ?? null,
     movementEfficiency: s.movement_efficiency ?? null,
+    // Wasted inputs (2026-09-15, artifacts/wasted-inputs/plan.md). null on a run
+    // played before the per-input trace went live — NOT zero: it never measured.
+    wallRate: s.wall_rate ?? null,
+    wallsHit: s.walls_hit ?? null,
+    chargedSteps: s.charged_steps ?? null,
     stepsFidelity: s.steps_fidelity ?? null,
     completion,
     progress,

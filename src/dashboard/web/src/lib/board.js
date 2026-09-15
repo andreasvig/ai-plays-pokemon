@@ -301,6 +301,7 @@ export function fmtTpm(v) {
 /**
  * Battles + movement (2026-09-14, artifacts/battle-and-movement-fidelity/plan.md).
  * movement — shortest path ÷ overworld steps over every leg with a shortest path, best first.
+ * walls — direction presses into a wall ÷ presses made outside a battle, fewest first.
  * wildTurns — turns per wild battle (rule A: turns that STARTED in one), fewest
  *   first; only runs that cleared Route 1 — before that no wild grass is
  *   reachable and a run has nothing to say (Andreas 2026-09-14).
@@ -425,6 +426,14 @@ export function battleSeries(rows, pool = rows) {
     (v) => Math.round(v * 100) + '%', { desc: true })
     .concat(rows.filter((r) => r.movementEfficiency == null).map(OFF))
 
+  // Presses into a wall as a share of every press made outside a battle. Lower
+  // is better, and only a run with a per-input trace is eligible — a run that
+  // never measured it is OFF, so the card shows no bar and says how many.
+  const walls = rank(rows.filter((r) => r.wallRate != null)
+    .map((r) => ({ row: r, value: r.wallRate, eligible: true, complete: true })),
+    (v) => Math.round(v * 100) + '%')
+    .concat(rows.filter((r) => r.wallRate == null).map(OFF))
+
   const wildOk = (r) => r.wildBattles > 0 && r.wildBattleTurns != null && r.gateTurns != null && r.gateTurns.route1_reached != null
   const wildTurns = rank(rows.filter(wildOk)
     .map((r) => ({ row: r, value: r.wildBattleTurns / r.wildBattles, eligible: true, complete: true })),
@@ -447,7 +456,7 @@ export function battleSeries(rows, pool = rows) {
       eligible: true, complete: m.complete })
   }
   const trainerTurns = rank(trainerVals, (v) => v.toFixed(1)).concat(trainerOff)
-  return { movement, wildTurns, trainerTurns }
+  return { movement, walls, wildTurns, trainerTurns }
 }
 
 // ───────────── model pages (2026-09-14, artifacts/model-pages/plan.md) ─────────────

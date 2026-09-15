@@ -38,7 +38,7 @@ _DEFAULT_LADDER = Path("configs/checkpoints-firered-v1.yaml")
 #   1 — 2026-09-09: error / crash (why a crashed run ended).
 #   2 — 2026-09-09: record (the spec the run was recorded with, for continues).
 #   3 — 2026-09-11: open-leg fraction capped at OPEN_LEG_FRACTION_CAP.
-PROJECTION_VERSION = 12  # 12 (2026-09-15): legs + battles replayed from events.jsonl (src/app/replay.py), so a rule change needs no back-fill; 11: route_points / route_coverage; 10 (2026-09-14): starter leg re-scored to the ball taken (score_to reached) in every run_summary; 9: Oak's Parcel leg re-scored (scripts/backfill_parcel_leg.py); 8: gate_times_s / gate_costs_usd / movement_legs
+PROJECTION_VERSION = 13  # 13 (2026-09-15): wall presses charged against movement_efficiency + the per-run input breakdown (artifacts/wasted-inputs/plan.md); 12 (2026-09-15): legs + battles replayed from events.jsonl (src/app/replay.py), so a rule change needs no back-fill; 11: route_points / route_coverage; 10 (2026-09-14): starter leg re-scored to the ball taken (score_to reached) in every run_summary; 9: Oak's Parcel leg re-scored (scripts/backfill_parcel_leg.py); 8: gate_times_s / gate_costs_usd / movement_legs
 
 # Status values the report treats as "cleared" for a gate (mirror report.py).
 _CLEARED_STATUSES = ("done", "auto")
@@ -256,6 +256,21 @@ def _gate_clock(run_dir: Path, gate_turns: dict[str, int] | None) -> tuple[dict[
         if costs:
             money[gate] = round(sum(v for k, v in costs.items() if k <= t), 6)
     return (times or None), (money or None)
+
+
+def _input_breakdown(referee: dict | None) -> dict | None:
+    """The run's per-input census for the report, or None for a run with no
+    per-input trace (everything before 2026-09-14 — 23 of the 25 rows published
+    on 2026-09-15). None, never a zeroed dict: a run that never measured the
+    buckets must not render as a run that measured them and found nothing.
+    """
+    inputs = (referee or {}).get("inputs") if isinstance(referee, dict) else None
+    if not isinstance(inputs, dict) or not inputs.get("inputs"):
+        return None
+    from src.referee import trace as _trace
+    keys = ("inputs", "overworld_inputs", "overworld_steps", "inputs_lost",
+            *_trace.INPUT_BUCKETS, "traced_turns", "wall_rate", "worst_turns")
+    return {k: inputs[k] for k in keys if k in inputs}
 
 
 def _battle_fields(battles: dict | None, fidelity: str | None, turns: int) -> dict:
@@ -496,6 +511,10 @@ def project_run_dir(run_dir: Path) -> RunSummary | None:
         movement_legs=move["legs"] if move else None,
         route_points=len(run_route["visits"]) if run_route else None,
         route_coverage=run_route["coverage"] if run_route else None,
+        charged_steps=move["charged"] if move else None,
+        walls_hit=move["walls"] if move else None,
+        wall_rate=(referee.get("inputs") or {}).get("wall_rate") if isinstance(referee, dict) else None,
+        input_breakdown=_input_breakdown(referee),
         progress=progress,
         leg_gate=leg_gate,
         leg_fraction=leg_fraction,

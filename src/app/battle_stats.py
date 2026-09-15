@@ -355,14 +355,18 @@ def movement(referee: Optional[dict], video_steps: Optional[dict[int, int]],
     steps come from the video when turns ``opened+1..last_turn`` are covered,
     else the referee's bound.
 
-    Returns ``{shortest, steps, efficiency, legs, fidelity}`` or None when no
+    Returns ``{shortest, steps, charged, walls, efficiency, legs, fidelity}`` or
+    None when no
     leg has a shortest path. ``fidelity`` is "trace" / "video" / "bound"
-    when every leg used that source, else "mixed".
+    when every leg used that source, else "mixed". ``steps`` is what the run
+    WALKED; ``charged`` adds the wall presses and is the efficiency denominator,
+    so the two differ exactly by ``walls`` (plan W4).
     """
     if not isinstance(referee, dict):
         return None
     legs = ((referee.get("progress") or {}).get("legs")) or []
-    shortest = steps = 0
+    shortest = steps = walked = walls = 0
+    measured = False
     used: list[dict[str, Any]] = []
     sources: set[str] = set()
     for leg in legs:
@@ -390,14 +394,30 @@ def movement(referee: Optional[dict], video_steps: Optional[dict[int, int]],
             src = "mixed"
         if not isinstance(s, int):
             continue
+        # A press into a wall while already facing it burns a step's worth of
+        # frames and buys nothing, so it is charged like a walked step (plan W4,
+        # artifacts/wasted-inputs/plan.md). Only a traced leg has the count;
+        # legs measured from the video or the poll bound charge 0, which is why
+        # the row carries steps_fidelity beside the efficiency.
+        # A leg from a run with no per-input trace has no walls_hit key at all.
+        # That is NOT zero walls: the run never measured them, so the row must
+        # report None and the board must omit it rather than draw an empty bar.
+        measured = measured or "walls_hit" in leg
+        w = leg.get("walls_hit")
+        w = w if isinstance(w, int) and w > 0 else 0
         shortest += d
-        steps += max(s, d)
+        walked += max(s, d)      # tiles the run actually covered
+        steps += max(s + w, d)   # what efficiency is measured against
+        walls += w
         sources.add(src)
-        used.append({"node_id": leg.get("node_id"), "d_open": d, "steps": s, "source": src, "status": leg.get("status")})
+        used.append({"node_id": leg.get("node_id"), "d_open": d, "steps": s, "walls": w,
+                     "source": src, "status": leg.get("status")})
     if not used or steps <= 0:
         return None
     fidelity = sources.pop() if len(sources) == 1 else "mixed"
-    return {"shortest": shortest, "steps": steps, "efficiency": shortest / steps, "legs": used, "fidelity": fidelity}
+    return {"shortest": shortest, "steps": walked,
+            "charged": steps if measured else None, "walls": walls if measured else None,
+            "efficiency": shortest / steps, "legs": used, "fidelity": fidelity}
 
 
 __all__ = ["battle_summary", "synthesize_records", "movement", "load_steps_backfill", "MANDATORY_TRAINERS"]

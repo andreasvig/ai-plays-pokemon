@@ -42,7 +42,7 @@ def test_restore_caps_stamps_to_savepoint_turn(tmp_path):
     _restore_referee_state(sp, new_run, up_to_turn=20)
 
     restored = json.loads((new_run / "referee_state.json").read_text())
-    assert restored == {"stamps": {"a": 10}, "autofilled": [], "positions": [], "battle_records": [], "traced_steps": {},
+    assert restored == {"stamps": {"a": 10}, "autofilled": [], "traced_walls": {}, "positions": [], "battle_records": [], "traced_steps": {},
                         "traced_end": {}}
 
 

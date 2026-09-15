@@ -113,6 +113,47 @@ class WalkGraph:
                 out.add(i)
         return out
 
+    # Which way a direction press points, in tile coordinates.
+    _STEP = {"U": (0, -1), "D": (0, 1), "L": (-1, 0), "R": (1, 0),
+             "UP": (0, -1), "DOWN": (0, 1), "LEFT": (-1, 0), "RIGHT": (1, 0)}
+
+    def passable_in(self, map_group: int, map_num: int, x: int, y: int, direction: str) -> Optional[bool]:
+        """Can the player leave this tile in this direction? None = cannot say.
+
+        True when the graph has an edge to the 4-adjacent tile that way, False
+        when it does not, None when the tile is off-graph OR the node carries a
+        CROSS-MAP edge. That last case is a door: its target lives on another
+        map, so it is absent from the same-map neighbour set and a legitimate
+        door approach would read as a wall. Control 2026-09-15: without the
+        cross-map guard, 9 presses at PalletTown (16,13), Oak's lab exit, both
+        Viridian Forest entrances and PewterCity (15,16) were charged as walls
+        on tiles the player demonstrably walked off in that same direction;
+        with it, 0 contradictions over both traced runs.
+        """
+        step = self._STEP.get(str(direction).upper())
+        if step is None:
+            return None
+        node = self.node_id(map_group, map_num, x, y)
+        if node is None:
+            return None
+        found = False
+        for other in self.adj[node]:
+            g, n, ox, oy = self.coord(other)
+            if g != map_group or n != map_num:
+                return None  # a warp leaves this tile; a door is not a wall
+            dx, dy = ox - x, oy - y
+            # Any edge ALONG this axis counts, not just the 4-adjacent tile: a
+            # ledge hop is one input that moves two tiles (Route 1 (13,30) D
+            # lands on (13,32)). Control 2026-09-15: the adjacent-only test
+            # called 4 of 1467 observed moves walls, every one a ledge.
+            if (dx, dy) == (0, 0):
+                continue
+            if step[0] == 0 and dx == 0 and dy * step[1] > 0:
+                found = True
+            elif step[1] == 0 and dy == 0 and dx * step[0] > 0:
+                found = True
+        return found
+
     def resolve_locus(self, checkpoint) -> set[int]:
         """The target tile set for a ladder gate.
 

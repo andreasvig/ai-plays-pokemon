@@ -1115,8 +1115,9 @@ def _restore_referee_state(savepoint_dir, new_run_dir: Path, up_to_turn: int) ->
         and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in p)
         and int(p[0]) <= up_to_turn
     ]
-    # Battle records ``[turn, in_battle, total, wild, trainer, [ids]]`` and the
-    # per-turn traced steps (2026-09-14) ride along under the same cap.
+    # Battle records ``[turn, in_battle, total, wild, trainer, [ids]]``, the
+    # per-turn traced steps (2026-09-14) and the per-turn wall presses
+    # (2026-09-15) ride along under the same cap.
     records = data.get("battle_records", []) if isinstance(data, dict) else []
     kept_records = [
         r for r in (records if isinstance(records, list) else [])
@@ -1134,11 +1135,17 @@ def _restore_referee_state(savepoint_dir, new_run_dir: Path, up_to_turn: int) ->
         if str(t).lstrip("-").isdigit() and int(t) <= up_to_turn and isinstance(c, (list, tuple)) and len(c) == 4
         and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in c)
     }
+    walls = data.get("traced_walls", {}) if isinstance(data, dict) else {}
+    kept_walls = {
+        str(int(t)): int(n) for t, n in (walls.items() if isinstance(walls, dict) else [])
+        if str(t).lstrip("-").isdigit() and int(t) <= up_to_turn and isinstance(n, (int, float))
+    }
     try:
         (Path(new_run_dir) / "referee_state.json").write_text(
             json.dumps(
                 {"stamps": kept, "autofilled": autofilled, "positions": kept_positions,
-                 "battle_records": kept_records, "traced_steps": kept_traced, "traced_end": kept_ends},
+                 "battle_records": kept_records, "traced_steps": kept_traced, "traced_end": kept_ends,
+                 "traced_walls": kept_walls},
                 indent=2,
             )
         )
