@@ -10,9 +10,15 @@
   // it — the same `drawRoute` the world map uses, given a tile → pixel function
   // that only places THIS floor, so a route that leaves the building simply
   // stops at the door.
-  import { TILE, loadMapImage, drawRoute, visitAt } from '../lib/mapatlas.js'
+  import { TILE, loadMapImage, drawRoute, visitAt, battlesFor } from '../lib/mapatlas.js'
+  import BattleCard from './BattleCard.svelte'
 
-  let { building, route, atlas, onturn = null, onclose = () => {} } = $props()
+  let { building, route, atlas, trainers = null, onturn = null, onclose = () => {} } = $props()
+
+  // The rival at Oak's lab and Brock in his gym are indoor fights, so their
+  // icons belong here rather than on the world map (M15).
+  const battlesOn = (key) => battlesFor(null, route, { onlyMap: key })
+  let openBattle = $state(null)
 
   const floors = $derived((building?.floors ?? [])
     .map((key) => ({ key, m: atlas?.maps?.[key] }))
@@ -52,6 +58,7 @@
   }
 
   const visited = (key) => !!route?.maps?.[key]
+  const anyFights = $derived(floors.some((f) => battlesOn(f.key).length))
 </script>
 
 <svelte:window onkeydown={(e) => e.key === 'Escape' && onclose()} />
@@ -66,12 +73,22 @@
     </header>
     <div class="floors">
       {#each floors as f (f.key)}
+        {@const fights = battlesOn(f.key)}
         <figure class:unvisited={!visited(f.key)}>
           <canvas use:mount={f.key} onmousemove={(e) => onmove(e, f.key)}
             onmouseleave={() => (hover = null)}
             onclick={() => onturn && hover?.key === f.key && onturn(hover.turn)}
             class:clickable={!!onturn}
             aria-label={`${building.name} ${floorLabel(f.m.name)}`}></canvas>
+          {#each fights as b (b.id)}
+            <button class="fight" class:trainer={b.kind === 'trainer'}
+              style={`left:${(b.tile.x + 0.5) * TILE}px;top:${(b.tile.y + 0.5) * TILE}px`}
+              onmouseenter={() => (openBattle = b)} onfocus={() => (openBattle = b)}
+              onmouseleave={() => (openBattle = null)} onblur={() => (openBattle = null)}
+              onclick={() => onturn && onturn(b.opened_turn)}>
+              <span class="sr">{b.kind} battle on turn {b.opened_turn}</span>
+            </button>
+          {/each}
           {#if hover?.key === f.key}
             <div class="tip" style={`left:${hover.x}px;top:${hover.y}px`}>
               <b>Turn {hover.turn}</b><span>({hover.tile})</span>
@@ -85,6 +102,22 @@
         </figure>
       {/each}
     </div>
+    <!-- A hovered fight reports BELOW the floors: the popup scrolls, so a card
+         floating over a canvas is clipped the moment the icon is near its top.
+         The slot is ALWAYS here, at a FIXED height, when the building saw a
+         fight. Showing it on hover resized the popup, which is centred in the
+         scrim, so the whole dialog rose and the dot slid out from under the
+         cursor — the browser then fired mouseleave and the card vanished again.
+         A reserved slot that does not change size is what stops that. -->
+    {#if anyFights}
+      <div class="bcard" class:empty={!openBattle}>
+        {#if openBattle}
+          <BattleCard battle={openBattle} {trainers} />
+        {:else}
+          Hover a battle dot for who it was against and how long it took.
+        {/if}
+      </div>
+    {/if}
   </div>
 </div>
 
@@ -120,9 +153,28 @@
   canvas.clickable { cursor: crosshair; }
   figcaption { margin-top: 5px; font-size: 11px; color: #aab2c0; font-weight: 650; }
   .tip {
-    position: absolute; transform: translate(10px, -130%); pointer-events: none;
+    position: absolute; transform: translate(10px, 10px); pointer-events: none; z-index: 2;
     background: rgba(18, 20, 24, .95); border-radius: 5px; padding: 4px 7px;
     font-size: 11px; display: flex; gap: 6px; white-space: nowrap;
   }
   .tip .faint { color: #98a0b0; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .fight {
+    position: absolute; transform: translate(-50%, -50%);
+    width: 13px; height: 13px; padding: 0; border-radius: 50%;
+    border: 2px solid #12151a; background: rgba(255, 255, 255, .9);
+    cursor: pointer; box-shadow: 0 1px 3px rgba(0, 0, 0, .5);
+  }
+  .fight.trainer { background: #dc3214; }
+  .fight:hover, .fight:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+  .bcard {
+    margin-top: 12px; padding: 9px 10px; font-size: 11px; line-height: 1.5;
+    background: rgba(255, 255, 255, .05); border: 1px solid rgba(255, 255, 255, .14);
+    border-radius: 7px; box-sizing: border-box;
+    /* Fixed in BOTH directions: the card's content is wider than the prompt it
+       replaces, and a popup that grows sideways slides the dot away just as
+       surely as one that grows taller. */
+    width: 272px; height: 156px; overflow: auto;
+  }
+  .bcard.empty { color: #8b93a3; display: flex; align-items: center; }
 </style>

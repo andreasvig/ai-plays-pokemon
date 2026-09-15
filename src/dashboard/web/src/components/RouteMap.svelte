@@ -12,8 +12,9 @@
   // than a corridor gets a marker on its door tile, and the marker opens the
   // building — all its floors — over the map (M10-M12).
   import { fetchRunRoute } from '../lib/api.js'
-  import { TILE, loadAtlas, loadMapImage, worldLayout, markersFor, drawRoute, visitAt } from '../lib/mapatlas.js'
+  import { TILE, loadAtlas, loadTrainers, loadMapImage, worldLayout, markersFor, battlesFor, drawRoute, visitAt } from '../lib/mapatlas.js'
   import InteriorPopup from './InteriorPopup.svelte'
+  import BattleCard from './BattleCard.svelte'
 
   // `onturn` is the local report link: the run detail passes a handler that
   // opens that turn's trace, and the published site passes nothing, so the map
@@ -22,6 +23,7 @@
 
   let route = $state(null)
   let atlas = $state(null)
+  let trainers = $state(null)
   let loading = $state(false)
   let canvas = $state(null)
   let ready = $state(0)            // bumped when the images for this route are in
@@ -33,13 +35,17 @@
     route = null
     if (!id) return
     loading = true
-    Promise.all([fetchRunRoute(id), loadAtlas()])
-      .then(([r, a]) => { route = r; atlas = a })
+    Promise.all([fetchRunRoute(id), loadAtlas(), loadTrainers()])
+      .then(([r, a, t]) => { route = r; atlas = a; trainers = t })
       .finally(() => { loading = false })
   })
 
   const layout = $derived(worldLayout(route, atlas))
   const markers = $derived(layout && route && atlas ? markersFor(layout, route, atlas) : [])
+  // Fights on the maps this canvas draws. One inside a building is drawn in
+  // that building's popup instead, where its tile actually is.
+  const battles = $derived(layout && route ? battlesFor(layout, route) : [])
+  let openBattle = $state(null)
   const px = $derived(layout ? layout.w * TILE : 0)
   const py = $derived(layout ? layout.h * TILE : 0)
 
@@ -119,6 +125,23 @@
             <span class="sr">{m.name}</span>
           </button>
         {/each}
+        {#each battles as b (b.id)}
+          <button class="fight" class:trainer={b.kind === 'trainer'}
+            style={`left:${(b.tile.x + 0.5) * TILE}px;top:${(b.tile.y + 0.5) * TILE}px`}
+            onmouseenter={() => (openBattle = b)} onfocus={() => (openBattle = b)}
+            onmouseleave={() => (openBattle = null)} onblur={() => (openBattle = null)}
+            onclick={(e) => { e.stopPropagation(); if (onturn) onturn(b.opened_turn) }}>
+            <span class="sr">{b.kind} battle on turn {b.opened_turn}</span>
+          </button>
+          {#if openBattle?.id === b.id}
+            <!-- The panel scrolls and clips, so a fight near the top of the map
+                 gets its card BELOW the dot rather than off the frame. -->
+            <div class="bcard" class:below={b.tile.y * TILE < 170}
+              style={`left:${(b.tile.x + 0.5) * TILE}px;top:${(b.tile.y + (b.tile.y * TILE < 170 ? 1 : -0.5)) * TILE}px`}>
+              <BattleCard battle={b} {trainers} />
+            </div>
+          {/if}
+        {/each}
         {#if hover}
           <div class="tip" style={`left:${hover.x}px;top:${hover.y}px`}>
             <b>Turn {hover.turn}</b>
@@ -139,6 +162,7 @@
       {#if tr.jump}<span class="dot">·</span><b>{tr.jump}</b> ledge{tr.jump === 1 ? '' : 's'}{/if}
       {#if blackouts}<span class="dot">·</span><b class="bad">{blackouts}</b> blackout{blackouts === 1 ? '' : 's'}{/if}
       {#if tr.break}<span class="dot">·</span><b class="bad">{tr.break}</b> unexplained jump{tr.break === 1 ? '' : 's'}{/if}
+      {#if route.battles?.length}<span class="dot">·</span><b>{route.battles.length}</b> battle{route.battles.length === 1 ? '' : 's'}{/if}
     </figcaption>
   </figure>
   <p class="note faint">
@@ -149,7 +173,7 @@
     {#if markers.length}A house marks a building you can open; the pale ones this run never entered.{/if}
   </p>
   {#if openBuilding}
-    <InteriorPopup building={openBuilding} {route} {atlas} {onturn} onclose={() => (openBuilding = null)} />
+    <InteriorPopup building={openBuilding} {route} {atlas} {trainers} {onturn} onclose={() => (openBuilding = null)} />
   {/if}
 {/if}
 
@@ -186,6 +210,24 @@
   .marker:hover { outline: 2px solid #fff; outline-offset: 1px; }
   .marker svg { width: 12px; height: 12px; fill: currentColor; }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .fight {
+    position: absolute; transform: translate(-50%, -50%);
+    width: 13px; height: 13px; padding: 0; border-radius: 50%;
+    border: 2px solid #12151a; background: rgba(255, 255, 255, .9);
+    cursor: pointer; box-shadow: 0 1px 3px rgba(0, 0, 0, .5);
+  }
+  .fight.trainer { background: var(--red, #dc3214); border-color: #12151a; }
+  .fight:hover, .fight:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+  .bcard {
+    position: absolute; transform: translate(-50%, -100%);
+    max-width: 280px;
+    z-index: 3; pointer-events: none;
+    background: rgba(16, 18, 22, .96); color: #eef1f6;
+    border: 1px solid rgba(255, 255, 255, .14);
+    border-radius: 7px; padding: 8px 9px; font-size: 11px; line-height: 1.5;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .5);
+  }
+  .bcard.below { transform: translate(-50%, 0); }
   .tip {
     position: absolute; transform: translate(10px, -130%);
     pointer-events: none; white-space: nowrap;

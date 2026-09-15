@@ -17,6 +17,22 @@ export const TILE = 16
 
 export const mapImageUrl = (file) => `${BASE}maps/${file}`
 
+let trainersPromise = null
+/** `{version, pret_sha, trainers: {"<id>": {label, name, class, pic, party}}}`.
+ *  Extracted from pret by scripts/extract_trainers.py: a trainer's roster is a
+ *  constant of the ROM, so every run already published gets a full hover card
+ *  from the trainer id the referee has stored since 2026-09-14 (M16). */
+export function loadTrainers() {
+  if (!trainersPromise) {
+    trainersPromise = fetch(`${BASE}trainers/index.json`, { cache: 'no-cache' })
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null)
+  }
+  return trainersPromise
+}
+
+export const trainerSpriteUrl = (pic) => `${BASE}trainers/${pic}`
+
 let atlasPromise = null
 /** `{version, tile_px, pret_sha, maps: {"g:m": {...}}}`, fetched once per page. */
 export function loadAtlas() {
@@ -29,7 +45,7 @@ export function loadAtlas() {
 }
 
 /** Tests and the dev harness swap the fetch and drop the memo. */
-export function _resetAtlas() { atlasPromise = null }
+export function _resetAtlas() { atlasPromise = null; trainersPromise = null }
 
 const imgCache = new Map()
 /** One decoded map image, cached across components and popups. */
@@ -200,6 +216,31 @@ export function drawRoute(c, route, place, { scale = TILE, width = null } = {}) 
     c.strokeStyle = colour
     c.strokeRect(p[0] - scale * 0.5, p[1] - scale * 0.5, scale, scale)
   }
+}
+
+/**
+ * The run's battles, placed on this layout.
+ *
+ * `route.battles` (src/app/route.py) already carries the tile each fight opened
+ * on, its turn span, its kind and — for a trainer — who it was and whether it
+ * was won. A battle on a map this layout does not draw (an interior, which
+ * lives in its building's popup) is dropped here and drawn there instead.
+ */
+export function battlesFor(layout, route, { onlyMap = null } = {}) {
+  const out = []
+  for (const [i, b] of (route?.battles ?? []).entries()) {
+    if (!Array.isArray(b.tile)) continue
+    const key = `${b.tile[0]}:${b.tile[1]}`
+    if (onlyMap) {
+      if (key !== onlyMap) continue
+      out.push({ ...b, id: `b${i}`, tile: { x: b.tile[2], y: b.tile[3] } })
+      continue
+    }
+    const p = layout?.at[key]
+    if (!p) continue
+    out.push({ ...b, id: `b${i}`, tile: { x: p.x + b.tile[2], y: p.y + b.tile[3] } })
+  }
+  return out
 }
 
 /** The visit nearest a canvas point, for the hover readout. `null` beyond `within` px. */

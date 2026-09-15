@@ -6,7 +6,7 @@ Plan: ``artifacts/route-fidelity/plan.md`` (2026-09-15). The source of truth is
 the referee's per-turn ``referee_position`` polls. Nothing is written at run
 time beyond those two events; this module reads them back and orders them.
 
-Route dict (``ROUTE_VERSION`` 1):
+Route dict (``ROUTE_VERSION`` 2):
 - ``visits`` — ``[turn, i, map_group, map_num, x, y, in_battle]`` per tile the
   player stood on, in order; ``i`` is the input index the sample followed or
   ``POLL`` (−1) for the referee's poll after the turn's last input. Consecutive
@@ -30,6 +30,14 @@ Route dict (``ROUTE_VERSION`` 1):
 - ``maps`` — ``{"g:m": {name, width, height, world}}`` for every map visited;
   ``world`` is the map's top-left in the shared outdoor frame (graph version 2)
   or None for an indoor map. ``tile_px`` gives the pixel size of one tile.
+- ``battles`` — one entry per battle segment
+  (:class:`~src.referee.battles.BattleTracker`, the same segments the board
+  counts), placed on the map: ``{kind, opened_turn, closed_turn, turns,
+  trainer_id, trainer, won, tile}``. ``tile`` is the last tile the player stood
+  on OUTSIDE the battle, which is where it was ambushed — the trace flags
+  ``in_battle`` per button, so the place a fight started is already recorded
+  (M15). A battle we cannot place (no overworld sample before it) carries a
+  null tile and is not drawn.
 """
 
 from __future__ import annotations
@@ -40,12 +48,14 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
+from src.referee.battles import BattleTracker, TRAINER_NAMES
 from src.referee.trace import MAX_TILES_PER_INPUT
 from src.referee.walkgraph import DEFAULT_GRAPH_PATH, WalkGraph
 
-ROUTE_VERSION = 1
+ROUTE_VERSION = 2
 POLL = -1
 Tile = tuple[int, int, int, int]
+ROUTE_EVENT_TYPES = ("turn_input_trace", "referee_position", "referee_battle_state")
 
 
 @lru_cache(maxsize=1)
@@ -68,13 +78,13 @@ def iter_route_events(run_dir: Path) -> Iterable[dict]:
         return
     with path.open() as fh:
         for line in fh:
-            if '"turn_input_trace"' not in line and '"referee_position"' not in line:
+            if not any(f'"{t}"' in line for t in ROUTE_EVENT_TYPES):
                 continue
             try:
                 e = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if e.get("type") in ("turn_input_trace", "referee_position"):
+            if e.get("type") in ROUTE_EVENT_TYPES:
                 yield e
 
 
@@ -117,9 +127,12 @@ def build_route(events: Iterable[dict], graph: Optional[WalkGraph]) -> Optional[
         turn = e.get("turn")
         if not isinstance(turn, int):
             continue
-        slot = per_turn.setdefault(turn, {"samples": None, "poll": None})
-        if e.get("type") == "turn_input_trace":
+        slot = per_turn.setdefault(turn, {"samples": None, "poll": None, "battle": None})
+        kind = e.get("type")
+        if kind == "turn_input_trace":
             slot["samples"] = e.get("samples") if isinstance(e.get("samples"), list) else []
+        elif kind == "referee_battle_state":
+            slot["battle"] = e
         else:
             slot["poll"] = e
     if not any(s["samples"] is not None for s in per_turn.values()):
@@ -194,7 +207,47 @@ def build_route(events: Iterable[dict], graph: Optional[WalkGraph]) -> Optional[
         "turns": {"total": total, "traced": traced, "blind": blind},
         "coverage": (traced / total) if total else 0.0,
         "maps": maps,
+        "battles": place_battles(per_turn, visits),
     }
+
+
+def place_battles(per_turn: dict[int, dict[str, Any]], visits: list[list[int]]) -> list[dict[str, Any]]:
+    """The run's battle segments, each put on the tile it opened on.
+
+    The segments are :class:`~src.referee.battles.BattleTracker`'s, replayed
+    from the same ``referee_battle_state`` events the board's numbers come from
+    — so a fight drawn here is a fight counted there, with the same kind, turn
+    count and outcome.
+
+    The tile is the last one the player stood on with no battle running, at or
+    before the opening turn. That is where the grass was walked into, not where
+    the fight was won: the trace samples after every button, so the visit
+    before ``in_battle`` first reads true is the ambush.
+    """
+    tracker = BattleTracker()
+    defeated: set[int] = set()
+    for turn in sorted(per_turn):
+        b = per_turn[turn].get("battle")
+        if b is None:
+            continue
+        defeated |= {int(i) for i in (b.get("trainers_new") or [])}
+        tracker.record(turn, bool(b.get("in_battle")), int(b.get("battles_total") or 0),
+                       int(b.get("wild_battles") or 0), int(b.get("trainer_battles") or 0),
+                       sorted(defeated), b.get("opponent"))
+    out: list[dict[str, Any]] = []
+    for seg in tracker.segments():
+        opened = seg.get("opened_turn")
+        tile = None
+        for v in visits:
+            if v[0] > opened:
+                break
+            if not v[6]:                     # in_battle flag of the visit
+                tile = v[2:6]
+        tid = seg.get("trainer_id")
+        out.append({"kind": seg.get("kind"), "opened_turn": opened, "closed_turn": seg.get("closed_turn"),
+                    "turns": seg.get("turns"), "trainer_id": tid, "trainer": TRAINER_NAMES.get(tid) if tid else None,
+                    "won": seg.get("won"), "uncounted": bool(seg.get("uncounted")), "tile": list(tile) if tile else None})
+    return out
 
 
 def _classify(graph: Optional[WalkGraph], a: Tile, b: Tile, *, one_input: bool = True
@@ -230,4 +283,5 @@ def load_route(run_dir: Path, graph: Optional[WalkGraph] = None) -> Optional[dic
     return build_route(iter_route_events(Path(run_dir)), default_graph() if graph is None else graph)
 
 
-__all__ = ["ROUTE_VERSION", "POLL", "MAX_TILES_PER_INPUT", "build_route", "load_route", "iter_route_events", "shortest_path", "default_graph"]
+__all__ = ["ROUTE_VERSION", "POLL", "MAX_TILES_PER_INPUT", "build_route", "load_route", "iter_route_events",
+           "shortest_path", "default_graph", "place_battles"]

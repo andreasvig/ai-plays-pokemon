@@ -135,3 +135,79 @@ def test_load_route_reads_events_jsonl(tmp_path, firered):
     r = route.load_route(tmp_path, firered)
     assert r["visits"] == [[1, 0, 3, 0, 6, 9, 0]]
     assert route.load_route(tmp_path / "missing", firered) is None
+
+
+# -- battles on the map (M15) --------------------------------------------------
+
+def battle_event(turn, *, in_battle, total, wild=0, trainer=0, opponent=None, new=()):
+    return {"type": "referee_battle_state", "turn": turn, "in_battle": in_battle,
+            "battles_total": total, "wild_battles": wild, "trainer_battles": trainer,
+            "opponent": opponent, "trainers_new": list(new)}
+
+
+def test_a_wild_battle_is_placed_on_the_tile_it_opened_on(firered):
+    # Route 1 grass: the run walks two tiles, the second one starts a fight.
+    events = [
+        trace_event(1, [sample(0, "U", 3, 19, 8, 32), sample(1, "U", 3, 19, 8, 31)]),
+        battle_event(1, in_battle=False, total=0),
+        trace_event(2, [sample(0, "U", 3, 19, 8, 30), sample(1, "A", 3, 19, 8, 30, battle=True)]),
+        battle_event(2, in_battle=True, total=1, wild=1),
+        trace_event(3, [sample(0, "A", 3, 19, 8, 30)]),
+        battle_event(3, in_battle=False, total=1, wild=1),
+    ]
+    r = route.build_route(events, firered)
+    assert len(r["battles"]) == 1
+    b = r["battles"][0]
+    assert b["kind"] == "wild"
+    assert b["opened_turn"] == 2 and b["closed_turn"] == 3
+    # the last tile stood on with no battle running — where the grass was walked into
+    assert b["tile"] == [3, 19, 8, 30]
+    assert b["trainer_id"] is None and b["trainer"] is None
+
+
+def test_a_trainer_battle_carries_its_name_and_whether_it_was_won(firered):
+    events = [
+        trace_event(1, [sample(0, "U", 3, 20, 14, 50)]),
+        battle_event(1, in_battle=False, total=0),
+        trace_event(2, [sample(0, "U", 3, 20, 14, 49, battle=True)]),
+        battle_event(2, in_battle=True, total=1, trainer=1, opponent=104),
+        trace_event(3, [sample(0, "A", 3, 20, 14, 49)]),
+        battle_event(3, in_battle=False, total=1, trainer=1, opponent=104, new=[104]),
+    ]
+    r = route.build_route(events, firered)
+    b = r["battles"][0]
+    assert b["kind"] == "trainer"
+    assert b["trainer_id"] == 104 and b["trainer"] == "Bug Catcher Sammy"
+    assert b["won"] is True
+    assert b["tile"] == [3, 20, 14, 50]
+
+
+def test_a_run_with_no_battle_events_lists_no_battles(firered):
+    r = route.build_route([trace_event(1, [sample(0, "D", 3, 0, 6, 9)])], firered)
+    assert r["battles"] == []
+
+
+def test_the_segments_drawn_are_the_segments_the_board_counts(firered):
+    # Same events through BattleTracker directly: one list is a projection of
+    # the other, so a fight on the map is a fight in the count.
+    from src.referee.battles import BattleTracker
+    events = [
+        trace_event(1, [sample(0, "U", 3, 19, 8, 32)]),
+        battle_event(1, in_battle=False, total=0),
+        trace_event(2, [sample(0, "U", 3, 19, 8, 31, battle=True)]),
+        battle_event(2, in_battle=True, total=1, wild=1),
+        battle_event(3, in_battle=False, total=1, wild=1),
+        trace_event(4, [sample(0, "U", 3, 19, 8, 30)]),
+        battle_event(4, in_battle=False, total=1, wild=1),
+        trace_event(5, [sample(0, "U", 3, 19, 8, 29, battle=True)]),
+        battle_event(5, in_battle=True, total=2, wild=2),
+        battle_event(6, in_battle=False, total=2, wild=2),
+    ]
+    t = BattleTracker()
+    for e in events:
+        if e["type"] == "referee_battle_state":
+            t.record(e["turn"], e["in_battle"], e["battles_total"], e["wild_battles"],
+                     e["trainer_battles"], [], e["opponent"])
+    r = route.build_route(events, firered)
+    assert [(s["kind"], s["opened_turn"], s["turns"]) for s in t.segments()] == \
+           [(b["kind"], b["opened_turn"], b["turns"]) for b in r["battles"]]

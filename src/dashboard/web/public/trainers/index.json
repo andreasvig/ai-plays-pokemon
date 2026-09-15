@@ -1,0 +1,206 @@
+{
+ "version": 1,
+ "pret_sha": "c75f352304d529f6ba92d4f74b9cf8b5c3810788",
+ "trainers": {
+  "102": {
+   "label": "Bug Catcher Rick",
+   "name": "Rick",
+   "class": "Bug Catcher",
+   "pic": "bug_catcher.png",
+   "party": [
+    {
+     "species": "Weedle",
+     "level": 6
+    },
+    {
+     "species": "Caterpie",
+     "level": 6
+    }
+   ]
+  },
+  "103": {
+   "label": "Bug Catcher Doug",
+   "name": "Doug",
+   "class": "Bug Catcher",
+   "pic": "bug_catcher.png",
+   "party": [
+    {
+     "species": "Weedle",
+     "level": 7
+    },
+    {
+     "species": "Kakuna",
+     "level": 7
+    },
+    {
+     "species": "Weedle",
+     "level": 7
+    }
+   ]
+  },
+  "104": {
+   "label": "Bug Catcher Sammy",
+   "name": "Sammy",
+   "class": "Bug Catcher",
+   "pic": "bug_catcher.png",
+   "party": [
+    {
+     "species": "Weedle",
+     "level": 9
+    }
+   ]
+  },
+  "142": {
+   "label": "Camper Liam",
+   "name": "Liam",
+   "class": "Camper",
+   "pic": "camper.png",
+   "party": [
+    {
+     "species": "Geodude",
+     "level": 10
+    },
+    {
+     "species": "Sandshrew",
+     "level": 11
+    }
+   ]
+  },
+  "326": {
+   "label": "Rival (Oak's Lab)",
+   "name": "Terry",
+   "class": "Rival Early",
+   "pic": "rival_early.png",
+   "party": [
+    {
+     "species": "Squirtle",
+     "level": 5
+    }
+   ]
+  },
+  "327": {
+   "label": "Rival (Oak's Lab)",
+   "name": "Terry",
+   "class": "Rival Early",
+   "pic": "rival_early.png",
+   "party": [
+    {
+     "species": "Bulbasaur",
+     "level": 5
+    }
+   ]
+  },
+  "328": {
+   "label": "Rival (Oak's Lab)",
+   "name": "Terry",
+   "class": "Rival Early",
+   "pic": "rival_early.png",
+   "party": [
+    {
+     "species": "Charmander",
+     "level": 5
+    }
+   ]
+  },
+  "329": {
+   "label": "Rival (Route 22)",
+   "name": "Terry",
+   "class": "Rival Early",
+   "pic": "rival_early.png",
+   "party": [
+    {
+     "species": "Pidgey",
+     "level": 9
+    },
+    {
+     "species": "Squirtle",
+     "level": 9
+    }
+   ]
+  },
+  "330": {
+   "label": "Rival (Route 22)",
+   "name": "Terry",
+   "class": "Rival Early",
+   "pic": "rival_early.png",
+   "party": [
+    {
+     "species": "Pidgey",
+     "level": 9
+    },
+    {
+     "species": "Bulbasaur",
+     "level": 9
+    }
+   ]
+  },
+  "331": {
+   "label": "Rival (Route 22)",
+   "name": "Terry",
+   "class": "Rival Early",
+   "pic": "rival_early.png",
+   "party": [
+    {
+     "species": "Pidgey",
+     "level": 9
+    },
+    {
+     "species": "Charmander",
+     "level": 9
+    }
+   ]
+  },
+  "414": {
+   "label": "Leader Brock",
+   "name": "Brock",
+   "class": "Leader",
+   "pic": "leader_brock.png",
+   "party": [
+    {
+     "species": "Geodude",
+     "level": 12
+    },
+    {
+     "species": "Onix",
+     "level": 14
+    }
+   ]
+  },
+  "531": {
+   "label": "Bug Catcher Anthony",
+   "name": "Anthony",
+   "class": "Bug Catcher",
+   "pic": "bug_catcher.png",
+   "party": [
+    {
+     "species": "Caterpie",
+     "level": 7
+    },
+    {
+     "species": "Caterpie",
+     "level": 8
+    }
+   ]
+  },
+  "532": {
+   "label": "Bug Catcher Charlie",
+   "name": "Charlie",
+   "class": "Bug Catcher",
+   "pic": "bug_catcher.png",
+   "party": [
+    {
+     "species": "Metapod",
+     "level": 7
+    },
+    {
+     "species": "Caterpie",
+     "level": 7
+    },
+    {
+     "species": "Metapod",
+     "level": 7
+    }
+   ]
+  }
+ }
+}
