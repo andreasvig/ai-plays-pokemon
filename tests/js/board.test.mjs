@@ -411,3 +411,19 @@ test('the wall card ranks fewest walls first', () => {
   ])
   assert.deepEqual(walls.filter((s) => s.eligible).map((s) => s.row.model), ['tidy', 'sloppy'])
 })
+
+test("the gate table's walk % charges wall presses, like the run-level efficiency", () => {
+  // 2026-09-15: the run-level figure charged them and this one did not, so the
+  // same run read 13% on its Oak's-lab leg and was scored at 9%.
+  const gates = [{ id: 'oaks_lab_entered', name: "Entered Oak's Lab", cap: 30 }]
+  const row = { turns: 37, status: 'terminated', terminationReason: 'leg_cap:oaks_lab_entered',
+    gateTurns: {},
+    movementLegs: [{ node_id: 'oaks_lab_entered', d_open: 11, steps: 83, walls: 42, source: 'trace', status: 'open' }] }
+  const [leg] = runGateRows(row, gates)
+  assert.ok(Math.abs(leg.efficiency - 11 / 125) < 1e-9)   // charged, not 11/83
+  assert.equal(leg.legSteps, 83)
+  assert.equal(leg.legWalls, 42)
+  // A leg from a run with no trace has no walls key: the figure is unchanged.
+  const untraced = { ...row, movementLegs: [{ node_id: 'oaks_lab_entered', d_open: 11, steps: 83, source: 'bound', status: 'open' }] }
+  assert.ok(Math.abs(runGateRows(untraced, gates)[0].efficiency - 11 / 83) < 1e-9)
+})

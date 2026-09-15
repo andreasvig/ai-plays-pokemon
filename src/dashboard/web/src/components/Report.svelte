@@ -473,8 +473,9 @@ where: {crash.where.join(' ← ')}{/if}</pre>
              above already carries the per-leg turns / cap the reader needs. -->
         {#if (legs.length || currentLeg) && !STATIC}
           <!-- Between-gate progress: where the run walked on each leg. `walked` is
-               a lower bound (position is sampled once per turn); efficiency =
-               shortest path ÷ walked, so 100% means no wasted step. -->
+               a lower bound (position is sampled once per turn) and holds only
+               tiles covered; efficiency divides the shortest path by walked +
+               walls, so 100% means no wasted step AND no press into scenery. -->
           <div class="legs">
             <div class="legs-head">
               <span>Between gates</span>
@@ -482,7 +483,7 @@ where: {crash.where.join(' ← ')}{/if}</pre>
               {#if progress?.graph && !progress.graph.loaded}<span class="faint">no walk graph — positions recorded, not scored</span>{/if}
             </div>
             <div class="ltable">
-              <div class="lrow lhead"><span>leg to</span><span class="r">opened</span><span class="r">closed</span><span class="r">path</span><span class="r">walked ≥</span><span class="r">efficiency</span><span class="r">tiles</span></div>
+              <div class="lrow lhead"><span>leg to</span><span class="r">opened</span><span class="r">closed</span><span class="r">path</span><span class="r">walked ≥</span><span class="r">walls</span><span class="r">efficiency</span><span class="r">tiles</span></div>
               {#each legs as l (l.node_id)}
                 <div class="lrow" class:open={l.closed_turn == null}>
                   <span class="lname">{l.name}</span>
@@ -490,7 +491,8 @@ where: {crash.where.join(' ← ')}{/if}</pre>
                   <span class="r tnum">{l.closed_turn != null ? 'T' + l.closed_turn : (l.fraction != null ? pctOf(l.fraction) + ' there' : '—')}</span>
                   <span class="r tnum">{l.d_open ?? '—'}</span>
                   <span class="r tnum">{l.steps_walked ?? '—'}</span>
-                  <span class="r tnum">{l.closed_turn != null ? pctOf(l.efficiency) : '—'}</span>
+                  <span class="r tnum">{l.walls_hit ?? '—'}</span>
+                  <span class="r tnum" title={l.charged_steps != null ? `shortest walk ÷ ${l.charged_steps} charged steps` : ''}>{l.closed_turn != null ? pctOf(l.efficiency) : '—'}</span>
                   <span class="r tnum">{l.tiles_seen ?? '—'}</span>
                 </div>
               {/each}
@@ -962,7 +964,7 @@ waited {Math.round(e.wait_s ?? 0)}s{/if}</pre>
   .legs-head { display: flex; gap: 12px; align-items: baseline; font-size: 12px; font-weight: 700; margin-bottom: 6px; }
   .legs-head .faint { font-weight: 500; }
   .ltable { display: flex; flex-direction: column; gap: 2px; }
-  .lrow { display: grid; grid-template-columns: minmax(160px, 1.6fr) 64px 84px 56px 72px 80px 56px; gap: 8px; font-size: 12px; padding: 3px 0; }
+  .lrow { display: grid; grid-template-columns: minmax(160px, 1.6fr) 64px 84px 56px 72px 56px 80px 56px; gap: 8px; font-size: 12px; padding: 3px 0; }
   .lrow.lhead { font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); font-weight: 700; }
   .lrow.open .lname { font-style: italic; }
   .lrow .r { text-align: right; }

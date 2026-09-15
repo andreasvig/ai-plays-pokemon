@@ -519,9 +519,12 @@ export function levelRows(rows, entry, base) {
  * failed leg's are the turns played past the last stamp, capped at the leg
  * cap — and the leg's movement efficiency (shortest ÷ steps, from
  * movementLegs; the leg the run ended on is credited with the ground it
- * gained). The failed gate is named by terminationReason ("leg_cap:<gate>",
+ * gained, and each press into a wall is charged as a step, as at run level). The failed gate is named by terminationReason ("leg_cap:<gate>",
  * "missed_gate:<gate>"), else the first uncleared gate of a terminated run.
  */
+/** Steps a leg is scored against: tiles walked + one per press into a wall. */
+const legCharged = (leg) => (leg?.steps ?? 0) + (leg?.walls ?? 0)
+
 export function runGateRows(row, gates) {
   const stamps = row?.gateTurns || {}
   const times = row?.gateTimesS || {}
@@ -543,8 +546,14 @@ export function runGateRows(row, gates) {
       id: g.id, name: g.name, status, turn, legTurns, cap: g.cap ?? null,
       timeS: turn != null && typeof times[g.id] === 'number' ? times[g.id] : null,
       costUsd: turn != null && typeof costs[g.id] === 'number' ? costs[g.id] : null,
-      efficiency: leg && leg.steps > 0 ? Math.min(1, leg.d_open / leg.steps) : null,
+      // Charged, not walked: the run-level efficiency pays for presses into a
+      // wall (2026-09-15), and a per-leg % that did not would disagree with the
+      // headline on the same run — muse-spark-1.3(medium)'s Oak's-lab leg read
+      // 13% here against the 9% it was actually scored at, over 42 bumps.
+      efficiency: leg && legCharged(leg) > 0 ? Math.min(1, leg.d_open / legCharged(leg)) : null,
       stepsSource: leg?.source ?? null,
+      legSteps: leg?.steps ?? null,
+      legWalls: leg?.walls ?? null,
     }
     if (turn != null) prev = turn; else chain = false
     return out

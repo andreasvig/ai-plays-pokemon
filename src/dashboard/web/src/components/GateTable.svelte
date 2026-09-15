@@ -36,7 +36,7 @@
            when the run was judged under a different cap the tooltip says which. -->
       <span class="gleg tnum" class:faint={g.status !== 'failed'} class:recap={g.capChanged}
             title={g.capChanged ? `turns on this leg / today's leg cap — the cap was ${g.capThen} when this run was judged` : 'turns on this leg / leg cap'}>{g.cap != null ? `${g.legTurns != null ? g.legTurns : '·'} / ${g.cap}` : (g.legTurns != null ? String(g.legTurns) : '')}</span>
-      {#if efficiency}<span class="gx tnum" title={g.efficiency != null ? `movement efficiency on this leg: shortest walk ÷ steps taken · ${STEPS[g.stepsSource] || ''}` : ''}>{g.efficiency != null ? Math.round(g.efficiency * 100) + '%' : ''}</span>{/if}
+      {#if efficiency}<span class="gx tnum" title={g.efficiency != null ? `movement efficiency on this leg: shortest walk ${g.legSteps != null ? `÷ ${g.legSteps + (g.legWalls || 0)} steps charged` : '÷ steps taken'}${g.legWalls ? ` (${g.legSteps} walked + ${g.legWalls} presses into a wall)` : ''} · ${STEPS[g.stepsSource] || ''}` : ''}>{g.efficiency != null ? Math.round(g.efficiency * 100) + '%' : ''}</span>{/if}
     </div>
   {/each}
 </div>
