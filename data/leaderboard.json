@@ -1,5 +1,102 @@
 [
   {
+    "run_id": "2026-09-15_08-55-27_config-5.1__gemini-3-5-flash-lite-low",
+    "label": null,
+    "kind": "official",
+    "model": "gemini-3.5-flash-lite(low)",
+    "model_resolved": "google/gemini-3.5-flash-lite",
+    "config_stem": "config-5.1",
+    "benchmark": "pokebench-first-badge",
+    "benchmark_version": "pokebench-v1.1",
+    "status": "terminated",
+    "started_at": "2026-09-15T08:55:29",
+    "ended_at": "2026-09-15T09:06:23",
+    "turns": 40,
+    "duration_s": 653.4,
+    "total_cost_usd": 0.13054,
+    "avg_cost_per_turn_usd": 0.0032635,
+    "avg_s_per_turn": 16.335,
+    "furthest_gate": "left_house",
+    "furthest_gate_turn": 10,
+    "gates_reached": 2,
+    "total_gates": 12,
+    "gate_turns": {
+      "left_bedroom": 5,
+      "left_house": 10
+    },
+    "gate_times_s": {
+      "left_bedroom": 34.15,
+      "left_house": 71.067
+    },
+    "gate_costs_usd": {
+      "left_bedroom": 0.008629,
+      "left_house": 0.025773
+    },
+    "avg_inputs_per_turn": 2.425,
+    "input_counts": {
+      "up": 46,
+      "down": 19,
+      "right": 18,
+      "left": 11,
+      "b": 2,
+      "a": 1
+    },
+    "avg_output_tokens_per_turn": 60.475,
+    "thinking_share": 0.10872261264985532,
+    "wild_battles": 0,
+    "wild_battle_turns": 0,
+    "trainer_battles": [],
+    "trainer_battle_turns": 0,
+    "battle_turn_share": 0.0,
+    "battle_fidelity": "live",
+    "overworld_steps": 45,
+    "shortest_steps": 21,
+    "movement_efficiency": 0.4666666666666667,
+    "steps_fidelity": "trace",
+    "movement_legs": [
+      {
+        "node_id": "left_bedroom",
+        "d_open": 9,
+        "steps": 11,
+        "source": "trace",
+        "status": "closed"
+      },
+      {
+        "node_id": "left_house",
+        "d_open": 12,
+        "steps": 14,
+        "source": "trace",
+        "status": "closed"
+      },
+      {
+        "node_id": "oaks_lab_entered",
+        "d_open": 0,
+        "steps": 20,
+        "source": "trace",
+        "status": "open"
+      }
+    ],
+    "route_points": 46,
+    "route_coverage": 1.0,
+    "progress": 2.230769230769231,
+    "leg_gate": "oaks_lab_entered",
+    "leg_fraction": 0.23076923076923073,
+    "leg_distance_min": 10,
+    "leg_distance_open": 13,
+    "termination_reason": "leg_cap:oaks_lab_entered",
+    "projection_version": 11,
+    "continued_from": null,
+    "resumed": false,
+    "harness": "append_compact",
+    "max_turns": 10000000,
+    "has_recording": true,
+    "video_url": "https://pub-c54bf882c85d4fad83024b5791b99424.r2.dev/runs/2026-09-15_08-55-27_config-5.1__gemini-3-5-flash-lite-low/recording.mp4",
+    "video_view": "detailed",
+    "screenshots_base_url": null,
+    "trace_published": false,
+    "published_at": "2026-09-15T07:11:30+00:00"
+  },
+  {
     "run_id": "2026-09-14_08-48-00_config-5.1__deepseek-v4-1-flash-max_continued_from_turn_109",
     "label": null,
     "kind": "official",
