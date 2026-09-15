@@ -44,6 +44,20 @@ TRACE_SPEC: list[str] = [
 
 MAX_PLAUSIBLE_BATTLES = 10_000  # a torn read shows up as a huge number
 
+# The furthest the PLAYER can move between two samples, in tiles. Samples are
+# taken at the end of every input's gap, so the window is one button's
+# hold+gap: 12+24 frames for a direction, 12+100 for A/B (config-5.1), and the
+# fastest the game ever walks the player is 8 frames per tile (running). That
+# bounds one input at 14 tiles; 16 leaves margin for a slower config.
+# A displacement BEYOND it is not walking — the game relocated the player:
+# a blackout after losing every Pokémon warps to the last heal point (live
+# 2026-09-15: gemini-3.8-flash(high) went Viridian Forest → the player's house,
+# 224 tiles, and Pewter Gym → the player's house, 374 tiles, on one B press
+# each). Those count as ONE step, like any other warp, and are counted in
+# ``relocations``; crediting the shortest path would have charged the run 598
+# steps it never walked — a quarter of its movement.
+MAX_TILES_PER_INPUT = 16
+
 DIRECTIONS = {"U": "up", "D": "down", "L": "left", "R": "right", "UP": "up", "DOWN": "down", "LEFT": "left", "RIGHT": "right"}
 
 
@@ -92,11 +106,13 @@ def derive(samples: list[dict[str, Any]], start_tile: Optional[tuple[int, int, i
     walk (Oak escorting the player to the lab moved ~28 tiles under five B
     presses) is as many steps as the video and the between-poll bound count,
     and ``scripted_tiles`` says how many came from such inputs. Without it, or
-    when no path is known, a displacement is one step as before.
+    when no path is known, a displacement is one step as before. A displacement
+    longer than :data:`MAX_TILES_PER_INPUT` is a RELOCATION the game performed
+    (a blackout warp), not a walk: one step, counted in ``relocations``.
     ``end_tile`` is the last tile sampled — the referee compares it with the
     poll that follows: a warp still fading at sample time shows the old tile.
     """
-    steps = lost = battle_inputs = scripted = 0
+    steps = lost = battle_inputs = scripted = relocations = 0
     battle_started_at: Optional[int] = None
     prev_tile, prev_batt = start_tile, start_in_battle
     prev_total: Optional[int] = None
@@ -120,6 +136,9 @@ def derive(samples: list[dict[str, Any]], start_tile: Optional[tuple[int, int, i
             if tile != prev_tile:
                 moved = distance(prev_tile, tile) if distance is not None else None
                 moved = moved if isinstance(moved, int) and moved > 0 else 1
+                if moved > MAX_TILES_PER_INPUT:  # the game moved the player, not the player
+                    relocations += 1
+                    moved = 1
                 steps += moved
                 scripted += moved - 1
             elif str(d.get("input", "")).upper() in DIRECTIONS:
@@ -140,8 +159,9 @@ def derive(samples: list[dict[str, Any]], start_tile: Optional[tuple[int, int, i
         "battle_started_at": battle_started_at,
         "end_in_battle": prev_batt,
         "scripted_tiles": scripted,
+        "relocations": relocations,
         "end_tile": None if blind else prev_tile,
     }
 
 
-__all__ = ["TRACE_SPEC", "decode_samples", "derive"]
+__all__ = ["TRACE_SPEC", "MAX_TILES_PER_INPUT", "decode_samples", "derive"]

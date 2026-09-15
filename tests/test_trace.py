@@ -57,7 +57,8 @@ def test_derive_counts_steps_only_outside_battle_and_names_lost_inputs():
             row("A", 3, 0, in_battle=True, total=1), row("A", 3, 0, in_battle=True, total=1)]
     d = trace.derive(trace.decode_samples(rows, KEY), start_tile=(3, 0, 0, 0), start_in_battle=False)
     assert d == {"inputs": 6, "blind": False, "overworld_steps": 2, "inputs_lost": 1, "battle_inputs": 3,
-                 "battle_started_at": 3, "end_in_battle": True, "scripted_tiles": 0, "end_tile": (3, 0, 3, 0)}
+                 "battle_started_at": 3, "end_in_battle": True, "scripted_tiles": 0, "relocations": 0,
+                 "end_tile": (3, 0, 3, 0)}
 
 
 def test_a_multi_tile_displacement_counts_its_graph_distance_when_one_is_known():
@@ -126,6 +127,28 @@ def test_traced_steps_replace_the_between_poll_bound_for_that_turn_only():
     fresh = tracker(); fresh.load_state(state); fresh.observe_stamps({"enter_room": 5})
     assert fresh.summary() == tr.summary()
     assert "traced_steps" not in bound.export_state()  # untraced runs keep the old shape
+
+
+def test_a_blackout_warp_is_one_step_not_the_shortest_path_home():
+    """Live 2026-09-15 (gemini-3.8-flash high): every Pokemon fainted in Viridian
+    Forest and the game warped the player to the player's house — 224 tiles on
+    one B press, and 374 tiles from Pewter Gym later. Crediting the shortest
+    path charged the run 598 steps it never walked. A displacement past
+    MAX_TILES_PER_INPUT is the GAME moving the player: one step, like any warp."""
+    rows = [row("B", 43, 5, g=1, m=0), row("B", 8, 5, g=4, m=0)]
+    far = {((1, 0, 43, 5), (4, 0, 8, 5)): 224}
+    d = trace.derive(trace.decode_samples(rows, KEY), start_tile=(1, 0, 43, 5), start_in_battle=False,
+                     distance=lambda a, b: far.get((a, b)))
+    assert (d["overworld_steps"], d["relocations"], d["scripted_tiles"]) == (1, 1, 0)
+    # the escort stays a walk: 8 tiles is inside one input's reach
+    near = {((3, 0, 11, 5), (3, 0, 11, 13)): 8}
+    esc = trace.derive(trace.decode_samples([row("B", 11, 13)], KEY), start_tile=(3, 0, 11, 5),
+                       start_in_battle=False, distance=lambda a, b: near.get((a, b)))
+    assert (esc["overworld_steps"], esc["relocations"], esc["scripted_tiles"]) == (8, 0, 7)
+    # the boundary itself is still a walk
+    edge = trace.derive(trace.decode_samples([row("B", 11, 13)], KEY), start_tile=(3, 0, 11, 5),
+                        start_in_battle=False, distance=lambda a, b: trace.MAX_TILES_PER_INPUT)
+    assert edge["overworld_steps"] == trace.MAX_TILES_PER_INPUT and edge["relocations"] == 0
 
 
 def test_movement_the_poll_sees_after_the_last_sample_is_added_to_the_turn():

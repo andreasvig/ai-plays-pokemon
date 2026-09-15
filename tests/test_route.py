@@ -8,6 +8,7 @@ import json
 import pytest
 
 from src.app import route
+from src.referee.trace import MAX_TILES_PER_INPUT
 from src.referee.walkgraph import DEFAULT_GRAPH_PATH, WalkGraph
 
 
@@ -74,6 +75,25 @@ def test_a_scripted_walk_between_samples_is_a_jump_filled_with_the_shortest_path
     chain = [(3, 0, 12, 1)] + [tuple(t) for t in fill] + [(3, 0, 11, 5)]
     for a, b in zip(chain, chain[1:]):
         assert firered.node_id(*b) in firered.adj[firered.node_id(*a)]
+
+
+def test_a_blackout_is_a_teleport_drawn_as_two_ends_not_a_line(firered):
+    """Live 2026-09-15: Viridian Forest -> the player's house, 224 tiles under one
+    B press. A jump that long is the game relocating the player; filling it would
+    draw a line across half the world the run never walked."""
+    events = [trace_event(99, [sample(0, "B", 1, 0, 43, 5), sample(1, "B", 4, 0, 8, 5)])]
+    r = route.build_route(events, firered)
+    assert r["transitions"] == {"teleport": 1} and r["tiles_moved"] == 1 and r["fills"] == {}
+
+
+def test_a_long_span_across_a_blind_turn_stays_a_jump(firered):
+    """The per-input cap must not fire on poll -> poll, which spans a whole turn
+    of walking: a blind turn can legitimately cover far more than one input."""
+    far = [poll_event(1, 3, 0, 6, 8), {"type": "turn_input_trace", "turn": 2, "samples": []},
+           poll_event(2, 3, 19, 10, 20)]
+    r = route.build_route(far, firered)
+    assert list(r["transitions"]) == ["jump"] and r["tiles_moved"] > route.MAX_TILES_PER_INPUT
+    assert r["fills"]["0"]  # the walked ground is still drawn
 
 
 def test_a_seam_is_one_tile_across_an_outdoor_connection(firered):

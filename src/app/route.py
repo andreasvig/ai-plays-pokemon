@@ -15,7 +15,11 @@ Route dict (``ROUTE_VERSION`` 1):
   (same map, one tile), ``seam`` (one tile across an outdoor connection),
   ``warp`` (a door, stairs, a hole: one graph edge), ``jump`` (a shortest path
   of 2+ steps — a scripted walk between two samples, Oak's escort to the lab),
-  ``break`` (no path: an off-graph tile or an unexplained relocation).
+  ``teleport`` (a path longer than one input can walk,
+  :data:`~src.referee.trace.MAX_TILES_PER_INPUT` — the game relocated the
+  player, e.g. a blackout after losing every Pokemon: drawn as its two ends,
+  never as a line), ``break`` (no path: an off-graph tile or an unexplained
+  relocation).
 - ``fills`` — ``{visit index: [[g, m, x, y], ...]}`` the shortest-path tiles
   between visit k and k+1 for every ``jump``, so the drawn line follows the
   ground, not a chord.
@@ -36,6 +40,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
+from src.referee.trace import MAX_TILES_PER_INPUT
 from src.referee.walkgraph import DEFAULT_GRAPH_PATH, WalkGraph
 
 ROUTE_VERSION = 1
@@ -133,7 +138,12 @@ def build_route(events: Iterable[dict], graph: Optional[WalkGraph]) -> Optional[
         if tile == last:
             return
         if last is not None:
-            kind, moved, fill = _classify(graph, last, tile)
+            # The cap that separates a scripted walk from a game relocation is
+            # a PER-INPUT bound, so it only applies when the two visits really
+            # are one input apart. A blind turn leaves poll → poll, a whole
+            # turn of walking, which may legitimately be far.
+            one_input = not (visits and visits[-1][1] == POLL and i == POLL)
+            kind, moved, fill = _classify(graph, last, tile, one_input=one_input)
             transitions[kind] += 1
             tiles_moved += moved
             if fill:
@@ -187,7 +197,8 @@ def build_route(events: Iterable[dict], graph: Optional[WalkGraph]) -> Optional[
     }
 
 
-def _classify(graph: Optional[WalkGraph], a: Tile, b: Tile) -> tuple[str, int, Optional[list[Tile]]]:
+def _classify(graph: Optional[WalkGraph], a: Tile, b: Tile, *, one_input: bool = True
+              ) -> tuple[str, int, Optional[list[Tile]]]:
     """(kind, graph steps, fill tiles between a and b for a jump)."""
     same_map = a[:2] == b[:2]
     if same_map and abs(a[2] - b[2]) + abs(a[3] - b[3]) == 1:
@@ -206,6 +217,11 @@ def _classify(graph: Optional[WalkGraph], a: Tile, b: Tile) -> tuple[str, int, O
     path = shortest_path(graph, na, nb)
     if path is None:
         return "break", 0, None
+    if one_input and len(path) - 1 > MAX_TILES_PER_INPUT:
+        # The game moved the player (a blackout warp). One step, and NO fill:
+        # drawing the shortest path would put a line across half the world the
+        # run never walked.
+        return "teleport", 1, None
     return "jump", len(path) - 1, [graph.coord(n) for n in path[1:-1]]
 
 
@@ -214,4 +230,4 @@ def load_route(run_dir: Path, graph: Optional[WalkGraph] = None) -> Optional[dic
     return build_route(iter_route_events(Path(run_dir)), default_graph() if graph is None else graph)
 
 
-__all__ = ["ROUTE_VERSION", "POLL", "build_route", "load_route", "iter_route_events", "shortest_path", "default_graph"]
+__all__ = ["ROUTE_VERSION", "POLL", "MAX_TILES_PER_INPUT", "build_route", "load_route", "iter_route_events", "shortest_path", "default_graph"]

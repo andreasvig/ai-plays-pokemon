@@ -15,6 +15,7 @@
 | R3 | Movement the poll sees after the last sample (door auto-step, a warp still fading) is added to that turn's traced steps. | Audit 2026-09-15: 7 of 140 turns ended on a pre-warp tile; each lost one step. The poll is the settled truth. |
 | R4 | Outdoor maps get a `world` tile offset in the walk graph (version 2), stitched from pret's connection offsets, Pallet Town at (0,0). Indoor maps have none and are drawn as insets. | Pixel = (world + tile) × 16. One frame for every future run, no per-run stitching. |
 | R5 | Publish writes `data/runs/<run_id>/route.json` per traced run (beside `summary.json`, so unpublish removes it) and two row fields, `route_points` and `route_coverage`. Old runs (no trace) get neither. `--refresh-rows` writes missing/stale route files too. | The board can draw later from a static file; rows stay small. |
+| R7 | A displacement longer than one input can walk (`MAX_TILES_PER_INPUT` = 16, from the A/B gap of 112 frames ÷ 8 frames per tile at running speed) is a RELOCATION the game performed, not a walk: one step, like any warp, counted in `relocations`. The route draws it as its two ends, never as a filled line. | Live 2026-09-15: gemini-3.8-flash(high) blacked out twice (Viridian Forest → the player's house, 224 tiles; Pewter Gym → the player's house, 374 tiles) and R2 charged it 596 steps it never walked, a quarter of its movement. Control: the four already-back-filled runs, none of which blacked out, are unchanged by the rule. |
 | R6 | Two official first-badge runs queued now: gemini-3.5-flash-lite(low) then gemini-3.8-flash(high). The old rows for both aliases are replaced at publish (`board_clash` guard → unpublish first). | Andreas: they need new runs anyway and are cheap. |
 
 ## 1. What the audit found (2026-09-15, the two traced runs of 2026-09-14)
@@ -36,6 +37,14 @@
 - Live: flash-lite(low) published with `route.json` (46 visits, coverage 1.0, 43 steps + 2 warps) and every row
   re-projected to v11. gemini-3.8-flash(high) queued behind it (playing on the pre-R2/R3 daemon; the back-fill script
   covers it at publish).
+
+## 1c. Defect found by the mark run (2026-09-15, after R2 shipped)
+A blackout — every Pokemon faints — warps the player to the last heal point. The trace samples that as one
+input moving the player hundreds of tiles, and R2's "count the graph distance" credited the whole shortest
+path as walking: 224 tiles out of Viridian Forest and 374 out of Pewter Gym, 596 of the run's 2 549 traced
+steps. The route builder filled those jumps too, drawing a line across half the world the run never walked.
+Fixed by R7. The bound path (untraced runs) has the same shape between two polls and is NOT capped — a whole
+turn of walking can legitimately be far; those runs keep video/bound fidelity and no route.
 
 ## 2. Build
 
