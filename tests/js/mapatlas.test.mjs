@@ -6,7 +6,7 @@
 // `drawRoute` is handed a recording stub in place of a canvas context.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { TILE, worldLayout, markersFor, buildingLabel, drawRoute, drawSize, drawWindow, turnColour, visitTimes, visitAt } from '../../src/dashboard/web/src/lib/mapatlas.js'
+import { TILE, worldLayout, markersFor, buildingLabel, drawRoute, drawSize, drawWindow, laneSteps, turnColour, visitTimes, visitAt } from '../../src/dashboard/web/src/lib/mapatlas.js'
 
 // Pallet Town at the world origin, Route 1 above it, Viridian Forest with no
 // place in the frame, and the player's two floors, which are never laid out.
@@ -262,4 +262,60 @@ test('a run that never left one turn still gets a defined time', () => {
   const t = visitTimes([visit(5, 3, 0, 0, 0), visit(5, 3, 0, 1, 0)])
   assert.ok(t.every((v) => Number.isFinite(v) && v >= 0 && v <= 1))
   assert.deepEqual(visitTimes([]), [])
+})
+
+
+// -- cables on the floor ------------------------------------------------------
+// Andreas, 2026-09-15: "is there a way we could design a system such that lines
+// [are] very small and thin so that they can be rendered as more than one on the
+// tile? I imagine it would look like 1,2,3,4 small cables on the floor."
+
+const there = (n) => Array.from({ length: n }, (_, i) => visit(i + 1, 3, 0, i, 0))
+const back = (n, from) => Array.from({ length: n }, (_, i) => visit(from + i, 3, 0, n - 1 - i, 0))
+
+test('a step walked once has a single lane', () => {
+  const steps = laneSteps(route(['3:0'], there(4)))
+  assert.equal(steps.length, 3)
+  assert.ok(steps.every((s) => s.lanes === 1 && s.lane === 0))
+})
+
+test('three passes over one corridor become three lanes', () => {
+  const r = route(['3:0'], [...there(5), ...back(5, 6), ...there(5).map((v, i) => visit(12 + i, 3, 0, i, 0))])
+  const onFirst = laneSteps(r).filter((s) => s.u[2] + s.v[2] === 1)   // the 0↔1 step
+  assert.equal(onFirst.length, 3)
+  assert.deepEqual(onFirst.map((s) => s.lane), [0, 1, 2])
+  assert.ok(onFirst.every((s) => s.lanes === 3))
+})
+
+test('a lane keeps the same side of the tile whichever way it was walked', () => {
+  // there and back over the same step: the two traversals face opposite ways,
+  // so the perpendicular has to be taken from the edge, not from the travel —
+  // otherwise the pair swaps sides halfway and the cables cross.
+  const r = route(['3:0'], [...there(3), ...back(3, 4)])
+  const pair = laneSteps(r).filter((s) => s.u[2] + s.v[2] === 1)
+  assert.equal(pair.length, 2)
+  assert.notEqual(pair[0].flip, pair[1].flip, 'they were walked in opposite directions')
+  // with flip applied, the offsets differ in lane index, not in the side the
+  // maths starts from: lane 0 is one side, lane 1 the other, for both.
+  assert.deepEqual(pair.map((s) => s.lane), [0, 1])
+})
+
+test('lanes stop multiplying past the cap', () => {
+  const visits = []
+  for (let p = 0; p < 9; p++) visits.push(...(p % 2 ? back(4, 1 + p * 4) : there(4).map((v, i) => visit(1 + p * 4 + i, 3, 0, i, 0))))
+  const steps = laneSteps(route(['3:0'], visits), { maxLanes: 4 })
+  const onFirst = steps.filter((s) => s.u[2] + s.v[2] === 1)
+  assert.ok(onFirst.length > 4)
+  assert.ok(onFirst.every((s) => s.lanes === 4 && s.lane <= 3))
+})
+
+test('two passes are actually drawn apart, not on top of each other', () => {
+  const c = stubWithTris()
+  const r = route(['3:0'], [...there(4), ...back(4, 5)])
+  drawRoute(c, r, placeAll, { arrowEvery: 1e6 })
+  // every drawn line for the 0↔1 step, ignoring the halo that shares its path
+  const ys = new Set(c.calls.lines
+    .filter(([a, b]) => Math.min(a[0], b[0]) < TILE && Math.max(a[0], b[0]) > TILE)
+    .map(([a]) => Math.round(a[1])))
+  assert.ok(ys.size >= 2, `both passes share one y: ${[...ys]}`)
 })

@@ -117,32 +117,21 @@ export const rampCss = () =>
   `linear-gradient(90deg, ${RAMP.map(([k, c]) => `rgb(${c.join(',')}) ${Math.round(k * 100)}%`).join(', ')})`
 
 /**
- * A continuous position in the run for every visit, 0 → 1.
+ * Where along the run each visit falls, 0 → 1.
  *
- * Colouring by turn NUMBER alone paints every tile of one turn the same and
- * steps at the boundary, which inside a house — ten turns over thirty tiles —
- * reads as three flat bands. Spreading each turn's own visits across the gap to
- * the next keeps the meaning (the ramp is still first turn → last) and makes
- * the change continuous along the path.
+ * By POSITION IN THE SEQUENCE, not by turn number. Visits are already in
+ * chronological order, so this is still "first to last" — but every tile
+ * advances the colour by the same amount, which is what makes a cable shade
+ * along its own length. Keyed on the turn instead, a turn that walked twenty
+ * tiles paints all twenty identically and then steps at the boundary, and the
+ * map reads as a handful of flat-coloured runs (Andreas, 2026-09-15: "it
+ * doesn't look gradual at all").
  */
 export function visitTimes(visits) {
   const n = visits.length
   if (!n) return []
-  const t0 = visits[0][0]
-  const span = Math.max(visits[n - 1][0] - t0, 1)
-  const out = new Array(n)
-  let i = 0
-  while (i < n) {
-    let j = i
-    while (j + 1 < n && visits[j + 1][0] === visits[i][0]) j++
-    const here = visits[i][0] - t0
-    const next = j + 1 < n ? visits[j + 1][0] - t0 : here + 1
-    for (let k = i; k <= j; k++) {
-      out[k] = Math.min(1, (here + ((next - here) * (k - i)) / (j - i + 1)) / span)
-    }
-    i = j + 1
-  }
-  return out
+  if (n === 1) return [0]
+  return visits.map((_v, i) => i / (n - 1))
 }
 
 const MARGIN = 2          // tiles of air around the drawn world
@@ -246,11 +235,101 @@ export function buildingLabel(building) {
  * along the path, not per segment, so a run that crosses its own track leaves
  * two arrows pointing different ways instead of one ambiguous line.
  */
+/**
+ * Walk the route as a flat list of drawn segments.
+ *
+ * One entry per tile-to-tile step, in order: `{u, v, t0, t1, fill}` where
+ * `u`/`v` are `[g, m, x, y]` and `t0`/`t1` are where that step starts and ends
+ * on the run's 0→1 timeline, for its colour.
+ *
+ * A scripted walk that covered several tiles on one press is expanded through
+ * `fills`, so the line follows the ground rather than cutting a chord — and the
+ * timeline is split across those sub-steps too. Giving all of them the visit's
+ * own pair repeats one short gradient over and over, which is the same flat
+ * look as no gradient at all.
+ */
+function routeSteps(route, times) {
+  const visits = route?.visits ?? []
+  const out = []
+  for (let i = 0; i < visits.length - 1; i++) {
+    const fill = route.fills?.[String(i)] || null
+    const chain = [visits[i].slice(2, 6), ...(fill || []), visits[i + 1].slice(2, 6)]
+    const a = times[i], b = times[i + 1]
+    const n = chain.length - 1
+    for (let j = 0; j < n; j++) {
+      out.push({
+        u: chain[j], v: chain[j + 1], fill: !!fill,
+        t0: a + ((b - a) * j) / n,
+        t1: a + ((b - a) * (j + 1)) / n,
+      })
+    }
+  }
+  return out
+}
+
+/** A step's identity regardless of which way it was walked. */
+const edgeKey = (u, v) => {
+  const a = u.join(','), b = v.join(',')
+  return a < b ? `${a}|${b}` : `${b}|${a}`
+}
+
+/**
+ * Lay the route out as parallel lanes — cables on the floor.
+ *
+ * Andreas, 2026-09-15: "is there a way we could design a system such that lines
+ * [are] very small and thin so that they can be rendered as more than one on
+ * the tile? I imagine it would look like 1,2,3,4 small cables on the floor."
+ *
+ * A step that the run walked more than once gets one lane per walk, offset
+ * perpendicular to the path and centred on it, so four crossings of a corridor
+ * read as four thin cables side by side instead of one line painted over three
+ * times. The offset is computed from the edge's CANONICAL direction, not the
+ * direction of travel, so a lane sits on the same physical side of the tile
+ * whichever way the run was going — otherwise a there-and-back pair would swap
+ * sides halfway and cross.
+ *
+ * Returns each step with `lane` (0-based) and `lanes` (how many that step has).
+ */
+export function laneSteps(route, { maxLanes = 5, times = null } = {}) {
+  const steps = routeSteps(route, times ?? visitTimes(route?.visits ?? []))
+  const total = new Map()
+  for (const s of steps) {
+    const k = edgeKey(s.u, s.v)
+    total.set(k, (total.get(k) ?? 0) + 1)
+  }
+  const seen = new Map()
+  for (const s of steps) {
+    const k = edgeKey(s.u, s.v)
+    const n = seen.get(k) ?? 0
+    seen.set(k, n + 1)
+    s.lanes = Math.min(total.get(k), maxLanes)
+    s.lane = Math.min(n, s.lanes - 1)
+    // canonical: lane 0 is always on the same side of the line
+    s.flip = s.u.join(',') > s.v.join(',')
+  }
+  return steps
+}
+
+/**
+ * Draw a run's route.
+ *
+ * `place(g, m, x, y)` → `[px, py]` of that tile's centre on this canvas, or
+ * null when the caller does not draw that map — which is how the world canvas
+ * skips interiors and a popup skips everything but its own floors. Segments
+ * with an end the caller cannot place are simply not drawn.
+ *
+ * Lines are thin and laid in lanes (see `laneSteps`); an arrowhead is dropped
+ * every `arrowEvery` pixels of walking, measured along the path rather than per
+ * segment, so a run that doubles back leaves two arrows pointing opposite ways.
+ */
 export function drawRoute(c, route, place, { scale = TILE, width = null, arrowEvery = TILE * 2.5 } = {}) {
   const visits = route?.visits ?? []
   if (visits.length < 2) return
-  const lw = width ?? Math.max(2, scale * 0.22)
-  let since = arrowEvery * 0.5      // the first arrow lands half a gap in
+  const lw = width ?? Math.max(1.2, scale * 0.11)
+  const gap = Math.max(2, scale * 0.2)          // between neighbouring cables
+  const times = visitTimes(visits)
+  let since = arrowEvery * 0.5                  // the first arrow lands half a gap in
+
   const arrow = (from, to, colour) => {
     const dx = to[0] - from[0], dy = to[1] - from[1]
     const len = Math.hypot(dx, dy)
@@ -259,75 +338,78 @@ export function drawRoute(c, route, place, { scale = TILE, width = null, arrowEv
     if (since < arrowEvery) return
     since = 0
     const ux = dx / len, uy = dy / len
-    const h = Math.max(5, scale * 0.5)         // along the line
-    const w = Math.max(5, scale * 0.56)        // across it — wider than the line, or it vanishes
-    // at the far end of this segment, pointing the way the run went
-    const tip = [to[0], to[1]]
-    const back = [tip[0] - ux * h, tip[1] - uy * h]
+    const h = Math.max(4, scale * 0.34)
+    const w = Math.max(4, scale * 0.34)
+    const back = [to[0] - ux * h, to[1] - uy * h]
     c.beginPath()
-    c.moveTo(tip[0], tip[1])
+    c.moveTo(to[0], to[1])
     c.lineTo(back[0] - uy * w * 0.5, back[1] + ux * w * 0.5)
     c.lineTo(back[0] + uy * w * 0.5, back[1] - ux * w * 0.5)
     c.closePath()
+    // Outlined, or a head only a little wider than its own cable is invisible.
     c.fillStyle = colour
-    c.strokeStyle = 'rgba(12,14,18,.9)'
-    c.lineWidth = Math.max(0.75, scale * 0.05)
+    c.strokeStyle = 'rgba(12,15,20,.75)'
+    c.lineWidth = Math.max(0.6, scale * 0.04)
     c.fill()
     c.stroke()
   }
-  const times = visitTimes(visits)
-  c.lineCap = 'round'
+
+  c.lineCap = 'butt'      // butt, so neighbouring cables do not smear together
   c.lineJoin = 'round'
-  for (let i = 0; i < visits.length - 1; i++) {
-    const a = visits[i], b = visits[i + 1]
-    const colour = turnColour(times[i])
-    const colourTo = turnColour(times[i + 1])
-    // A scripted walk moved several tiles on one press; `fills` carries the
-    // tiles between, so the line follows the ground rather than cutting a chord.
-    const fill = route.fills?.[String(i)] || null
-    const chain = [a.slice(2, 6), ...(fill || []), b.slice(2, 6)]
-    for (let j = 0; j < chain.length - 1; j++) {
-      const pu = place(...chain[j]), pv = place(...chain[j + 1])
-      if (!pu || !pv) continue
-      const u = chain[j], v = chain[j + 1]
-      const sameMap = u[0] === v[0] && u[1] === v[1]
-      const adjacent = sameMap && Math.abs(u[2] - v[2]) + Math.abs(u[3] - v[3]) <= 2
-      const seam = !sameMap && Math.abs(pu[0] - pv[0]) + Math.abs(pu[1] - pv[1]) <= 2 * scale
-      if (adjacent || seam) {
-        // A dark halo first: the artwork underneath is busy, and a bare line
-        // on Viridian Forest's canopy is invisible.
-        c.strokeStyle = 'rgba(15,18,22,.55)'
-        c.lineWidth = lw + Math.max(2, scale * 0.12)
-        c.beginPath(); c.moveTo(pu[0], pu[1]); c.lineTo(pv[0], pv[1]); c.stroke()
-        // A gradient per segment, so the colour slides along the path rather
-        // than changing at the joins.
-        let stroke = fill ? 'rgba(190,190,255,.85)' : colour
-        if (!fill && colour !== colourTo && c.createLinearGradient) {
-          const g = c.createLinearGradient(pu[0], pu[1], pv[0], pv[1])
-          g.addColorStop(0, colour)
-          g.addColorStop(1, colourTo)
-          stroke = g
-        }
-        c.strokeStyle = stroke
-        c.lineWidth = fill ? lw * 0.7 : lw
-        c.beginPath(); c.moveTo(pu[0], pu[1]); c.lineTo(pv[0], pv[1]); c.stroke()
-        arrow(pu, pv, fill ? 'rgb(190,190,255)' : colourTo)
-      } else {
-        // A warp or a blackout: mark both ends, never a chord across the map.
-        c.lineWidth = Math.max(1.5, lw * 0.7)
-        for (const p of [pu, pv]) {
-          c.strokeStyle = 'rgba(15,18,22,.55)'
-          c.beginPath(); c.arc(p[0], p[1], scale * 0.42, 0, 6.284); c.stroke()
-          c.strokeStyle = colour
-          c.beginPath(); c.arc(p[0], p[1], scale * 0.36, 0, 6.284); c.stroke()
-        }
+
+  for (const s of laneSteps(route, { times })) {
+    const pu = place(...s.u), pv = place(...s.v)
+    if (!pu || !pv) continue
+    const sameMap = s.u[0] === s.v[0] && s.u[1] === s.v[1]
+    const adjacent = sameMap && Math.abs(s.u[2] - s.v[2]) + Math.abs(s.u[3] - s.v[3]) <= 2
+    const seam = !sameMap && Math.abs(pu[0] - pv[0]) + Math.abs(pu[1] - pv[1]) <= 2 * scale
+    const colour = turnColour(s.t0)
+    const colourTo = turnColour(s.t1)
+
+    if (!(adjacent || seam)) {
+      // A warp or a blackout: mark both ends, never a chord across the map.
+      c.lineWidth = Math.max(1.2, lw)
+      for (const p of [pu, pv]) {
+        c.strokeStyle = 'rgba(15,18,22,.5)'
+        c.beginPath(); c.arc(p[0], p[1], scale * 0.34, 0, 6.284); c.stroke()
+        c.strokeStyle = colour
+        c.beginPath(); c.arc(p[0], p[1], scale * 0.28, 0, 6.284); c.stroke()
       }
+      continue
     }
+
+    // offset this lane perpendicular to the CANONICAL direction of the edge
+    const dx = pv[0] - pu[0], dy = pv[1] - pu[1]
+    const len = Math.hypot(dx, dy) || 1
+    const sign = s.flip ? -1 : 1
+    const nx = (-dy / len) * sign, ny = (dx / len) * sign
+    const off = (s.lane - (s.lanes - 1) / 2) * gap
+    const au = [pu[0] + nx * off, pu[1] + ny * off]
+    const av = [pv[0] + nx * off, pv[1] + ny * off]
+
+    // A dark hairline under each cable: the artwork below is busy, and a bare
+    // thin line on Viridian Forest's canopy disappears.
+    c.strokeStyle = 'rgba(12,15,20,.55)'
+    c.lineWidth = lw + Math.max(1.4, scale * 0.09)
+    c.beginPath(); c.moveTo(au[0], au[1]); c.lineTo(av[0], av[1]); c.stroke()
+
+    let stroke = s.fill ? 'rgba(190,190,255,.9)' : colour
+    if (!s.fill && colour !== colourTo && c.createLinearGradient) {
+      const g = c.createLinearGradient(au[0], au[1], av[0], av[1])
+      g.addColorStop(0, colour)
+      g.addColorStop(1, colourTo)
+      stroke = g
+    }
+    c.strokeStyle = stroke
+    c.lineWidth = lw
+    c.beginPath(); c.moveTo(au[0], au[1]); c.lineTo(av[0], av[1]); c.stroke()
+    arrow(au, av, s.fill ? 'rgb(190,190,255)' : colourTo)
   }
+
   for (const [v, colour] of [[visits[0], '#2850dc'], [visits[visits.length - 1], '#dc3214']]) {
     const p = place(...v.slice(2, 6))
     if (!p) continue
-    c.lineWidth = Math.max(2, scale * 0.16)
+    c.lineWidth = Math.max(1.5, scale * 0.12)
     c.strokeStyle = 'rgba(15,18,22,.6)'
     c.strokeRect(p[0] - scale * 0.6, p[1] - scale * 0.6, scale * 1.2, scale * 1.2)
     c.strokeStyle = colour
