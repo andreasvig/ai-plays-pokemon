@@ -139,9 +139,10 @@ def render(run_dir: Path, out: Path, scale: int = 4) -> Path:
     tr = r["transitions"]
     legend = (f"{run_dir.name}   turns {t0}-{max(turns)}   tiles visited {len(visits)}   tiles moved {r['tiles_moved']}   "
               f"coverage {r['coverage']:.0%}   steps {tr.get('step', 0)}  seams {tr.get('seam', 0)}  warps {tr.get('warp', 0)}  "
-              f"jumps {tr.get('jump', 0)}  breaks {tr.get('break', 0)}")
+              f"jumps {tr.get('jump', 0)}  teleports {tr.get('teleport', 0)}  breaks {tr.get('break', 0)}")
     draw.text((4, total_h - 32), legend, fill=TEXT)
-    draw.text((4, total_h - 18), "blue -> red = turn order; hollow circles = warp ends; light line = scripted walk fill; red dots = in battle",
+    draw.text((4, total_h - 18), "blue -> red = turn order; hollow circles = warp/teleport ends (a blackout is not drawn as a line); "
+              "light line = scripted walk fill; red dots = in battle",
               fill=TEXT)
     out.parent.mkdir(parents=True, exist_ok=True)
     img.save(out)
