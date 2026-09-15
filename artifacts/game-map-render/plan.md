@@ -210,3 +210,64 @@ Only once a candidate matches on several states does it go into `TRACE_SPEC`.
 
 **Roughly two days**, not the half day Part 1 alone was. Steps 1 and 2 are independent and both are
 the kind that either work or fail loudly; 3–5 are routine once they do.
+
+---
+
+# What landed, 2026-09-15
+
+Built in the order §13 set out. Every claim below was checked, and the checks
+are in the repo.
+
+## Part 1 — the maps
+
+`scripts/render_gamemaps.py` renders all 32 maps from pret's own tilesets at 16
+px a tile: **684 KB for the lot**, and a run only fetches what it entered. The
+three silent failures §4 warned about did not happen — `NUM_PALS_IN_PRIMARY` is
+7 (checked against the pinned tree, not assumed), the tile order is row-major
+and the layer composition is bottom-then-top with index 0 transparent.
+
+The Pallet Town spike matched the emulator **to the pixel**: 17,223 terrain
+pixels, maximum channel difference 1, which is the GBA's 5-bit colour and
+nothing else. Getting there needed three things the plan did not anticipate:
+
+| what | why it mattered |
+|---|---|
+| The screenshot on turn N shows the state polled after turn **N−1**. | Pairing it with turn N's own position makes 90% of the pixels differ on any turn that moved — which reads exactly like a broken renderer. |
+| The harness draws its own **red grid** over every screenshot (`emulator._draw_grid_overlay`). | 22% of pixels differed on a correct render until the tile edges were masked. |
+| Viridian Forest is **`WEATHER_SHADE`** — the game darkens every palette entry at runtime. | A correct render of it differs in colour on nearly every pixel. A colour map is a per-colour lookup by construction, so `verify_gamemap_render.py` fits one from the frame and measures through it; no lookup puts a tree on a roof, so a structurally wrong render still fails. |
+
+`scripts/verify_gamemap_render.py` is that control, re-runnable against any run.
+Three runs check clean.
+
+## Part 2 — buildings, battles, turns
+
+- **Doors and transition rooms (M10–M12)** are derived offline into
+  `maps/index.json`. A room is a corridor when EITHER its exits lead to two
+  different maps OR closing it on the walk graph cuts its own doorsteps off from
+  each other. Neither rule alone works: the first misses Route 2's east
+  building, the second would catch the Pewter museum. All 23 interiors are
+  pinned by `tests/test_gamemaps.py`.
+- **Battle icons (M15)** sit on the tile each fight opened on, from
+  `route.json` (`ROUTE_VERSION` 2). The segments are the tracker's own, so a
+  fight drawn is a fight counted — asserted.
+- **Trainer cards (M16)** come from `scripts/extract_trainers.py`: sprite, class,
+  party with levels for all 13 trainers, retroactive to every published run.
+- **The memory probe (M14)** found `gBattleMons` at **0x02023BE4** and
+  `gBattleOutcome` at **0x02023E8A** — by search, confirmed against the trainer
+  rosters and the wild encounter tables (146/146 mid-battle save states
+  explained), then live on the emulator. Read the outcome at the poll the battle
+  CLOSES on: during the intro `inBattle` is already set while the byte still
+  holds the previous result.
+- **Turn links** (Andreas, mid-build): every tile and every fight names its turn
+  on hover, and clicking one locally opens that turn in the report.
+
+## Still open
+
+- Wild-battle cards are complete only from **2026-09-15 onwards**: the 26
+  published runs carry trainer cards and a dot, and say plainly that the run did
+  not record the species or the outcome.
+- The published site shows none of this until a `pokemon publish --site-only
+  --refresh-rows`: the map PNGs, the trainer atlas and the new `route.json`
+  shape all ship with a publish.
+- Object events are still not drawn (M4), and animated tiles still render frame
+  0 (M5). Both are in the caption.
