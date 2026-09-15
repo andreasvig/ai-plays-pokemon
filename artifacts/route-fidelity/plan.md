@@ -27,6 +27,16 @@
   door). The sample is taken at the end of the input's gap; a warp fade outlasts it. The poll a second later
   has the settled tile. → R3.
 
+## 1b. Results (2026-09-15, same day)
+- Built and committed (8d5163e); 1041 Python + 67 JS tests green.
+- Control: today's gemini-3.5-flash-lite(low) official run (T40, current code) re-derived under R2+R3 changed only the door
+  auto-step (+1 on one leg, movement efficiency 0.477 → 0.467). The 2026-09-14 runs moved more because their stored
+  figures came from the derive of that afternoon (the battle-start rule landed mid-run): gemini-3.8-flash(low)'s lab
+  leg 19 → 38 steps (Oak's escort), efficiency 0.556 → 0.515. Back-fill applied to 4 runs, tracker oracle OK on 4/4.
+- Live: flash-lite(low) published with `route.json` (46 visits, coverage 1.0, 43 steps + 2 warps) and every row
+  re-projected to v11. gemini-3.8-flash(high) queued behind it (playing on the pre-R2/R3 daemon; the back-fill script
+  covers it at publish).
+
 ## 2. Build
 
 1. `scripts/build_walkgraph.py` — `world` per connected outdoor map; graph version 2; regenerate (offline,
