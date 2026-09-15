@@ -6,7 +6,7 @@
 // `drawRoute` is handed a recording stub in place of a canvas context.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { TILE, worldLayout, markersFor, buildingLabel, drawRoute, drawSize, drawWindow, visitAt } from '../../src/dashboard/web/src/lib/mapatlas.js'
+import { TILE, worldLayout, markersFor, buildingLabel, drawRoute, drawSize, drawWindow, turnColour, visitTimes, visitAt } from '../../src/dashboard/web/src/lib/mapatlas.js'
 
 // Pallet Town at the world origin, Route 1 above it, Viridian Forest with no
 // place in the frame, and the player's two floors, which are never laid out.
@@ -217,4 +217,49 @@ test('drawSize only ever cuts TRAILING edges, so tile coordinates cannot move', 
 
 test('a map is never trimmed away entirely', () => {
   assert.deepEqual(drawWindow({ width: 2, height: 2, trim: { left: 5, bottom: 5 } }), { x: 5, y: 0, w: 1, h: 1 })
+})
+
+
+// -- the colour ramp ----------------------------------------------------------
+// Andreas, 2026-09-15: "can we render the colours as fully gradual changes?"
+
+const rgb = (s) => s.match(/\d+/g).map(Number)
+
+test('the ramp never jumps: neighbouring values are neighbouring colours', () => {
+  let prev = rgb(turnColour(0))
+  for (let k = 0.005; k <= 1; k += 0.005) {
+    const c = rgb(turnColour(k))
+    const step = Math.max(...c.map((v, i) => Math.abs(v - prev[i])))
+    assert.ok(step <= 6, `a jump of ${step} at ${k.toFixed(3)}`)
+    prev = c
+  }
+})
+
+test('the ramp runs blue to red and is clamped outside 0..1', () => {
+  const [r0, , b0] = rgb(turnColour(0))
+  const [r1, , b1] = rgb(turnColour(1))
+  assert.ok(b0 > r0, 'it starts blue')
+  assert.ok(r1 > b1, 'it ends red')
+  assert.equal(turnColour(-3), turnColour(0))
+  assert.equal(turnColour(9), turnColour(1))
+  assert.equal(turnColour(undefined), turnColour(0))
+})
+
+test('time advances WITHIN a turn, so one turn is not one flat band', () => {
+  // four tiles walked on turn 1, then one on turn 3: colouring by turn number
+  // alone paints the first four identically and steps at the join.
+  const visits = [visit(1, 3, 0, 0, 0), visit(1, 3, 0, 1, 0), visit(1, 3, 0, 2, 0),
+                  visit(1, 3, 0, 3, 0), visit(3, 3, 0, 4, 0)]
+  const t = visitTimes(visits)
+  assert.equal(t.length, 5)
+  assert.ok(t[0] < t[1] && t[1] < t[2] && t[2] < t[3], 'it moves inside turn 1')
+  assert.ok(t[3] < t[4], 'and across the turn boundary')
+  assert.equal(t[0], 0)
+  assert.ok(t[4] <= 1)
+})
+
+test('a run that never left one turn still gets a defined time', () => {
+  const t = visitTimes([visit(5, 3, 0, 0, 0), visit(5, 3, 0, 1, 0)])
+  assert.ok(t.every((v) => Number.isFinite(v) && v >= 0 && v <= 1))
+  assert.deepEqual(visitTimes([]), [])
 })

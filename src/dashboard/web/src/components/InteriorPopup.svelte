@@ -59,7 +59,13 @@
     const x = e.clientX - rect.left, y = e.clientY - rect.top
     const place = tilePlacer(key, drawWindow(atlas.maps[key]))
     const v = visitAt(route, place, x, y, TILE)
-    hover = v ? { key, x, y, turn: v[0], tile: `${v[4]},${v[5]}` } : null
+    // The readout is drawn in a FIXED layer, at viewport coordinates. Inside
+    // the scrolling dialog it grew the scroll area the moment it reached past a
+    // floor, and the browser answered with a scrollbar across the bottom — the
+    // bar Andreas kept pointing at (2026-09-15). Nothing positioned at the
+    // cursor should be able to do that, so it sits outside the box entirely.
+    hover = v ? { key, cx: e.clientX, cy: e.clientY, turn: v[0], tile: `${v[4]},${v[5]}`,
+                  flipX: e.clientX > innerWidth - 220, flipY: e.clientY < 48 } : null
   }
 
   const visited = (key) => !!route?.maps?.[key]
@@ -96,7 +102,8 @@
             </button>
           {/each}
           {#if hover?.key === f.key}
-            <div class="tip" style={`left:${hover.x}px;top:${hover.y}px`}>
+            <div class="tip" class:flip-x={hover.flipX} class:flip-y={hover.flipY}
+              style={`left:${hover.cx}px;top:${hover.cy}px`}>
               <b>Turn {hover.turn}</b><span>({hover.tile})</span>
               {#if onturn}<span class="faint">click for the trace</span>{/if}
             </div>
@@ -140,7 +147,11 @@
     box-shadow: 0 18px 48px rgba(0, 0, 0, .55);
     max-width: min(96vw, 1100px);
     max-height: calc(90vh - 190px);   /* room for the battle card beneath */
-    overflow: auto;
+    /* Vertical only. The floors wrap, so nothing legitimate is ever wider than
+       the dialog, and a horizontal scrollbar here could only ever come from
+       something poking out — which is exactly what it did. */
+    overflow-x: hidden;
+    overflow-y: auto;
     padding: 12px 14px 14px;
     color: #eef1f6;
   }
@@ -155,11 +166,14 @@
   canvas.clickable { cursor: crosshair; }
   figcaption { margin-top: 5px; font-size: 11px; color: #aab2c0; font-weight: 650; }
   .tip {
-    position: absolute; transform: translate(10px, 10px); pointer-events: none; z-index: 2;
+    position: fixed; transform: translate(12px, -130%); pointer-events: none; z-index: 70;
     background: rgba(18, 20, 24, .95); border-radius: 5px; padding: 4px 7px;
     font-size: 11px; display: flex; gap: 6px; white-space: nowrap;
   }
   .tip .faint { color: #98a0b0; }
+  .tip.flip-x { transform: translate(calc(-100% - 12px), -130%); }
+  .tip.flip-y { transform: translate(12px, 30%); }
+  .tip.flip-x.flip-y { transform: translate(calc(-100% - 12px), 30%); }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   .fight {
     position: absolute; transform: translate(-50%, -50%);

@@ -89,12 +89,60 @@ export function loadMapImage(file) {
   return imgCache.get(file)
 }
 
-/** 0 → blue (first turn), .5 → green, 1 → red (last). The ramp the PNG uses. */
+/**
+ * The ramp: 0 is the first turn, 1 the last, and every value between is a real
+ * mix of its neighbours — five stops, linearly interpolated, no steps
+ * (Andreas, 2026-09-15: "can we render the colours as fully gradual changes").
+ */
+const RAMP = [
+  [0.0, [40, 90, 220]],    // blue
+  [0.25, [0, 170, 205]],   // cyan
+  [0.5, [40, 200, 90]],    // green
+  [0.75, [235, 190, 40]],  // amber
+  [1.0, [220, 50, 20]],    // red
+]
+
 export function turnColour(t) {
-  const k = Math.max(0, Math.min(1, t))
-  return k < 0.5
-    ? `rgb(40,${Math.round(80 + 280 * k)},${Math.round(220 - 280 * k)})`
-    : `rgb(${Math.round(360 * (k - 0.5))},${Math.round(220 - 340 * (k - 0.5))},${Math.round(80 - 120 * (k - 0.5))})`
+  const k = Math.max(0, Math.min(1, Number.isFinite(t) ? t : 0))
+  let i = 0
+  while (i < RAMP.length - 2 && k > RAMP[i + 1][0]) i++
+  const [k0, a] = RAMP[i]
+  const [k1, b] = RAMP[i + 1]
+  const f = k1 === k0 ? 0 : (k - k0) / (k1 - k0)
+  return `rgb(${Math.round(a[0] + (b[0] - a[0]) * f)},${Math.round(a[1] + (b[1] - a[1]) * f)},${Math.round(a[2] + (b[2] - a[2]) * f)})`
+}
+
+/** The ramp as a CSS gradient, so the legend cannot drift from the drawing. */
+export const rampCss = () =>
+  `linear-gradient(90deg, ${RAMP.map(([k, c]) => `rgb(${c.join(',')}) ${Math.round(k * 100)}%`).join(', ')})`
+
+/**
+ * A continuous position in the run for every visit, 0 → 1.
+ *
+ * Colouring by turn NUMBER alone paints every tile of one turn the same and
+ * steps at the boundary, which inside a house — ten turns over thirty tiles —
+ * reads as three flat bands. Spreading each turn's own visits across the gap to
+ * the next keeps the meaning (the ramp is still first turn → last) and makes
+ * the change continuous along the path.
+ */
+export function visitTimes(visits) {
+  const n = visits.length
+  if (!n) return []
+  const t0 = visits[0][0]
+  const span = Math.max(visits[n - 1][0] - t0, 1)
+  const out = new Array(n)
+  let i = 0
+  while (i < n) {
+    let j = i
+    while (j + 1 < n && visits[j + 1][0] === visits[i][0]) j++
+    const here = visits[i][0] - t0
+    const next = j + 1 < n ? visits[j + 1][0] - t0 : here + 1
+    for (let k = i; k <= j; k++) {
+      out[k] = Math.min(1, (here + ((next - here) * (k - i)) / (j - i + 1)) / span)
+    }
+    i = j + 1
+  }
+  return out
 }
 
 const MARGIN = 2          // tiles of air around the drawn world
@@ -227,13 +275,13 @@ export function drawRoute(c, route, place, { scale = TILE, width = null, arrowEv
     c.fill()
     c.stroke()
   }
-  const t0 = visits[0][0]
-  const t1 = Math.max(visits[visits.length - 1][0], t0 + 1)
+  const times = visitTimes(visits)
   c.lineCap = 'round'
   c.lineJoin = 'round'
   for (let i = 0; i < visits.length - 1; i++) {
     const a = visits[i], b = visits[i + 1]
-    const colour = turnColour((a[0] - t0) / (t1 - t0))
+    const colour = turnColour(times[i])
+    const colourTo = turnColour(times[i + 1])
     // A scripted walk moved several tiles on one press; `fills` carries the
     // tiles between, so the line follows the ground rather than cutting a chord.
     const fill = route.fills?.[String(i)] || null
@@ -251,10 +299,19 @@ export function drawRoute(c, route, place, { scale = TILE, width = null, arrowEv
         c.strokeStyle = 'rgba(15,18,22,.55)'
         c.lineWidth = lw + Math.max(2, scale * 0.12)
         c.beginPath(); c.moveTo(pu[0], pu[1]); c.lineTo(pv[0], pv[1]); c.stroke()
-        c.strokeStyle = fill ? 'rgba(190,190,255,.85)' : colour
+        // A gradient per segment, so the colour slides along the path rather
+        // than changing at the joins.
+        let stroke = fill ? 'rgba(190,190,255,.85)' : colour
+        if (!fill && colour !== colourTo && c.createLinearGradient) {
+          const g = c.createLinearGradient(pu[0], pu[1], pv[0], pv[1])
+          g.addColorStop(0, colour)
+          g.addColorStop(1, colourTo)
+          stroke = g
+        }
+        c.strokeStyle = stroke
         c.lineWidth = fill ? lw * 0.7 : lw
         c.beginPath(); c.moveTo(pu[0], pu[1]); c.lineTo(pv[0], pv[1]); c.stroke()
-        arrow(pu, pv, fill ? 'rgb(190,190,255)' : colour)
+        arrow(pu, pv, fill ? 'rgb(190,190,255)' : colourTo)
       } else {
         // A warp or a blackout: mark both ends, never a chord across the map.
         c.lineWidth = Math.max(1.5, lw * 0.7)

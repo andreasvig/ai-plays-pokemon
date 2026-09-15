@@ -12,7 +12,7 @@
   // than a corridor gets a marker on its door tile, and the marker opens the
   // building — all its floors — over the map (M10-M12).
   import { fetchRunRoute } from '../lib/api.js'
-  import { TILE, loadAtlas, loadTrainers, loadMapImage, worldLayout, markersFor, battlesFor, drawRoute, drawSize, visitAt } from '../lib/mapatlas.js'
+  import { TILE, loadAtlas, loadTrainers, loadMapImage, worldLayout, markersFor, battlesFor, drawRoute, drawSize, rampCss, visitAt } from '../lib/mapatlas.js'
   import InteriorPopup from './InteriorPopup.svelte'
   import BattleCard from './BattleCard.svelte'
 
@@ -96,7 +96,12 @@
     const rect = e.currentTarget.getBoundingClientRect()
     const x = e.clientX - rect.left, y = e.clientY - rect.top
     const v = visitAt(route, place, x, y, TILE)
-    hover = v ? { x, y, turn: v[0], key: `${v[2]}:${v[3]}`, tile: `${v[4]},${v[5]}`, battle: !!v[6] } : null
+    // Flip the readout near an edge: the frame scrolls, so a tooltip hanging
+    // past the canvas grows the scroll area and puts a scrollbar across the
+    // panel (2026-09-15).
+    hover = v ? { cx: e.clientX, cy: e.clientY, turn: v[0], key: `${v[2]}:${v[3]}`,
+                  tile: `${v[4]},${v[5]}`, battle: !!v[6],
+                  flipX: e.clientX > innerWidth - 300, flipY: e.clientY < 48 } : null
   }
 
   function onclick() {
@@ -144,7 +149,8 @@
           {/if}
         {/each}
         {#if hover}
-          <div class="tip" style={`left:${hover.x}px;top:${hover.y}px`}>
+          <div class="tip" class:flip-x={hover.flipX} class:flip-y={hover.flipY}
+            style={`left:${hover.cx}px;top:${hover.cy}px`}>
             <b>Turn {hover.turn}</b>
             <span>{mapName(hover.key)} ({hover.tile})</span>
             {#if hover.battle}<span class="bad">in a battle</span>{/if}
@@ -154,7 +160,7 @@
       </div>
     </div>
     <figcaption>
-      <span class="ramp" aria-hidden="true"></span>
+      <span class="ramp" aria-hidden="true" style={`background:${rampCss()}`}></span>
       <span class="faint">first turn → last</span>
       <span class="dot">·</span>
       <b>{route.visits.length.toLocaleString()}</b> tiles stood on across <b>{layout.outdoor + layout.insets + layout.interiors.length}</b> maps
@@ -230,12 +236,15 @@
   }
   .bcard.below { transform: translate(-50%, 0); }
   .tip {
-    position: absolute; transform: translate(10px, -130%);
+    position: fixed; z-index: 40; transform: translate(12px, -130%);
     pointer-events: none; white-space: nowrap;
     background: rgba(18, 20, 24, .93); color: #f2f4f8;
     border-radius: 5px; padding: 4px 7px; font-size: 11px; line-height: 1.5;
     display: flex; gap: 7px; align-items: baseline;
   }
+  .tip.flip-x { transform: translate(calc(-100% - 12px), -130%); }
+  .tip.flip-y { transform: translate(12px, 30%); }
+  .tip.flip-x.flip-y { transform: translate(calc(-100% - 12px), 30%); }
   .tip b { font-weight: 700; }
   .tip .faint { color: #98a0b0; }
   .tip .bad { color: #ff8b7a; }
@@ -244,9 +253,6 @@
   figcaption b.bad { color: var(--red); }
   .dot { color: var(--faint); }
   .note { font-size: 11px; margin: 6px 0 0; line-height: 1.5; max-width: 78ch; }
-  .ramp {
-    width: 44px; height: 7px; border-radius: 4px; display: inline-block;
-    background: linear-gradient(90deg, rgb(40,80,220), rgb(40,220,80), rgb(220,50,20));
-  }
+  .ramp { width: 52px; height: 7px; border-radius: 4px; display: inline-block; }
   .small { font-size: 12px; }
 </style>
