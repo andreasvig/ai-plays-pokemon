@@ -177,7 +177,12 @@
       NPCs, items and cuttable trees are object events that move, so a route that dead-ends at a tree
       ends at what looks like open ground, and animated tiles — water, the flower beds — are drawn at
       their first frame. Viridian Forest is shown in daylight; the game tints it.
-    {#if markers.length}A house marks a building you can open; the pale ones this run never entered.{/if}
+      Where the run walked the same way more than once the passes are laid side by side, one thin
+      cable each, so four crossings of a corridor read as four lines rather than one painted over
+      three times.
+      {#if markers.length}A house marks a building you can open; the pale ones this run never entered.{/if}
+      {#if battles.length}A dot marks a battle where it started — filled for a trainer, hollow for a
+      wild one.{/if}
   </p>
   {#if openBuilding}
     <InteriorPopup building={openBuilding} {route} {atlas} {trainers} {onturn} onclose={() => (openBuilding = null)} />
