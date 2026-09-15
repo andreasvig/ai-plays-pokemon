@@ -552,8 +552,12 @@ export function runGateRows(row, gates) {
       // 13% here against the 9% it was actually scored at, over 42 bumps.
       efficiency: leg && legCharged(leg) > 0 ? Math.min(1, leg.d_open / legCharged(leg)) : null,
       stepsSource: leg?.source ?? null,
+      // The three numbers the walk % is made of, so the table can show the
+      // derivation instead of an unexplained percentage: path ÷ (walked +
+      // walls). legWalls is null — not 0 — for a leg that never measured them.
+      legPath: leg?.d_open ?? null,
       legSteps: leg?.steps ?? null,
-      legWalls: leg?.walls ?? null,
+      legWalls: leg && 'walls' in leg ? leg.walls : null,
     }
     if (turn != null) prev = turn; else chain = false
     return out

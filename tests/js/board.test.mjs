@@ -427,3 +427,27 @@ test("the gate table's walk % charges wall presses, like the run-level efficienc
   const untraced = { ...row, movementLegs: [{ node_id: 'oaks_lab_entered', d_open: 11, steps: 83, source: 'bound', status: 'open' }] }
   assert.ok(Math.abs(runGateRows(untraced, gates)[0].efficiency - 11 / 83) < 1e-9)
 })
+
+test('a gate row carries the three numbers the walk % is made of', () => {
+  // Andreas 2026-09-15: show how the efficiency is derived. path ÷ steps = walk,
+  // with wall bounces inside `steps` so the row reads across.
+  const gates = [{ id: 'oaks_lab_entered', name: "Entered Oak's Lab", cap: 30 }]
+  const row = { turns: 37, status: 'terminated', terminationReason: 'leg_cap:oaks_lab_entered', gateTurns: {},
+    movementLegs: [{ node_id: 'oaks_lab_entered', d_open: 11, steps: 83, walls: 42, source: 'trace', status: 'open' }] }
+  const [leg] = runGateRows(row, gates)
+  assert.equal(leg.legPath, 11)
+  assert.equal(leg.legSteps, 83)
+  assert.equal(leg.legWalls, 42)
+  // the table renders path ÷ (steps + walls); the arithmetic must close
+  assert.ok(Math.abs(leg.legPath / (leg.legSteps + leg.legWalls) - leg.efficiency) < 1e-9)
+})
+
+test('walls is null, not 0, on a leg that never measured them', () => {
+  // A 0 would claim an untraced run hit no walls; the table must show nothing.
+  const gates = [{ id: 'left_house', name: 'Stepped outside', cap: 30 }]
+  const row = { turns: 9, status: 'completed', gateTurns: { left_house: 9 },
+    movementLegs: [{ node_id: 'left_house', d_open: 12, steps: 18, source: 'bound', status: 'closed' }] }
+  const [leg] = runGateRows(row, gates)
+  assert.equal(leg.legWalls, null)
+  assert.ok(Math.abs(leg.efficiency - 12 / 18) < 1e-9)
+})
