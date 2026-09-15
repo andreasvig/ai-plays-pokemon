@@ -169,7 +169,8 @@ def replay_referee(run_dir: Path, graph: Optional[WalkGraph] = None,
             defeated |= {int(i) for i in (b.get("trainers_new") or [])}
             battles.record(turn, bool(b.get("in_battle")), int(b.get("battles_total") or 0),
                            int(b.get("wild_battles") or 0), int(b.get("trainer_battles") or 0),
-                           sorted(defeated), b.get("opponent"))
+                           sorted(defeated), b.get("opponent"),
+                           outcome=b.get("outcome"), foe=b.get("foe"), own=b.get("own"))
     progress.observe_stamps(raw["stamps"])
     inputs["traced_turns"] = len(raw["samples"])
     # Presses that could have moved the player: everything outside a battle.

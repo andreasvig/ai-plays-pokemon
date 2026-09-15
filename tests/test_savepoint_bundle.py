@@ -53,7 +53,8 @@ def test_export_state_matches_persisted_shape(tmp_path):
     assert ref.export_state() == on_disk
     assert on_disk == {"stamps": {"left_bedroom": 3, "left_house": 7},
                        "autofilled": ["left_house"], "positions": [],
-                       "battle_records": [], "traced_steps": {}, "traced_end": {}}  # + battle/trace telemetry (2026-09-14)
+                       "battle_records": [], "battle_details": {},
+                       "traced_steps": {}, "traced_end": {}}  # + battle/trace telemetry (2026-09-14/15)
 
 
 def test_savepoint_bundle_includes_referee_state(tmp_path):
@@ -71,7 +72,8 @@ def test_savepoint_bundle_includes_referee_state(tmp_path):
     bundle = json.loads((target / "referee_state.json").read_text())
     assert bundle == {"stamps": {"left_bedroom": 3, "left_house": 7},
                       "autofilled": ["left_house"], "positions": [],
-                      "battle_records": [], "traced_steps": {}, "traced_end": {}}
+                      "battle_records": [], "battle_details": {},
+                      "traced_steps": {}, "traced_end": {}}
 
 
 def test_savepoint_without_referee_writes_no_referee_file(tmp_path):

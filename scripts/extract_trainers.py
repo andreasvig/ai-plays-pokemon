@@ -4,8 +4,10 @@
     venv/bin/python scripts/extract_trainers.py --offline  # cache only, no network
 
 Output under ``src/dashboard/web/public/trainers/``: one RGBA PNG per trainer
-picture and ``index.json`` mapping the trainer ids the referee already records
-to ``{name, class, pic, party: [{species, level}]}``.
+picture and ``index.json`` — the trainer ids the referee already records mapped
+to ``{name, class, pic, party: [{species, level}]}``, plus ``species``, the
+game's own name for every species id, which is how a wild battle's icon names
+what the run walked into (the referee reads the id, not the name).
 
 Why this is static (artifacts/game-map-render/plan.md M16): the party a trainer
 carries is a constant of the ROM, and the referee has stored the trainer id of
@@ -22,6 +24,7 @@ Sources, all at the same pinned SHA as the walk graph:
 - ``src/data/trainer_graphics/front_pic_tables.h``  pic -> graphics symbol
 - ``src/data/graphics/trainers.h``             graphics symbol -> a PNG path
 - ``src/data/text/species_names.h``            SPECIES_<NAME> -> the game's name
+- ``include/constants/species.h``              SPECIES_<NAME> -> its id
 """
 
 from __future__ import annotations
@@ -42,6 +45,7 @@ from src.referee.battles import TRAINER_NAMES  # noqa: E402
 
 OUT_DIR = REPO_ROOT / "src" / "dashboard" / "web" / "public" / "trainers"
 
+SPECIES_IDS = "include/constants/species.h"
 OPPONENTS = "include/constants/opponents.h"
 TRAINERS = "src/data/trainers.h"
 PARTIES = "src/data/trainer_parties.h"
@@ -56,6 +60,10 @@ def text(path: str, *, offline: bool, ref: str) -> str:
 
 def trainer_ids(src: str) -> dict[str, int]:
     return {m[1]: int(m[2]) for m in re.finditer(r"#define\s+(TRAINER_[A-Z0-9_]+)\s+(\d+)", src)}
+
+
+def species_ids(src: str) -> dict[str, int]:
+    return {m[1]: int(m[2]) for m in re.finditer(r"#define\s+(SPECIES_[A-Z0-9_]+)\s+(\d+)", src)}
 
 
 def species_names(src: str) -> dict[str, str]:
@@ -176,8 +184,10 @@ def main() -> int:
         sprite(raw).save(args.out / f"{pic.lower()}.png", optimize=True)
         print(f"{pic.lower():28s} {(args.out / f'{pic.lower()}.png').stat().st_size // 1024:3d} KB")
 
+    ids = species_ids(rd(SPECIES_IDS))
+    by_id = {str(i): species[key] for key, i in ids.items() if key in species and i > 0}
     (args.out / "index.json").write_text(json.dumps(
-        {"version": 1, "pret_sha": ref, "trainers": index}, indent=1) + "\n")
+        {"version": 2, "pret_sha": ref, "trainers": index, "species": by_id}, indent=1) + "\n")
     if missing:
         raise SystemExit(f"no pret entry for trainer ids {missing} — the referee names them but the ROM does not")
     print(f"{len(index)} trainers, {len(wanted_pics)} sprites")

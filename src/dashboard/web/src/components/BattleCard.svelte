@@ -8,11 +8,13 @@
   // which Pokémon they had, with level on the Pokémon."
   //
   // The trainer half is complete for every run ever recorded: the referee has
-  // stored the trainer id since 2026-09-14 and the roster is a ROM constant. The
-  // wild half is not — species, levels and how a wild fight ended (won, ran,
-  // caught) were never read out of memory, and this card says so rather than
-  // guessing. It is also the roster, not what was sent out: the game need not
-  // use the whole party, and we do not know which mon appeared.
+  // stored the trainer id since 2026-09-14 and the roster is a ROM constant —
+  // though it is the ROSTER, not what was sent out, which we do not know.
+  //
+  // The wild half needed two memory reads that went in on 2026-09-15
+  // (gBattleMons, gBattleOutcome — src/referee/battles.py). A run from before
+  // that carries neither, and the card says the run did not look rather than
+  // calling the outcome unknown: absent is not "we could not tell".
   import { trainerSpriteUrl } from '../lib/mapatlas.js'
 
   let { battle, trainers = null } = $props()
@@ -22,6 +24,15 @@
     ? (battle.closed_turn === battle.opened_turn ? `turn ${battle.opened_turn}` : `turns ${battle.opened_turn}–${battle.closed_turn}`)
     : `turn ${battle.opened_turn}`)
   const cost = $derived(battle.turns === 0 ? 'over inside one turn' : `${battle.turns} turn${battle.turns === 1 ? '' : 's'} in the battle`)
+  const foe = $derived(battle.foe ?? null)
+  const foeName = $derived(foe ? (trainers?.species?.[String(foe.species)] ?? `#${foe.species}`) : null)
+  // The words the game's own outcome byte maps to, said the way a reader would.
+  const OUTCOME = {
+    won: ['won', 'win'], lost: ['lost', 'loss'], ran: ['ran', ''], caught: ['caught', 'win'],
+    drew: ['drew', ''], teleported: ['teleported away', ''], mon_fled: ['it fled', ''],
+    forfeited: ['forfeited', 'loss'], mon_teleported: ['it teleported away', ''],
+  }
+  const verdict = $derived(battle.outcome ? OUTCOME[battle.outcome] ?? [battle.outcome, ''] : null)
   // The referee's label usually IS the class and the given name, and printing
   // "Bug Catcher Rick" twice reads like a bug. Show the ROM's own naming only
   // where it says something the label does not — the rival, whose three ids
@@ -37,11 +48,15 @@
       <b>{battle.kind === 'trainer' ? (t?.label ?? battle.trainer ?? 'Trainer battle') : 'Wild battle'}</b>
       {#if battle.kind === 'trainer'}
         {#if sub}<span class="sub">{sub}</span>{/if}
+      {:else if foe}
+        <span class="sub">{foeName} · Lv {foe.level}</span>
       {:else}
-        <span class="sub">which Pokémon is not recorded</span>
+        <span class="sub">this run did not record which Pokémon</span>
       {/if}
     </div>
-    {#if battle.kind === 'trainer'}
+    {#if verdict}
+      <span class="verdict" class:win={verdict[1] === 'win'} class:loss={verdict[1] === 'loss'}>{verdict[0]}</span>
+    {:else if battle.kind === 'trainer'}
       <span class="verdict" class:win={battle.won === true} class:loss={battle.won === false}>
         {battle.won === true ? 'won' : battle.won === false ? 'lost' : 'outcome unknown'}
       </span>
@@ -61,8 +76,8 @@
     <span>{cost}</span>
     {#if battle.uncounted}<span class="dot">·</span><span class="warn">flag only — no battle counted</span>{/if}
   </div>
-  {#if battle.kind === 'wild'}
-    <p class="roster">won, ran or caught all look the same to the referee; the read that would tell them apart is not in this run</p>
+  {#if battle.kind === 'wild' && !battle.outcome}
+    <p class="roster">won, ran or caught all look the same here: this run predates the read that tells them apart</p>
   {/if}
 </div>
 

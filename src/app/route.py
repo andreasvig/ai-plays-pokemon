@@ -37,7 +37,9 @@ Route dict (``ROUTE_VERSION`` 2):
   on OUTSIDE the battle, which is where it was ambushed — the trace flags
   ``in_battle`` per button, so the place a fight started is already recorded
   (M15). A battle we cannot place (no overworld sample before it) carries a
-  null tile and is not drawn.
+  null tile and is not drawn. ``outcome`` (won / lost / ran / caught / …) and
+  ``foe`` (``{species, level, hp, max_hp}``) are present only on runs whose
+  referee read them — from 2026-09-15 — and absent otherwise.
 """
 
 from __future__ import annotations
@@ -233,7 +235,8 @@ def place_battles(per_turn: dict[int, dict[str, Any]], visits: list[list[int]]) 
         defeated |= {int(i) for i in (b.get("trainers_new") or [])}
         tracker.record(turn, bool(b.get("in_battle")), int(b.get("battles_total") or 0),
                        int(b.get("wild_battles") or 0), int(b.get("trainer_battles") or 0),
-                       sorted(defeated), b.get("opponent"))
+                       sorted(defeated), b.get("opponent"),
+                       outcome=b.get("outcome"), foe=b.get("foe"), own=b.get("own"))
     out: list[dict[str, Any]] = []
     for seg in tracker.segments():
         opened = seg.get("opened_turn")
@@ -244,9 +247,16 @@ def place_battles(per_turn: dict[int, dict[str, Any]], visits: list[list[int]]) 
             if not v[6]:                     # in_battle flag of the visit
                 tile = v[2:6]
         tid = seg.get("trainer_id")
-        out.append({"kind": seg.get("kind"), "opened_turn": opened, "closed_turn": seg.get("closed_turn"),
-                    "turns": seg.get("turns"), "trainer_id": tid, "trainer": TRAINER_NAMES.get(tid) if tid else None,
-                    "won": seg.get("won"), "uncounted": bool(seg.get("uncounted")), "tile": list(tile) if tile else None})
+        entry = {"kind": seg.get("kind"), "opened_turn": opened, "closed_turn": seg.get("closed_turn"),
+                 "turns": seg.get("turns"), "trainer_id": tid, "trainer": TRAINER_NAMES.get(tid) if tid else None,
+                 "won": seg.get("won"), "uncounted": bool(seg.get("uncounted")), "tile": list(tile) if tile else None}
+        # Only on runs that recorded them (2026-09-15 onwards): what was on the
+        # other side, and how the fight ended. Absent means the run never read
+        # them, which the card must say rather than call the outcome unknown.
+        for key in ("outcome", "foe"):
+            if seg.get(key) is not None:
+                entry[key] = seg[key]
+        out.append(entry)
     return out
 
 

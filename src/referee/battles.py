@@ -4,6 +4,23 @@ Plan: ``artifacts/battle-and-movement-fidelity/plan.md`` (2026-09-14). The
 referee polls once per turn, AFTER the turn's inputs ran, and hands this module
 three things it reads from the emulator:
 
+- ``gBattleMons`` — the four battler structs at EWRAM ``0x02023BE4``, 0x58
+  bytes each: battler 0 is the player's mon, battler 1 the opponent's. Species
+  is the u16 at +0x00 and level the u8 at +0x2A (pret ``include/pokemon.h``).
+  **Found by search, not by lookup** (2026-09-15): across 146 mid-battle save
+  states from every run, this is the only address where battler 0 AND battler 1
+  are both coherent, and every one of the 146 opponents is explained — 59 by the
+  ROM roster of the trainer the referee had already identified, 87 by the wild
+  encounter table of the map the player was standing on (the last four needed
+  FireRed's table rather than LeafGreen's, which is the same map with different
+  mons).
+- ``gBattleOutcome`` — the u8 at EWRAM ``0x02023E8A``. Zero while a battle runs
+  (``BattleStartClearSetData``), then one of ``B_OUTCOME``. It agreed with the
+  referee's own won/lost verdict on 4 of 4 trainer battles that could be
+  checked, and gives what nothing else here can: whether a WILD battle was won,
+  fled or caught. Read it at the poll where the battle CLOSES — during the
+  intro, ``inBattle`` is already set while the byte still holds the previous
+  battle's result (seen on 35 of 146 mid-battle states).
 - ``gMain.inBattle`` — bit 1 of the byte at IWRAM ``0x03003529`` (gMain at
   ``0x030030F0`` + 0x439; pret ``include/main.h``). Verified 27/27 against
   screenshots on the Fable medium run's savepoints.
@@ -49,6 +66,46 @@ GAME_STAT_TRAINER_BATTLES = 9
 # won OR lost — with no flag needed. Verified 2026-09-14 on mid-fight save
 # states of six runs (142 during Liam, 414 during Brock, 104 after Sammy).
 GTRAINER_BATTLE_OPPONENT_A = 0x020386AE
+
+# gBattleMons[MAX_BATTLERS_COUNT] and the fields of one struct BattlePokemon.
+GBATTLE_MONS = 0x02023BE4
+BATTLE_MON_SIZE = 0x58
+BATTLE_MON_SPECIES = 0x00   # u16
+BATTLE_MON_HP = 0x28        # u16
+BATTLE_MON_LEVEL = 0x2A     # u8
+BATTLE_MON_MAX_HP = 0x2C    # u16
+BATTLER_PLAYER, BATTLER_OPPONENT = 0, 1
+
+GBATTLE_OUTCOME = 0x02023E8A  # u8
+# include/constants/battle.h. The high bit (link battles) cannot occur here.
+BATTLE_OUTCOMES = {0: None, 1: "won", 2: "lost", 3: "drew", 4: "ran", 5: "teleported",
+                   6: "mon_fled", 7: "caught", 8: "no_safari_balls", 9: "forfeited", 10: "mon_teleported"}
+
+
+def decode_battle_mon(raw: Optional[bytes], battler: int = BATTLER_OPPONENT) -> Optional[dict[str, int]]:
+    """``{species, level, hp, max_hp}`` for one battler, or None when unreadable.
+
+    ``raw`` is ``gBattleMons`` from the start; a species of 0 (or one past the
+    last FireRed species) means the slot is empty, which is what a poll outside
+    a battle reads.
+    """
+    off = battler * BATTLE_MON_SIZE
+    if raw is None or len(raw) < off + BATTLE_MON_MAX_HP + 2:
+        return None
+    species = struct.unpack_from("<H", raw, off + BATTLE_MON_SPECIES)[0]
+    level = raw[off + BATTLE_MON_LEVEL]
+    if not (1 <= species <= 411) or not (1 <= level <= 100):
+        return None
+    return {"species": species, "level": level,
+            "hp": struct.unpack_from("<H", raw, off + BATTLE_MON_HP)[0],
+            "max_hp": struct.unpack_from("<H", raw, off + BATTLE_MON_MAX_HP)[0]}
+
+
+def decode_battle_outcome(byte: Optional[int]) -> Optional[str]:
+    """The ``B_OUTCOME`` name, or None for 0 (no battle has ended) / unknown."""
+    if byte is None:
+        return None
+    return BATTLE_OUTCOMES.get(int(byte) & 0x7F)
 
 TRAINER_FLAGS_START = 0x500
 TRAINER_FLAGS_END = 0x7FF  # inclusive
@@ -115,6 +172,10 @@ class BattleTracker:
 
     def __init__(self) -> None:
         self.records: list[Record] = []
+        # Per-turn reads that are not part of the Record tuple: the outcome byte
+        # and the two battlers. They ride alongside rather than widening the
+        # tuple, which three other modules unpack and two persist.
+        self.details: dict[int, dict[str, Any]] = {}
         # Optional fallback: the turn a trainer battle began → trainer id, from
         # the run's OCR text ("BUG CATCHER RICK would like to battle!"). Used
         # only when the record carries no opponent id (pre-2026-09-14 data).
@@ -123,7 +184,9 @@ class BattleTracker:
     # --- input ----------------------------------------------------------------
 
     def record(self, turn: int, in_battle: bool, total: int, wild: int, trainer: int,
-               trainers: list[int] | tuple[int, ...], opponent: Optional[int] = None) -> dict[str, Any]:
+               trainers: list[int] | tuple[int, ...], opponent: Optional[int] = None,
+               outcome: Optional[str] = None, foe: Optional[dict] = None,
+               own: Optional[dict] = None) -> dict[str, Any]:
         rec: Record = (int(turn), bool(in_battle), int(total), int(wild), int(trainer), tuple(sorted(int(t) for t in trainers)),
                        int(opponent) if opponent is not None else None)
         # A re-poll of the same turn (retry) replaces the earlier record.
@@ -131,16 +194,23 @@ class BattleTracker:
             self.records[-1] = rec
         else:
             self.records.append(rec)
+        detail = {k: v for k, v in (("outcome", outcome), ("foe", foe), ("own", own)) if v is not None}
+        if detail:
+            self.details[rec[0]] = detail
+        else:
+            self.details.pop(rec[0], None)
         prev = self.records[-2] if len(self.records) > 1 else None
         return {
             "turn": rec[0], "in_battle": rec[1], "battles_total": rec[2], "wild_battles": rec[3],
             "trainer_battles": rec[4], "opponent": rec[6],
             "new_battles": rec[2] - (prev[2] if prev else 0),
             "trainers_new": [t for t in rec[5] if not prev or t not in prev[5]],
+            **detail,
         }
 
     def export_state(self) -> dict[str, Any]:
-        return {"battle_records": [[r[0], r[1], r[2], r[3], r[4], list(r[5]), r[6]] for r in self.records]}
+        return {"battle_records": [[r[0], r[1], r[2], r[3], r[4], list(r[5]), r[6]] for r in self.records],
+                "battle_details": {str(k): v for k, v in sorted(self.details.items())}}
 
     def load_state(self, data: Any) -> None:
         """Restore records (everything else is recomputed). Tolerant of junk."""
@@ -156,6 +226,14 @@ class BattleTracker:
             except (TypeError, ValueError):
                 continue
         self.records = out
+        self.details = {}
+        raw_d = data.get("battle_details") if isinstance(data, dict) else None
+        for turn, detail in (raw_d or {}).items():
+            try:
+                if isinstance(detail, dict):
+                    self.details[int(turn)] = detail
+            except (TypeError, ValueError):
+                continue
 
     # --- derived ----------------------------------------------------------------
 
@@ -306,7 +384,35 @@ class BattleTracker:
                 tid = seg["trainer_id"]
                 seg["group"] = trainer_group(tid) if tid is not None else "unknown"
                 seg["name"] = trainer_name(tid) if tid is not None else "Unknown trainer"
+        self._attach_details(segs)
         return segs
+
+    def _attach_details(self, segs: list[dict[str, Any]]) -> None:
+        """Hang the memory reads on the segments they describe.
+
+        ``outcome`` comes from the poll where the battle CLOSED: the byte is
+        cleared when a battle starts and set when it ends, so any earlier poll
+        either reads 0 or the PREVIOUS battle's result. ``foe`` comes from the
+        last poll taken while the battle was still running, because by the
+        closing poll the battler slots have been torn down. Both stay absent on
+        a run that never recorded them, which is every run before 2026-09-15 —
+        absent is not "unknown outcome", it is "we did not look".
+        """
+        if not self.details:
+            return
+        for seg in segs:
+            closed = seg.get("closed_turn")
+            if closed is not None:
+                outcome = (self.details.get(closed) or {}).get("outcome")
+                if outcome is not None:
+                    seg["outcome"] = outcome
+            inside = [t for t in seg.get("turn_list") or [] if t != closed]
+            inside = [t for t in ([seg.get("opened_turn")] + inside) if t is not None]
+            for turn in reversed(inside):
+                foe = (self.details.get(turn) or {}).get("foe")
+                if foe:
+                    seg["foe"] = foe
+                    break
 
     def summary(self) -> dict[str, Any]:
         if not self.records:

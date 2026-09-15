@@ -7,7 +7,11 @@ turn belongs to the state it STARTED in; a battle contained in one turn costs
 
 from __future__ import annotations
 
+import json
 import struct
+from pathlib import Path
+
+from src.referee import battles
 
 from src.referee.battles import (
     GTRAINER_BATTLE_OPPONENT_A,
@@ -270,3 +274,135 @@ def test_the_opponent_id_names_a_lost_fight_and_its_rematch_without_any_flag():
     # Six-field records (pre-opponent state files) load with opponent None.
     t3 = BattleTracker(); t3.load_state({"battle_records": [[1, False, 0, 0, 0, []], [2, True, 1, 0, 1, [], 327]]})
     assert [r[6] for r in t3.records] == [None, 327]
+
+
+# -- what was on the field, and how it ended (2026-09-15) ----------------------
+# gBattleMons and gBattleOutcome. Both addresses were found by searching every
+# run's save states and checked against ground truth we already had; these tests
+# guard the DECODING and how a segment picks which poll to believe.
+
+def battle_mon_bytes(species: int, level: int, hp: int = 20, max_hp: int = 20) -> bytes:
+    buf = bytearray(battles.BATTLE_MON_SIZE)
+    struct.pack_into("<H", buf, battles.BATTLE_MON_SPECIES, species)
+    struct.pack_into("<H", buf, battles.BATTLE_MON_HP, hp)
+    buf[battles.BATTLE_MON_LEVEL] = level
+    struct.pack_into("<H", buf, battles.BATTLE_MON_MAX_HP, max_hp)
+    return bytes(buf)
+
+
+def test_a_battler_decodes_to_species_level_and_hp():
+    raw = battle_mon_bytes(7, 6, 18, 21) + battle_mon_bytes(13, 9, 3, 26)
+    assert battles.decode_battle_mon(raw, battles.BATTLER_PLAYER) == {"species": 7, "level": 6, "hp": 18, "max_hp": 21}
+    assert battles.decode_battle_mon(raw, battles.BATTLER_OPPONENT) == {"species": 13, "level": 9, "hp": 3, "max_hp": 26}
+
+
+def test_an_empty_or_impossible_battler_reads_as_nothing():
+    # Outside a battle the slots are zeroed; a level of 0 or a species past the
+    # last one is not a Pokemon, and must not be shown as one.
+    assert battles.decode_battle_mon(bytes(battles.BATTLE_MON_SIZE * 2)) is None
+    assert battles.decode_battle_mon(battle_mon_bytes(13, 9) + battle_mon_bytes(9999, 5)) is None
+    assert battles.decode_battle_mon(battle_mon_bytes(13, 9) + battle_mon_bytes(13, 0)) is None
+    assert battles.decode_battle_mon(None) is None
+    assert battles.decode_battle_mon(b"\x00" * 4) is None
+
+
+def test_the_outcome_byte_reads_as_the_games_own_words():
+    assert battles.decode_battle_outcome(0) is None      # no battle has ended
+    assert battles.decode_battle_outcome(1) == "won"
+    assert battles.decode_battle_outcome(2) == "lost"
+    assert battles.decode_battle_outcome(4) == "ran"
+    assert battles.decode_battle_outcome(7) == "caught"
+    assert battles.decode_battle_outcome(None) is None
+    assert battles.decode_battle_outcome(200) is None    # nothing the enum names
+
+
+def test_a_segment_takes_its_outcome_from_the_poll_the_battle_CLOSED_on():
+    # The byte is cleared when a battle starts and set when it ends, so a poll
+    # taken DURING the battle holds the previous battle's result — 35 of 146
+    # real save states did. Believing it would label this fight "won".
+    t = battles.BattleTracker()
+    t.record(1, False, 0, 0, 0, [], outcome="won")
+    t.record(2, True, 1, 1, 0, [], outcome="won", foe={"species": 13, "level": 4})
+    t.record(3, True, 1, 1, 0, [], outcome="won", foe={"species": 13, "level": 4})
+    t.record(4, False, 1, 1, 0, [], outcome="ran")
+    seg, = t.segments()
+    assert seg["kind"] == "wild"
+    assert seg["outcome"] == "ran"
+    assert seg["foe"] == {"species": 13, "level": 4}
+
+
+def test_a_run_that_never_read_them_carries_neither_key():
+    # Absent must not read as "unknown outcome": it means nobody looked.
+    t = battles.BattleTracker()
+    t.record(1, False, 0, 0, 0, [])
+    t.record(2, True, 1, 1, 0, [])
+    t.record(3, False, 1, 1, 0, [])
+    seg, = t.segments()
+    assert "outcome" not in seg and "foe" not in seg
+
+
+def test_the_reads_survive_a_save_and_restore():
+    t = battles.BattleTracker()
+    t.record(2, True, 1, 1, 0, [], outcome="won", foe={"species": 16, "level": 3})
+    t.record(3, False, 1, 1, 0, [], outcome="caught")
+    back = battles.BattleTracker()
+    back.load_state(t.export_state())
+    assert back.segments() == t.segments()
+
+
+# -- the reads against real memory ---------------------------------------------
+
+def test_the_decoders_read_four_real_save_states():
+    """tests/fixtures/firered_battle_reads.json is gBattleMons and gBattleOutcome
+    lifted verbatim out of four mGBA save states of one published run. Unit
+    tests above prove the arithmetic; this proves the ADDRESSES, which is the
+    part that could be wrong, and it does so against facts from outside the
+    read: the trainer's ROM roster, and the HP the fight left behind.
+    """
+    fx = json.loads((Path(__file__).resolve().parent / "fixtures" / "firered_battle_reads.json").read_text())
+    states = fx["states"]
+
+    def read(turn):
+        s = states[str(turn)]
+        raw = bytes.fromhex(s["gBattleMons"])
+        return (battles.decode_battle_mon(raw, battles.BATTLER_OPPONENT),
+                battles.decode_battle_outcome(s["gBattleOutcome"]), s["in_battle"])
+
+    foe, outcome, in_battle = read(70)
+    assert (outcome, in_battle) == ("caught", False)
+    assert foe["hp"] == foe["max_hp"], "a caught Pokemon is not a fainted one"
+
+    foe, outcome, _ = read(90)
+    assert outcome == "won" and foe["hp"] == 0, "won by knocking it out"
+
+    foe, outcome, _ = read(100)
+    assert outcome == "lost" and foe["hp"] == foe["max_hp"], "the run lost; the foe was untouched"
+
+    foe, outcome, in_battle = read(200)
+    assert in_battle and outcome is None, "the byte is cleared while a battle runs"
+    # Bug Catcher Sammy's whole party, straight out of src/data/trainer_parties.h
+    assert (foe["species"], foe["level"]) == (13, 9)
+
+
+def test_the_referee_state_carries_the_reads_across_a_continue():
+    """A continued run restores the referee from referee_state.json. The first
+    live run of these reads (2026-09-15) wrote them into the events and NOT into
+    that file, so a continue would have kept every battle's count and lost who
+    it was fighting.
+    """
+    from src.referee.referee import Referee
+    ref = Referee.__new__(Referee)          # no emulator: only the state matters
+    ref.stamps, ref.autofilled = {}, set()
+    ref.battles = battles.BattleTracker()
+    ref.battles.record(4, True, 1, 1, 0, [], outcome="won", foe={"species": 74, "level": 10})
+
+    class _P:
+        def export_state(self):
+            return {"positions": [], "traced_steps": {}, "traced_end": {}}
+    ref.progress = _P()
+
+    state = ref.export_state()
+    assert state["battle_details"] == {"4": {"outcome": "won", "foe": {"species": 74, "level": 10}}}
+    back = battles.BattleTracker()
+    back.load_state(state)
+    assert back.details == {4: {"outcome": "won", "foe": {"species": 74, "level": 10}}}

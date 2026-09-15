@@ -43,7 +43,9 @@ from typing import Any, Optional
 
 from src.referee.battles import (
     GAME_STAT_TOTAL_BATTLES, GAME_STAT_TRAINER_BATTLES, GAME_STAT_WILD_BATTLES, GMAIN_IN_BATTLE_BYTE,
-    GTRAINER_BATTLE_OPPONENT_A, NUM_GAME_STATS, SB1_GAME_STATS, SB2_ENCRYPTION_KEY, BattleTracker, decode_game_stat,
+    BATTLER_OPPONENT, BATTLER_PLAYER, BATTLE_MON_SIZE, GBATTLE_MONS, GBATTLE_OUTCOME,
+    GTRAINER_BATTLE_OPPONENT_A, NUM_GAME_STATS, SB1_GAME_STATS, SB2_ENCRYPTION_KEY, BattleTracker,
+    decode_battle_mon, decode_battle_outcome, decode_game_stat,
     decode_trainer_flags, in_battle_from_byte,
 )
 from src.referee.checkpoints import Checkpoint, MultiGate, Node
@@ -230,8 +232,12 @@ class Referee:
             # input of the progress tracker; capped to the savepoint turn on
             # --continue exactly like the stamps (runner._restore_referee_state).
             "positions": self.progress.export_state()["positions"],
-            # Per-poll battle records ``[turn, in_battle, total, wild, trainer, [ids]]``.
+            # Per-poll battle records ``[turn, in_battle, total, wild, trainer, [ids]]``
+            # and, since 2026-09-15, the reads that ride beside them: the
+            # outcome byte and both battlers. Without this line a continued run
+            # keeps the counts and loses who it was fighting.
             "battle_records": self.battles.export_state()["battle_records"],
+            "battle_details": self.battles.export_state()["battle_details"],
             # Exact overworld steps per traced turn (src/referee/trace.py).
             "traced_steps": self.progress.export_state().get("traced_steps", {}),
             # The trace's last sampled tile per turn ``[g, m, x, y]`` — the poll
@@ -313,7 +319,7 @@ class Referee:
             # Battle telemetry reads. Best-effort: an emulator (or test fake)
             # that cannot serve them leaves the battle fields None for this
             # poll; the gate latch above must never depend on them.
-            key = in_battle_byte = opponent = None
+            key = in_battle_byte = opponent = battle_mons = outcome_byte = None
             try:
                 sb2_ptr = self._read_u32(GSAVEBLOCK2_PTR)
                 if self._in_ewram(sb2_ptr):
@@ -325,9 +331,19 @@ class Referee:
                 opponent = int.from_bytes(self.emulator.read_memory(GTRAINER_BATTLE_OPPONENT_A, 2), "little")
             except Exception:
                 opponent = None
+            # Who is on the field and how the last battle ended (2026-09-15).
+            # Both addresses were found by search and checked against ground
+            # truth we already had — see src/referee/battles.py. Best-effort
+            # like the reads above: a fake emulator leaves them None.
+            try:
+                battle_mons = self.emulator.read_memory(GBATTLE_MONS, BATTLE_MON_SIZE * 2)
+                outcome_byte = self.emulator.read_memory(GBATTLE_OUTCOME, 1)[0]
+            except Exception:
+                battle_mons = outcome_byte = None
             if key is not None:
                 self.last_encryption_key = key
-            return _MemorySnapshot(block, party_count, key=key, in_battle_byte=in_battle_byte, opponent=opponent)
+            return _MemorySnapshot(block, party_count, key=key, in_battle_byte=in_battle_byte, opponent=opponent,
+                                   battle_mons=battle_mons, outcome_byte=outcome_byte)
 
         # Pointer kept moving across both attempts — give up for this poll.
         return None
@@ -834,15 +850,18 @@ class _MemorySnapshot:
     decodes fields lazily on access. All multi-byte fields are little-endian.
     """
 
-    __slots__ = ("_block", "party_count", "key", "in_battle_byte", "opponent")
+    __slots__ = ("_block", "party_count", "key", "in_battle_byte", "opponent", "battle_mons", "outcome_byte")
 
     def __init__(self, block: bytes, party_count: int, key: Optional[int] = None,
-                 in_battle_byte: Optional[int] = None, opponent: Optional[int] = None) -> None:
+                 in_battle_byte: Optional[int] = None, opponent: Optional[int] = None,
+                 battle_mons: Optional[bytes] = None, outcome_byte: Optional[int] = None) -> None:
         self._block = block
         self.party_count = party_count
         self.key = key  # SaveBlock2 encryptionKey; None when the read failed
         self.in_battle_byte = in_battle_byte  # gMain byte holding inBattle; None when unread
         self.opponent = opponent  # gTrainerBattleOpponent_A; None when unread
+        self.battle_mons = battle_mons  # gBattleMons[0..1] raw; None when unread
+        self.outcome_byte = outcome_byte  # gBattleOutcome; None when unread
 
     def battle_state(self) -> Optional[dict]:
         """Kwargs for ``BattleTracker.record`` or None when this poll cannot say."""
@@ -855,6 +874,9 @@ class _MemorySnapshot:
             "trainer": decode_game_stat(self._block, GAME_STAT_TRAINER_BATTLES, self.key),
             "trainers": decode_trainer_flags(self._block, SB1_FLAGS),
             "opponent": self.opponent,
+            "outcome": decode_battle_outcome(self.outcome_byte),
+            "foe": decode_battle_mon(self.battle_mons, BATTLER_OPPONENT),
+            "own": decode_battle_mon(self.battle_mons, BATTLER_PLAYER),
         }
 
     @property
