@@ -1,4 +1,17 @@
-"""Re-score one leg of every stored run from its recorded positions.
+"""SUPERSEDED 2026-09-15 — do not use on a traced run.
+
+``src/app/replay.py`` rebuilds the legs and battle summary from
+``events.jsonl`` every time a row is projected, against the run's OWN ladder
+(``config.json["referee"]["checkpoints"]``). A rule change is therefore a
+``PROJECTION_VERSION`` bump plus ``pokemon publish --site-only
+--refresh-rows`` — nothing edits a run folder any more. This script stays only
+for runs recorded BEFORE the per-input trace (2026-09-14), which have nothing
+to replay, and it carries a defect worth remembering: it re-scored every run
+against the DEFAULT ladder, so a casual run played on
+``checkpoints-firered-v1.yaml`` had its starter leg rewritten with the
+first-badge locus (D 1 -> 4). Pass --i-know-this-is-superseded to run it.
+
+Re-score one leg of every stored run from its recorded positions.
 
 Written 2026-09-14 for the Oak's Parcel leg: the ladder's locus for
 ``parcel_delivered`` pointed at tiles behind the Mart counter, unreachable on
@@ -237,7 +250,12 @@ def main() -> None:
                     help="rebuild each run's legs with ProgressTracker and compare before writing")
     ap.add_argument("--only", help="limit to run directories whose name contains this")
     ap.add_argument("--apply", action="store_true", help="write run_summary.json; default prints the changes")
+    ap.add_argument("--i-know-this-is-superseded", action="store_true",
+                    help="required: src/app/replay.py re-derives this at projection time (2026-09-15)")
     args = ap.parse_args()
+    if not getattr(args, "i_know_this_is_superseded", False):
+        raise SystemExit(__doc__.strip().splitlines()[0] + "\n"
+                         "Re-derive instead: pokemon publish --site-only --refresh-rows")
     graph = WalkGraph.load(DEFAULT_GRAPH_PATH)
     targets = leg_targets(graph, Path(args.ladder), args.leg)
     score_to = leg_score_to(Path(args.ladder), args.leg) if args.score_to == "auto" else args.score_to

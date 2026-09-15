@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from src.app import battle_stats, route
+from src.app import battle_stats, replay, route
 from src.app.models import RunKind, RunStatus, RunSummary
 from src.referee.progress import OPEN_LEG_FRACTION_CAP
 
@@ -38,7 +38,7 @@ _DEFAULT_LADDER = Path("configs/checkpoints-firered-v1.yaml")
 #   1 — 2026-09-09: error / crash (why a crashed run ended).
 #   2 — 2026-09-09: record (the spec the run was recorded with, for continues).
 #   3 — 2026-09-11: open-leg fraction capped at OPEN_LEG_FRACTION_CAP.
-PROJECTION_VERSION = 11  # 11 (2026-09-15): route_points / route_coverage (src/app/route.py); 10 (2026-09-14): starter leg re-scored to the ball taken (score_to reached) in every run_summary; 9: Oak's Parcel leg re-scored (scripts/backfill_parcel_leg.py); 8: gate_times_s / gate_costs_usd / movement_legs
+PROJECTION_VERSION = 12  # 12 (2026-09-15): legs + battles replayed from events.jsonl (src/app/replay.py), so a rule change needs no back-fill; 11: route_points / route_coverage; 10 (2026-09-14): starter leg re-scored to the ball taken (score_to reached) in every run_summary; 9: Oak's Parcel leg re-scored (scripts/backfill_parcel_leg.py); 8: gate_times_s / gate_costs_usd / movement_legs
 
 # Status values the report treats as "cleared" for a gate (mirror report.py).
 _CLEARED_STATUSES = ("done", "auto")
@@ -331,7 +331,13 @@ def project_run_dir(run_dir: Path) -> RunSummary | None:
 
     session = summary.get("session") or {}
     cost = summary.get("cost") or {}
-    referee = summary.get("referee") or None
+    # The referee's DERIVED halves (legs, battles) are replayed from
+    # events.jsonl rather than read from the stored summary, so today's rules
+    # score every traced run — including one played by a daemon still holding
+    # older code — and a rule change never needs a back-fill
+    # (src/app/replay.py). A run with no per-input trace has nothing to replay
+    # and keeps its stored numbers.
+    referee = replay.referee_view(run_dir, summary.get("referee")) or None
 
     # --- nested → flat (always present in the nested writer) ---
     model = session.get("llm_alias") or session.get("llm_model") or "unknown"
@@ -345,8 +351,8 @@ def project_run_dir(run_dir: Path) -> RunSummary | None:
     avg_s_per_turn = _safe_div(duration_s, turns)
     avg_inputs_per_turn, input_counts = _input_stats(run_dir)
     avg_output_tokens_per_turn, thinking_share = _output_token_stats(run_dir, turns, cost)
-    battles, battle_fidelity = battle_stats.battle_summary(run_dir, summary.get("referee"), turns)
-    move = battle_stats.movement(summary.get("referee"), battle_stats.load_steps_backfill(run_dir),
+    battles, battle_fidelity = battle_stats.battle_summary(run_dir, referee, turns)
+    move = battle_stats.movement(referee, battle_stats.load_steps_backfill(run_dir),
                                  (summary.get("session") or {}).get("total_turns"))
     run_route = route.load_route(run_dir)
 

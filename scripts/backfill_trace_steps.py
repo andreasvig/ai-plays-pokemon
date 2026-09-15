@@ -1,4 +1,17 @@
-"""Re-derive the per-turn traced steps of stored traced runs under the
+"""SUPERSEDED 2026-09-15 — do not use on a traced run.
+
+``src/app/replay.py`` rebuilds the legs and battle summary from
+``events.jsonl`` every time a row is projected, against the run's OWN ladder
+(``config.json["referee"]["checkpoints"]``). A rule change is therefore a
+``PROJECTION_VERSION`` bump plus ``pokemon publish --site-only
+--refresh-rows`` — nothing edits a run folder any more. This script stays only
+for runs recorded BEFORE the per-input trace (2026-09-14), which have nothing
+to replay, and it carries a defect worth remembering: it re-scored every run
+against the DEFAULT ladder, so a casual run played on
+``checkpoints-firered-v1.yaml`` had its starter leg rewritten with the
+first-badge locus (D 1 -> 4). Pass --i-know-this-is-superseded to run it.
+
+Re-derive the per-turn traced steps of stored traced runs under the
 2026-09-15 rules and rewrite their legs through the real tracker.
 
     venv/bin/python scripts/backfill_trace_steps.py [--only <substr>] [--apply]
@@ -100,7 +113,12 @@ def main() -> None:
     ap.add_argument("--ladder", default=str(LADDER))
     ap.add_argument("--only", help="limit to run directories whose name contains this")
     ap.add_argument("--apply", action="store_true", help="write referee_state.json and run_summary.json; default prints")
+    ap.add_argument("--i-know-this-is-superseded", action="store_true",
+                    help="required: src/app/replay.py re-derives this at projection time (2026-09-15)")
     args = ap.parse_args()
+    if not getattr(args, "i_know_this_is_superseded", False):
+        raise SystemExit(__doc__.strip().splitlines()[0] + "\n"
+                         "Re-derive instead: pokemon publish --site-only --refresh-rows")
     graph = WalkGraph.load(DEFAULT_GRAPH_PATH)
     ladder = Path(args.ladder)
     touched = 0
