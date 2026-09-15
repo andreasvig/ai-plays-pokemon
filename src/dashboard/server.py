@@ -33,6 +33,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from src.app import replay as app_replay
+from src.app import route as app_route
 from src.app.recording_name import recording_filename
 from src.app.trace_build import cached_run_trace
 from src.dashboard.event_bridge import EventBridge
@@ -1799,6 +1800,25 @@ async def api_run_summary(run_id: str):
         except Exception:  # a replay must never take the report down
             pass
     return JSONResponse(summary)
+
+
+@app.get("/api/runs/{run_id}/route")
+async def api_run_route(run_id: str):
+    """The run's drawn route — ``src.app.route.build_route`` over events.jsonl.
+
+    Same document the publisher writes to ``data/runs/<id>/route.json``, so the
+    map draws identically live and on the static site. 404 when the run has no
+    per-input trace (every run before 2026-09-14).
+    """
+    _queue, executor, _index = _require_control()
+    run_dir = Path(executor.runs_root) / run_id
+    try:
+        payload = app_route.load_route(run_dir)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"could not build the route: {exc}")
+    if payload is None:
+        raise HTTPException(status_code=404, detail=f"no per-input trace: {run_id}")
+    return JSONResponse(payload)
 
 
 # ───────────────────── task-grouped trace (Plan Round 8 / B1+B2) ────────────

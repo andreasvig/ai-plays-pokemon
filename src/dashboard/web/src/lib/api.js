@@ -115,6 +115,10 @@ export function toRun(s) {
     wallRate: s.wall_rate ?? null,
     wallsHit: s.walls_hit ?? null,
     chargedSteps: s.charged_steps ?? null,
+    // The eight-bucket census, on the row so the model page needs no fetch.
+    inputBreakdown: s.input_breakdown ?? null,
+    routePoints: s.route_points ?? null,
+    routeCoverage: s.route_coverage ?? null,
     stepsFidelity: s.steps_fidelity ?? null,
     completion,
     progress,
@@ -404,6 +408,18 @@ export async function fetchRunSummary(runId) {
   // ({session, cost:{…, per_turn}, turns, referee:{gates, furthest, …}}).
   // The Report view renders the scorecard + per-turn trace from this (Plan §P6).
   return getJSON(`/api/runs/${encodeURIComponent(runId)}/summary`)
+}
+
+export async function fetchRunRoute(runId) {
+  // GET /api/runs/{id}/route → every tile the run stood on, the transitions
+  // between them and the maps it saw ({visits, transitions, fills, maps,
+  // tile_px, coverage}). Null for a run with no per-input trace — the map
+  // renders nothing rather than an empty frame.
+  try {
+    return await getJSON(`/api/runs/${encodeURIComponent(runId)}/route`)
+  } catch {
+    return null
+  }
 }
 
 export async function fetchRunTrace(runId) {

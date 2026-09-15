@@ -11,6 +11,8 @@
 //   data/benchmarks.json           the registry, for the board's benchmark tabs
 //   data/models.json               the model catalog (models with a row): thinking levels per model, for the model pages
 //   data/runs/<run_id>/summary.json  (run_summary.json minus its per-turn list)
+//   data/runs/<run_id>/route.json    every tile the run stood on, for the map;
+//                                    absent for a run with no per-input trace
 //   data/runs/<run_id>/trace.json    only when published with --with-trace; the
 //                                    default is result + video, and Report renders
 //                                    no turn section when this 404s
@@ -92,7 +94,7 @@ export async function staticGet(path) {
   if (p === '/api/model-catalog') return loadJSON('data/models.json').catch(() => [])
   if (p === '/api/leaderboard') return rankBoard(await board(), url.searchParams.get('benchmark'))
   if (p === '/api/runs') return board()
-  const m = p.match(/^\/api\/runs\/([^/]+)(?:\/(summary|trace))?$/)
+  const m = p.match(/^\/api\/runs\/([^/]+)(?:\/(summary|trace|route))?$/)
   if (m) {
     const runId = decodeURIComponent(m[1])
     const row = (await board()).find((r) => r.run_id === runId)
