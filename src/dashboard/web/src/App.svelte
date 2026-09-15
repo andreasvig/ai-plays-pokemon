@@ -202,7 +202,13 @@
   // A bar or point on the board opens the run's MODEL page (decision 1A,
   // 2026-09-14); History and the Report open the run itself (local only).
   function inspect(r) { go(`/models/${encodeURIComponent(baseModel(r.model))}`) }
-  function inspectRun(r) { go(`/history/${r.slug}`) }
+  // A second argument opens the report ON a turn: the run map's tiles and
+  // battle icons carry their turn number, so clicking one locally lands in that
+  // turn's trace rather than at the top of a 500-turn report (Andreas,
+  // 2026-09-15). It is not in the URL — the router is path-only, and this is a
+  // local-only affordance.
+  let reportTurn = $state(null)
+  function inspectRun(r, turn = null) { reportTurn = typeof turn === 'number' ? turn : null; go(`/history/${r.slug}`) }
   function pickSlug(slug) { const r = leaderboard.find((x) => x.slug === slug); if (r) inspect(r) }
   function openNew() { dialogContinueFrom = null; submitError = null; dialogOpen = true }
   function openContinue(r) { dialogContinueFrom = r; submitError = null; dialogOpen = true }
@@ -303,7 +309,7 @@
     <Spectate run={active} {activeRunId} muted={emulator.muted} ontogglemute={toggleMute} onnew={openNew} onback={() => go('/')}
       {recording} {forcedSimple} {forcedShow} />
   {:else if view === 'report'}
-    <Report run={selectedRun} {benchmarks} onback={() => go('/history')} oncontinue={openContinue} />
+    <Report run={selectedRun} {benchmarks} focusTurn={reportTurn} onback={() => go('/history')} oncontinue={openContinue} />
   {:else if view === 'about'}
     <section class="about">
       <h2>About PokeBench</h2>

@@ -15,8 +15,12 @@
   import ConversationDiagnostics from './ConversationDiagnostics.svelte'
   import GateTable from './GateTable.svelte'
   import InputCensus from './InputCensus.svelte'
+  import RouteMap from './RouteMap.svelte'
   import RunVideo from './RunVideo.svelte'
-  let { run = null, onback, oncontinue, benchmarks = [] } = $props()
+  // `focusTurn` opens the report on one turn — the run map hands over the turn
+  // it was clicked on (Andreas, 2026-09-15: "each movement and fight linked to a
+  // turn number, such that we can show the trace for that specific turn").
+  let { run = null, onback, oncontinue, benchmarks = [], focusTurn = null } = $props()
   // The CURRENT per-leg caps of this run's benchmark, from the shared list the
   // ladder YAML feeds (/api/benchmarks, data/benchmarks.json when published).
   // Caps apply retroactively (Andreas, 2026-09-10: "make it true retroactively,
@@ -220,6 +224,29 @@
     s.has(k) ? s.delete(k) : s.add(k)
     openTurns = s
   }
+
+  // Open the group and the turn `focusTurn` names, then scroll to it. Guarded
+  // on `focused` so re-opening the same turn after the reader has collapsed it
+  // does not fight them, and so a trace that arrives late still lands.
+  let focused = $state(null)
+  let mapTurn = $state(null)      // a click on this page's own map
+  let mapOpen = $state(false)
+  $effect(() => {
+    const n = mapTurn ?? focusTurn
+    if (n == null || focused === n || !tasks.length) return
+    for (let gi = 0; gi < tasks.length; gi++) {
+      const list = tasks[gi].timeline ?? tasks[gi].turns ?? []
+      const ti = list.findIndex((t) => t.kind !== 'compaction' && t.turn === n)
+      if (ti < 0) continue
+      const gk = groupKey(tasks[gi], gi)
+      openGroups = new Set([...openGroups, gk])
+      openTurns = new Set([...openTurns, `${gk}:${list[ti].kind ?? 'turn'}:${ti}`])
+      focused = n
+      requestAnimationFrame(() =>
+        document.getElementById(`turn-${n}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }))
+      return
+    }
+  })
 
   // --- Trace step helpers ----------------------------------------------------
   // `args` may be a dict OR a JSON string OR free text. Pretty-print dicts as
@@ -483,6 +510,22 @@ where: {crash.where.join(' ← ')}{/if}</pre>
       <section class="inputs"><InputCensus {inputs} /></section>
     {/if}
 
+    <!-- Where it walked, on the game's own artwork. Collapsed, so a report
+         opened to read a turn does not pull 100 KB of map PNGs (M13); clicking
+         a tile opens that turn below rather than leaving the page. -->
+    {#if run.runId}
+      <section class="mapsec">
+        <button class="maphead" onclick={() => (mapOpen = !mapOpen)} aria-expanded={mapOpen}>
+          <span class="arr">{mapOpen ? '▾' : '▸'}</span>
+          <span class="mtitle">Where it walked</span>
+          <span class="faint">every tile, on the game's own map — click one for its turn</span>
+        </button>
+        {#if mapOpen}
+          <RouteMap runId={run.runId} height={560} onturn={(t) => { focused = null; mapTurn = t }} />
+        {/if}
+      </section>
+    {/if}
+
     <!-- The recording, when the run was published with one (pokemon publish →
          R2). A plain <video>: the file is browser-ready H.264, and R2 serves
          byte ranges so the scrub bar seeks. Locally the player lives in History. -->
@@ -735,7 +778,7 @@ where: {crash.where.join(' ← ')}{/if}</pre>
                     {/if}
                   </div>
                 {:else}
-                <div class="turn" class:open={tOpen}>
+                <div class="turn" class:open={tOpen} class:focused={(mapTurn ?? focusTurn) === t.turn} id={`turn-${t.turn}`}>
                   <button class="thead" onclick={() => toggleTurn(tk)}>
                     <span class="arr">{tOpen ? '▾' : '▸'}</span>
                     <span class="tn mono">Turn {t.turn}{t.fresh ? ' (fresh)' : ''}</span>
@@ -940,6 +983,12 @@ waited {Math.round(e.wait_s ?? 0)}s{/if}</pre>
   .crash-details summary { cursor: pointer; font-size: 12px; }
   .crash-details pre { margin: 6px 0 0; white-space: pre-wrap; word-break: break-word; font-size: 11.5px; line-height: 1.5; color: var(--muted); }
   .terr { font-size: 10.5px; font-weight: 800; color: var(--red); background: var(--red-soft); border: 1px solid var(--red-rule); padding: 1px 6px; border-radius: var(--radius-sm); flex: none; }
+  .turn.focused > .thead { box-shadow: inset 3px 0 0 var(--accent); }
+  .mapsec { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 14px; }
+  .maphead { display: flex; align-items: center; gap: 10px; width: 100%; background: none; border: 0; padding: 0; cursor: pointer; color: inherit; text-align: left; font-size: 12px; }
+  .maphead .arr { color: var(--faint); width: 10px; }
+  .maphead .mtitle { font-size: 13px; font-weight: 750; }
+  .mapsec:has(.maphead[aria-expanded="true"]) .maphead { margin-bottom: 10px; }
   .turn-errors { margin: 0 0 10px; display: grid; gap: 6px; }
   .trace-error { padding: 7px 10px; border-left: 3px solid var(--red); background: var(--red-soft); }
   .trace-error.soft { border-left-color: var(--red-rule); background: var(--wash); }
