@@ -9,6 +9,28 @@ Output: ``src/dashboard/web/public/maps/<group>-<num>.png`` at the game's own
 version so a map image and the geometry drawn on it cannot silently disagree
 (artifacts/game-map-render/plan.md M1-M3).
 
+``index.json`` also carries what the map viewer needs to place a building
+(M10-M12), all of it static and all of it derived here rather than shipped to
+the browser as a walk graph:
+
+- ``type``      the map's own ``map_type``.
+- ``building``  the name floors share: ``PewterCity_PokemonCenter_{1F,2F}``
+                are one building, ordered by ``floors``.
+- ``doors``     on an outdoor map, the tiles a building is entered from —
+                ``{x, y, to, building}``. A transition room gets none: it is a
+                corridor, not a place, and it is one when EITHER of two things
+                is true of the building (all its floors together):
+
+                * its exits lead to two different maps — both Viridian Forest
+                  gate houses (Route 2 and the forest) and the Route 22 gate
+                  (Route 22 and Route 23, which we do not render); or
+                * it is the only way through: close the building on the walk
+                  graph and its own outside doorsteps stop reaching each other.
+                  That is Route 2's east building, whose two doors are both on
+                  Route 2 with a cliff between them — the first rule cannot see
+                  it, and the Pewter museum, which also has two doors onto one
+                  town, must not be caught by it.
+
 The format, from ``include/fieldmap.h`` at the pinned SHA:
 
 - ``map.bin``          one u16 per tile; ``& 0x03FF`` is the metatile id.
@@ -36,6 +58,7 @@ import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
+from typing import Callable, Optional
 
 import numpy as np
 from PIL import Image
@@ -87,6 +110,10 @@ def fetch(path: str, *, offline: bool, ref: str) -> bytes:
     return data
 
 
+MAP_TYPE_INDOOR = "MAP_TYPE_INDOOR"
+FLOOR_RE = re.compile(r"_(?:B?\d+F|Basement\d*|Roof)$")
+
+
 def camel_to_const(name: str) -> str:
     parts = []
     for part in name.split("_"):
@@ -102,6 +129,99 @@ def tileset_dir(kind: str, gname: str) -> str:
         if d.replace("_", "") == want:
             return f"data/tilesets/{kind}/{d}"
     raise SystemExit(f"no {kind} tileset dir for {gname}")
+
+
+# ---------------------------------------------------------------- buildings
+
+def building_of(name: str) -> str:
+    """'PewterCity_PokemonCenter_2F' -> 'PewterCity_PokemonCenter' (1F stays 1F's own)."""
+    return FLOOR_RE.sub("", name)
+
+
+def _corridor_by_graph(graph: dict, building_maps: set[str], key_of: dict[str, str]) -> Optional[bool]:
+    """True when closing this building cuts its own doorsteps off from each other.
+
+    The doorstep is the OUTSIDE tile of each warp — on the walk graph that is a
+    node outside the building with an edge into it. Returns None when the
+    building has fewer than two of them (nothing to disconnect) or is not on
+    the graph at all.
+    """
+    keys = {key_of[m] for m in building_maps if m in key_of}
+    if not keys:
+        return None
+    nodes = [tuple(n) for n in graph["nodes"]]
+    inside = {i for i, (g, m, _x, _y) in enumerate(nodes) if f"{g}:{m}" in keys}
+    if not inside:
+        return None
+    steps = {j for i in inside for j in graph["adj"][i] if j not in inside}
+    steps |= {i for i, adj in enumerate(graph["adj"]) if i not in inside and any(j in inside for j in adj)}
+    if len(steps) < 2:
+        return None
+    start = min(steps)
+    seen = {start}
+    queue = [start]
+    while queue:
+        n = queue.pop()
+        for u in graph["adj"][n]:
+            if u in inside or u in seen:
+                continue
+            seen.add(u)
+            queue.append(u)
+    return not steps <= seen
+
+
+def door_index(map_json: dict[str, dict], names: dict[str, str], graph: dict,
+               key_of: dict[str, str], floors: dict[str, list[str]],
+               is_indoor: Callable[[str], bool]) -> dict[str, list[dict]]:
+    """Outdoor map name -> the door tiles of the buildings it holds.
+
+    A warp's destination is a building's door when the destination is indoor
+    AND is not a transition room. ``names`` maps a MAP_ constant to a map name;
+    ``is_indoor`` answers for a destination OUTSIDE the rendered set, which is
+    the difference between the Route 22 gate (its other side is Route 23, a
+    route, so it is a corridor) and a Pokemon Center's 2F (its other sides are
+    the Link rooms, which are indoor, so the Center stays a building).
+    """
+    indoor = {n for n, mj in map_json.items() if mj.get("map_type") == MAP_TYPE_INDOOR}
+    # each interior's ways OUT: 2+ distinct ones means it is a corridor. A
+    # destination we do not render (Route 23 through the Route 22 gate) is an
+    # exit too — not knowing where it goes does not make it a room.
+    reach: dict[str, set[tuple[str, str]]] = {}
+    for n in indoor:
+        out = set()
+        for w in map_json[n].get("warp_events") or []:
+            const = str(w.get("dest_map"))
+            dest = names.get(const)
+            inside = dest in indoor if dest is not None else is_indoor(const)
+            if not inside:
+                out.add((const, str(w.get("dest_warp_id"))))
+        reach[n] = out
+    corridor = {}
+    for n in indoor:
+        b = building_of(n)
+        if b in corridor:
+            continue
+        maps = set(floors.get(b, [n]))
+        two_maps = len({d for f in maps for d, _w in reach.get(f, ())}) >= 2
+        corridor[b] = two_maps or bool(_corridor_by_graph(graph, maps, key_of))
+
+    doors: dict[str, list[dict]] = {}
+    for n, mj in map_json.items():
+        if n in indoor:
+            continue
+        seen: set[str] = set()
+        for w in mj.get("warp_events") or []:
+            dest = names.get(str(w.get("dest_map")))
+            if dest is None or dest not in indoor:
+                continue
+            b = building_of(dest)
+            if corridor[b]:
+                continue
+            if b in seen:
+                continue           # one marker per building, its first door
+            seen.add(b)
+            doors.setdefault(n, []).append({"x": int(w["x"]), "y": int(w["y"]), "to": dest, "building": b})
+    return doors
 
 
 # ---------------------------------------------------------------- tilesets
@@ -218,11 +338,37 @@ def main() -> int:
     tilesets: dict[tuple[str, str], Tileset] = {}
     index: dict[str, dict] = {}
 
+    # every map's own json first: the door index is a property of the whole set
+    map_json = {m["name"]: json.loads(fetch(f"data/maps/{m['name']}/map.json", offline=args.offline, ref=ref))
+                for m in graph["maps"].values()}
+    key_of = {m["name"]: k for k, m in graph["maps"].items()}
+    floors: dict[str, list[str]] = {}
+    for name in sorted(map_json):
+        if map_json[name].get("map_type") == MAP_TYPE_INDOOR:
+            floors.setdefault(building_of(name), []).append(name)
+    # map_type for a destination outside the rendered set, fetched once and
+    # cached like everything else; unknown counts as NOT indoor, which is the
+    # conservative read (an unknown exit makes a room a corridor).
+    groups = json.loads(fetch("data/maps/map_groups.json", offline=args.offline, ref=ref))
+    all_names = {camel_to_const(m): m for g in groups["group_order"] for m in groups[g]}
+
+    def is_indoor(const: str) -> bool:
+        name = all_names.get(const)
+        if name is None:
+            return False
+        try:
+            mj = json.loads(fetch(f"data/maps/{name}/map.json", offline=args.offline, ref=ref))
+        except SystemExit:
+            return False
+        return mj.get("map_type") == MAP_TYPE_INDOOR
+
+    doors = door_index(map_json, {camel_to_const(n): n for n in map_json}, graph, key_of, floors, is_indoor)
+
     for key, m in sorted(graph["maps"].items()):
         name = m["name"]
         if args.only and name not in args.only:
             continue
-        mj = json.loads(fetch(f"data/maps/{name}/map.json", offline=args.offline, ref=ref))
+        mj = map_json[name]
         layout = layouts[mj["layout"]]
         tkey = (layout["primary_tileset"], layout["secondary_tileset"])
         if tkey not in tilesets:
@@ -235,9 +381,17 @@ def main() -> int:
         fname = f"{key.replace(':', '-')}.png"
         img.save(args.out / fname, optimize=True)
         entry = {"name": name, "width": w, "height": h, "file": fname,
-                 "bytes": (args.out / fname).stat().st_size}
+                 "bytes": (args.out / fname).stat().st_size, "type": mj.get("map_type")}
         if isinstance(m.get("world"), list):
             entry["world"] = m["world"]
+        if mj.get("map_type") == MAP_TYPE_INDOOR:
+            b = building_of(name)
+            entry["building"] = b
+            # the other floors of this building, as map keys, 1F first; a floor
+            # outside the rendered set is dropped rather than left dangling.
+            entry["floors"] = [key_of[f] for f in sorted(floors.get(b, [])) if f in key_of]
+        if name in doors:
+            entry["doors"] = [{**d, "to": key_of[d["to"]]} for d in doors[name] if d["to"] in key_of]
         index[key] = entry
         print(f"{name:42s} {w:3d}x{h:<3d} {entry['bytes'] // 1024:4d} KB")
 

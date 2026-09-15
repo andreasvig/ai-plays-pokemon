@@ -10,42 +10,68 @@
    "width": 15,
    "height": 12,
    "file": "15-0.png",
-   "bytes": 5050
+   "bytes": 5050,
+   "type": "MAP_TYPE_INDOOR",
+   "building": "Route2_ViridianForest_SouthEntrance",
+   "floors": [
+    "15:0"
+   ]
   },
   "15:1": {
    "name": "Route2_House",
    "width": 11,
    "height": 9,
    "file": "15-1.png",
-   "bytes": 3561
+   "bytes": 3561,
+   "type": "MAP_TYPE_INDOOR",
+   "building": "Route2_House",
+   "floors": [
+    "15:1"
+   ]
   },
   "15:2": {
    "name": "Route2_EastBuilding",
    "width": 15,
    "height": 12,
    "file": "15-2.png",
-   "bytes": 5050
+   "bytes": 5050,
+   "type": "MAP_TYPE_INDOOR",
+   "building": "Route2_EastBuilding",
+   "floors": [
+    "15:2"
+   ]
   },
   "15:3": {
    "name": "Route2_ViridianForest_NorthEntrance",
    "width": 15,
    "height": 12,
    "file": "15-3.png",
-   "bytes": 5050
+   "bytes": 5050,
+   "type": "MAP_TYPE_INDOOR",
+   "building": "Route2_ViridianForest_NorthEntrance",
+   "floors": [
+    "15:3"
+   ]
   },
   "1:0": {
    "name": "ViridianForest",
    "width": 54,
    "height": 69,
    "file": "1-0.png",
-   "bytes": 126075
+   "bytes": 126075,
+   "type": "MAP_TYPE_ROUTE"
   },
   "28:0": {
    "name": "Route22_NorthEntrance",
    "width": 15,
    "height": 12,
    "file": "28-0.png",
-   "bytes": 5100
+   "bytes": 5100,
+   "type": "MAP_TYPE_INDOOR",
+   "building": "Route22_NorthEntrance",
+   "floors": [
+    "28:0"
+   ]
   },
   "3:0": {
    "name": "PalletTown",
@@ -53,9 +79,30 @@
    "height": 20,
    "file": "3-0.png",
    "bytes": 23302,
+   "type": "MAP_TYPE_TOWN",
    "world": [
     0,
     0
+   ],
+   "doors": [
+    {
+     "x": 6,
+     "y": 7,
+     "to": "4:0",
+     "building": "PalletTown_PlayersHouse"
+    },
+    {
+     "x": 15,
+     "y": 7,
+     "to": "4:2",
+     "building": "PalletTown_RivalsHouse"
+    },
+    {
+     "x": 16,
+     "y": 13,
+     "to": "4:3",
+     "building": "PalletTown_ProfessorOaksLab"
+    }
    ]
   },
   "3:1": {
@@ -64,9 +111,42 @@
    "height": 40,
    "file": "3-1.png",
    "bytes": 91523,
+   "type": "MAP_TYPE_TOWN",
    "world": [
     -12,
     -80
+   ],
+   "doors": [
+    {
+     "x": 26,
+     "y": 26,
+     "to": "5:4",
+     "building": "ViridianCity_PokemonCenter"
+    },
+    {
+     "x": 25,
+     "y": 11,
+     "to": "5:0",
+     "building": "ViridianCity_House"
+    },
+    {
+     "x": 36,
+     "y": 10,
+     "to": "5:1",
+     "building": "ViridianCity_Gym"
+    },
+    {
+     "x": 25,
+     "y": 18,
+     "to": "5:2",
+     "building": "ViridianCity_School"
+    },
+    {
+     "x": 36,
+     "y": 19,
+     "to": "5:3",
+     "building": "ViridianCity_Mart"
+    }
    ]
   },
   "3:19": {
@@ -75,6 +155,7 @@
    "height": 40,
    "file": "3-19.png",
    "bytes": 46766,
+   "type": "MAP_TYPE_ROUTE",
    "world": [
     0,
     -40
@@ -86,9 +167,48 @@
    "height": 40,
    "file": "3-2.png",
    "bytes": 74442,
+   "type": "MAP_TYPE_TOWN",
    "world": [
     -12,
     -200
+   ],
+   "doors": [
+    {
+     "x": 17,
+     "y": 6,
+     "to": "6:0",
+     "building": "PewterCity_Museum"
+    },
+    {
+     "x": 15,
+     "y": 16,
+     "to": "6:2",
+     "building": "PewterCity_Gym"
+    },
+    {
+     "x": 28,
+     "y": 18,
+     "to": "6:3",
+     "building": "PewterCity_Mart"
+    },
+    {
+     "x": 33,
+     "y": 11,
+     "to": "6:4",
+     "building": "PewterCity_House1"
+    },
+    {
+     "x": 17,
+     "y": 25,
+     "to": "6:5",
+     "building": "PewterCity_PokemonCenter"
+    },
+    {
+     "x": 9,
+     "y": 30,
+     "to": "6:7",
+     "building": "PewterCity_House2"
+    }
    ]
   },
   "3:20": {
@@ -97,9 +217,18 @@
    "height": 80,
    "file": "3-20.png",
    "bytes": 90993,
+   "type": "MAP_TYPE_ROUTE",
    "world": [
     0,
     -160
+   ],
+   "doors": [
+    {
+     "x": 17,
+     "y": 22,
+     "to": "15:1",
+     "building": "Route2_House"
+    }
    ]
   },
   "3:21": {
@@ -108,6 +237,7 @@
    "height": 20,
    "file": "3-21.png",
    "bytes": 51911,
+   "type": "MAP_TYPE_ROUTE",
    "world": [
     36,
     -190
@@ -119,6 +249,7 @@
    "height": 50,
    "file": "3-39.png",
    "bytes": 41305,
+   "type": "MAP_TYPE_ROUTE",
    "world": [
     0,
     20
@@ -130,6 +261,7 @@
    "height": 24,
    "file": "3-41.png",
    "bytes": 40366,
+   "type": "MAP_TYPE_ROUTE",
    "world": [
     -60,
     -70
@@ -140,126 +272,224 @@
    "width": 13,
    "height": 10,
    "file": "4-0.png",
-   "bytes": 4011
+   "bytes": 4011,
+   "type": "MAP_TYPE_INDOOR",
+   "building": "PalletTown_PlayersHouse",
+   "floors": [
+    "4:0",
+    "4:1"
+   ]
   },
   "4:1": {
    "name": "PalletTown_PlayersHouse_2F",
    "width": 12,
    "height": 9,
    "file": "4-1.png",
-   "bytes": 3372
+   "bytes": 3372,
+   "type": "MAP_TYPE_INDOOR",
+   "building": "PalletTown_PlayersHouse",
+   "floors": [
+    "4:0",
+    "4:1"
+   ]
   },
   "4:2": {
    "name": "PalletTown_RivalsHouse",
    "width": 13,
    "height": 10,
    "file": "4-2.png",
-   "bytes": 3932
+   "bytes": 3932,
+   "type": "MAP_TYPE_INDOOR",
+   "building": "PalletTown_RivalsHouse",
+   "floors": [
+    "4:2"
+   ]
   },
   "4:3": {
    "name": "PalletTown_ProfessorOaksLab",
    "width": 13,
    "height": 14,
    "file": "4-3.png",
-   "bytes": 6197
+   "bytes": 6197,
+   "type": "MAP_TYPE_INDOOR",
+   "building": "PalletTown_ProfessorOaksLab",
+   "floors": [
+    "4:3"
+   ]
   },
   "5:0": {
    "name": "ViridianCity_House",
    "width": 11,
    "height": 9,
    "file": "5-0.png",
-   "bytes": 3538
+   "bytes": 3538,
+   "type": "MAP_TYPE_INDOOR",
+   "building": "ViridianCity_House",
+   "floors": [
+    "5:0"
+   ]
   },
   "5:1": {
    "name": "ViridianCity_Gym",
    "width": 20,
    "height": 24,
    "file": "5-1.png",
-   "bytes": 7701
+   "bytes": 7701,
+   "type": "MAP_TYPE_INDOOR",
+   "building": "ViridianCity_Gym",
+   "floors": [
+    "5:1"
+   ]
   },
   "5:2": {
    "name": "ViridianCity_School",
    "width": 10,
    "height": 9,
    "file": "5-2.png",
-   "bytes": 2938
+   "bytes": 2938,
+   "type": "MAP_TYPE_INDOOR",
+   "building": "ViridianCity_School",
+   "floors": [
+    "5:2"
+   ]
   },
   "5:3": {
    "name": "ViridianCity_Mart",
    "width": 11,
    "height": 9,
    "file": "5-3.png",
-   "bytes": 4753
+   "bytes": 4753,
+   "type": "MAP_TYPE_INDOOR",
+   "building": "ViridianCity_Mart",
+   "floors": [
+    "5:3"
+   ]
   },
   "5:4": {
    "name": "ViridianCity_PokemonCenter_1F",
    "width": 15,
    "height": 10,
    "file": "5-4.png",
-   "bytes": 6041
+   "bytes": 6041,
+   "type": "MAP_TYPE_INDOOR",
+   "building": "ViridianCity_PokemonCenter",
+   "floors": [
+    "5:4",
+    "5:5"
+   ]
   },
   "5:5": {
    "name": "ViridianCity_PokemonCenter_2F",
    "width": 15,
    "height": 10,
    "file": "5-5.png",
-   "bytes": 5353
+   "bytes": 5353,
+   "type": "MAP_TYPE_INDOOR",
+   "building": "ViridianCity_PokemonCenter",
+   "floors": [
+    "5:4",
+    "5:5"
+   ]
   },
   "6:0": {
    "name": "PewterCity_Museum_1F",
    "width": 28,
    "height": 11,
    "file": "6-0.png",
-   "bytes": 8541
+   "bytes": 8541,
+   "type": "MAP_TYPE_INDOOR",
+   "building": "PewterCity_Museum",
+   "floors": [
+    "6:0",
+    "6:1"
+   ]
   },
   "6:1": {
    "name": "PewterCity_Museum_2F",
    "width": 19,
    "height": 10,
    "file": "6-1.png",
-   "bytes": 5521
+   "bytes": 5521,
+   "type": "MAP_TYPE_INDOOR",
+   "building": "PewterCity_Museum",
+   "floors": [
+    "6:0",
+    "6:1"
+   ]
   },
   "6:2": {
    "name": "PewterCity_Gym",
    "width": 13,
    "height": 16,
    "file": "6-2.png",
-   "bytes": 5539
+   "bytes": 5539,
+   "type": "MAP_TYPE_INDOOR",
+   "building": "PewterCity_Gym",
+   "floors": [
+    "6:2"
+   ]
   },
   "6:3": {
    "name": "PewterCity_Mart",
    "width": 11,
    "height": 9,
    "file": "6-3.png",
-   "bytes": 4753
+   "bytes": 4753,
+   "type": "MAP_TYPE_INDOOR",
+   "building": "PewterCity_Mart",
+   "floors": [
+    "6:3"
+   ]
   },
   "6:4": {
    "name": "PewterCity_House1",
    "width": 11,
    "height": 9,
    "file": "6-4.png",
-   "bytes": 3561
+   "bytes": 3561,
+   "type": "MAP_TYPE_INDOOR",
+   "building": "PewterCity_House1",
+   "floors": [
+    "6:4"
+   ]
   },
   "6:5": {
    "name": "PewterCity_PokemonCenter_1F",
    "width": 15,
    "height": 10,
    "file": "6-5.png",
-   "bytes": 6041
+   "bytes": 6041,
+   "type": "MAP_TYPE_INDOOR",
+   "building": "PewterCity_PokemonCenter",
+   "floors": [
+    "6:5",
+    "6:6"
+   ]
   },
   "6:6": {
    "name": "PewterCity_PokemonCenter_2F",
    "width": 15,
    "height": 10,
    "file": "6-6.png",
-   "bytes": 5353
+   "bytes": 5353,
+   "type": "MAP_TYPE_INDOOR",
+   "building": "PewterCity_PokemonCenter",
+   "floors": [
+    "6:5",
+    "6:6"
+   ]
   },
   "6:7": {
    "name": "PewterCity_House2",
    "width": 11,
    "height": 9,
    "file": "6-7.png",
-   "bytes": 3561
+   "bytes": 3561,
+   "type": "MAP_TYPE_INDOOR",
+   "building": "PewterCity_House2",
+   "floors": [
+    "6:7"
+   ]
   }
  }
 }
