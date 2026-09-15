@@ -152,6 +152,11 @@ class ProgressTracker:
         # Exact overworld steps per turn from the per-input trace
         # (src/referee/trace.py); replaces the between-poll bound for that turn.
         self.traced_steps: dict[int, int] = {}
+        # The last tile the trace sampled on that turn. A door warp or the
+        # auto-step out of a door outlasts the input's gap, so the sample shows
+        # the old tile and the poll a second later the settled one; the steps
+        # between them belong to the turn (2026-09-15, plan R3).
+        self.traced_end: dict[int, tuple[int, int, int, int]] = {}
         self._steps_cache: dict[tuple[int, int], Optional[int]] = {}
         # Per-member resolved loci, computed once: node index -> gate id -> tiles.
         self._member_targets: list[dict[str, frozenset[int]]] = []
@@ -201,14 +206,23 @@ class ProgressTracker:
         self.stamps = known
         self._rebuild()
 
-    def record_traced_steps(self, turn: int, steps: int) -> None:
-        """Exact overworld steps for ``turn`` — call BEFORE that turn's ``record``."""
+    def record_traced_steps(self, turn: int, steps: int,
+                            end_tile: Optional[tuple[int, int, int, int]] = None) -> None:
+        """Exact overworld steps for ``turn`` — call BEFORE that turn's ``record``.
+        ``end_tile`` is the trace's last sampled tile; the poll's tile may lie a
+        warp or a door step further, which ``_fold`` adds to the turn."""
         self.traced_steps[int(turn)] = max(int(steps), 0)
+        if end_tile is not None and len(end_tile) == 4:
+            self.traced_end[int(turn)] = tuple(int(v) for v in end_tile)  # type: ignore[assignment]
+        else:
+            self.traced_end.pop(int(turn), None)
 
     def export_state(self) -> dict[str, Any]:
         out: dict[str, Any] = {"positions": [list(p) for p in self.positions]}
         if self.traced_steps:  # only runs with a per-input trace carry the key
             out["traced_steps"] = {str(t): s for t, s in sorted(self.traced_steps.items())}
+        if self.traced_end:
+            out["traced_end"] = {str(t): list(c) for t, c in sorted(self.traced_end.items())}
         return out
 
     def load_state(self, data: Any) -> None:
@@ -231,6 +245,14 @@ class ProgressTracker:
             except (TypeError, ValueError):
                 continue
         self.traced_steps = traced
+        ends: dict[int, tuple[int, int, int, int]] = {}
+        for t, c in ((data.get("traced_end") if isinstance(data, dict) else None) or {}).items():
+            try:
+                if len(c) == 4:
+                    ends[int(t)] = tuple(int(v) for v in c)  # type: ignore[assignment]
+            except (TypeError, ValueError):
+                continue
+        self.traced_end = ends
         self._rebuild()
 
     def summary(self) -> dict[str, Any]:
@@ -465,6 +487,14 @@ class ProgressTracker:
             if traced is not None:
                 leg.steps_walked += traced
                 leg.traced_turns += 1
+                # Movement the poll saw after the last sample (a warp that was
+                # still fading, the auto-step out of a door) — plan R3.
+                end = self.traced_end.get(pos[0])
+                end_node = self._node_of((pos[0], *end)) if end is not None else None
+                if end_node is not None and end_node != node:
+                    extra = self._steps(end_node, node)
+                    if extra:
+                        leg.steps_walked += extra
             else:
                 step = self._steps(leg.prev_node, node)
                 if step is not None:

@@ -183,6 +183,16 @@ class WalkGraph:
         d = self.distance_field(targets)[node]
         return None if d < 0 else d
 
+    def world_xy(self, map_group: int, map_num: int, x: int, y: int) -> Optional[tuple[int, int]]:
+        """Tile coordinates in the shared outdoor frame (graph version 2:
+        ``maps[key]["world"]`` is the map's top-left, Pallet Town at (0, 0)).
+        None for an indoor map or a graph built before the frame existed.
+        Pixels are ``meta["tile_px"]`` (16) per tile."""
+        w = (self.maps.get(f"{int(map_group)}:{int(map_num)}") or {}).get("world")
+        if not w:
+            return None
+        return int(w[0]) + int(x), int(w[1]) + int(y)
+
     def steps_between(self, a: int, b: int) -> Optional[int]:
         """Shortest directed walk a → b; None if b is unreachable from a."""
         if a == b:

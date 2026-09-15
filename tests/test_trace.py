@@ -57,7 +57,23 @@ def test_derive_counts_steps_only_outside_battle_and_names_lost_inputs():
             row("A", 3, 0, in_battle=True, total=1), row("A", 3, 0, in_battle=True, total=1)]
     d = trace.derive(trace.decode_samples(rows, KEY), start_tile=(3, 0, 0, 0), start_in_battle=False)
     assert d == {"inputs": 6, "blind": False, "overworld_steps": 2, "inputs_lost": 1, "battle_inputs": 3,
-                 "battle_started_at": 3, "end_in_battle": True}
+                 "battle_started_at": 3, "end_in_battle": True, "scripted_tiles": 0, "end_tile": (3, 0, 3, 0)}
+
+
+def test_a_multi_tile_displacement_counts_its_graph_distance_when_one_is_known():
+    """Live 2026-09-14 (gemini-3.8-flash low, turn 24): Oak walks the player to
+    the lab under five B presses — samples 5, 8, 5, 3 and 7 tiles apart. One
+    step per sample undercounted the walk the video and the bound both count."""
+    rows = [row("B", 11, 5), row("B", 11, 13), row("B", 11, 13)]
+    dist = {((3, 0, 12, 1), (3, 0, 11, 5)): 5, ((3, 0, 11, 5), (3, 0, 11, 13)): 8}
+    d = trace.derive(trace.decode_samples(rows, KEY), start_tile=(3, 0, 12, 1), start_in_battle=False,
+                     distance=lambda a, b: dist.get((a, b)))
+    assert (d["overworld_steps"], d["scripted_tiles"], d["end_tile"]) == (13, 11, (3, 0, 11, 13))
+    plain = trace.derive(trace.decode_samples(rows, KEY), start_tile=(3, 0, 12, 1), start_in_battle=False)
+    assert (plain["overworld_steps"], plain["scripted_tiles"]) == (2, 0)  # no graph: one step per displacement
+    unknown = trace.derive(trace.decode_samples(rows, KEY), start_tile=(3, 0, 12, 1), start_in_battle=False,
+                           distance=lambda a, b: None)
+    assert unknown["overworld_steps"] == 2  # no path known: one step, never zero
 
 
 def test_derive_leaves_the_first_step_uncounted_when_the_start_is_unknown_and_a_warp_is_one_step():
@@ -112,6 +128,25 @@ def test_traced_steps_replace_the_between_poll_bound_for_that_turn_only():
     assert "traced_steps" not in bound.export_state()  # untraced runs keep the old shape
 
 
+def test_movement_the_poll_sees_after_the_last_sample_is_added_to_the_turn():
+    """Live 2026-09-14: 7 of 140 turns ended on the pre-warp tile (the door,
+    the stairs) — the warp fade outlasts the input's gap — and the poll a
+    second later stood on the other side. That step belongs to the turn."""
+    lagging = tracker()
+    lagging.record_traced_steps(5, 3, end_tile=(3, 0, 9, 0))   # sampled ON the door; the poll is in the room
+    walk_to_room(lagging)
+    settled = tracker()
+    settled.record_traced_steps(5, 3, end_tile=(4, 3, 0, 0))   # sample and poll agree
+    walk_to_room(settled)
+    assert lagging.summary()["legs"][0]["steps_walked"] == settled.summary()["legs"][0]["steps_walked"] + 1
+    state = lagging.export_state()
+    assert state["traced_end"] == {"5": [3, 0, 9, 0]}
+    fresh = tracker(); fresh.load_state(state); fresh.observe_stamps({"enter_room": 5})
+    assert fresh.summary() == lagging.summary()
+    lagging.record_traced_steps(5, 3)  # no end tile → the key is dropped, not left stale
+    assert "traced_end" not in lagging.export_state()
+
+
 def test_referee_folds_the_trace_in_before_the_poll_and_logs_it(tmp_path):
     emu = BattleFakeEmulator(stats_block(total=0, wild=0, trainer=0, map_group=4, map_num=0))
     log = FakeLogger()
@@ -125,6 +160,7 @@ def test_referee_folds_the_trace_in_before_the_poll_and_logs_it(tmp_path):
     assert ev[0]["samples"][0]["battles_total"] == 0  # decoded with the poll's key
     ref.poll(2)
     assert ref.export_state()["traced_steps"] == {"2": derived["overworld_steps"]}
+    assert ref.export_state()["traced_end"] == {"2": [4, 0, 2, 0]}
     assert ref.record_trace(3, []) is None
     blind = ref.record_trace(3, [("U", [b"", b"", b""])])
     assert blind["blind"] and "3" not in ref.export_state()["traced_steps"]  # the bound stands for a blind turn

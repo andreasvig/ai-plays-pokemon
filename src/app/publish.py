@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
 from src.app.models import RunKind, RunStatus
+from src.app import route
 from src.app.projection import project_run_dir
 
 # The User-Agent every anonymous probe sends. Cloudflare answers 403 to
@@ -612,6 +613,14 @@ def recorded_view(run_dir: Path, video_file: str = "recording.mp4") -> str | Non
     return view if view in ("simple", "detailed") else None
 
 
+def route_json(run_dir: Path) -> str | None:
+    """``data/runs/<run_id>/route.json`` — the run's tile sequence
+    (src/app/route.py), None for a run with no per-input trace. Compact: a
+    1 500-turn run is ~12k visits."""
+    r = route.load_route(run_dir)
+    return json.dumps(r, separators=(",", ":")) if r is not None else None
+
+
 def public_summary_text(summary_path: Path) -> str:
     """``run_summary.json`` minus its per-turn list — the result, not the reasoning."""
     data = json.loads(Path(summary_path).read_text())
@@ -779,6 +788,14 @@ def publish_run(
 
     # -- gh-pages (worktree synced by ensure() before the guard above)
     files = {"summary.json": summary_text}
+    route_text = route_json(run_dir)
+    if route_text is not None:
+        files["route.json"] = route_text
+    else:
+        # a run that lost its trace must not keep a stale route from an earlier publish
+        old_route = pages.run_dir(run_id) / "route.json"
+        if old_route.exists():
+            old_route.unlink()
     if trace_text is not None:
         files["trace.json"] = trace_text
     else:
@@ -855,6 +872,14 @@ def refresh_rows(pages: PagesRepo, runs_root: Path, *, secrets: Iterable[str] = 
             changed += 1
             log(f"row refreshed: {run_id}")
         out.append(fresh)
+        # The route file is a projection of the same run dir: (re)write it when
+        # the run has one and the published copy is missing or stale.
+        route_text = route_json(run_dir)
+        if route_text is not None:
+            target = pages.run_dir(str(run_id)) / "route.json"
+            if not target.is_file() or target.read_text() != route_text:
+                pages.write_run_files(str(run_id), {"route.json": route_text})
+                log(f"route written: {run_id}")
     if changed:
         pages.write_board(out)
     return changed

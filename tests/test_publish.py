@@ -353,6 +353,44 @@ def test_publish_end_to_end(world, tmp_path):
     assert local_trace["tasks"][0]["turns"][0]["screenshot"] == "00001_turn_1.png"
 
 
+def test_publish_writes_the_route_file_for_a_traced_run_and_refresh_backfills_it(world, tmp_path):
+    """2026-09-15 (artifacts/route-fidelity/plan.md R5): a run with a per-input
+    trace publishes ``route.json`` beside ``summary.json`` and its row carries
+    route_points / route_coverage; a run without a trace gets neither. A row
+    published before the route existed gets the file on --refresh-rows."""
+    run = world["run"]
+    events = [
+        {"type": "turn_input_trace", "turn": 1, "samples": [
+            {"i": 0, "input": "D", "map_group": 3, "map_num": 0, "x": 6, "y": 9, "in_battle": False, "battles_total": 0},
+            {"i": 1, "input": "D", "map_group": 3, "map_num": 0, "x": 6, "y": 10, "in_battle": False, "battles_total": 0}]},
+        {"type": "referee_position", "turn": 1, "map_group": 3, "map_num": 0, "x": 6, "y": 10},
+        {"type": "turn_input_trace", "turn": 2, "samples": [
+            {"i": 0, "input": "D", "map_group": 3, "map_num": 0, "x": 6, "y": 11, "in_battle": False, "battles_total": 0}]},
+        {"type": "referee_position", "turn": 2, "map_group": 3, "map_num": 0, "x": 6, "y": 11},
+        {"type": "referee_position", "turn": 3, "map_group": 3, "map_num": 0, "x": 6, "y": 12},  # polled, never traced
+    ]
+    (run / "events.jsonl").write_text("\n".join(json.dumps(e) for e in events) + "\n")
+    _publish(world)
+    files = _clone_board(world["repo"], tmp_path)
+    route = json.loads(files[f"data/runs/{run.name}/route.json"].read_text())
+    assert [v[2:6] for v in route["visits"]] == [[3, 0, 6, 9], [3, 0, 6, 10], [3, 0, 6, 11], [3, 0, 6, 12]]
+    assert route["turns"] == {"total": 3, "traced": 2, "blind": 0} and route["transitions"] == {"step": 3}
+    row = json.loads(files["data/leaderboard.json"].read_text())[0]
+    assert row["route_points"] == 4 and abs(row["route_coverage"] - 2 / 3) < 1e-9
+    # an untraced run: no file, null fields
+    (run / "events.jsonl").unlink()
+    _publish(world)  # drops the stale route.json like a --no-trace publish drops trace.json
+    files = _clone_board(world["repo"], tmp_path)
+    assert f"data/runs/{run.name}/route.json" not in files
+    assert json.loads(files["data/leaderboard.json"].read_text())[0]["route_points"] is None
+    # --refresh-rows backfills the file once the trace is there
+    (run / "events.jsonl").write_text("\n".join(json.dumps(e) for e in events) + "\n")
+    pages = world["pages"]
+    pages.ensure()
+    assert pub.refresh_rows(pages, run.parent, secrets=[], log=lambda m: None) == 1
+    assert json.loads((pages.run_dir(run.name) / "route.json").read_text())["visits"] == route["visits"]
+
+
 def test_republish_is_one_row_and_idempotent_uploads(world, tmp_path):
     _publish(world)
     n_objects = len(world["s3"].objects)

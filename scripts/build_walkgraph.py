@@ -337,13 +337,60 @@ def build(*, offline: bool) -> WalkGraph:
                         link(a, b)
                         link(b, a)
 
+    # -- world frame (version 2, 2026-09-15): every outdoor map connected to
+    # Pallet Town gets the tile offset of its top-left corner in ONE shared
+    # frame, Pallet Town at (0, 0), so a run's route can be drawn on a single
+    # pixel map (tile = 16 px; artifacts/route-fidelity/plan.md R4). The offsets
+    # follow pret's connection semantics exactly as the seam stitching above:
+    # "up" with offset o puts the neighbour's column x at our column x + o.
+    world: dict[str, tuple[int, int]] = {}
+    conflicts: list[str] = []
+    origin = next((m for m in maps.values() if m.name == "PalletTown"), None)
+    if origin is not None:
+        world[origin.name] = (0, 0)
+        q: deque[str] = deque([origin.name])
+        while q:
+            m = maps[q.popleft()]
+            wx, wy = world[m.name]
+            for c in m.json.get("connections") or []:
+                dest = const_to_name.get(c["map"])
+                dm = maps.get(dest) if dest else None
+                if dm is None:
+                    continue
+                off, d = int(c["offset"]), c["direction"]
+                if d == "up":
+                    w = (wx + off, wy - dm.height)
+                elif d == "down":
+                    w = (wx + off, wy + m.height)
+                elif d == "left":
+                    w = (wx - dm.width, wy + off)
+                elif d == "right":
+                    w = (wx + m.width, wy + off)
+                else:
+                    continue
+                if dm.name in world:
+                    if world[dm.name] != w:  # a cycle of connections must close
+                        conflicts.append(f"{m.name} → {dm.name}: {w} vs {world[dm.name]}")
+                    continue
+                world[dm.name] = w
+                q.append(dm.name)
+    if conflicts:
+        raise SystemExit("world frame does not close: " + "; ".join(conflicts))
+
     meta = {
-        "version": 1,
+        "version": 2,
         "source": f"{PRET}@{pret_sha(offline=offline)}",
         "built": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         "rules": "collision0+notwater; ledges one-way; MB_IMPASSABLE_*; elevation 0/15 wild; warps 1 step; connections stitched",
+        "tile_px": 16,
+        "world_origin": "PalletTown top-left = (0, 0); outdoor maps only",
     }
-    mapsd = {f"{m.group}:{m.num}": {"name": m.name, "width": m.width, "height": m.height} for m in maps.values()}
+    mapsd = {}
+    for m in maps.values():
+        entry: dict = {"name": m.name, "width": m.width, "height": m.height}
+        if m.name in world:
+            entry["world"] = list(world[m.name])
+        mapsd[f"{m.group}:{m.num}"] = entry
     return WalkGraph(nodes, [sorted(a) for a in adj], mapsd, meta)
 
 

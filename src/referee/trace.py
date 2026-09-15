@@ -30,7 +30,7 @@ Derived per turn (rule set of the plan, decision 2B recorded alongside 2A):
 from __future__ import annotations
 
 import struct
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from src.referee.battles import GAME_STAT_TOTAL_BATTLES, GMAIN_IN_BATTLE_BYTE, SB1_GAME_STATS, in_battle_from_byte
 
@@ -76,15 +76,27 @@ def _tile(d: dict[str, Any]) -> Optional[tuple[int, int, int, int]]:
     return (d["map_group"], d["map_num"], d["x"], d["y"])
 
 
+Distance = Callable[[tuple[int, int, int, int], tuple[int, int, int, int]], Optional[int]]
+
+
 def derive(samples: list[dict[str, Any]], start_tile: Optional[tuple[int, int, int, int]],
-           start_in_battle: Optional[bool]) -> dict[str, Any]:
+           start_in_battle: Optional[bool], distance: Optional[Distance] = None) -> dict[str, Any]:
     """Turn-level figures from the per-input samples.
 
     ``start_tile`` / ``start_in_battle`` are the referee's last poll before this
     turn (the state the turn began in). Unknown starts leave the first input's
     step uncounted rather than guessed.
+
+    ``distance(a, b)`` — walk-graph steps between two tiles — makes a
+    multi-tile displacement count its tiles (2026-09-15, plan R2): a scripted
+    walk (Oak escorting the player to the lab moved ~28 tiles under five B
+    presses) is as many steps as the video and the between-poll bound count,
+    and ``scripted_tiles`` says how many came from such inputs. Without it, or
+    when no path is known, a displacement is one step as before.
+    ``end_tile`` is the last tile sampled — the referee compares it with the
+    poll that follows: a warp still fading at sample time shows the old tile.
     """
-    steps = lost = battle_inputs = 0
+    steps = lost = battle_inputs = scripted = 0
     battle_started_at: Optional[int] = None
     prev_tile, prev_batt = start_tile, start_in_battle
     prev_total: Optional[int] = None
@@ -106,7 +118,10 @@ def derive(samples: list[dict[str, Any]], start_tile: Optional[tuple[int, int, i
         quiet = (prev_batt is False) and (batt is False)
         if quiet and tile is not None and prev_tile is not None:
             if tile != prev_tile:
-                steps += 1
+                moved = distance(prev_tile, tile) if distance is not None else None
+                moved = moved if isinstance(moved, int) and moved > 0 else 1
+                steps += moved
+                scripted += moved - 1
             elif str(d.get("input", "")).upper() in DIRECTIONS:
                 lost += 1
         if tile is not None:
@@ -124,6 +139,8 @@ def derive(samples: list[dict[str, Any]], start_tile: Optional[tuple[int, int, i
         "battle_inputs": battle_inputs,
         "battle_started_at": battle_started_at,
         "end_in_battle": prev_batt,
+        "scripted_tiles": scripted,
+        "end_tile": None if blind else prev_tile,
     }
 
 

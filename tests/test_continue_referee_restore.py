@@ -42,7 +42,8 @@ def test_restore_caps_stamps_to_savepoint_turn(tmp_path):
     _restore_referee_state(sp, new_run, up_to_turn=20)
 
     restored = json.loads((new_run / "referee_state.json").read_text())
-    assert restored == {"stamps": {"a": 10}, "autofilled": [], "positions": [], "battle_records": [], "traced_steps": {}}
+    assert restored == {"stamps": {"a": 10}, "autofilled": [], "positions": [], "battle_records": [], "traced_steps": {},
+                        "traced_end": {}}
 
 
 def test_restore_caps_battle_records_and_traced_steps_to_savepoint_turn(tmp_path):
@@ -54,12 +55,14 @@ def test_restore_caps_battle_records_and_traced_steps_to_savepoint_turn(tmp_path
         "stamps": {}, "autofilled": [], "positions": [],
         "battle_records": [[9, False, 1, 1, 0, []], [10, True, 2, 2, 0, []], [11, False, 2, 2, 0, [327]], "junk"],
         "traced_steps": {"9": 4, "10": 2, "11": 6, "x": 1},
+        "traced_end": {"9": [3, 0, 6, 7], "11": [3, 0, 6, 8], "10": [1, 2], "y": [3, 0, 1, 1]},
     }))
     new_run = tmp_path / "new"; new_run.mkdir()
     _restore_referee_state(sp, new_run, 10)
     restored = json.loads((new_run / "referee_state.json").read_text())
     assert restored["battle_records"] == [[9, False, 1, 1, 0, []], [10, True, 2, 2, 0, []]]
     assert restored["traced_steps"] == {"9": 4, "10": 2}
+    assert restored["traced_end"] == {"9": [3, 0, 6, 7]}  # capped, and a malformed tile is dropped
 
 
 def test_restored_latch_is_what_a_fresh_referee_loads(tmp_path):

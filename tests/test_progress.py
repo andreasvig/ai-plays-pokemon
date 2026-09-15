@@ -407,7 +407,7 @@ def test_restore_referee_state_caps_positions_to_savepoint_turn(tmp_path):
     restored = json.loads((new_run / "referee_state.json").read_text())
     assert restored == {"stamps": {"a": 10}, "autofilled": [],
                         "positions": [[10, 3, 0, 1, 0], [20, 3, 0, 2, 0]],
-                        "battle_records": [], "traced_steps": {}}
+                        "battle_records": [], "traced_steps": {}, "traced_end": {}}
 
 
 def test_restore_legacy_bundle_without_positions(tmp_path):

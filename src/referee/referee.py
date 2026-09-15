@@ -234,6 +234,9 @@ class Referee:
             "battle_records": self.battles.export_state()["battle_records"],
             # Exact overworld steps per traced turn (src/referee/trace.py).
             "traced_steps": self.progress.export_state().get("traced_steps", {}),
+            # The trace's last sampled tile per turn ``[g, m, x, y]`` — the poll
+            # may stand a warp further (2026-09-15, plan R3).
+            "traced_end": self.progress.export_state().get("traced_end", {}),
         }
 
     def stamped_events(self) -> list[dict]:
@@ -418,9 +421,17 @@ class Referee:
         samples = trace.decode_samples(rows, self.last_encryption_key)
         start_tile = tuple(self.progress.positions[-1][1:]) if self.progress.positions else None
         start_in_battle = self.battles.records[-1][1] if self.battles.records else (False if turn_number <= 1 else None)
-        derived = trace.derive(samples, start_tile, start_in_battle)
+        graph = self.progress.graph
+
+        def _distance(a: tuple, b: tuple) -> Optional[int]:
+            if graph is None:
+                return None
+            na, nb = graph.node_id(*a), graph.node_id(*b)
+            return graph.steps_between(na, nb) if na is not None and nb is not None else None
+
+        derived = trace.derive(samples, start_tile, start_in_battle, distance=_distance)
         if derived["overworld_steps"] is not None:  # a blind trace leaves the between-poll bound in place
-            self.progress.record_traced_steps(turn_number, derived["overworld_steps"])
+            self.progress.record_traced_steps(turn_number, derived["overworld_steps"], end_tile=derived["end_tile"])
         self.logger.log_event("turn_input_trace", {"turn": turn_number, **derived, "samples": samples})
         return derived
 

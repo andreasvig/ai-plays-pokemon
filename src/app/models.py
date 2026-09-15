@@ -188,6 +188,13 @@ class RunSummary(BaseModel):
     # [{node_id, d_open, steps, source, status}] (battle_stats.movement). Lets a
     # model page show the per-leg directness without recomputing it.
     movement_legs: list[dict] | None = None
+    # Route (2026-09-15, artifacts/route-fidelity/plan.md): the run's tile
+    # sequence from the per-input trace + polls (src/app/route.py), published
+    # as ``data/runs/<run_id>/route.json``. ``route_points`` = tiles visited,
+    # ``route_coverage`` = share of polled turns whose trace saw a tile (1.0 =
+    # every step of the run is on record). None for runs without a trace.
+    route_points: int | None = None
+    route_coverage: float | None = None
     # Between-gate progress (2026-09-09, artifacts/granular-progress/plan.md):
     # ``gates_reached`` plus the fraction of the CURRENT leg walked, where the
     # fraction is 1 - d_min/D on the FireRed walk graph (d_min = steps from the

@@ -120,6 +120,17 @@ def _gn(g: WalkGraph, name: str) -> tuple[int, int]:
     raise AssertionError(f"{name} not in graph")
 
 
+def test_firered_graph_places_outdoor_maps_in_one_world_frame(firered):
+    """Graph version 2 (2026-09-15): Pallet Town's top-left is (0, 0); Route 1
+    sits directly above it (40 tall), Viridian above that; indoor maps have no
+    frame. Pixel = world × meta["tile_px"]."""
+    assert firered.meta["version"] == 2 and firered.meta["tile_px"] == 16
+    assert firered.world_xy(3, 0, 6, 8) == (6, 8)          # Pallet Town, the player's door step
+    assert firered.world_xy(3, 19, 10, 39) == (10, -1)      # Route 1's bottom row touches Pallet Town's top
+    assert firered.world_xy(3, 1, 0, 39) == (-12, -41)      # Viridian, offset 12 west of Route 1
+    assert firered.world_xy(4, 0, 4, 8) is None             # the player's house: indoor, no frame
+
+
 def test_firered_graph_covers_the_first_badge_route(firered):
     for name in ("PalletTown", "PalletTown_PlayersHouse_2F", "PalletTown_ProfessorOaksLab", "Route1", "ViridianCity",
                  "ViridianCity_Mart", "ViridianCity_PokemonCenter_1F", "Route2", "ViridianForest", "PewterCity", "PewterCity_Gym"):

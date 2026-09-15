@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from src.app import battle_stats
+from src.app import battle_stats, route
 from src.app.models import RunKind, RunStatus, RunSummary
 from src.referee.progress import OPEN_LEG_FRACTION_CAP
 
@@ -38,7 +38,7 @@ _DEFAULT_LADDER = Path("configs/checkpoints-firered-v1.yaml")
 #   1 — 2026-09-09: error / crash (why a crashed run ended).
 #   2 — 2026-09-09: record (the spec the run was recorded with, for continues).
 #   3 — 2026-09-11: open-leg fraction capped at OPEN_LEG_FRACTION_CAP.
-PROJECTION_VERSION = 10  # 10 (2026-09-14): starter leg re-scored to the ball taken (score_to reached) in every run_summary; 9: Oak's Parcel leg re-scored (scripts/backfill_parcel_leg.py); 8: gate_times_s / gate_costs_usd / movement_legs
+PROJECTION_VERSION = 11  # 11 (2026-09-15): route_points / route_coverage (src/app/route.py); 10 (2026-09-14): starter leg re-scored to the ball taken (score_to reached) in every run_summary; 9: Oak's Parcel leg re-scored (scripts/backfill_parcel_leg.py); 8: gate_times_s / gate_costs_usd / movement_legs
 
 # Status values the report treats as "cleared" for a gate (mirror report.py).
 _CLEARED_STATUSES = ("done", "auto")
@@ -348,6 +348,7 @@ def project_run_dir(run_dir: Path) -> RunSummary | None:
     battles, battle_fidelity = battle_stats.battle_summary(run_dir, summary.get("referee"), turns)
     move = battle_stats.movement(summary.get("referee"), battle_stats.load_steps_backfill(run_dir),
                                  (summary.get("session") or {}).get("total_turns"))
+    run_route = route.load_route(run_dir)
 
     # --- explicit-or-inferred top-level fields ---
     run_id = summary.get("run_id") or run_dir.name
@@ -487,6 +488,8 @@ def project_run_dir(run_dir: Path) -> RunSummary | None:
         movement_efficiency=move["efficiency"] if move else None,
         steps_fidelity=move["fidelity"] if move else None,
         movement_legs=move["legs"] if move else None,
+        route_points=len(run_route["visits"]) if run_route else None,
+        route_coverage=run_route["coverage"] if run_route else None,
         progress=progress,
         leg_gate=leg_gate,
         leg_fraction=leg_fraction,

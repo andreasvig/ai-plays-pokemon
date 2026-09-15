@@ -1128,11 +1128,17 @@ def _restore_referee_state(savepoint_dir, new_run_dir: Path, up_to_turn: int) ->
         str(int(t)): int(n) for t, n in (traced.items() if isinstance(traced, dict) else [])
         if str(t).lstrip("-").isdigit() and int(t) <= up_to_turn and isinstance(n, (int, float))
     }
+    ends = data.get("traced_end", {}) if isinstance(data, dict) else {}
+    kept_ends = {
+        str(int(t)): [int(v) for v in c] for t, c in (ends.items() if isinstance(ends, dict) else [])
+        if str(t).lstrip("-").isdigit() and int(t) <= up_to_turn and isinstance(c, (list, tuple)) and len(c) == 4
+        and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in c)
+    }
     try:
         (Path(new_run_dir) / "referee_state.json").write_text(
             json.dumps(
                 {"stamps": kept, "autofilled": autofilled, "positions": kept_positions,
-                 "battle_records": kept_records, "traced_steps": kept_traced},
+                 "battle_records": kept_records, "traced_steps": kept_traced, "traced_end": kept_ends},
                 indent=2,
             )
         )
