@@ -352,14 +352,14 @@
           "scored": true,
           "opened_turn": 93,
           "closed_turn": 112,
-          "d_open": null,
-          "d_min": null,
-          "distance_now": null,
-          "fraction": null,
+          "d_open": 36,
+          "d_min": 4,
+          "distance_now": 4,
+          "fraction": 0.8888888888888888,
           "steps_walked": 158,
           "tiles_seen": 19,
           "off_graph": 0,
-          "efficiency": null
+          "efficiency": 0.22784810126582278
         },
         {
           "index": 8,

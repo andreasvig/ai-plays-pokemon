@@ -220,6 +220,8 @@
         "distance_now": 15,
         "fraction": 0.23076923076923073,
         "steps_walked": 20,
+        "walls_hit": 16,
+        "charged_steps": 36,
         "tiles_seen": 7,
         "off_graph": 0,
         "efficiency": null,
@@ -240,9 +242,11 @@
           "distance_now": 0,
           "fraction": 1.0,
           "steps_walked": 11,
+          "walls_hit": 3,
+          "charged_steps": 14,
           "tiles_seen": 6,
           "off_graph": 0,
-          "efficiency": 0.8181818181818182,
+          "efficiency": 0.6428571428571429,
           "steps_source": "trace",
           "traced_turns": 5
         },
@@ -259,6 +263,8 @@
           "distance_now": 1,
           "fraction": 0.9166666666666666,
           "steps_walked": 14,
+          "walls_hit": 0,
+          "charged_steps": 14,
           "tiles_seen": 5,
           "off_graph": 0,
           "efficiency": 0.8571428571428571,
@@ -278,6 +284,8 @@
           "distance_now": 15,
           "fraction": 0.23076923076923073,
           "steps_walked": 20,
+          "walls_hit": 16,
+          "charged_steps": 36,
           "tiles_seen": 7,
           "off_graph": 0,
           "efficiency": null,
@@ -311,6 +319,75 @@
       "turns_started_in_battle": 0,
       "turns_polled": 41,
       "segments": []
+    },
+    "inputs": {
+      "inputs": 97,
+      "overworld_steps": 44,
+      "inputs_lost": 50,
+      "moved_inputs": 44,
+      "battle_inputs": 0,
+      "battle_edge": 0,
+      "walls_hit": 19,
+      "turns_to_face": 30,
+      "blocked_by_actor": 1,
+      "blocked_unknown": 0,
+      "idle_ab": 3,
+      "unclassified": 0,
+      "traced_turns": 40,
+      "overworld_inputs": 97,
+      "wall_rate": 0.195876,
+      "worst_turns": [
+        {
+          "turn": 11,
+          "walls": 2,
+          "inputs": 9
+        },
+        {
+          "turn": 1,
+          "walls": 2,
+          "inputs": 7
+        },
+        {
+          "turn": 26,
+          "walls": 2,
+          "inputs": 3
+        },
+        {
+          "turn": 18,
+          "walls": 2,
+          "inputs": 3
+        },
+        {
+          "turn": 12,
+          "walls": 1,
+          "inputs": 5
+        },
+        {
+          "turn": 14,
+          "walls": 1,
+          "inputs": 4
+        },
+        {
+          "turn": 28,
+          "walls": 1,
+          "inputs": 3
+        },
+        {
+          "turn": 27,
+          "walls": 1,
+          "inputs": 3
+        },
+        {
+          "turn": 20,
+          "walls": 1,
+          "inputs": 3
+        },
+        {
+          "turn": 13,
+          "walls": 1,
+          "inputs": 3
+        }
+      ]
     }
   },
   "status": "terminated",

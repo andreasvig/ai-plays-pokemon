@@ -219,7 +219,9 @@
         "d_min": 2,
         "distance_now": 7,
         "fraction": 0.95,
-        "steps_walked": 1117,
+        "steps_walked": 744,
+        "walls_hit": 146,
+        "charged_steps": 890,
         "tiles_seen": 77,
         "off_graph": 0,
         "efficiency": null,
@@ -240,9 +242,11 @@
           "distance_now": 0,
           "fraction": 1.0,
           "steps_walked": 15,
+          "walls_hit": 5,
+          "charged_steps": 20,
           "tiles_seen": 3,
           "off_graph": 0,
-          "efficiency": 0.6,
+          "efficiency": 0.45,
           "steps_source": "trace",
           "traced_turns": 2
         },
@@ -259,6 +263,8 @@
           "distance_now": 1,
           "fraction": 0.9166666666666666,
           "steps_walked": 14,
+          "walls_hit": 0,
+          "charged_steps": 14,
           "tiles_seen": 2,
           "off_graph": 0,
           "efficiency": 0.8571428571428571,
@@ -278,9 +284,11 @@
           "distance_now": 27,
           "fraction": 0.7692307692307692,
           "steps_walked": 44,
+          "walls_hit": 5,
+          "charged_steps": 49,
           "tiles_seen": 3,
           "off_graph": 0,
-          "efficiency": 0.29545454545454547,
+          "efficiency": 0.2653061224489796,
           "steps_source": "trace",
           "traced_turns": 2
         },
@@ -297,6 +305,8 @@
           "distance_now": 0,
           "fraction": 1.0,
           "steps_walked": 9,
+          "walls_hit": 0,
+          "charged_steps": 9,
           "tiles_seen": 3,
           "off_graph": 0,
           "efficiency": 0.5555555555555556,
@@ -316,6 +326,8 @@
           "distance_now": 4,
           "fraction": 0.0,
           "steps_walked": 4,
+          "walls_hit": 0,
+          "charged_steps": 4,
           "tiles_seen": 2,
           "off_graph": 0,
           "efficiency": null,
@@ -335,9 +347,11 @@
           "distance_now": 7,
           "fraction": 0.8095238095238095,
           "steps_walked": 36,
+          "walls_hit": 28,
+          "charged_steps": 64,
           "tiles_seen": 4,
           "off_graph": 0,
-          "efficiency": 0.5833333333333334,
+          "efficiency": 0.328125,
           "steps_source": "trace",
           "traced_turns": 3
         },
@@ -354,9 +368,11 @@
           "distance_now": 8,
           "fraction": 0.8490566037735849,
           "steps_walked": 91,
+          "walls_hit": 97,
+          "charged_steps": 188,
           "tiles_seen": 11,
           "off_graph": 0,
-          "efficiency": 0.5824175824175825,
+          "efficiency": 0.28191489361702127,
           "steps_source": "trace",
           "traced_turns": 13
         },
@@ -373,6 +389,8 @@
           "distance_now": 4,
           "fraction": 0.8823529411764706,
           "steps_walked": 40,
+          "walls_hit": 0,
+          "charged_steps": 40,
           "tiles_seen": 5,
           "off_graph": 0,
           "efficiency": 0.85,
@@ -392,9 +410,11 @@
           "distance_now": 0,
           "fraction": 1.0,
           "steps_walked": 128,
+          "walls_hit": 51,
+          "charged_steps": 179,
           "tiles_seen": 16,
           "off_graph": 0,
-          "efficiency": 0.8359375,
+          "efficiency": 0.5977653631284916,
           "steps_source": "trace",
           "traced_turns": 17
         },
@@ -411,9 +431,11 @@
           "distance_now": 0,
           "fraction": 1.0,
           "steps_walked": 223,
+          "walls_hit": 44,
+          "charged_steps": 267,
           "tiles_seen": 22,
           "off_graph": 0,
-          "efficiency": 0.8340807174887892,
+          "efficiency": 0.6966292134831461,
           "steps_source": "trace",
           "traced_turns": 24
         },
@@ -429,10 +451,12 @@
           "d_min": 5,
           "distance_now": 5,
           "fraction": 0.9700598802395209,
-          "steps_walked": 1137,
+          "steps_walked": 914,
+          "walls_hit": 200,
+          "charged_steps": 1114,
           "tiles_seen": 95,
           "off_graph": 0,
-          "efficiency": 0.1468777484608619,
+          "efficiency": 0.14991023339317774,
           "steps_source": "trace",
           "traced_turns": 139
         },
@@ -448,7 +472,9 @@
           "d_min": 2,
           "distance_now": 7,
           "fraction": 0.95,
-          "steps_walked": 1117,
+          "steps_walked": 744,
+          "walls_hit": 146,
+          "charged_steps": 890,
           "tiles_seen": 77,
           "off_graph": 0,
           "efficiency": null,
@@ -1074,6 +1100,75 @@
           ],
           "trainer_id": null,
           "won": null
+        }
+      ]
+    },
+    "inputs": {
+      "inputs": 4158,
+      "overworld_steps": 2258,
+      "inputs_lost": 769,
+      "moved_inputs": 2227,
+      "battle_inputs": 834,
+      "battle_edge": 85,
+      "walls_hit": 576,
+      "turns_to_face": 64,
+      "blocked_by_actor": 106,
+      "blocked_unknown": 23,
+      "idle_ab": 243,
+      "unclassified": 0,
+      "traced_turns": 310,
+      "overworld_inputs": 3324,
+      "wall_rate": 0.173285,
+      "worst_turns": [
+        {
+          "turn": 93,
+          "walls": 16,
+          "inputs": 24
+        },
+        {
+          "turn": 22,
+          "walls": 16,
+          "inputs": 20
+        },
+        {
+          "turn": 21,
+          "walls": 15,
+          "inputs": 29
+        },
+        {
+          "turn": 20,
+          "walls": 15,
+          "inputs": 28
+        },
+        {
+          "turn": 12,
+          "walls": 15,
+          "inputs": 19
+        },
+        {
+          "turn": 62,
+          "walls": 13,
+          "inputs": 16
+        },
+        {
+          "turn": 15,
+          "walls": 12,
+          "inputs": 22
+        },
+        {
+          "turn": 35,
+          "walls": 12,
+          "inputs": 20
+        },
+        {
+          "turn": 34,
+          "walls": 12,
+          "inputs": 18
+        },
+        {
+          "turn": 36,
+          "walls": 12,
+          "inputs": 14
         }
       ]
     }

@@ -125,13 +125,14 @@
     "battle_fidelity": "live",
     "overworld_steps": 2258,
     "shortest_steps": 659,
-    "movement_efficiency": 0.29185119574845,
+    "movement_efficiency": 0.23253352152434723,
     "steps_fidelity": "trace",
     "movement_legs": [
       {
         "node_id": "left_bedroom",
         "d_open": 9,
         "steps": 15,
+        "walls": 5,
         "source": "trace",
         "status": "closed"
       },
@@ -139,6 +140,7 @@
         "node_id": "left_house",
         "d_open": 12,
         "steps": 14,
+        "walls": 0,
         "source": "trace",
         "status": "closed"
       },
@@ -146,6 +148,7 @@
         "node_id": "oaks_lab_entered",
         "d_open": 13,
         "steps": 44,
+        "walls": 5,
         "source": "trace",
         "status": "closed"
       },
@@ -153,6 +156,7 @@
         "node_id": "starter_chosen",
         "d_open": 5,
         "steps": 9,
+        "walls": 0,
         "source": "trace",
         "status": "closed"
       },
@@ -160,6 +164,7 @@
         "node_id": "route1_reached",
         "d_open": 21,
         "steps": 36,
+        "walls": 28,
         "source": "trace",
         "status": "closed"
       },
@@ -167,6 +172,7 @@
         "node_id": "viridian_reached",
         "d_open": 53,
         "steps": 91,
+        "walls": 97,
         "source": "trace",
         "status": "closed"
       },
@@ -174,6 +180,7 @@
         "node_id": "parcel_delivered",
         "d_open": 34,
         "steps": 40,
+        "walls": 0,
         "source": "trace",
         "status": "closed"
       },
@@ -181,6 +188,7 @@
         "node_id": "pokedex_received",
         "d_open": 107,
         "steps": 128,
+        "walls": 51,
         "source": "trace",
         "status": "closed"
       },
@@ -188,6 +196,7 @@
         "node_id": "viridian_forest_reached",
         "d_open": 186,
         "steps": 223,
+        "walls": 44,
         "source": "trace",
         "status": "closed"
       },
@@ -195,6 +204,7 @@
         "node_id": "pewter_reached",
         "d_open": 167,
         "steps": 914,
+        "walls": 200,
         "source": "trace",
         "status": "closed"
       },
@@ -202,19 +212,92 @@
         "node_id": "brock_defeated",
         "d_open": 52,
         "steps": 744,
+        "walls": 146,
         "source": "trace",
         "status": "open"
       }
     ],
     "route_points": 2266,
     "route_coverage": 1.0,
+    "charged_steps": 2834,
+    "walls_hit": 576,
+    "wall_rate": 0.173285,
+    "input_breakdown": {
+      "inputs": 4158,
+      "overworld_inputs": 3324,
+      "overworld_steps": 2258,
+      "inputs_lost": 769,
+      "moved_inputs": 2227,
+      "battle_inputs": 834,
+      "battle_edge": 85,
+      "walls_hit": 576,
+      "turns_to_face": 64,
+      "blocked_by_actor": 106,
+      "blocked_unknown": 23,
+      "idle_ab": 243,
+      "unclassified": 0,
+      "traced_turns": 310,
+      "wall_rate": 0.173285,
+      "worst_turns": [
+        {
+          "turn": 93,
+          "walls": 16,
+          "inputs": 24
+        },
+        {
+          "turn": 22,
+          "walls": 16,
+          "inputs": 20
+        },
+        {
+          "turn": 21,
+          "walls": 15,
+          "inputs": 29
+        },
+        {
+          "turn": 20,
+          "walls": 15,
+          "inputs": 28
+        },
+        {
+          "turn": 12,
+          "walls": 15,
+          "inputs": 19
+        },
+        {
+          "turn": 62,
+          "walls": 13,
+          "inputs": 16
+        },
+        {
+          "turn": 15,
+          "walls": 12,
+          "inputs": 22
+        },
+        {
+          "turn": 35,
+          "walls": 12,
+          "inputs": 20
+        },
+        {
+          "turn": 34,
+          "walls": 12,
+          "inputs": 18
+        },
+        {
+          "turn": 36,
+          "walls": 12,
+          "inputs": 14
+        }
+      ]
+    },
     "progress": 11.95,
     "leg_gate": "brock_defeated",
     "leg_fraction": 0.95,
     "leg_distance_min": 2,
     "leg_distance_open": 59,
     "termination_reason": "leg_cap:brock_defeated",
-    "projection_version": 12,
+    "projection_version": 13,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -278,13 +361,14 @@
     "battle_fidelity": "live",
     "overworld_steps": 45,
     "shortest_steps": 21,
-    "movement_efficiency": 0.4666666666666667,
+    "movement_efficiency": 0.328125,
     "steps_fidelity": "trace",
     "movement_legs": [
       {
         "node_id": "left_bedroom",
         "d_open": 9,
         "steps": 11,
+        "walls": 3,
         "source": "trace",
         "status": "closed"
       },
@@ -292,6 +376,7 @@
         "node_id": "left_house",
         "d_open": 12,
         "steps": 14,
+        "walls": 0,
         "source": "trace",
         "status": "closed"
       },
@@ -299,19 +384,92 @@
         "node_id": "oaks_lab_entered",
         "d_open": 0,
         "steps": 20,
+        "walls": 16,
         "source": "trace",
         "status": "open"
       }
     ],
     "route_points": 46,
     "route_coverage": 1.0,
+    "charged_steps": 64,
+    "walls_hit": 19,
+    "wall_rate": 0.195876,
+    "input_breakdown": {
+      "inputs": 97,
+      "overworld_inputs": 97,
+      "overworld_steps": 44,
+      "inputs_lost": 50,
+      "moved_inputs": 44,
+      "battle_inputs": 0,
+      "battle_edge": 0,
+      "walls_hit": 19,
+      "turns_to_face": 30,
+      "blocked_by_actor": 1,
+      "blocked_unknown": 0,
+      "idle_ab": 3,
+      "unclassified": 0,
+      "traced_turns": 40,
+      "wall_rate": 0.195876,
+      "worst_turns": [
+        {
+          "turn": 11,
+          "walls": 2,
+          "inputs": 9
+        },
+        {
+          "turn": 1,
+          "walls": 2,
+          "inputs": 7
+        },
+        {
+          "turn": 26,
+          "walls": 2,
+          "inputs": 3
+        },
+        {
+          "turn": 18,
+          "walls": 2,
+          "inputs": 3
+        },
+        {
+          "turn": 12,
+          "walls": 1,
+          "inputs": 5
+        },
+        {
+          "turn": 14,
+          "walls": 1,
+          "inputs": 4
+        },
+        {
+          "turn": 28,
+          "walls": 1,
+          "inputs": 3
+        },
+        {
+          "turn": 27,
+          "walls": 1,
+          "inputs": 3
+        },
+        {
+          "turn": 20,
+          "walls": 1,
+          "inputs": 3
+        },
+        {
+          "turn": 13,
+          "walls": 1,
+          "inputs": 3
+        }
+      ]
+    },
     "progress": 2.230769230769231,
     "leg_gate": "oaks_lab_entered",
     "leg_fraction": 0.23076923076923073,
     "leg_distance_min": 10,
     "leg_distance_open": 13,
     "termination_reason": "leg_cap:oaks_lab_entered",
-    "projection_version": 12,
+    "projection_version": 13,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -426,6 +584,7 @@
         "node_id": "left_bedroom",
         "d_open": 9,
         "steps": 17,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -433,6 +592,7 @@
         "node_id": "left_house",
         "d_open": 11,
         "steps": 35,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -440,6 +600,7 @@
         "node_id": "oaks_lab_entered",
         "d_open": 16,
         "steps": 48,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -447,6 +608,7 @@
         "node_id": "starter_chosen",
         "d_open": 3,
         "steps": 19,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -454,6 +616,7 @@
         "node_id": "rival1_done",
         "d_open": 4,
         "steps": 15,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -461,6 +624,7 @@
         "node_id": "route1_reached",
         "d_open": 21,
         "steps": 25,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -468,6 +632,7 @@
         "node_id": "viridian_reached",
         "d_open": 54,
         "steps": 123,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -475,6 +640,7 @@
         "node_id": "parcel_delivered",
         "d_open": 39,
         "steps": 137,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -482,6 +648,7 @@
         "node_id": "pokedex_received",
         "d_open": 107,
         "steps": 154,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -489,6 +656,7 @@
         "node_id": "viridian_forest_reached",
         "d_open": 186,
         "steps": 203,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -496,19 +664,24 @@
         "node_id": "pewter_reached",
         "d_open": 81,
         "steps": 1427,
+        "walls": 0,
         "source": "video",
         "status": "open"
       }
     ],
     "route_points": null,
     "route_coverage": null,
+    "charged_steps": null,
+    "walls_hit": null,
+    "wall_rate": null,
+    "input_breakdown": null,
     "progress": 10.592814371257486,
     "leg_gate": "pewter_reached",
     "leg_fraction": 0.592814371257485,
     "leg_distance_min": 68,
     "leg_distance_open": 167,
     "termination_reason": "leg_cap:pewter_reached",
-    "projection_version": 12,
+    "projection_version": 13,
     "continued_from": "2026-09-12_05-47-17_config-5.1__deepseek-v4-1-flash-max",
     "resumed": true,
     "harness": "append_compact",
@@ -600,6 +773,7 @@
         "node_id": "left_bedroom",
         "d_open": 9,
         "steps": 24,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -607,6 +781,7 @@
         "node_id": "left_house",
         "d_open": 12,
         "steps": 13,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -614,6 +789,7 @@
         "node_id": "oaks_lab_entered",
         "d_open": 13,
         "steps": 36,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -621,6 +797,7 @@
         "node_id": "starter_chosen",
         "d_open": 1,
         "steps": 1,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -628,6 +805,7 @@
         "node_id": "rival1_done",
         "d_open": 4,
         "steps": 5,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -635,19 +813,24 @@
         "node_id": "route1_reached",
         "d_open": 15,
         "steps": 54,
+        "walls": 0,
         "source": "video",
         "status": "open"
       }
     ],
     "route_points": null,
     "route_coverage": null,
+    "charged_steps": null,
+    "walls_hit": null,
+    "wall_rate": null,
+    "input_breakdown": null,
     "progress": 5.68,
     "leg_gate": "route1_reached",
     "leg_fraction": 0.6799999999999999,
     "leg_distance_min": 8,
     "leg_distance_open": 25,
     "termination_reason": "leg_cap:route1_reached",
-    "projection_version": 12,
+    "projection_version": 13,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -772,6 +955,7 @@
         "node_id": "left_bedroom",
         "d_open": 9,
         "steps": 8,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -779,6 +963,7 @@
         "node_id": "left_house",
         "d_open": 12,
         "steps": 13,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -786,6 +971,7 @@
         "node_id": "oaks_lab_entered",
         "d_open": 13,
         "steps": 13,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -793,6 +979,7 @@
         "node_id": "starter_chosen",
         "d_open": 4,
         "steps": 18,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -800,6 +987,7 @@
         "node_id": "rival1_done",
         "d_open": 5,
         "steps": 7,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -807,6 +995,7 @@
         "node_id": "route1_reached",
         "d_open": 25,
         "steps": 29,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -814,6 +1003,7 @@
         "node_id": "viridian_reached",
         "d_open": 59,
         "steps": 209,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -821,6 +1011,7 @@
         "node_id": "parcel_delivered",
         "d_open": 32,
         "steps": 110,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -828,6 +1019,7 @@
         "node_id": "pokedex_received",
         "d_open": 106,
         "steps": 111,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -835,6 +1027,7 @@
         "node_id": "viridian_forest_reached",
         "d_open": 186,
         "steps": 204,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -842,19 +1035,24 @@
         "node_id": "pewter_reached",
         "d_open": 0,
         "steps": 1640,
+        "walls": 0,
         "source": "video",
         "status": "open"
       }
     ],
     "route_points": null,
     "route_coverage": null,
+    "charged_steps": null,
+    "walls_hit": null,
+    "wall_rate": null,
+    "input_breakdown": null,
     "progress": 10.29940119760479,
     "leg_gate": "pewter_reached",
     "leg_fraction": 0.29940119760479045,
     "leg_distance_min": 117,
     "leg_distance_open": 167,
     "termination_reason": "leg_cap:pewter_reached",
-    "projection_version": 12,
+    "projection_version": 13,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -952,6 +1150,7 @@
         "node_id": "left_bedroom",
         "d_open": 9,
         "steps": 20,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -959,6 +1158,7 @@
         "node_id": "left_house",
         "d_open": 6,
         "steps": 11,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -966,6 +1166,7 @@
         "node_id": "oaks_lab_entered",
         "d_open": 13,
         "steps": 18,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -973,6 +1174,7 @@
         "node_id": "starter_chosen",
         "d_open": 5,
         "steps": 5,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -980,6 +1182,7 @@
         "node_id": "rival1_done",
         "d_open": 8,
         "steps": 8,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -987,6 +1190,7 @@
         "node_id": "route1_reached",
         "d_open": 25,
         "steps": 82,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -994,6 +1198,7 @@
         "node_id": "viridian_reached",
         "d_open": 53,
         "steps": 93,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1001,19 +1206,24 @@
         "node_id": "parcel_delivered",
         "d_open": 0,
         "steps": 247,
+        "walls": 0,
         "source": "video",
         "status": "open"
       }
     ],
     "route_points": null,
     "route_coverage": null,
+    "charged_steps": null,
+    "walls_hit": null,
+    "wall_rate": null,
+    "input_breakdown": null,
     "progress": 7.815789473684211,
     "leg_gate": "parcel_delivered",
     "leg_fraction": 0.8157894736842105,
     "leg_distance_min": 7,
     "leg_distance_open": 38,
     "termination_reason": "leg_cap:parcel_delivered",
-    "projection_version": 12,
+    "projection_version": 13,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -1107,6 +1317,7 @@
         "node_id": "left_bedroom",
         "d_open": 9,
         "steps": 66,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1114,6 +1325,7 @@
         "node_id": "left_house",
         "d_open": 12,
         "steps": 17,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1121,6 +1333,7 @@
         "node_id": "oaks_lab_entered",
         "d_open": 13,
         "steps": 13,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1128,6 +1341,7 @@
         "node_id": "starter_chosen",
         "d_open": 1,
         "steps": 1,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1135,6 +1349,7 @@
         "node_id": "rival1_done",
         "d_open": 4,
         "steps": 4,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1142,6 +1357,7 @@
         "node_id": "route1_reached",
         "d_open": 25,
         "steps": 41,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1149,19 +1365,24 @@
         "node_id": "viridian_reached",
         "d_open": 29,
         "steps": 479,
+        "walls": 0,
         "source": "video",
         "status": "open"
       }
     ],
     "route_points": null,
     "route_coverage": null,
+    "charged_steps": null,
+    "walls_hit": null,
+    "wall_rate": null,
+    "input_breakdown": null,
     "progress": 6.620689655172414,
     "leg_gate": "viridian_reached",
     "leg_fraction": 0.6206896551724138,
     "leg_distance_min": 22,
     "leg_distance_open": 58,
     "termination_reason": "leg_cap:viridian_reached",
-    "projection_version": 12,
+    "projection_version": 13,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -1318,6 +1539,7 @@
         "node_id": "left_bedroom",
         "d_open": 9,
         "steps": 9,
+        "walls": 0,
         "source": "bound",
         "status": "closed"
       },
@@ -1325,6 +1547,7 @@
         "node_id": "left_house",
         "d_open": 12,
         "steps": 13,
+        "walls": 0,
         "source": "bound",
         "status": "closed"
       },
@@ -1332,6 +1555,7 @@
         "node_id": "oaks_lab_entered",
         "d_open": 13,
         "steps": 40,
+        "walls": 0,
         "source": "bound",
         "status": "closed"
       },
@@ -1339,6 +1563,7 @@
         "node_id": "starter_chosen",
         "d_open": 4,
         "steps": 6,
+        "walls": 0,
         "source": "bound",
         "status": "closed"
       },
@@ -1346,6 +1571,7 @@
         "node_id": "rival1_done",
         "d_open": 5,
         "steps": 12,
+        "walls": 0,
         "source": "bound",
         "status": "closed"
       },
@@ -1353,6 +1579,7 @@
         "node_id": "route1_reached",
         "d_open": 19,
         "steps": 66,
+        "walls": 0,
         "source": "bound",
         "status": "closed"
       },
@@ -1360,6 +1587,7 @@
         "node_id": "viridian_reached",
         "d_open": 52,
         "steps": 240,
+        "walls": 0,
         "source": "bound",
         "status": "closed"
       },
@@ -1367,6 +1595,7 @@
         "node_id": "parcel_delivered",
         "d_open": 36,
         "steps": 36,
+        "walls": 0,
         "source": "bound",
         "status": "closed"
       },
@@ -1374,6 +1603,7 @@
         "node_id": "pokedex_received",
         "d_open": 107,
         "steps": 109,
+        "walls": 0,
         "source": "bound",
         "status": "closed"
       },
@@ -1381,6 +1611,7 @@
         "node_id": "viridian_forest_reached",
         "d_open": 186,
         "steps": 228,
+        "walls": 0,
         "source": "bound",
         "status": "closed"
       },
@@ -1388,6 +1619,7 @@
         "node_id": "pewter_reached",
         "d_open": 167,
         "steps": 883,
+        "walls": 0,
         "source": "bound",
         "status": "closed"
       },
@@ -1395,19 +1627,24 @@
         "node_id": "brock_defeated",
         "d_open": 60,
         "steps": 126,
+        "walls": 0,
         "source": "bound",
         "status": "closed"
       }
     ],
     "route_points": null,
     "route_coverage": null,
+    "charged_steps": null,
+    "walls_hit": null,
+    "wall_rate": null,
+    "input_breakdown": null,
     "progress": 12.0,
     "leg_gate": null,
     "leg_fraction": null,
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": null,
-    "projection_version": 12,
+    "projection_version": 13,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -1523,6 +1760,7 @@
         "node_id": "left_bedroom",
         "d_open": 9,
         "steps": 72,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1530,6 +1768,7 @@
         "node_id": "left_house",
         "d_open": 10,
         "steps": 11,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1537,6 +1776,7 @@
         "node_id": "oaks_lab_entered",
         "d_open": 13,
         "steps": 15,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1544,6 +1784,7 @@
         "node_id": "starter_chosen",
         "d_open": 1,
         "steps": 1,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1551,6 +1792,7 @@
         "node_id": "rival1_done",
         "d_open": 4,
         "steps": 14,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1558,6 +1800,7 @@
         "node_id": "route1_reached",
         "d_open": 25,
         "steps": 49,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1565,6 +1808,7 @@
         "node_id": "viridian_reached",
         "d_open": 56,
         "steps": 180,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1572,6 +1816,7 @@
         "node_id": "parcel_delivered",
         "d_open": 36,
         "steps": 150,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1579,6 +1824,7 @@
         "node_id": "pokedex_received",
         "d_open": 107,
         "steps": 387,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1586,6 +1832,7 @@
         "node_id": "viridian_forest_reached",
         "d_open": 186,
         "steps": 280,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1593,19 +1840,24 @@
         "node_id": "pewter_reached",
         "d_open": 0,
         "steps": 1142,
+        "walls": 0,
         "source": "video",
         "status": "open"
       }
     ],
     "route_points": null,
     "route_coverage": null,
+    "charged_steps": null,
+    "walls_hit": null,
+    "wall_rate": null,
+    "input_breakdown": null,
     "progress": 10.335329341317365,
     "leg_gate": "pewter_reached",
     "leg_fraction": 0.33532934131736525,
     "leg_distance_min": 111,
     "leg_distance_open": 167,
     "termination_reason": "leg_cap:pewter_reached",
-    "projection_version": 12,
+    "projection_version": 13,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -1702,6 +1954,7 @@
         "node_id": "left_bedroom",
         "d_open": 9,
         "steps": 8,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1709,6 +1962,7 @@
         "node_id": "left_house",
         "d_open": 12,
         "steps": 15,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1716,6 +1970,7 @@
         "node_id": "oaks_lab_entered",
         "d_open": 13,
         "steps": 115,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1723,6 +1978,7 @@
         "node_id": "starter_chosen",
         "d_open": 1,
         "steps": 1,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1730,6 +1986,7 @@
         "node_id": "rival1_done",
         "d_open": 4,
         "steps": 6,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1737,6 +1994,7 @@
         "node_id": "route1_reached",
         "d_open": 25,
         "steps": 30,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1744,6 +2002,7 @@
         "node_id": "viridian_reached",
         "d_open": 57,
         "steps": 106,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1751,19 +2010,24 @@
         "node_id": "parcel_delivered",
         "d_open": 9,
         "steps": 163,
+        "walls": 0,
         "source": "video",
         "status": "open"
       }
     ],
     "route_points": null,
     "route_coverage": null,
+    "charged_steps": null,
+    "walls_hit": null,
+    "wall_rate": null,
+    "input_breakdown": null,
     "progress": 7.394736842105263,
     "leg_gate": "parcel_delivered",
     "leg_fraction": 0.39473684210526316,
     "leg_distance_min": 23,
     "leg_distance_open": 38,
     "termination_reason": "leg_cap:parcel_delivered",
-    "projection_version": 12,
+    "projection_version": 13,
     "continued_from": "2026-09-12_17-31-29_config-5.1__qwen3-8-flash-thinking",
     "resumed": true,
     "harness": "append_compact",
@@ -1921,6 +2185,7 @@
         "node_id": "left_bedroom",
         "d_open": 9,
         "steps": 16,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1928,6 +2193,7 @@
         "node_id": "left_house",
         "d_open": 12,
         "steps": 13,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1935,6 +2201,7 @@
         "node_id": "oaks_lab_entered",
         "d_open": 13,
         "steps": 19,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1942,6 +2209,7 @@
         "node_id": "starter_chosen",
         "d_open": 4,
         "steps": 32,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1949,6 +2217,7 @@
         "node_id": "rival1_done",
         "d_open": 5,
         "steps": 6,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1956,6 +2225,7 @@
         "node_id": "route1_reached",
         "d_open": 25,
         "steps": 29,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1963,6 +2233,7 @@
         "node_id": "viridian_reached",
         "d_open": 56,
         "steps": 60,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1970,6 +2241,7 @@
         "node_id": "parcel_delivered",
         "d_open": 41,
         "steps": 93,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1977,6 +2249,7 @@
         "node_id": "pokedex_received",
         "d_open": 107,
         "steps": 109,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1984,6 +2257,7 @@
         "node_id": "viridian_forest_reached",
         "d_open": 186,
         "steps": 227,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1991,6 +2265,7 @@
         "node_id": "pewter_reached",
         "d_open": 167,
         "steps": 544,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -1998,19 +2273,24 @@
         "node_id": "brock_defeated",
         "d_open": 59,
         "steps": 320,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       }
     ],
     "route_points": null,
     "route_coverage": null,
+    "charged_steps": null,
+    "walls_hit": null,
+    "wall_rate": null,
+    "input_breakdown": null,
     "progress": 12.0,
     "leg_gate": null,
     "leg_fraction": null,
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": null,
-    "projection_version": 12,
+    "projection_version": 13,
     "continued_from": "2026-09-12_14-17-37_config-5.1__claude-opus-5-high",
     "resumed": true,
     "harness": "append_compact",
@@ -2108,6 +2388,7 @@
         "node_id": "left_bedroom",
         "d_open": 9,
         "steps": 10,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2115,6 +2396,7 @@
         "node_id": "left_house",
         "d_open": 12,
         "steps": 13,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2122,6 +2404,7 @@
         "node_id": "oaks_lab_entered",
         "d_open": 13,
         "steps": 20,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2129,6 +2412,7 @@
         "node_id": "starter_chosen",
         "d_open": 1,
         "steps": 1,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2136,6 +2420,7 @@
         "node_id": "rival1_done",
         "d_open": 4,
         "steps": 4,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2143,6 +2428,7 @@
         "node_id": "route1_reached",
         "d_open": 25,
         "steps": 29,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2150,6 +2436,7 @@
         "node_id": "viridian_reached",
         "d_open": 55,
         "steps": 305,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2157,19 +2444,24 @@
         "node_id": "parcel_delivered",
         "d_open": 34,
         "steps": 218,
+        "walls": 0,
         "source": "video",
         "status": "open"
       }
     ],
     "route_points": null,
     "route_coverage": null,
+    "charged_steps": null,
+    "walls_hit": null,
+    "wall_rate": null,
+    "input_breakdown": null,
     "progress": 7.829268292682927,
     "leg_gate": "parcel_delivered",
     "leg_fraction": 0.8292682926829268,
     "leg_distance_min": 7,
     "leg_distance_open": 41,
     "termination_reason": "leg_cap:parcel_delivered",
-    "projection_version": 12,
+    "projection_version": 13,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -2303,6 +2595,7 @@
         "node_id": "left_bedroom",
         "d_open": 9,
         "steps": 19,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2310,6 +2603,7 @@
         "node_id": "left_house",
         "d_open": 11,
         "steps": 12,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2317,6 +2611,7 @@
         "node_id": "oaks_lab_entered",
         "d_open": 13,
         "steps": 13,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2324,6 +2619,7 @@
         "node_id": "starter_chosen",
         "d_open": 1,
         "steps": 1,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2331,6 +2627,7 @@
         "node_id": "rival1_done",
         "d_open": 4,
         "steps": 4,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2338,6 +2635,7 @@
         "node_id": "route1_reached",
         "d_open": 25,
         "steps": 31,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2345,6 +2643,7 @@
         "node_id": "viridian_reached",
         "d_open": 57,
         "steps": 87,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2352,6 +2651,7 @@
         "node_id": "parcel_delivered",
         "d_open": 39,
         "steps": 173,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2359,6 +2659,7 @@
         "node_id": "pokedex_received",
         "d_open": 107,
         "steps": 196,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2366,6 +2667,7 @@
         "node_id": "viridian_forest_reached",
         "d_open": 186,
         "steps": 244,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2373,19 +2675,24 @@
         "node_id": "pewter_reached",
         "d_open": 34,
         "steps": 902,
+        "walls": 0,
         "source": "video",
         "status": "open"
       }
     ],
     "route_points": null,
     "route_coverage": null,
+    "charged_steps": null,
+    "walls_hit": null,
+    "wall_rate": null,
+    "input_breakdown": null,
     "progress": 10.682634730538922,
     "leg_gate": "pewter_reached",
     "leg_fraction": 0.6826347305389222,
     "leg_distance_min": 53,
     "leg_distance_open": 167,
     "termination_reason": "leg_cap:pewter_reached",
-    "projection_version": 12,
+    "projection_version": 13,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -2551,6 +2858,7 @@
         "node_id": "left_bedroom",
         "d_open": 9,
         "steps": 15,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2558,6 +2866,7 @@
         "node_id": "left_house",
         "d_open": 5,
         "steps": 6,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2565,6 +2874,7 @@
         "node_id": "oaks_lab_entered",
         "d_open": 13,
         "steps": 41,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2572,6 +2882,7 @@
         "node_id": "starter_chosen",
         "d_open": 4,
         "steps": 4,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2579,6 +2890,7 @@
         "node_id": "rival1_done",
         "d_open": 5,
         "steps": 5,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2586,6 +2898,7 @@
         "node_id": "route1_reached",
         "d_open": 25,
         "steps": 40,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2593,6 +2906,7 @@
         "node_id": "viridian_reached",
         "d_open": 54,
         "steps": 110,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2600,6 +2914,7 @@
         "node_id": "parcel_delivered",
         "d_open": 40,
         "steps": 51,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2607,6 +2922,7 @@
         "node_id": "pokedex_received",
         "d_open": 107,
         "steps": 133,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2614,6 +2930,7 @@
         "node_id": "viridian_forest_reached",
         "d_open": 186,
         "steps": 227,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2621,6 +2938,7 @@
         "node_id": "pewter_reached",
         "d_open": 167,
         "steps": 557,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2628,19 +2946,24 @@
         "node_id": "brock_defeated",
         "d_open": 58,
         "steps": 245,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       }
     ],
     "route_points": null,
     "route_coverage": null,
+    "charged_steps": null,
+    "walls_hit": null,
+    "wall_rate": null,
+    "input_breakdown": null,
     "progress": 12.0,
     "leg_gate": null,
     "leg_fraction": null,
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": null,
-    "projection_version": 12,
+    "projection_version": 13,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -2797,6 +3120,7 @@
         "node_id": "left_bedroom",
         "d_open": 9,
         "steps": 8,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2804,6 +3128,7 @@
         "node_id": "left_house",
         "d_open": 12,
         "steps": 13,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2811,6 +3136,7 @@
         "node_id": "oaks_lab_entered",
         "d_open": 13,
         "steps": 39,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2818,6 +3144,7 @@
         "node_id": "starter_chosen",
         "d_open": 3,
         "steps": 7,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2825,6 +3152,7 @@
         "node_id": "rival1_done",
         "d_open": 6,
         "steps": 10,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2832,6 +3160,7 @@
         "node_id": "route1_reached",
         "d_open": 21,
         "steps": 23,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2839,6 +3168,7 @@
         "node_id": "viridian_reached",
         "d_open": 58,
         "steps": 68,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2846,6 +3176,7 @@
         "node_id": "parcel_delivered",
         "d_open": 38,
         "steps": 51,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2853,6 +3184,7 @@
         "node_id": "pokedex_received",
         "d_open": 107,
         "steps": 140,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2860,6 +3192,7 @@
         "node_id": "viridian_forest_reached",
         "d_open": 186,
         "steps": 219,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2867,6 +3200,7 @@
         "node_id": "pewter_reached",
         "d_open": 167,
         "steps": 231,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2874,19 +3208,24 @@
         "node_id": "brock_defeated",
         "d_open": 63,
         "steps": 128,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       }
     ],
     "route_points": null,
     "route_coverage": null,
+    "charged_steps": null,
+    "walls_hit": null,
+    "wall_rate": null,
+    "input_breakdown": null,
     "progress": 12.0,
     "leg_gate": null,
     "leg_fraction": null,
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": null,
-    "projection_version": 12,
+    "projection_version": 13,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -2957,6 +3296,7 @@
         "node_id": "left_bedroom",
         "d_open": 9,
         "steps": 32,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2964,6 +3304,7 @@
         "node_id": "left_house",
         "d_open": 12,
         "steps": 13,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -2971,19 +3312,24 @@
         "node_id": "oaks_lab_entered",
         "d_open": 0,
         "steps": 34,
+        "walls": 0,
         "source": "video",
         "status": "open"
       }
     ],
     "route_points": null,
     "route_coverage": null,
+    "charged_steps": null,
+    "walls_hit": null,
+    "wall_rate": null,
+    "input_breakdown": null,
     "progress": 2.0769230769230766,
     "leg_gate": "oaks_lab_entered",
     "leg_fraction": 0.07692307692307687,
     "leg_distance_min": 12,
     "leg_distance_open": 13,
     "termination_reason": "leg_cap:oaks_lab_entered",
-    "projection_version": 12,
+    "projection_version": 13,
     "continued_from": "2026-09-09_19-37-48_config-5.0__gemini-3-5-flash-lite-minimal",
     "resumed": true,
     "harness": "append_compact",
@@ -3058,6 +3404,7 @@
         "node_id": "left_bedroom",
         "d_open": 9,
         "steps": 30,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3065,6 +3412,7 @@
         "node_id": "left_house",
         "d_open": 12,
         "steps": 13,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3072,6 +3420,7 @@
         "node_id": "oaks_lab_entered",
         "d_open": 13,
         "steps": 22,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3079,19 +3428,24 @@
         "node_id": "starter_chosen",
         "d_open": 0,
         "steps": 26,
+        "walls": 0,
         "source": "video",
         "status": "open"
       }
     ],
     "route_points": null,
     "route_coverage": null,
+    "charged_steps": null,
+    "walls_hit": null,
+    "wall_rate": null,
+    "input_breakdown": null,
     "progress": 3.95,
     "leg_gate": "starter_chosen",
     "leg_fraction": 0.95,
     "leg_distance_min": 0,
     "leg_distance_open": 1,
     "termination_reason": "leg_cap:starter_chosen",
-    "projection_version": 12,
+    "projection_version": 13,
     "continued_from": "2026-09-09_20-18-53_config-5.0__gemini-3-5-flash-lite-medium",
     "resumed": true,
     "harness": "append_compact",
@@ -3166,6 +3520,7 @@
         "node_id": "left_bedroom",
         "d_open": 9,
         "steps": 31,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3173,6 +3528,7 @@
         "node_id": "left_house",
         "d_open": 12,
         "steps": 15,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3180,6 +3536,7 @@
         "node_id": "oaks_lab_entered",
         "d_open": 13,
         "steps": 19,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3187,19 +3544,24 @@
         "node_id": "starter_chosen",
         "d_open": 0,
         "steps": 14,
+        "walls": 0,
         "source": "video",
         "status": "open"
       }
     ],
     "route_points": null,
     "route_coverage": null,
+    "charged_steps": null,
+    "walls_hit": null,
+    "wall_rate": null,
+    "input_breakdown": null,
     "progress": 3.95,
     "leg_gate": "starter_chosen",
     "leg_fraction": 0.95,
     "leg_distance_min": 0,
     "leg_distance_open": 1,
     "termination_reason": "leg_cap:starter_chosen",
-    "projection_version": 12,
+    "projection_version": 13,
     "continued_from": "2026-09-09_21-20-50_config-5.1__gemini-3-5-flash-lite-high",
     "resumed": true,
     "harness": "append_compact",
@@ -3314,6 +3676,7 @@
         "node_id": "left_bedroom",
         "d_open": 9,
         "steps": 22,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3321,6 +3684,7 @@
         "node_id": "left_house",
         "d_open": 12,
         "steps": 13,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3328,6 +3692,7 @@
         "node_id": "oaks_lab_entered",
         "d_open": 13,
         "steps": 19,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3335,6 +3700,7 @@
         "node_id": "starter_chosen",
         "d_open": 4,
         "steps": 16,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3342,6 +3708,7 @@
         "node_id": "rival1_done",
         "d_open": 5,
         "steps": 6,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3349,6 +3716,7 @@
         "node_id": "route1_reached",
         "d_open": 25,
         "steps": 25,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3356,6 +3724,7 @@
         "node_id": "viridian_reached",
         "d_open": 59,
         "steps": 138,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3363,6 +3732,7 @@
         "node_id": "parcel_delivered",
         "d_open": 34,
         "steps": 53,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3370,6 +3740,7 @@
         "node_id": "pokedex_received",
         "d_open": 107,
         "steps": 176,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3377,6 +3748,7 @@
         "node_id": "viridian_forest_reached",
         "d_open": 186,
         "steps": 206,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3384,19 +3756,24 @@
         "node_id": "pewter_reached",
         "d_open": 23,
         "steps": 1193,
+        "walls": 0,
         "source": "video",
         "status": "open"
       }
     ],
     "route_points": null,
     "route_coverage": null,
+    "charged_steps": null,
+    "walls_hit": null,
+    "wall_rate": null,
+    "input_breakdown": null,
     "progress": 10.137724550898204,
     "leg_gate": "pewter_reached",
     "leg_fraction": 0.13772455089820357,
     "leg_distance_min": 144,
     "leg_distance_open": 167,
     "termination_reason": "leg_cap:pewter_reached",
-    "projection_version": 12,
+    "projection_version": 13,
     "continued_from": "2026-09-09_16-04-56_config-5.0__gemini-3-8-flash-minimal_continued_from_turn_40",
     "resumed": true,
     "harness": "append_compact",
@@ -3468,6 +3845,7 @@
         "node_id": "left_bedroom",
         "d_open": 9,
         "steps": 96,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3475,6 +3853,7 @@
         "node_id": "left_house",
         "d_open": 12,
         "steps": 15,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3482,19 +3861,24 @@
         "node_id": "oaks_lab_entered",
         "d_open": 0,
         "steps": 134,
+        "walls": 0,
         "source": "video",
         "status": "open"
       }
     ],
     "route_points": null,
     "route_coverage": null,
+    "charged_steps": null,
+    "walls_hit": null,
+    "wall_rate": null,
+    "input_breakdown": null,
     "progress": 2.4615384615384617,
     "leg_gate": "oaks_lab_entered",
     "leg_fraction": 0.46153846153846156,
     "leg_distance_min": 7,
     "leg_distance_open": 13,
     "termination_reason": "leg_cap:oaks_lab_entered",
-    "projection_version": 12,
+    "projection_version": 13,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -3601,6 +3985,7 @@
         "node_id": "left_bedroom",
         "d_open": 9,
         "steps": 26,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3608,6 +3993,7 @@
         "node_id": "left_house",
         "d_open": 12,
         "steps": 31,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3615,6 +4001,7 @@
         "node_id": "oaks_lab_entered",
         "d_open": 13,
         "steps": 53,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3622,6 +4009,7 @@
         "node_id": "starter_chosen",
         "d_open": 9,
         "steps": 58,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3629,6 +4017,7 @@
         "node_id": "rival1_done",
         "d_open": 4,
         "steps": 4,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3636,6 +4025,7 @@
         "node_id": "route1_reached",
         "d_open": 25,
         "steps": 64,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3643,6 +4033,7 @@
         "node_id": "viridian_reached",
         "d_open": 54,
         "steps": 131,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3650,6 +4041,7 @@
         "node_id": "parcel_delivered",
         "d_open": 38,
         "steps": 83,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3657,6 +4049,7 @@
         "node_id": "pokedex_received",
         "d_open": 107,
         "steps": 165,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3664,6 +4057,7 @@
         "node_id": "viridian_forest_reached",
         "d_open": 186,
         "steps": 237,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3671,19 +4065,24 @@
         "node_id": "pewter_reached",
         "d_open": 0,
         "steps": 1214,
+        "walls": 0,
         "source": "video",
         "status": "open"
       }
     ],
     "route_points": null,
     "route_coverage": null,
+    "charged_steps": null,
+    "walls_hit": null,
+    "wall_rate": null,
+    "input_breakdown": null,
     "progress": 10.053892215568862,
     "leg_gate": "pewter_reached",
     "leg_fraction": 0.053892215568862256,
     "leg_distance_min": 158,
     "leg_distance_open": 167,
     "termination_reason": "leg_cap:pewter_reached",
-    "projection_version": 12,
+    "projection_version": 13,
     "continued_from": "2026-09-11_10-29-29_config-5.1__glm-5-3-flash-high_continued_from_turn_412",
     "resumed": true,
     "harness": "append_compact",
@@ -3780,6 +4179,7 @@
         "node_id": "left_bedroom",
         "d_open": 9,
         "steps": 24,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3787,6 +4187,7 @@
         "node_id": "left_house",
         "d_open": 10,
         "steps": 11,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3794,6 +4195,7 @@
         "node_id": "oaks_lab_entered",
         "d_open": 13,
         "steps": 39,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3801,6 +4203,7 @@
         "node_id": "starter_chosen",
         "d_open": 1,
         "steps": 5,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3808,6 +4211,7 @@
         "node_id": "rival1_done",
         "d_open": 4,
         "steps": 25,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3815,6 +4219,7 @@
         "node_id": "route1_reached",
         "d_open": 25,
         "steps": 42,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3822,6 +4227,7 @@
         "node_id": "viridian_reached",
         "d_open": 59,
         "steps": 159,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3829,19 +4235,24 @@
         "node_id": "parcel_delivered",
         "d_open": 31,
         "steps": 307,
+        "walls": 0,
         "source": "video",
         "status": "open"
       }
     ],
     "route_points": null,
     "route_coverage": null,
+    "charged_steps": null,
+    "walls_hit": null,
+    "wall_rate": null,
+    "input_breakdown": null,
     "progress": 7.775,
     "leg_gate": "parcel_delivered",
     "leg_fraction": 0.775,
     "leg_distance_min": 9,
     "leg_distance_open": 40,
     "termination_reason": "leg_cap:parcel_delivered",
-    "projection_version": 12,
+    "projection_version": 13,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -3989,6 +4400,7 @@
         "node_id": "left_bedroom",
         "d_open": 9,
         "steps": 8,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -3996,6 +4408,7 @@
         "node_id": "left_house",
         "d_open": 12,
         "steps": 13,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -4003,6 +4416,7 @@
         "node_id": "oaks_lab_entered",
         "d_open": 13,
         "steps": 13,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -4010,6 +4424,7 @@
         "node_id": "starter_chosen",
         "d_open": 3,
         "steps": 3,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -4017,6 +4432,7 @@
         "node_id": "rival1_done",
         "d_open": 6,
         "steps": 10,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -4024,6 +4440,7 @@
         "node_id": "route1_reached",
         "d_open": 21,
         "steps": 23,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -4031,6 +4448,7 @@
         "node_id": "viridian_reached",
         "d_open": 58,
         "steps": 67,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -4038,6 +4456,7 @@
         "node_id": "parcel_delivered",
         "d_open": 38,
         "steps": 53,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -4045,6 +4464,7 @@
         "node_id": "pokedex_received",
         "d_open": 107,
         "steps": 109,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -4052,6 +4472,7 @@
         "node_id": "viridian_forest_reached",
         "d_open": 186,
         "steps": 209,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -4059,6 +4480,7 @@
         "node_id": "pewter_reached",
         "d_open": 167,
         "steps": 234,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -4066,19 +4488,24 @@
         "node_id": "brock_defeated",
         "d_open": 62,
         "steps": 109,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       }
     ],
     "route_points": null,
     "route_coverage": null,
+    "charged_steps": null,
+    "walls_hit": null,
+    "wall_rate": null,
+    "input_breakdown": null,
     "progress": 12.0,
     "leg_gate": null,
     "leg_fraction": null,
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": null,
-    "projection_version": 12,
+    "projection_version": 13,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -4233,6 +4660,7 @@
         "node_id": "left_bedroom",
         "d_open": 9,
         "steps": 10,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -4240,6 +4668,7 @@
         "node_id": "left_house",
         "d_open": 12,
         "steps": 14,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -4247,6 +4676,7 @@
         "node_id": "oaks_lab_entered",
         "d_open": 14,
         "steps": 22,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -4254,6 +4684,7 @@
         "node_id": "starter_chosen",
         "d_open": 5,
         "steps": 25,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -4261,6 +4692,7 @@
         "node_id": "rival1_done",
         "d_open": 6,
         "steps": 7,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -4268,6 +4700,7 @@
         "node_id": "route1_reached",
         "d_open": 25,
         "steps": 52,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -4275,6 +4708,7 @@
         "node_id": "viridian_reached",
         "d_open": 55,
         "steps": 65,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -4282,6 +4716,7 @@
         "node_id": "parcel_delivered",
         "d_open": 36,
         "steps": 237,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -4289,6 +4724,7 @@
         "node_id": "pokedex_received",
         "d_open": 107,
         "steps": 325,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -4296,6 +4732,7 @@
         "node_id": "viridian_forest_reached",
         "d_open": 186,
         "steps": 222,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -4303,6 +4740,7 @@
         "node_id": "pewter_reached",
         "d_open": 167,
         "steps": 1018,
+        "walls": 0,
         "source": "video",
         "status": "closed"
       },
@@ -4310,19 +4748,24 @@
         "node_id": "brock_defeated",
         "d_open": 55,
         "steps": 588,
+        "walls": 0,
         "source": "video",
         "status": "open"
       }
     ],
     "route_points": null,
     "route_coverage": null,
+    "charged_steps": null,
+    "walls_hit": null,
+    "wall_rate": null,
+    "input_breakdown": null,
     "progress": 11.95,
     "leg_gate": "brock_defeated",
     "leg_fraction": 0.95,
     "leg_distance_min": 0,
     "leg_distance_open": 55,
     "termination_reason": "leg_cap:brock_defeated",
-    "projection_version": 12,
+    "projection_version": 13,
     "continued_from": "2026-09-10_13-32-55_config-5.1__glm-5-3-flash-max_continued_from_turn_129",
     "resumed": true,
     "harness": "append_compact",
@@ -4468,13 +4911,17 @@
     "movement_legs": null,
     "route_points": null,
     "route_coverage": null,
+    "charged_steps": null,
+    "walls_hit": null,
+    "wall_rate": null,
+    "input_breakdown": null,
     "progress": null,
     "leg_gate": null,
     "leg_fraction": null,
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": null,
-    "projection_version": 12,
+    "projection_version": 13,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",

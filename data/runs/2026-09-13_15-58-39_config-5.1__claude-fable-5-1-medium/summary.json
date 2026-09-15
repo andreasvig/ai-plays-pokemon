@@ -268,14 +268,14 @@
           "scored": true,
           "opened_turn": 8,
           "closed_turn": 12,
-          "d_open": 1,
+          "d_open": 4,
           "d_min": 0,
           "distance_now": 0,
           "fraction": 1.0,
           "steps_walked": 6,
           "tiles_seen": 3,
           "off_graph": 0,
-          "efficiency": 0.16666666666666666
+          "efficiency": 0.6666666666666666
         },
         {
           "index": 4,
@@ -336,14 +336,14 @@
           "scored": true,
           "opened_turn": 67,
           "closed_turn": 71,
-          "d_open": null,
-          "d_min": null,
-          "distance_now": null,
-          "fraction": null,
+          "d_open": 36,
+          "d_min": 4,
+          "distance_now": 4,
+          "fraction": 0.8888888888888888,
           "steps_walked": 36,
           "tiles_seen": 5,
           "off_graph": 0,
-          "efficiency": null
+          "efficiency": 1.0
         },
         {
           "index": 8,
