@@ -11,8 +11,6 @@
   // the header can state a total and mean it.
   let { inputs = null, compact = false } = $props()
 
-  const pct = (x) => (x == null ? '—' : `${Math.round(x * 100)}%`)
-
   const buckets = $derived(
     !inputs?.inputs
       ? []
@@ -37,6 +35,9 @@
         ].filter((b) => typeof b.n === 'number' && b.n > 0)
   )
   const total = $derived(buckets.reduce((a, b) => a + b.n, 0))
+  // The buckets partition the run's presses, so each share is out of the same
+  // total and the column adds to 100%.
+  const share = (n) => (total ? `${(n * 100 / total).toFixed(n * 100 / total < 10 ? 1 : 0)}%` : '—')
   const max = $derived(Math.max(1, ...buckets.map((b) => b.n)))
 </script>
 
@@ -45,24 +46,23 @@
     <div class="chead">
       <h4>Where the inputs went</h4>
       <span class="sub">{total.toLocaleString()} presses over {inputs.traced_turns} turns</span>
-      <span class="verdict" class:bad={inputs.wall_rate > 0.15}>{pct(inputs.wall_rate)} into walls</span>
     </div>
     <div class="btable">
       {#each buckets as b (b.key)}
         <div class="brow" class:charged={b.charged}>
           <span class="blabel">{b.label}{#if b.charged}<em>charged</em>{/if}</span>
           <span class="bbar"><i style={`width:${(b.n / max) * 100}%`}></i></span>
-          <span class="bn tnum">{b.n.toLocaleString()}</span>
+          <span class="bn tnum">{b.n.toLocaleString()}<i>/ {share(b.n)}</i></span>
           <span class="bnote faint">{b.note}</span>
         </div>
       {/each}
     </div>
     <p class="bfoot faint">
-      A press into a wall burns the same frames as a step and gains no ground, so each one is charged
-      against movement efficiency like a walked step. The rate is measured against the
-      {(inputs.overworld_inputs ?? 0).toLocaleString()} presses made outside a battle. Turning to face,
-      presses an actor ate, and A/B are measured but never charged — the trace records the player's
-      tile, not what was on screen, so they cannot be attributed.
+      Shares are of all {total.toLocaleString()} presses, which the buckets divide exactly between
+      them. A press into a wall burns the same frames as a step and gains no ground, so each one is
+      charged against movement efficiency like a walked step. Turning to face, presses an actor ate,
+      and A/B are measured but never charged — the trace records the player's tile, not what was on
+      screen, so they cannot be attributed.
     </p>
   </div>
 {/if}
@@ -71,23 +71,22 @@
   .chead { display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
   h4 { font-size: 13px; font-weight: 750; margin: 0; }
   .sub { font-size: 12px; color: var(--muted); }
-  .verdict { font-size: 12px; font-weight: 650; margin-left: auto; }
-  .verdict.bad { color: var(--red); }
   .btable { display: flex; flex-direction: column; gap: 4px; }
-  .brow { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(70px, 180px) 56px minmax(0, 1.5fr); gap: 10px; align-items: center; font-size: 12px; }
+  .brow { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(70px, 180px) 92px minmax(0, 1.5fr); gap: 10px; align-items: center; font-size: 12px; }
   .blabel { font-weight: 600; }
   .blabel em { font-style: normal; font-size: 9.5px; text-transform: uppercase; letter-spacing: .05em; font-weight: 700; color: var(--red); margin-left: 6px; }
   .bbar { background: var(--border); border-radius: 3px; height: 8px; overflow: hidden; }
   .bbar i { display: block; height: 100%; background: var(--muted); border-radius: 3px; }
   .brow.charged .bbar i { background: var(--red); }
-  .bn { text-align: right; font-weight: 650; }
+  .bn { text-align: right; font-weight: 650; white-space: nowrap; }
+  .bn i { font-style: normal; font-weight: 500; color: var(--faint); margin-left: 5px; font-size: 11px; }
   .bnote { font-size: 11px; }
   .bfoot { font-size: 11px; margin: 10px 0 0; line-height: 1.5; max-width: 72ch; }
   /* On the model page the census sits in a column, so the notes come off. */
-  .compact .brow { grid-template-columns: minmax(150px, 1fr) minmax(60px, 1fr) 52px; }
+  .compact .brow { grid-template-columns: minmax(150px, 1fr) minmax(60px, 1fr) 88px; }
   .compact .bnote, .compact .bfoot { display: none; }
   @media (max-width: 720px) {
-    .brow { grid-template-columns: 1fr 56px; }
+    .brow { grid-template-columns: 1fr 92px; }
     .brow .bbar, .brow .bnote { display: none; }
   }
 </style>

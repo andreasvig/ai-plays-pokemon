@@ -31,31 +31,6 @@
   const hasCosts = $derived(gates.some((g) => g.costUsd != null))
   const hasEff = $derived(gates.some((g) => g.efficiency != null))
 
-  // What the run was LIKE, from the row alone. Every chip is omitted when its
-  // number was never measured — a run with no per-input trace must not read as
-  // a run that measured zero of everything.
-  const n = (v) => (typeof v === 'number' ? v.toLocaleString() : null)
-  const plural = (v, one, many) => `${n(v)} ${v === 1 ? one : many}`
-  const chips = $derived.by(() => {
-    const c = []
-    const b = row.inputBreakdown
-    if (b?.inputs) c.push({ k: 'presses', v: n(b.inputs), l: 'button presses' })
-    if (row.wildBattles) c.push({ k: 'wild', v: n(row.wildBattles), l: 'wild battles' })
-    const fights = (row.trainerBattles || []).filter((t) => t.attempts > 0)
-    if (fights.length) {
-      const lost = fights.filter((t) => !t.won)
-      c.push({ k: 'trainers', v: n(fights.length), l: `trainer fight${fights.length === 1 ? '' : 's'}`,
-               sub: lost.length ? `lost to ${lost.map((t) => t.name).join(', ')}` : 'won every one', bad: !!lost.length })
-    }
-    if (row.routePoints) c.push({ k: 'tiles', v: n(row.routePoints), l: 'tiles stood on' })
-    if (row.wallsHit) c.push({ k: 'walls', v: n(row.wallsHit), l: 'presses into scenery', bad: true })
-    const ic = row.inputCounts || {}
-    const top = Object.entries(ic).filter(([k]) => ['up', 'down', 'left', 'right'].includes(k))
-      .sort((a, b2) => b2[1] - a[1])[0]
-    if (top) c.push({ k: 'dir', v: n(top[1]), l: `× ${top[0]}`, sub: 'its most-pressed direction' })
-    if (row.battleTurnShare != null) c.push({ k: 'share', v: `${Math.round(row.battleTurnShare * 100)}%`, l: 'of turns in a battle' })
-    return c
-  })
 </script>
 
 <div class="detail">
@@ -75,16 +50,6 @@
         <button class="btn ghost report" onclick={() => onreport(row)}><Icon name="report" size={13} /> Open the full report</button>
       {/if}
     </section>
-    {#if chips.length}
-      <section class="chips">
-        {#each chips as c (c.k)}
-          <div class="chip" class:bad={c.bad}>
-            <b>{c.v}</b><span>{c.l}</span>
-            {#if c.sub}<em>{c.sub}</em>{/if}
-          </div>
-        {/each}
-      </section>
-    {/if}
     {#if row.inputBreakdown?.inputs}
       <section class="score census"><InputCensus inputs={row.inputBreakdown} /></section>
     {/if}
@@ -117,10 +82,4 @@
   .video { border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); border: 1px solid var(--border); background: var(--dark); min-width: 0; }
   /* The census and the map are full-width under the two columns. */
   .census, .map { grid-column: 1 / -1; }
-  .chips { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; }
-  .chip { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 12px; display: flex; flex-direction: column; gap: 1px; min-width: 96px; }
-  .chip b { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
-  .chip span { font-size: 11px; color: var(--muted); }
-  .chip em { font-style: normal; font-size: 10.5px; color: var(--faint); }
-  .chip.bad b { color: var(--red); }
 </style>
