@@ -12,7 +12,7 @@
   // than a corridor gets a marker on its door tile, and the marker opens the
   // building — all its floors — over the map (M10-M12).
   import { fetchRunRoute } from '../lib/api.js'
-  import { TILE, loadAtlas, loadTrainers, loadMapImage, worldLayout, markersFor, battlesFor, drawRoute, visitAt } from '../lib/mapatlas.js'
+  import { TILE, loadAtlas, loadTrainers, loadMapImage, worldLayout, markersFor, battlesFor, drawRoute, drawSize, visitAt } from '../lib/mapatlas.js'
   import InteriorPopup from './InteriorPopup.svelte'
   import BattleCard from './BattleCard.svelte'
 
@@ -82,7 +82,8 @@
     for (const p of Object.values(L.at)) {
       loadMapImage(p.m.file).then((img) => {
         if (!img || canvas !== el) return
-        c.drawImage(img, p.x * TILE, p.y * TILE, p.m.width * TILE, p.m.height * TILE)
+        const [dw, dh] = drawSize(p.m)
+        c.drawImage(img, 0, 0, dw * TILE, dh * TILE, p.x * TILE, p.y * TILE, dw * TILE, dh * TILE)
         // The route is drawn after every image lands, so a slow map cannot
         // paint over the line that crosses it.
         drawRoute(c, r, place)

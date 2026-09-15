@@ -115,3 +115,39 @@ def test_a_multi_floor_building_lists_all_its_floors_in_order(atlas):
     for b, keys in multi.items():
         for k in keys:
             assert atlas["maps"][k]["floors"] == sorted(keys, key=lambda x: atlas["maps"][x]["name"]), b
+
+
+# -- trimmed edges (2026-09-15) ------------------------------------------------
+# Andreas: "I still see this bar". Every FireRed interior ends in a flat strip
+# nothing can stand on, and drawn honestly it reads as an empty progress bar
+# under the floor. The renderer marks those edges; the viewer draws a shorter
+# image. The invariant that makes it safe is below.
+
+def test_no_trimmed_edge_holds_a_walkable_tile(atlas, graph):
+    """Cutting a row the run could stand on would erase part of the route."""
+    walkable: dict[str, set[tuple[int, int]]] = {}
+    for g, n, x, y in graph["nodes"]:
+        walkable.setdefault(f"{g}:{n}", set()).add((x, y))
+    for key, m in atlas["maps"].items():
+        trim = m.get("trim") or {}
+        tiles = walkable.get(key, set())
+        for x, y in tiles:
+            assert x >= trim.get("left", 0), (key, "left", x, y)
+            assert y >= trim.get("top", 0), (key, "top", x, y)
+            assert x < m["width"] - trim.get("right", 0), (key, "right", x, y)
+            assert y < m["height"] - trim.get("bottom", 0), (key, "bottom", x, y)
+
+
+def test_only_interiors_are_trimmed(atlas):
+    # An outdoor map's edges have to line up with its neighbours in the world
+    # frame, so none of them may be cut, however blank they look.
+    for key, m in atlas["maps"].items():
+        if m.get("trim"):
+            assert m["type"] == "MAP_TYPE_INDOOR", key
+
+
+def test_a_trim_never_swallows_the_map(atlas):
+    for key, m in atlas["maps"].items():
+        t = m.get("trim") or {}
+        assert m["width"] - t.get("left", 0) - t.get("right", 0) >= 1, key
+        assert m["height"] - t.get("top", 0) - t.get("bottom", 0) >= 1, key

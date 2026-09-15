@@ -17,6 +17,34 @@ export const TILE = 16
 
 export const mapImageUrl = (file) => `${BASE}maps/${file}`
 
+/**
+ * The part of a map worth drawing, in tiles: `{x, y, w, h}`.
+ *
+ * `trim` marks edge rows and columns that are one flat colour and that nothing
+ * can stand on — every FireRed interior ends in a black strip under the door
+ * that the game hides behind its exit fade, and drawn honestly it reads as an
+ * empty progress bar under the floor. No outdoor map has any, which matters:
+ * their edges have to line up with their neighbours in the world frame.
+ *
+ * Cutting a LEADING row or column moves every tile, so a caller that uses
+ * `x`/`y` must subtract them when placing one. `drawSize` is the safe subset
+ * for a caller that cannot move anything — trailing only, coordinates intact.
+ */
+export const drawWindow = (m) => {
+  const t = m?.trim ?? {}
+  return {
+    x: t.left ?? 0,
+    y: t.top ?? 0,
+    w: Math.max(1, (m?.width ?? 1) - (t.left ?? 0) - (t.right ?? 0)),
+    h: Math.max(1, (m?.height ?? 1) - (t.top ?? 0) - (t.bottom ?? 0)),
+  }
+}
+
+export const drawSize = (m) => [
+  Math.max(1, (m?.width ?? 1) - (m?.trim?.right ?? 0)),
+  Math.max(1, (m?.height ?? 1) - (m?.trim?.bottom ?? 0)),
+]
+
 let trainersPromise = null
 /** `{version, pret_sha, trainers: {"<id>": {label, name, class, pic, party}}}`.
  *  Extracted from pret by scripts/extract_trainers.py: a trainer's roster is a
@@ -170,7 +198,7 @@ export function buildingLabel(building) {
  * along the path, not per segment, so a run that crosses its own track leaves
  * two arrows pointing different ways instead of one ambiguous line.
  */
-export function drawRoute(c, route, place, { scale = TILE, width = null, arrowEvery = TILE * 5 } = {}) {
+export function drawRoute(c, route, place, { scale = TILE, width = null, arrowEvery = TILE * 2.5 } = {}) {
   const visits = route?.visits ?? []
   if (visits.length < 2) return
   const lw = width ?? Math.max(2, scale * 0.22)
@@ -183,8 +211,8 @@ export function drawRoute(c, route, place, { scale = TILE, width = null, arrowEv
     if (since < arrowEvery) return
     since = 0
     const ux = dx / len, uy = dy / len
-    const h = Math.max(7, scale * 0.78)        // along the line
-    const w = Math.max(6, scale * 0.66)        // across it
+    const h = Math.max(5, scale * 0.5)         // along the line
+    const w = Math.max(5, scale * 0.56)        // across it — wider than the line, or it vanishes
     // at the far end of this segment, pointing the way the run went
     const tip = [to[0], to[1]]
     const back = [tip[0] - ux * h, tip[1] - uy * h]
@@ -195,7 +223,7 @@ export function drawRoute(c, route, place, { scale = TILE, width = null, arrowEv
     c.closePath()
     c.fillStyle = colour
     c.strokeStyle = 'rgba(12,14,18,.9)'
-    c.lineWidth = Math.max(1, scale * 0.09)
+    c.lineWidth = Math.max(0.75, scale * 0.05)
     c.fill()
     c.stroke()
   }

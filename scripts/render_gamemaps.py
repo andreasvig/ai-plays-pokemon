@@ -16,6 +16,17 @@ the browser as a walk graph:
 - ``type``      the map's own ``map_type``.
 - ``building``  the name floors share: ``PewterCity_PokemonCenter_{1F,2F}``
                 are one building, ordered by ``floors``.
+- ``trim``      tile rows and columns at the EDGES that are one flat colour AND
+                hold no walkable tile. Every FireRed interior ends in one such
+                row — the black strip under the door — and drawn honestly it
+                reads as an empty progress bar beneath the floor (Andreas,
+                2026-09-15: "I still see this bar"). Both conditions are
+                required: flatness alone would clip the doormat art bleeding
+                into that row, and the walk-graph test alone would clip real
+                scenery nobody can stand on. Note the strip is BLACK ART, not
+                the transparent backdrop, which for the lab's tileset is cream
+                — testing for the backdrop finds nothing. Tile coordinates are
+                untouched; a viewer just draws a shorter image.
 - ``doors``     on an outdoor map, the tiles a building is entered from —
                 ``{x, y, to, building}``. A transition room gets none: it is a
                 corridor, not a place, and it is one when EITHER of two things
@@ -314,6 +325,39 @@ class Tileset:
 
 # ---------------------------------------------------------------- rendering
 
+FLAT_SHARE = 0.9   # how much of a strip must be one colour to call it filler
+
+
+def _flat(strip: np.ndarray) -> bool:
+    px = strip.reshape(-1, 3)
+    _, counts = np.unique(px, axis=0, return_counts=True)
+    return bool(counts.max() / len(px) >= FLAT_SHARE)
+
+
+def empty_edges(img: Image.Image, walkable: set[tuple[int, int]]) -> dict[str, int]:
+    """Edge tile rows / columns that are one flat colour and unwalkable."""
+    a = np.asarray(img)
+    rows, cols = a.shape[0] // 16, a.shape[1] // 16
+    used_rows = {ty for _tx, ty in walkable}
+    used_cols = {tx for tx, _ty in walkable}
+    row = lambda y: a[y * 16: (y + 1) * 16]          # noqa: E731
+    col = lambda x: a[:, x * 16: (x + 1) * 16]       # noqa: E731
+
+    def count(order, used, strip):
+        n = 0
+        for i in order:
+            if i in used or not _flat(strip(i)):
+                break
+            n += 1
+        return n
+
+    top = count(range(rows - 1), used_rows, row)
+    bottom = count(range(rows - 1, top, -1), used_rows, row)
+    left = count(range(cols - 1), used_cols, col)
+    right = count(range(cols - 1, left, -1), used_cols, col)
+    return {"top": top, "left": left, "bottom": bottom, "right": right}
+
+
 def render_map(grid: bytes, width: int, height: int, ts: Tileset) -> Image.Image:
     cells = np.frombuffer(grid, dtype="<u2")[: width * height].reshape(height, width)
     out = np.zeros((height * 16, width * 16, 3), dtype=np.uint8)
@@ -380,8 +424,12 @@ def main() -> int:
         img = render_map(grid, w, h, tilesets[tkey])
         fname = f"{key.replace(':', '-')}.png"
         img.save(args.out / fname, optimize=True)
+        walkable = {(n[2], n[3]) for n in graph["nodes"] if f"{n[0]}:{n[1]}" == key}
+        trim = empty_edges(img, walkable)
         entry = {"name": name, "width": w, "height": h, "file": fname,
                  "bytes": (args.out / fname).stat().st_size, "type": mj.get("map_type")}
+        if any(trim.values()):
+            entry["trim"] = {k: v for k, v in trim.items() if v}
         if isinstance(m.get("world"), list):
             entry["world"] = m["world"]
         if mj.get("map_type") == MAP_TYPE_INDOOR:

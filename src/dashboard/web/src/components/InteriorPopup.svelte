@@ -10,7 +10,7 @@
   // it — the same `drawRoute` the world map uses, given a tile → pixel function
   // that only places THIS floor, so a route that leaves the building simply
   // stops at the door.
-  import { TILE, loadMapImage, drawRoute, visitAt, battlesFor } from '../lib/mapatlas.js'
+  import { TILE, loadMapImage, drawRoute, drawWindow, visitAt, battlesFor } from '../lib/mapatlas.js'
   import BattleCard from './BattleCard.svelte'
 
   let { building, route, atlas, trainers = null, onturn = null, onclose = () => {} } = $props()
@@ -32,7 +32,8 @@
   function mount(node, key) {
     // A Svelte action so each floor's canvas draws itself once it exists.
     const m = atlas.maps[key]
-    const w = m.width * TILE, h = m.height * TILE
+    const win = drawWindow(m)
+    const w = win.w * TILE, h = win.h * TILE
     const dpr = Math.min(2, (typeof devicePixelRatio === 'number' ? devicePixelRatio : 1) || 1)
     node.width = Math.ceil(w * dpr)
     node.height = Math.ceil(h * dpr)
@@ -41,18 +42,22 @@
     const c = node.getContext('2d')
     c.setTransform(dpr, 0, 0, dpr, 0, 0)
     c.imageSmoothingEnabled = false
-    const place = (g, n, x, y) => (`${g}:${n}` === key ? [(x + 0.5) * TILE, (y + 0.5) * TILE] : null)
+    const place = tilePlacer(key, win)
     loadMapImage(m.file).then((img) => {
-      if (img) c.drawImage(img, 0, 0, w, h)
+      if (img) c.drawImage(img, win.x * TILE, win.y * TILE, w, h, 0, 0, w, h)
       drawRoute(c, route, place)
     })
     return {}
   }
 
+  /** Tile → pixel on THIS floor's canvas, shifted by any trimmed leading edge. */
+  const tilePlacer = (key, win) => (g, n, tx, ty) =>
+    (`${g}:${n}` === key ? [(tx - win.x + 0.5) * TILE, (ty - win.y + 0.5) * TILE] : null)
+
   function onmove(e, key) {
     const rect = e.currentTarget.getBoundingClientRect()
     const x = e.clientX - rect.left, y = e.clientY - rect.top
-    const place = (g, n, tx, ty) => (`${g}:${n}` === key ? [(tx + 0.5) * TILE, (ty + 0.5) * TILE] : null)
+    const place = tilePlacer(key, drawWindow(atlas.maps[key]))
     const v = visitAt(route, place, x, y, TILE)
     hover = v ? { key, x, y, turn: v[0], tile: `${v[4]},${v[5]}` } : null
   }
@@ -73,6 +78,7 @@
     </header>
     <div class="floors">
       {#each floors as f (f.key)}
+        {@const win = drawWindow(f.m)}
         {@const fights = battlesOn(f.key)}
         <figure class:unvisited={!visited(f.key)}>
           <canvas use:mount={f.key} onmousemove={(e) => onmove(e, f.key)}
@@ -82,7 +88,7 @@
             aria-label={`${building.name} ${floorLabel(f.m.name)}`}></canvas>
           {#each fights as b (b.id)}
             <button class="fight" class:trainer={b.kind === 'trainer'}
-              style={`left:${(b.tile.x + 0.5) * TILE}px;top:${(b.tile.y + 0.5) * TILE}px`}
+              style={`left:${(b.tile.x - win.x + 0.5) * TILE}px;top:${(b.tile.y - win.y + 0.5) * TILE}px`}
               onmouseenter={() => (openBattle = b)} onfocus={() => (openBattle = b)}
               onmouseleave={() => (openBattle = null)} onblur={() => (openBattle = null)}
               onclick={() => onturn && onturn(b.opened_turn)}>

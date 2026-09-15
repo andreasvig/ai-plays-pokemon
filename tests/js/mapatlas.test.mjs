@@ -6,7 +6,7 @@
 // `drawRoute` is handed a recording stub in place of a canvas context.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { TILE, worldLayout, markersFor, buildingLabel, drawRoute, visitAt } from '../../src/dashboard/web/src/lib/mapatlas.js'
+import { TILE, worldLayout, markersFor, buildingLabel, drawRoute, drawSize, drawWindow, visitAt } from '../../src/dashboard/web/src/lib/mapatlas.js'
 
 // Pallet Town at the world origin, Route 1 above it, Viridian Forest with no
 // place in the frame, and the player's two floors, which are never laid out.
@@ -196,4 +196,25 @@ test('spacing is measured along the path, so a route that doubles back marks bot
   drawRoute(c, route(['3:0'], [...out, ...back]), placeAll, { arrowEvery: TILE * 5 })
   const dirs = new Set(arrows(c).map(([tip, a]) => Math.sign(tip[0] - a[0])))
   assert.deepEqual([...dirs].sort(), [-1, 1], 'arrows point both ways over the same ground')
+})
+
+
+// -- trimmed edges ------------------------------------------------------------
+// Every FireRed interior ends in a flat strip nothing can stand on — drawn, it
+// reads as an empty progress bar under the floor.
+
+test('the drawn window leaves out the trimmed edges', () => {
+  const m = { width: 13, height: 10, trim: { left: 1, bottom: 1 } }
+  assert.deepEqual(drawWindow(m), { x: 1, y: 0, w: 12, h: 9 })
+  assert.deepEqual(drawWindow({ width: 13, height: 10 }), { x: 0, y: 0, w: 13, h: 10 })
+})
+
+test('drawSize only ever cuts TRAILING edges, so tile coordinates cannot move', () => {
+  // The world frame lines outdoor maps up with their neighbours; a caller that
+  // cannot shift tiles gets the safe subset.
+  assert.deepEqual(drawSize({ width: 13, height: 10, trim: { left: 1, top: 2, bottom: 1 } }), [13, 9])
+})
+
+test('a map is never trimmed away entirely', () => {
+  assert.deepEqual(drawWindow({ width: 2, height: 2, trim: { left: 5, bottom: 5 } }), { x: 5, y: 0, w: 1, h: 1 })
 })
