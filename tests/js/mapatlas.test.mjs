@@ -135,3 +135,65 @@ test('the hover readout finds the visit under the cursor and nothing beyond a ti
   assert.equal(visitAt(r, placeAll, 9.5 * TILE, 9.5 * TILE, TILE)[0], 9)
   assert.equal(visitAt(r, placeAll, 20 * TILE, 20 * TILE, TILE), null)
 })
+
+// -- direction arrows ---------------------------------------------------------
+// Andreas, 2026-09-15: "would love for the routes to have arrows such that it
+// would be easier to see at overlaps and which way it is going."
+
+/** A straight walk of `n` tiles east from (0,0), one visit per tile. */
+const walkEast = (n) => route(['3:0'], Array.from({ length: n }, (_, i) => visit(i + 1, 3, 0, i, 0)))
+
+function arrows(c) {
+  // an arrowhead is the only thing drawRoute fills: three points, closed
+  return c.calls.tris
+}
+
+function stubWithTris() {
+  const c = stub()
+  c.calls.tris = []
+  let pending = []
+  const orig = { moveTo: c.moveTo, lineTo: c.lineTo }
+  c.beginPath = () => { pending = [] }
+  c.moveTo = (x, y) => { pending = [[x, y]] }
+  c.lineTo = (x, y) => { pending.push([x, y]) }
+  c.closePath = () => {}
+  c.fill = () => { if (pending.length === 3) c.calls.tris.push(pending.slice()) }
+  c.stroke = () => {
+    // a two-point path that was drawn, not filled, is a route segment
+    if (pending.length === 2) c.calls.lines.push([pending[0], pending[1]])
+  }
+  return c
+}
+
+test('a long walk carries arrowheads, spaced along the path', () => {
+  const c = stubWithTris()
+  drawRoute(c, walkEast(40), placeAll, { arrowEvery: TILE * 5 })
+  // 39 tiles of travel, one arrow every 5 tiles, the first half a gap in
+  assert.ok(arrows(c).length >= 6 && arrows(c).length <= 9, `got ${arrows(c).length}`)
+})
+
+test('an arrowhead points the way the run went', () => {
+  const c = stubWithTris()
+  drawRoute(c, walkEast(40), placeAll, { arrowEvery: TILE * 5 })
+  for (const [tip, a, b] of arrows(c)) {
+    // walking east: the tip is the rightmost of the three points
+    assert.ok(tip[0] > a[0] && tip[0] > b[0], 'the tip leads')
+    assert.ok(Math.abs(a[1] - b[1]) > 0, 'the base spans across the line')
+  }
+})
+
+test('a short hop is not decorated', () => {
+  const c = stubWithTris()
+  drawRoute(c, walkEast(3), placeAll, { arrowEvery: TILE * 5 })
+  assert.equal(arrows(c).length, 0)
+})
+
+test('spacing is measured along the path, so a route that doubles back marks both ways', () => {
+  // out 10 east, then back 10 west over the same tiles
+  const out = Array.from({ length: 11 }, (_, i) => visit(i + 1, 3, 0, i, 0))
+  const back = Array.from({ length: 10 }, (_, i) => visit(12 + i, 3, 0, 9 - i, 0))
+  const c = stubWithTris()
+  drawRoute(c, route(['3:0'], [...out, ...back]), placeAll, { arrowEvery: TILE * 5 })
+  const dirs = new Set(arrows(c).map(([tip, a]) => Math.sign(tip[0] - a[0])))
+  assert.deepEqual([...dirs].sort(), [-1, 1], 'arrows point both ways over the same ground')
+})

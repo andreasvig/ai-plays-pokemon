@@ -58,13 +58,13 @@
   }
 
   const visited = (key) => !!route?.maps?.[key]
-  const anyFights = $derived(floors.some((f) => battlesOn(f.key).length))
 </script>
 
 <svelte:window onkeydown={(e) => e.key === 'Escape' && onclose()} />
 
 <div class="scrim">
   <button class="backdrop" onclick={onclose} aria-label="Close"></button>
+  <div class="shell">
   <div class="popup" role="dialog" tabindex="-1" aria-label={building.name}>
     <header>
       <h4>{building.name}</h4>
@@ -102,22 +102,17 @@
         </figure>
       {/each}
     </div>
-    <!-- A hovered fight reports BELOW the floors: the popup scrolls, so a card
-         floating over a canvas is clipped the moment the icon is near its top.
-         The slot is ALWAYS here, at a FIXED height, when the building saw a
-         fight. Showing it on hover resized the popup, which is centred in the
-         scrim, so the whole dialog rose and the dot slid out from under the
-         cursor — the browser then fired mouseleave and the card vanished again.
-         A reserved slot that does not change size is what stops that. -->
-    {#if anyFights}
-      <div class="bcard" class:empty={!openBattle}>
-        {#if openBattle}
-          <BattleCard battle={openBattle} {trainers} />
-        {:else}
-          Hover a battle dot for who it was against and how long it took.
-        {/if}
-      </div>
-    {/if}
+  </div>
+  <!-- A hovered fight reports UNDER the dialog, positioned out of the flow.
+       In the flow it resized the popup, which is centred in the scrim, so the
+       whole thing moved and the dot slid out from under the cursor; the browser
+       fired mouseleave and the card vanished again. Reserving the space instead
+       fixed that but left an empty grey panel sitting there looking like
+       something still loading (Andreas, 2026-09-15). Out of the flow, it
+       neither moves the dialog nor shows when there is nothing to say. -->
+  {#if openBattle}
+    <div class="bcard"><BattleCard battle={openBattle} {trainers} /></div>
+  {/if}
   </div>
 </div>
 
@@ -130,6 +125,7 @@
   /* The scrim itself is the close control, so dismissing by clicking away is a
      real button rather than a click handler on a decorative div. */
   .backdrop { position: absolute; inset: 0; border: 0; padding: 0; background: rgba(8, 9, 12, .72); cursor: default; }
+  .shell { position: relative; }
   .popup {
     position: relative;
     background: #101216;
@@ -137,7 +133,7 @@
     border-radius: 10px;
     box-shadow: 0 18px 48px rgba(0, 0, 0, .55);
     max-width: min(96vw, 1100px);
-    max-height: 90vh;
+    max-height: calc(90vh - 190px);   /* room for the battle card beneath */
     overflow: auto;
     padding: 12px 14px 14px;
     color: #eef1f6;
@@ -168,13 +164,10 @@
   .fight.trainer { background: #dc3214; }
   .fight:hover, .fight:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
   .bcard {
-    margin-top: 12px; padding: 9px 10px; font-size: 11px; line-height: 1.5;
-    background: rgba(255, 255, 255, .05); border: 1px solid rgba(255, 255, 255, .14);
-    border-radius: 7px; box-sizing: border-box;
-    /* Fixed in BOTH directions: the card's content is wider than the prompt it
-       replaces, and a popup that grows sideways slides the dot away just as
-       surely as one that grows taller. */
-    width: 272px; height: 156px; overflow: auto;
+    position: absolute; top: 100%; left: 0; margin-top: 10px; width: 272px;
+    padding: 9px 10px; font-size: 11px; line-height: 1.5; box-sizing: border-box;
+    background: #14171c; border: 1px solid rgba(255, 255, 255, .16);
+    border-radius: 8px; color: #eef1f6;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, .5);
   }
-  .bcard.empty { color: #8b93a3; display: flex; align-items: center; }
 </style>

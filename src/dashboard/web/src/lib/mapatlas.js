@@ -163,11 +163,42 @@ export function buildingLabel(building) {
  * null when the caller does not draw that map — which is how the world canvas
  * skips interiors and a popup skips everything but its own floors. Segments
  * with an end the caller cannot place are simply not drawn.
+ *
+ * An arrowhead is dropped every `arrowEvery` pixels of walking (Andreas,
+ * 2026-09-15: "would love for the routes to have arrows such that it would be
+ * easier to see at overlaps and which way it is going"). Spacing is measured
+ * along the path, not per segment, so a run that crosses its own track leaves
+ * two arrows pointing different ways instead of one ambiguous line.
  */
-export function drawRoute(c, route, place, { scale = TILE, width = null } = {}) {
+export function drawRoute(c, route, place, { scale = TILE, width = null, arrowEvery = TILE * 5 } = {}) {
   const visits = route?.visits ?? []
   if (visits.length < 2) return
   const lw = width ?? Math.max(2, scale * 0.22)
+  let since = arrowEvery * 0.5      // the first arrow lands half a gap in
+  const arrow = (from, to, colour) => {
+    const dx = to[0] - from[0], dy = to[1] - from[1]
+    const len = Math.hypot(dx, dy)
+    if (!len) return
+    since += len
+    if (since < arrowEvery) return
+    since = 0
+    const ux = dx / len, uy = dy / len
+    const h = Math.max(7, scale * 0.78)        // along the line
+    const w = Math.max(6, scale * 0.66)        // across it
+    // at the far end of this segment, pointing the way the run went
+    const tip = [to[0], to[1]]
+    const back = [tip[0] - ux * h, tip[1] - uy * h]
+    c.beginPath()
+    c.moveTo(tip[0], tip[1])
+    c.lineTo(back[0] - uy * w * 0.5, back[1] + ux * w * 0.5)
+    c.lineTo(back[0] + uy * w * 0.5, back[1] - ux * w * 0.5)
+    c.closePath()
+    c.fillStyle = colour
+    c.strokeStyle = 'rgba(12,14,18,.9)'
+    c.lineWidth = Math.max(1, scale * 0.09)
+    c.fill()
+    c.stroke()
+  }
   const t0 = visits[0][0]
   const t1 = Math.max(visits[visits.length - 1][0], t0 + 1)
   c.lineCap = 'round'
@@ -195,6 +226,7 @@ export function drawRoute(c, route, place, { scale = TILE, width = null } = {}) 
         c.strokeStyle = fill ? 'rgba(190,190,255,.85)' : colour
         c.lineWidth = fill ? lw * 0.7 : lw
         c.beginPath(); c.moveTo(pu[0], pu[1]); c.lineTo(pv[0], pv[1]); c.stroke()
+        arrow(pu, pv, fill ? 'rgb(190,190,255)' : colour)
       } else {
         // A warp or a blackout: mark both ends, never a chord across the map.
         c.lineWidth = Math.max(1.5, lw * 0.7)
