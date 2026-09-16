@@ -24,7 +24,14 @@
     "15:0"
    ],
    "popup": true,
-   "complex": true
+   "complex": true,
+   "exits": [
+    {
+     "x": 7,
+     "y": 10,
+     "to": "3:20"
+    }
+   ]
   },
   "15:1": {
    "name": "Route2_House",
@@ -40,7 +47,14 @@
    "floors": [
     "15:1"
    ],
-   "popup": true
+   "popup": true,
+   "exits": [
+    {
+     "x": 4,
+     "y": 7,
+     "to": "3:20"
+    }
+   ]
   },
   "15:2": {
    "name": "Route2_EastBuilding",
@@ -58,7 +72,19 @@
    "floors": [
     "15:2"
    ],
-   "popup": true
+   "popup": true,
+   "exits": [
+    {
+     "x": 7,
+     "y": 10,
+     "to": "3:20"
+    },
+    {
+     "x": 7,
+     "y": 1,
+     "to": "3:20"
+    }
+   ]
   },
   "15:3": {
    "name": "Route2_ViridianForest_NorthEntrance",
@@ -79,7 +105,14 @@
     "15:0"
    ],
    "popup": true,
-   "complex": true
+   "complex": true,
+   "exits": [
+    {
+     "x": 7,
+     "y": 1,
+     "to": "3:20"
+    }
+   ]
   },
   "1:0": {
    "name": "ViridianForest",
@@ -111,7 +144,14 @@
    "floors": [
     "28:0"
    ],
-   "popup": true
+   "popup": true,
+   "exits": [
+    {
+     "x": 7,
+     "y": 10,
+     "to": "3:41"
+    }
+   ]
   },
   "3:0": {
    "name": "PalletTown",
@@ -334,7 +374,14 @@
     "4:0",
     "4:1"
    ],
-   "popup": true
+   "popup": true,
+   "exits": [
+    {
+     "x": 4,
+     "y": 8,
+     "to": "3:0"
+    }
+   ]
   },
   "4:1": {
    "name": "PalletTown_PlayersHouse_2F",
@@ -367,7 +414,14 @@
    "floors": [
     "4:2"
    ],
-   "popup": true
+   "popup": true,
+   "exits": [
+    {
+     "x": 4,
+     "y": 8,
+     "to": "3:0"
+    }
+   ]
   },
   "4:3": {
    "name": "PalletTown_ProfessorOaksLab",
@@ -383,7 +437,14 @@
    "floors": [
     "4:3"
    ],
-   "popup": true
+   "popup": true,
+   "exits": [
+    {
+     "x": 6,
+     "y": 12,
+     "to": "3:0"
+    }
+   ]
   },
   "5:0": {
    "name": "ViridianCity_House",
@@ -399,7 +460,14 @@
    "floors": [
     "5:0"
    ],
-   "popup": true
+   "popup": true,
+   "exits": [
+    {
+     "x": 4,
+     "y": 7,
+     "to": "3:1"
+    }
+   ]
   },
   "5:1": {
    "name": "ViridianCity_Gym",
@@ -415,7 +483,14 @@
    "floors": [
     "5:1"
    ],
-   "popup": true
+   "popup": true,
+   "exits": [
+    {
+     "x": 17,
+     "y": 22,
+     "to": "3:1"
+    }
+   ]
   },
   "5:2": {
    "name": "ViridianCity_School",
@@ -431,7 +506,14 @@
    "floors": [
     "5:2"
    ],
-   "popup": true
+   "popup": true,
+   "exits": [
+    {
+     "x": 4,
+     "y": 7,
+     "to": "3:1"
+    }
+   ]
   },
   "5:3": {
    "name": "ViridianCity_Mart",
@@ -447,7 +529,14 @@
    "floors": [
     "5:3"
    ],
-   "popup": true
+   "popup": true,
+   "exits": [
+    {
+     "x": 4,
+     "y": 7,
+     "to": "3:1"
+    }
+   ]
   },
   "5:4": {
    "name": "ViridianCity_PokemonCenter_1F",
@@ -464,7 +553,14 @@
     "5:4",
     "5:5"
    ],
-   "popup": true
+   "popup": true,
+   "exits": [
+    {
+     "x": 7,
+     "y": 8,
+     "to": "3:1"
+    }
+   ]
   },
   "5:5": {
    "name": "ViridianCity_PokemonCenter_2F",
@@ -498,7 +594,19 @@
     "6:0",
     "6:1"
    ],
-   "popup": true
+   "popup": true,
+   "exits": [
+    {
+     "x": 14,
+     "y": 9,
+     "to": "3:2"
+    },
+    {
+     "x": 22,
+     "y": 9,
+     "to": "3:2"
+    }
+   ]
   },
   "6:1": {
    "name": "PewterCity_Museum_2F",
@@ -528,7 +636,14 @@
    "floors": [
     "6:2"
    ],
-   "popup": true
+   "popup": true,
+   "exits": [
+    {
+     "x": 6,
+     "y": 14,
+     "to": "3:2"
+    }
+   ]
   },
   "6:3": {
    "name": "PewterCity_Mart",
@@ -544,7 +659,14 @@
    "floors": [
     "6:3"
    ],
-   "popup": true
+   "popup": true,
+   "exits": [
+    {
+     "x": 4,
+     "y": 7,
+     "to": "3:2"
+    }
+   ]
   },
   "6:4": {
    "name": "PewterCity_House1",
@@ -560,7 +682,14 @@
    "floors": [
     "6:4"
    ],
-   "popup": true
+   "popup": true,
+   "exits": [
+    {
+     "x": 4,
+     "y": 7,
+     "to": "3:2"
+    }
+   ]
   },
   "6:5": {
    "name": "PewterCity_PokemonCenter_1F",
@@ -577,7 +706,14 @@
     "6:5",
     "6:6"
    ],
-   "popup": true
+   "popup": true,
+   "exits": [
+    {
+     "x": 7,
+     "y": 8,
+     "to": "3:2"
+    }
+   ]
   },
   "6:6": {
    "name": "PewterCity_PokemonCenter_2F",
@@ -610,7 +746,14 @@
    "floors": [
     "6:7"
    ],
-   "popup": true
+   "popup": true,
+   "exits": [
+    {
+     "x": 4,
+     "y": 7,
+     "to": "3:2"
+    }
+   ]
   }
  }
 }
