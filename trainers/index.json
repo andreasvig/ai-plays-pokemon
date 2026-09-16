@@ -1,5 +1,5 @@
 {
- "version": 2,
+ "version": 3,
  "pret_sha": "c75f352304d529f6ba92d4f74b9cf8b5c3810788",
  "trainers": {
   "102": {
@@ -10,11 +10,13 @@
    "party": [
     {
      "species": "Weedle",
-     "level": 6
+     "level": 6,
+     "id": 13
     },
     {
      "species": "Caterpie",
-     "level": 6
+     "level": 6,
+     "id": 10
     }
    ]
   },
@@ -26,15 +28,18 @@
    "party": [
     {
      "species": "Weedle",
-     "level": 7
+     "level": 7,
+     "id": 13
     },
     {
      "species": "Kakuna",
-     "level": 7
+     "level": 7,
+     "id": 14
     },
     {
      "species": "Weedle",
-     "level": 7
+     "level": 7,
+     "id": 13
     }
    ]
   },
@@ -46,7 +51,8 @@
    "party": [
     {
      "species": "Weedle",
-     "level": 9
+     "level": 9,
+     "id": 13
     }
    ]
   },
@@ -58,11 +64,13 @@
    "party": [
     {
      "species": "Geodude",
-     "level": 10
+     "level": 10,
+     "id": 74
     },
     {
      "species": "Sandshrew",
-     "level": 11
+     "level": 11,
+     "id": 27
     }
    ]
   },
@@ -74,7 +82,8 @@
    "party": [
     {
      "species": "Squirtle",
-     "level": 5
+     "level": 5,
+     "id": 7
     }
    ]
   },
@@ -86,7 +95,8 @@
    "party": [
     {
      "species": "Bulbasaur",
-     "level": 5
+     "level": 5,
+     "id": 1
     }
    ]
   },
@@ -98,7 +108,8 @@
    "party": [
     {
      "species": "Charmander",
-     "level": 5
+     "level": 5,
+     "id": 4
     }
    ]
   },
@@ -110,11 +121,13 @@
    "party": [
     {
      "species": "Pidgey",
-     "level": 9
+     "level": 9,
+     "id": 16
     },
     {
      "species": "Squirtle",
-     "level": 9
+     "level": 9,
+     "id": 7
     }
    ]
   },
@@ -126,11 +139,13 @@
    "party": [
     {
      "species": "Pidgey",
-     "level": 9
+     "level": 9,
+     "id": 16
     },
     {
      "species": "Bulbasaur",
-     "level": 9
+     "level": 9,
+     "id": 1
     }
    ]
   },
@@ -142,11 +157,13 @@
    "party": [
     {
      "species": "Pidgey",
-     "level": 9
+     "level": 9,
+     "id": 16
     },
     {
      "species": "Charmander",
-     "level": 9
+     "level": 9,
+     "id": 4
     }
    ]
   },
@@ -158,11 +175,13 @@
    "party": [
     {
      "species": "Geodude",
-     "level": 12
+     "level": 12,
+     "id": 74
     },
     {
      "species": "Onix",
-     "level": 14
+     "level": 14,
+     "id": 95
     }
    ]
   },
@@ -174,11 +193,13 @@
    "party": [
     {
      "species": "Caterpie",
-     "level": 7
+     "level": 7,
+     "id": 10
     },
     {
      "species": "Caterpie",
-     "level": 8
+     "level": 8,
+     "id": 10
     }
    ]
   },
@@ -190,15 +211,18 @@
    "party": [
     {
      "species": "Metapod",
-     "level": 7
+     "level": 7,
+     "id": 11
     },
     {
      "species": "Caterpie",
-     "level": 7
+     "level": 7,
+     "id": 10
     },
     {
      "species": "Metapod",
-     "level": 7
+     "level": 7,
+     "id": 11
     }
    ]
   }
