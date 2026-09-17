@@ -1,5 +1,339 @@
 [
   {
+    "run_id": "2026-09-16_21-08-49_config-5.1__union-alpha",
+    "label": null,
+    "kind": "official",
+    "model": "union-alpha",
+    "model_resolved": "stealth/union-alpha",
+    "config_stem": "config-5.1",
+    "benchmark": "pokebench-first-badge",
+    "benchmark_version": "pokebench-v1.1",
+    "status": "completed",
+    "started_at": "2026-09-16T21:08:51",
+    "ended_at": "2026-09-17T01:17:13",
+    "turns": 175,
+    "duration_s": 14901.7,
+    "total_cost_usd": 0.059379,
+    "avg_cost_per_turn_usd": 0.0003393085714285714,
+    "endpoint_price_usd_per_m": {
+      "prompt": 0.0,
+      "completion": 0.0
+    },
+    "avg_s_per_turn": 85.15257142857143,
+    "furthest_gate": "brock_defeated",
+    "furthest_gate_turn": 175,
+    "gates_reached": 12,
+    "total_gates": 12,
+    "gate_turns": {
+      "left_bedroom": 9,
+      "left_house": 11,
+      "oaks_lab_entered": 13,
+      "starter_chosen": 17,
+      "rival1_done": 25,
+      "route1_reached": 30,
+      "viridian_reached": 47,
+      "parcel_delivered": 53,
+      "pokedex_received": 69,
+      "viridian_forest_reached": 96,
+      "pewter_reached": 150,
+      "brock_defeated": 175
+    },
+    "gate_times_s": {
+      "left_bedroom": 1919.65,
+      "left_house": 2124.589,
+      "oaks_lab_entered": 2288.902,
+      "starter_chosen": 2554.09,
+      "rival1_done": 3230.847,
+      "route1_reached": 3639.49,
+      "viridian_reached": 4543.546,
+      "parcel_delivered": 4775.93,
+      "pokedex_received": 6179.433,
+      "viridian_forest_reached": 9625.658,
+      "pewter_reached": 13098.794,
+      "brock_defeated": 14901.537
+    },
+    "gate_costs_usd": {
+      "left_bedroom": 0.0,
+      "left_house": 0.0,
+      "oaks_lab_entered": 0.0,
+      "starter_chosen": 0.0,
+      "rival1_done": 0.0,
+      "route1_reached": 0.0,
+      "viridian_reached": 0.0,
+      "parcel_delivered": 0.0,
+      "pokedex_received": 0.0,
+      "viridian_forest_reached": 0.0,
+      "pewter_reached": 0.0,
+      "brock_defeated": 0.0
+    },
+    "avg_inputs_per_turn": 11.062857142857142,
+    "input_counts": {
+      "up": 644,
+      "b": 298,
+      "down": 237,
+      "left": 234,
+      "right": 199,
+      "wait": 177,
+      "a": 147
+    },
+    "avg_output_tokens_per_turn": 1229.2,
+    "thinking_share": 0.0,
+    "wild_battles": 10,
+    "wild_battle_turns": 18,
+    "trainer_battles": [
+      {
+        "group": "102",
+        "id": 102,
+        "name": "Bug Catcher Rick",
+        "attempts": 1,
+        "turns": 9,
+        "won": true,
+        "mandatory": false
+      },
+      {
+        "group": "104",
+        "id": 104,
+        "name": "Bug Catcher Sammy",
+        "attempts": 1,
+        "turns": 3,
+        "won": true,
+        "mandatory": false
+      },
+      {
+        "group": "142",
+        "id": 142,
+        "name": "Camper Liam",
+        "attempts": 1,
+        "turns": 5,
+        "won": true,
+        "mandatory": false
+      },
+      {
+        "group": "rival_oaks_lab",
+        "id": 328,
+        "name": "Rival (Oak's Lab)",
+        "attempts": 1,
+        "turns": 7,
+        "won": true,
+        "mandatory": true
+      },
+      {
+        "group": "414",
+        "id": 414,
+        "name": "Leader Brock",
+        "attempts": 1,
+        "turns": 5,
+        "won": true,
+        "mandatory": true
+      },
+      {
+        "group": "531",
+        "id": 531,
+        "name": "Bug Catcher Anthony",
+        "attempts": 1,
+        "turns": 8,
+        "won": true,
+        "mandatory": false
+      }
+    ],
+    "trainer_battle_turns": 37,
+    "battle_turn_share": 0.32,
+    "battle_fidelity": "live",
+    "overworld_steps": 1003,
+    "shortest_steps": 666,
+    "movement_efficiency": 0.578125,
+    "steps_fidelity": "trace",
+    "movement_legs": [
+      {
+        "node_id": "left_bedroom",
+        "d_open": 9,
+        "steps": 23,
+        "walls": 4,
+        "source": "trace",
+        "status": "closed"
+      },
+      {
+        "node_id": "left_house",
+        "d_open": 12,
+        "steps": 14,
+        "walls": 0,
+        "source": "trace",
+        "status": "closed"
+      },
+      {
+        "node_id": "oaks_lab_entered",
+        "d_open": 13,
+        "steps": 42,
+        "walls": 2,
+        "source": "trace",
+        "status": "closed"
+      },
+      {
+        "node_id": "starter_chosen",
+        "d_open": 3,
+        "steps": 7,
+        "walls": 0,
+        "source": "trace",
+        "status": "closed"
+      },
+      {
+        "node_id": "rival1_done",
+        "d_open": 6,
+        "steps": 6,
+        "walls": 0,
+        "source": "trace",
+        "status": "closed"
+      },
+      {
+        "node_id": "route1_reached",
+        "d_open": 25,
+        "steps": 69,
+        "walls": 15,
+        "source": "trace",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_reached",
+        "d_open": 52,
+        "steps": 84,
+        "walls": 14,
+        "source": "trace",
+        "status": "closed"
+      },
+      {
+        "node_id": "parcel_delivered",
+        "d_open": 32,
+        "steps": 70,
+        "walls": 2,
+        "source": "trace",
+        "status": "closed"
+      },
+      {
+        "node_id": "pokedex_received",
+        "d_open": 107,
+        "steps": 133,
+        "walls": 30,
+        "source": "trace",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_forest_reached",
+        "d_open": 186,
+        "steps": 225,
+        "walls": 53,
+        "source": "trace",
+        "status": "closed"
+      },
+      {
+        "node_id": "pewter_reached",
+        "d_open": 164,
+        "steps": 225,
+        "walls": 12,
+        "source": "trace",
+        "status": "closed"
+      },
+      {
+        "node_id": "brock_defeated",
+        "d_open": 57,
+        "steps": 105,
+        "walls": 17,
+        "source": "trace",
+        "status": "closed"
+      }
+    ],
+    "route_points": 975,
+    "route_coverage": 1.0,
+    "charged_steps": 1152,
+    "walls_hit": 149,
+    "wall_rate": 0.106201,
+    "input_breakdown": {
+      "inputs": 1759,
+      "overworld_inputs": 1403,
+      "overworld_steps": 988,
+      "inputs_lost": 246,
+      "moved_inputs": 962,
+      "battle_inputs": 356,
+      "battle_edge": 21,
+      "walls_hit": 149,
+      "turns_to_face": 32,
+      "blocked_by_actor": 52,
+      "blocked_unknown": 13,
+      "idle_ab": 174,
+      "unclassified": 0,
+      "traced_turns": 175,
+      "wall_rate": 0.106201,
+      "worst_turns": [
+        {
+          "turn": 27,
+          "walls": 12,
+          "inputs": 35
+        },
+        {
+          "turn": 57,
+          "walls": 10,
+          "inputs": 16
+        },
+        {
+          "turn": 73,
+          "walls": 10,
+          "inputs": 14
+        },
+        {
+          "turn": 80,
+          "walls": 8,
+          "inputs": 20
+        },
+        {
+          "turn": 154,
+          "walls": 8,
+          "inputs": 19
+        },
+        {
+          "turn": 72,
+          "walls": 8,
+          "inputs": 14
+        },
+        {
+          "turn": 58,
+          "walls": 7,
+          "inputs": 19
+        },
+        {
+          "turn": 81,
+          "walls": 7,
+          "inputs": 14
+        },
+        {
+          "turn": 92,
+          "walls": 7,
+          "inputs": 12
+        },
+        {
+          "turn": 79,
+          "walls": 6,
+          "inputs": 15
+        }
+      ]
+    },
+    "progress": 12.0,
+    "leg_gate": null,
+    "leg_fraction": null,
+    "leg_distance_min": null,
+    "leg_distance_open": null,
+    "termination_reason": null,
+    "projection_version": 14,
+    "continued_from": null,
+    "resumed": false,
+    "harness": "append_compact",
+    "max_turns": 10000000,
+    "has_recording": true,
+    "video_url": "https://pub-c54bf882c85d4fad83024b5791b99424.r2.dev/runs/2026-09-16_21-08-49_config-5.1__union-alpha/recording.mp4",
+    "video_view": "detailed",
+    "screenshots_base_url": null,
+    "trace_published": false,
+    "published_at": "2026-09-17T05:35:25+00:00"
+  },
+  {
     "run_id": "2026-09-15_21-36-32_config-5.1__gpt-6-astra-low",
     "label": null,
     "kind": "official",
