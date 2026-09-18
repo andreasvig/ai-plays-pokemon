@@ -162,6 +162,14 @@
     "released": "2026-09-02"
   },
   {
+    "model": "pareto",
+    "openrouter_id": "unbiased/pareto",
+    "vendor": "unbiased",
+    "reasoning_type": "none",
+    "thinking_levels": [],
+    "released": "2026-09-18"
+  },
+  {
     "model": "qwen3.8-flash",
     "openrouter_id": "qwen/qwen3.8-flash",
     "vendor": "qwen",
@@ -171,13 +179,5 @@
       "non-thinking"
     ],
     "released": "2026-08-26"
-  },
-  {
-    "model": "union-alpha",
-    "openrouter_id": "stealth/union-alpha",
-    "vendor": "stealth",
-    "reasoning_type": "none",
-    "thinking_levels": [],
-    "released": "2026-09-16"
   }
 ]

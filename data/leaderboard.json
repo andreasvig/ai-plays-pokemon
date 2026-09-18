@@ -3,8 +3,8 @@
     "run_id": "2026-09-16_21-08-49_config-5.1__union-alpha",
     "label": null,
     "kind": "official",
-    "model": "union-alpha",
-    "model_resolved": "stealth/union-alpha",
+    "model": "pareto",
+    "model_resolved": "unbiased/pareto",
     "config_stem": "config-5.1",
     "benchmark": "pokebench-first-badge",
     "benchmark_version": "pokebench-v1.1",
@@ -19,6 +19,13 @@
       "prompt": 0.0,
       "completion": 0.0
     },
+    "list_price_usd_per_m": {
+      "prompt": 2.5,
+      "completion": 7.5,
+      "input_cache_read": 0.25
+    },
+    "list_price_cost_usd": 5.58302125,
+    "list_price_per_turn_usd": 0.03190297857142857,
     "avg_s_per_turn": 85.15257142857143,
     "furthest_gate": "brock_defeated",
     "furthest_gate_turn": 175,
@@ -65,6 +72,20 @@
       "viridian_forest_reached": 0.0,
       "pewter_reached": 0.0,
       "brock_defeated": 0.0
+    },
+    "gate_list_costs_usd": {
+      "left_bedroom": 0.387025,
+      "left_house": 0.489495,
+      "oaks_lab_entered": 0.507929,
+      "starter_chosen": 0.564825,
+      "rival1_done": 0.928463,
+      "route1_reached": 1.201509,
+      "viridian_reached": 1.486953,
+      "parcel_delivered": 1.671018,
+      "pokedex_received": 2.031793,
+      "viridian_forest_reached": 3.138999,
+      "pewter_reached": 4.701099,
+      "brock_defeated": 5.583021
     },
     "avg_inputs_per_turn": 11.062857142857142,
     "input_counts": {
@@ -321,7 +342,7 @@
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": null,
-    "projection_version": 14,
+    "projection_version": 15,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -349,6 +370,15 @@
     "duration_s": 3830.8,
     "total_cost_usd": 7.375888,
     "avg_cost_per_turn_usd": 0.05344846376811594,
+    "endpoint_price_usd_per_m": {
+      "prompt": 10.0,
+      "completion": 50.0,
+      "input_cache_read": 1.0,
+      "input_cache_write": 12.5
+    },
+    "list_price_usd_per_m": null,
+    "list_price_cost_usd": null,
+    "list_price_per_turn_usd": null,
     "avg_s_per_turn": 27.759420289855075,
     "furthest_gate": "brock_defeated",
     "furthest_gate_turn": 138,
@@ -396,6 +426,7 @@
       "pewter_reached": 6.608808,
       "brock_defeated": 7.296083
     },
+    "gate_list_costs_usd": null,
     "avg_inputs_per_turn": 11.108695652173912,
     "input_counts": {
       "up": 493,
@@ -651,7 +682,7 @@
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": null,
-    "projection_version": 13,
+    "projection_version": 15,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -679,6 +710,14 @@
     "duration_s": 726.4,
     "total_cost_usd": 0.481877,
     "avg_cost_per_turn_usd": 0.013023702702702703,
+    "endpoint_price_usd_per_m": {
+      "prompt": 1.25,
+      "completion": 4.25,
+      "input_cache_read": 0.15
+    },
+    "list_price_usd_per_m": null,
+    "list_price_cost_usd": null,
+    "list_price_per_turn_usd": null,
     "avg_s_per_turn": 19.63243243243243,
     "furthest_gate": "left_house",
     "furthest_gate_turn": 7,
@@ -696,6 +735,7 @@
       "left_bedroom": 0.039051,
       "left_house": 0.059433
     },
+    "gate_list_costs_usd": null,
     "avg_inputs_per_turn": 5.945945945945946,
     "input_counts": {
       "down": 72,
@@ -823,7 +863,7 @@
     "leg_distance_min": 2,
     "leg_distance_open": 13,
     "termination_reason": "leg_cap:oaks_lab_entered",
-    "projection_version": 13,
+    "projection_version": 15,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -851,6 +891,15 @@
     "duration_s": 12406.3,
     "total_cost_usd": 10.13702,
     "avg_cost_per_turn_usd": 0.03270006451612903,
+    "endpoint_price_usd_per_m": {
+      "prompt": 0.75,
+      "completion": 3.75,
+      "input_cache_read": 0.075,
+      "input_cache_write": 0.0416666666666667
+    },
+    "list_price_usd_per_m": null,
+    "list_price_cost_usd": null,
+    "list_price_per_turn_usd": null,
     "avg_s_per_turn": 40.02032258064516,
     "furthest_gate": "pewter_reached",
     "furthest_gate_turn": 210,
@@ -895,6 +944,7 @@
       "viridian_forest_reached": 2.515872,
       "pewter_reached": 6.950992
     },
+    "gate_list_costs_usd": null,
     "avg_inputs_per_turn": 13.996774193548386,
     "input_counts": {
       "up": 1779,
@@ -1133,7 +1183,7 @@
     "leg_distance_min": 2,
     "leg_distance_open": 59,
     "termination_reason": "leg_cap:brock_defeated",
-    "projection_version": 13,
+    "projection_version": 15,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -1161,6 +1211,15 @@
     "duration_s": 653.4,
     "total_cost_usd": 0.13054,
     "avg_cost_per_turn_usd": 0.0032635,
+    "endpoint_price_usd_per_m": {
+      "prompt": 0.3,
+      "completion": 2.5,
+      "input_cache_read": 0.03,
+      "input_cache_write": 0.0833333333333333
+    },
+    "list_price_usd_per_m": null,
+    "list_price_cost_usd": null,
+    "list_price_per_turn_usd": null,
     "avg_s_per_turn": 16.335,
     "furthest_gate": "left_house",
     "furthest_gate_turn": 10,
@@ -1178,6 +1237,7 @@
       "left_bedroom": 0.008629,
       "left_house": 0.025773
     },
+    "gate_list_costs_usd": null,
     "avg_inputs_per_turn": 2.425,
     "input_counts": {
       "up": 46,
@@ -1305,7 +1365,7 @@
     "leg_distance_min": 10,
     "leg_distance_open": 13,
     "termination_reason": "leg_cap:oaks_lab_entered",
-    "projection_version": 13,
+    "projection_version": 15,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -1333,6 +1393,14 @@
     "duration_s": 30860.0,
     "total_cost_usd": 4.056006,
     "avg_cost_per_turn_usd": 0.00841495020746888,
+    "endpoint_price_usd_per_m": {
+      "prompt": 0.3,
+      "completion": 1.2,
+      "input_cache_read": 0.006
+    },
+    "list_price_usd_per_m": null,
+    "list_price_cost_usd": null,
+    "list_price_per_turn_usd": null,
     "avg_s_per_turn": 64.02489626556017,
     "furthest_gate": "viridian_forest_reached",
     "furthest_gate_turn": 182,
@@ -1374,6 +1442,7 @@
       "pokedex_received": 1.034998,
       "viridian_forest_reached": 1.565939
     },
+    "gate_list_costs_usd": null,
     "avg_inputs_per_turn": 10.82780082987552,
     "input_counts": {
       "up": 1844,
@@ -1517,7 +1586,7 @@
     "leg_distance_min": 68,
     "leg_distance_open": 167,
     "termination_reason": "leg_cap:pewter_reached",
-    "projection_version": 13,
+    "projection_version": 15,
     "continued_from": "2026-09-12_05-47-17_config-5.1__deepseek-v4-1-flash-max",
     "resumed": true,
     "harness": "append_compact",
@@ -1545,6 +1614,14 @@
     "duration_s": 2399.9,
     "total_cost_usd": 1.91962,
     "avg_cost_per_turn_usd": 0.028651044776119405,
+    "endpoint_price_usd_per_m": {
+      "prompt": 3.0,
+      "completion": 15.0,
+      "input_cache_read": 0.3
+    },
+    "list_price_usd_per_m": null,
+    "list_price_cost_usd": null,
+    "list_price_per_turn_usd": null,
     "avg_s_per_turn": 35.819402985074625,
     "furthest_gate": "rival1_done",
     "furthest_gate_turn": 37,
@@ -1571,6 +1648,7 @@
       "starter_chosen": 0.555793,
       "rival1_done": 0.759923
     },
+    "gate_list_costs_usd": null,
     "avg_inputs_per_turn": 5.582089552238806,
     "input_counts": {
       "up": 82,
@@ -1666,7 +1744,7 @@
     "leg_distance_min": 8,
     "leg_distance_open": 25,
     "termination_reason": "leg_cap:route1_reached",
-    "projection_version": 13,
+    "projection_version": 15,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -1694,6 +1772,15 @@
     "duration_s": 10780.2,
     "total_cost_usd": 6.338579,
     "avg_cost_per_turn_usd": 0.015273684337349398,
+    "endpoint_price_usd_per_m": {
+      "prompt": 2.0,
+      "completion": 10.0,
+      "input_cache_read": 0.19999999999999998,
+      "input_cache_write": 2.5
+    },
+    "list_price_usd_per_m": null,
+    "list_price_cost_usd": null,
+    "list_price_per_turn_usd": null,
     "avg_s_per_turn": 25.976385542168675,
     "furthest_gate": "viridian_forest_reached",
     "furthest_gate_turn": 115,
@@ -1735,6 +1822,7 @@
       "pokedex_received": 1.163303,
       "viridian_forest_reached": 1.65249
     },
+    "gate_list_costs_usd": null,
     "avg_inputs_per_turn": 11.421686746987952,
     "input_counts": {
       "up": 1739,
@@ -1888,7 +1976,7 @@
     "leg_distance_min": 117,
     "leg_distance_open": 167,
     "termination_reason": "leg_cap:pewter_reached",
-    "projection_version": 13,
+    "projection_version": 15,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -1916,6 +2004,15 @@
     "duration_s": 2532.0,
     "total_cost_usd": 0.28,
     "avg_cost_per_turn_usd": 0.0018666666666666669,
+    "endpoint_price_usd_per_m": {
+      "prompt": 0.19999999999999998,
+      "completion": 1.2,
+      "input_cache_read": 0.02,
+      "input_cache_write": 0.25
+    },
+    "list_price_usd_per_m": null,
+    "list_price_cost_usd": null,
+    "list_price_per_turn_usd": null,
     "avg_s_per_turn": 16.88,
     "furthest_gate": "viridian_reached",
     "furthest_gate_turn": 100,
@@ -1948,6 +2045,7 @@
       "route1_reached": 0.088415,
       "viridian_reached": 0.13763
     },
+    "gate_list_costs_usd": null,
     "avg_inputs_per_turn": 6.12,
     "input_counts": {
       "up": 339,
@@ -2059,7 +2157,7 @@
     "leg_distance_min": 7,
     "leg_distance_open": 38,
     "termination_reason": "leg_cap:parcel_delivered",
-    "projection_version": 13,
+    "projection_version": 15,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -2087,6 +2185,15 @@
     "duration_s": 4066.8,
     "total_cost_usd": 0.530952,
     "avg_cost_per_turn_usd": 0.0031793532934131737,
+    "endpoint_price_usd_per_m": {
+      "prompt": 0.19999999999999998,
+      "completion": 1.2,
+      "input_cache_read": 0.02,
+      "input_cache_write": 0.25
+    },
+    "list_price_usd_per_m": null,
+    "list_price_cost_usd": null,
+    "list_price_per_turn_usd": null,
     "avg_s_per_turn": 24.352095808383236,
     "furthest_gate": "route1_reached",
     "furthest_gate_turn": 67,
@@ -2116,6 +2223,7 @@
       "rival1_done": 0.133983,
       "route1_reached": 0.151474
     },
+    "gate_list_costs_usd": null,
     "avg_inputs_per_turn": 6.023952095808383,
     "input_counts": {
       "up": 321,
@@ -2218,7 +2326,7 @@
     "leg_distance_min": 22,
     "leg_distance_open": 58,
     "termination_reason": "leg_cap:viridian_reached",
-    "projection_version": 13,
+    "projection_version": 15,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -2246,6 +2354,15 @@
     "duration_s": 9138.4,
     "total_cost_usd": 18.584238,
     "avg_cost_per_turn_usd": 0.06733419565217391,
+    "endpoint_price_usd_per_m": {
+      "prompt": 10.0,
+      "completion": 50.0,
+      "input_cache_read": 0.25,
+      "input_cache_write": 12.5
+    },
+    "list_price_usd_per_m": null,
+    "list_price_cost_usd": null,
+    "list_price_per_turn_usd": null,
     "avg_s_per_turn": 33.11014492753623,
     "furthest_gate": "brock_defeated",
     "furthest_gate_turn": 276,
@@ -2293,6 +2410,7 @@
       "pewter_reached": 16.573254,
       "brock_defeated": 18.420451
     },
+    "gate_list_costs_usd": null,
     "avg_inputs_per_turn": 12.75,
     "input_counts": {
       "up": 1070,
@@ -2480,7 +2598,7 @@
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": null,
-    "projection_version": 13,
+    "projection_version": 15,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -2508,6 +2626,14 @@
     "duration_s": 29495.7,
     "total_cost_usd": 23.705796,
     "avg_cost_per_turn_usd": 0.04558806923076923,
+    "endpoint_price_usd_per_m": {
+      "prompt": 2.0,
+      "completion": 6.0,
+      "input_cache_read": 0.5
+    },
+    "list_price_usd_per_m": null,
+    "list_price_cost_usd": null,
+    "list_price_per_turn_usd": null,
     "avg_s_per_turn": 56.722500000000004,
     "furthest_gate": "viridian_forest_reached",
     "furthest_gate_turn": 220,
@@ -2549,6 +2675,7 @@
       "pokedex_received": 8.213556,
       "viridian_forest_reached": 10.418136
     },
+    "gate_list_costs_usd": null,
     "avg_inputs_per_turn": 9.305769230769231,
     "input_counts": {
       "up": 1150,
@@ -2693,7 +2820,7 @@
     "leg_distance_min": 111,
     "leg_distance_open": 167,
     "termination_reason": "leg_cap:pewter_reached",
-    "projection_version": 13,
+    "projection_version": 15,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -2721,6 +2848,15 @@
     "duration_s": 10013.1,
     "total_cost_usd": 0.496122,
     "avg_cost_per_turn_usd": 0.002970790419161677,
+    "endpoint_price_usd_per_m": {
+      "prompt": 0.15,
+      "completion": 0.47,
+      "input_cache_read": 0.016,
+      "input_cache_write": 0.19999999999999998
+    },
+    "list_price_usd_per_m": null,
+    "list_price_cost_usd": null,
+    "list_price_per_turn_usd": null,
     "avg_s_per_turn": 59.95868263473054,
     "furthest_gate": "viridian_reached",
     "furthest_gate_turn": 117,
@@ -2753,6 +2889,7 @@
       "route1_reached": 0.106401,
       "viridian_reached": 0.273265
     },
+    "gate_list_costs_usd": null,
     "avg_inputs_per_turn": 6.934131736526946,
     "input_counts": {
       "up": 565,
@@ -2863,7 +3000,7 @@
     "leg_distance_min": 23,
     "leg_distance_open": 38,
     "termination_reason": "leg_cap:parcel_delivered",
-    "projection_version": 13,
+    "projection_version": 15,
     "continued_from": "2026-09-12_17-31-29_config-5.1__qwen3-8-flash-thinking",
     "resumed": true,
     "harness": "append_compact",
@@ -2891,6 +3028,15 @@
     "duration_s": 11548.2,
     "total_cost_usd": 21.971612,
     "avg_cost_per_turn_usd": 0.05954366395663957,
+    "endpoint_price_usd_per_m": {
+      "prompt": 5.0,
+      "completion": 25.0,
+      "input_cache_read": 0.5,
+      "input_cache_write": 6.25
+    },
+    "list_price_usd_per_m": null,
+    "list_price_cost_usd": null,
+    "list_price_per_turn_usd": null,
     "avg_s_per_turn": 31.295934959349594,
     "furthest_gate": "brock_defeated",
     "furthest_gate_turn": 369,
@@ -2938,6 +3084,7 @@
       "pewter_reached": 17.432366,
       "brock_defeated": 21.770522
     },
+    "gate_list_costs_usd": null,
     "avg_inputs_per_turn": 7.37940379403794,
     "input_counts": {
       "up": 834,
@@ -3126,7 +3273,7 @@
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": null,
-    "projection_version": 13,
+    "projection_version": 15,
     "continued_from": "2026-09-12_14-17-37_config-5.1__claude-opus-5-high",
     "resumed": true,
     "harness": "append_compact",
@@ -3154,6 +3301,14 @@
     "duration_s": 4565.6,
     "total_cost_usd": 0.413968,
     "avg_cost_per_turn_usd": 0.002392878612716763,
+    "endpoint_price_usd_per_m": {
+      "prompt": 0.15,
+      "completion": 0.6,
+      "input_cache_read": 0.003
+    },
+    "list_price_usd_per_m": null,
+    "list_price_cost_usd": null,
+    "list_price_per_turn_usd": null,
     "avg_s_per_turn": 26.390751445086707,
     "furthest_gate": "viridian_reached",
     "furthest_gate_turn": 123,
@@ -3186,6 +3341,7 @@
       "route1_reached": 0.053624,
       "viridian_reached": 0.23112
     },
+    "gate_list_costs_usd": null,
     "avg_inputs_per_turn": 6.971098265895954,
     "input_counts": {
       "up": 478,
@@ -3297,7 +3453,7 @@
     "leg_distance_min": 7,
     "leg_distance_open": 41,
     "termination_reason": "leg_cap:parcel_delivered",
-    "projection_version": 13,
+    "projection_version": 15,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -3325,6 +3481,14 @@
     "duration_s": 14760.2,
     "total_cost_usd": 1.380761,
     "avg_cost_per_turn_usd": 0.0026604258188824663,
+    "endpoint_price_usd_per_m": {
+      "prompt": 0.15,
+      "completion": 0.6,
+      "input_cache_read": 0.003
+    },
+    "list_price_usd_per_m": null,
+    "list_price_cost_usd": null,
+    "list_price_per_turn_usd": null,
     "avg_s_per_turn": 28.439691714836226,
     "furthest_gate": "viridian_forest_reached",
     "furthest_gate_turn": 219,
@@ -3366,6 +3530,7 @@
       "pokedex_received": 0.379315,
       "viridian_forest_reached": 0.544253
     },
+    "gate_list_costs_usd": null,
     "avg_inputs_per_turn": 6.574181117533719,
     "input_counts": {
       "up": 1107,
@@ -3528,7 +3693,7 @@
     "leg_distance_min": 53,
     "leg_distance_open": 167,
     "termination_reason": "leg_cap:pewter_reached",
-    "projection_version": 13,
+    "projection_version": 15,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -3556,6 +3721,15 @@
     "duration_s": 6583.9,
     "total_cost_usd": 3.329399,
     "avg_cost_per_turn_usd": 0.009047279891304348,
+    "endpoint_price_usd_per_m": {
+      "prompt": 0.75,
+      "completion": 3.75,
+      "input_cache_read": 0.075,
+      "input_cache_write": 0.0416666666666667
+    },
+    "list_price_usd_per_m": null,
+    "list_price_cost_usd": null,
+    "list_price_per_turn_usd": null,
     "avg_s_per_turn": 17.89103260869565,
     "furthest_gate": "brock_defeated",
     "furthest_gate_turn": 368,
@@ -3603,6 +3777,7 @@
       "pewter_reached": 2.463553,
       "brock_defeated": 3.140544
     },
+    "gate_list_costs_usd": null,
     "avg_inputs_per_turn": 8.182065217391305,
     "input_counts": {
       "up": 923,
@@ -3799,7 +3974,7 @@
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": null,
-    "projection_version": 13,
+    "projection_version": 15,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -3827,6 +4002,15 @@
     "duration_s": 758.8,
     "total_cost_usd": 0.190128,
     "avg_cost_per_turn_usd": 0.0033355789473684208,
+    "endpoint_price_usd_per_m": {
+      "prompt": 0.3,
+      "completion": 2.5,
+      "input_cache_read": 0.03,
+      "input_cache_write": 0.0833333333333333
+    },
+    "list_price_usd_per_m": null,
+    "list_price_cost_usd": null,
+    "list_price_per_turn_usd": null,
     "avg_s_per_turn": 13.312280701754386,
     "furthest_gate": "left_house",
     "furthest_gate_turn": 27,
@@ -3844,6 +4028,7 @@
       "left_bedroom": 0.0686,
       "left_house": 0.081041
     },
+    "gate_list_costs_usd": null,
     "avg_inputs_per_turn": 3.017543859649123,
     "input_counts": {
       "right": 48,
@@ -3903,7 +4088,7 @@
     "leg_distance_min": 12,
     "leg_distance_open": 13,
     "termination_reason": "leg_cap:oaks_lab_entered",
-    "projection_version": 13,
+    "projection_version": 15,
     "continued_from": "2026-09-09_19-37-48_config-5.0__gemini-3-5-flash-lite-minimal",
     "resumed": true,
     "harness": "append_compact",
@@ -3931,6 +4116,15 @@
     "duration_s": 757.7,
     "total_cost_usd": 0.236065,
     "avg_cost_per_turn_usd": 0.0038075,
+    "endpoint_price_usd_per_m": {
+      "prompt": 0.3,
+      "completion": 2.5,
+      "input_cache_read": 0.03,
+      "input_cache_write": 0.0833333333333333
+    },
+    "list_price_usd_per_m": null,
+    "list_price_cost_usd": null,
+    "list_price_per_turn_usd": null,
     "avg_s_per_turn": 12.220967741935485,
     "furthest_gate": "oaks_lab_entered",
     "furthest_gate_turn": 32,
@@ -3951,6 +4145,7 @@
       "left_house": 0.079564,
       "oaks_lab_entered": 0.112053
     },
+    "gate_list_costs_usd": null,
     "avg_inputs_per_turn": 5.096774193548387,
     "input_counts": {
       "b": 117,
@@ -4019,7 +4214,7 @@
     "leg_distance_min": 0,
     "leg_distance_open": 1,
     "termination_reason": "leg_cap:starter_chosen",
-    "projection_version": 13,
+    "projection_version": 15,
     "continued_from": "2026-09-09_20-18-53_config-5.0__gemini-3-5-flash-lite-medium",
     "resumed": true,
     "harness": "append_compact",
@@ -4047,6 +4242,15 @@
     "duration_s": 797.4,
     "total_cost_usd": 0.234346,
     "avg_cost_per_turn_usd": 0.004421622641509434,
+    "endpoint_price_usd_per_m": {
+      "prompt": 0.3,
+      "completion": 2.5,
+      "input_cache_read": 0.03,
+      "input_cache_write": 0.0833333333333333
+    },
+    "list_price_usd_per_m": null,
+    "list_price_cost_usd": null,
+    "list_price_per_turn_usd": null,
     "avg_s_per_turn": 15.045283018867924,
     "furthest_gate": "oaks_lab_entered",
     "furthest_gate_turn": 23,
@@ -4067,6 +4271,7 @@
       "left_house": 0.079352,
       "oaks_lab_entered": 0.096971
     },
+    "gate_list_costs_usd": null,
     "avg_inputs_per_turn": 5.849056603773585,
     "input_counts": {
       "b": 129,
@@ -4135,7 +4340,7 @@
     "leg_distance_min": 0,
     "leg_distance_open": 1,
     "termination_reason": "leg_cap:starter_chosen",
-    "projection_version": 13,
+    "projection_version": 15,
     "continued_from": "2026-09-09_21-20-50_config-5.1__gemini-3-5-flash-lite-high",
     "resumed": true,
     "harness": "append_compact",
@@ -4163,6 +4368,15 @@
     "duration_s": 8438.7,
     "total_cost_usd": 3.94911,
     "avg_cost_per_turn_usd": 0.008641378555798686,
+    "endpoint_price_usd_per_m": {
+      "prompt": 0.75,
+      "completion": 3.75,
+      "input_cache_read": 0.075,
+      "input_cache_write": 0.0416666666666667
+    },
+    "list_price_usd_per_m": null,
+    "list_price_cost_usd": null,
+    "list_price_per_turn_usd": null,
     "avg_s_per_turn": 18.465426695842453,
     "furthest_gate": "viridian_forest_reached",
     "furthest_gate_turn": 157,
@@ -4204,6 +4418,7 @@
       "pokedex_received": 0.885392,
       "viridian_forest_reached": 1.302521
     },
+    "gate_list_costs_usd": null,
     "avg_inputs_per_turn": 7.49234135667396,
     "input_counts": {
       "up": 1047,
@@ -4347,7 +4562,7 @@
     "leg_distance_min": 144,
     "leg_distance_open": 167,
     "termination_reason": "leg_cap:pewter_reached",
-    "projection_version": 13,
+    "projection_version": 15,
     "continued_from": "2026-09-09_16-04-56_config-5.0__gemini-3-8-flash-minimal_continued_from_turn_40",
     "resumed": true,
     "harness": "append_compact",
@@ -4375,6 +4590,14 @@
     "duration_s": 1341.1,
     "total_cost_usd": 0.074522,
     "avg_cost_per_turn_usd": 0.0015855744680851065,
+    "endpoint_price_usd_per_m": {
+      "prompt": 0.15,
+      "completion": 0.5,
+      "input_cache_read": 0.03
+    },
+    "list_price_usd_per_m": null,
+    "list_price_cost_usd": null,
+    "list_price_per_turn_usd": null,
     "avg_s_per_turn": 28.534042553191487,
     "furthest_gate": "left_house",
     "furthest_gate_turn": 17,
@@ -4392,6 +4615,7 @@
       "left_bedroom": 0.013896,
       "left_house": 0.022068
     },
+    "gate_list_costs_usd": null,
     "avg_inputs_per_turn": 9.319148936170214,
     "input_counts": {
       "up": 106,
@@ -4452,7 +4676,7 @@
     "leg_distance_min": 7,
     "leg_distance_open": 13,
     "termination_reason": "leg_cap:oaks_lab_entered",
-    "projection_version": 13,
+    "projection_version": 15,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -4480,6 +4704,14 @@
     "duration_s": 14138.5,
     "total_cost_usd": 0.878173,
     "avg_cost_per_turn_usd": 0.001715181640625,
+    "endpoint_price_usd_per_m": {
+      "prompt": 0.15,
+      "completion": 0.5,
+      "input_cache_read": 0.03
+    },
+    "list_price_usd_per_m": null,
+    "list_price_cost_usd": null,
+    "list_price_per_turn_usd": null,
     "avg_s_per_turn": 27.6142578125,
     "furthest_gate": "viridian_forest_reached",
     "furthest_gate_turn": 212,
@@ -4521,6 +4753,7 @@
       "pokedex_received": 0.12876,
       "viridian_forest_reached": 0.169479
     },
+    "gate_list_costs_usd": null,
     "avg_inputs_per_turn": 8.162109375,
     "input_counts": {
       "up": 1260,
@@ -4656,7 +4889,7 @@
     "leg_distance_min": 158,
     "leg_distance_open": 167,
     "termination_reason": "leg_cap:pewter_reached",
-    "projection_version": 13,
+    "projection_version": 15,
     "continued_from": "2026-09-11_10-29-29_config-5.1__glm-5-3-flash-high_continued_from_turn_412",
     "resumed": true,
     "harness": "append_compact",
@@ -4684,6 +4917,14 @@
     "duration_s": 3678.1,
     "total_cost_usd": 1.590025,
     "avg_cost_per_turn_usd": 0.011041840277777777,
+    "endpoint_price_usd_per_m": {
+      "prompt": 1.25,
+      "completion": 4.25,
+      "input_cache_read": 0.15
+    },
+    "list_price_usd_per_m": null,
+    "list_price_cost_usd": null,
+    "list_price_per_turn_usd": null,
     "avg_s_per_turn": 25.54236111111111,
     "furthest_gate": "viridian_reached",
     "furthest_gate_turn": 94,
@@ -4716,6 +4957,7 @@
       "route1_reached": 0.559546,
       "viridian_reached": 0.948968
     },
+    "gate_list_costs_usd": null,
     "avg_inputs_per_turn": 8.159722222222221,
     "input_counts": {
       "up": 439,
@@ -4826,7 +5068,7 @@
     "leg_distance_min": 9,
     "leg_distance_open": 40,
     "termination_reason": "leg_cap:parcel_delivered",
-    "projection_version": 13,
+    "projection_version": 15,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -4854,6 +5096,15 @@
     "duration_s": 4139.5,
     "total_cost_usd": 8.480074,
     "avg_cost_per_turn_usd": 0.05653382666666667,
+    "endpoint_price_usd_per_m": {
+      "prompt": 10.0,
+      "completion": 50.0,
+      "input_cache_read": 1.0,
+      "input_cache_write": 12.5
+    },
+    "list_price_usd_per_m": null,
+    "list_price_cost_usd": null,
+    "list_price_per_turn_usd": null,
     "avg_s_per_turn": 27.596666666666668,
     "furthest_gate": "brock_defeated",
     "furthest_gate_turn": 150,
@@ -4901,6 +5152,7 @@
       "pewter_reached": 7.44871,
       "brock_defeated": 8.36274
     },
+    "gate_list_costs_usd": null,
     "avg_inputs_per_turn": 11.2,
     "input_counts": {
       "up": 522,
@@ -5079,7 +5331,7 @@
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": null,
-    "projection_version": 13,
+    "projection_version": 15,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
@@ -5107,6 +5359,14 @@
     "duration_s": 72732.4,
     "total_cost_usd": 3.101516,
     "avg_cost_per_turn_usd": 0.005568251346499103,
+    "endpoint_price_usd_per_m": {
+      "prompt": 0.15,
+      "completion": 0.5,
+      "input_cache_read": 0.03
+    },
+    "list_price_usd_per_m": null,
+    "list_price_cost_usd": null,
+    "list_price_per_turn_usd": null,
     "avg_s_per_turn": 130.57881508078992,
     "furthest_gate": "pewter_reached",
     "furthest_gate_turn": 457,
@@ -5151,6 +5411,7 @@
       "viridian_forest_reached": 0.601472,
       "pewter_reached": 2.052266
     },
+    "gate_list_costs_usd": null,
     "avg_inputs_per_turn": 9.08258527827648,
     "input_counts": {
       "up": 1452,
@@ -5339,7 +5600,7 @@
     "leg_distance_min": 0,
     "leg_distance_open": 55,
     "termination_reason": "leg_cap:brock_defeated",
-    "projection_version": 13,
+    "projection_version": 15,
     "continued_from": "2026-09-10_13-32-55_config-5.1__glm-5-3-flash-max_continued_from_turn_129",
     "resumed": true,
     "harness": "append_compact",
@@ -5367,6 +5628,15 @@
     "duration_s": 7428.8,
     "total_cost_usd": 4.295766,
     "avg_cost_per_turn_usd": 0.01812559493670886,
+    "endpoint_price_usd_per_m": {
+      "prompt": 0.75,
+      "completion": 3.75,
+      "input_cache_read": 0.075,
+      "input_cache_write": 0.0416666666666667
+    },
+    "list_price_usd_per_m": null,
+    "list_price_cost_usd": null,
+    "list_price_per_turn_usd": null,
     "avg_s_per_turn": 31.345147679324896,
     "furthest_gate": "brock_defeated",
     "furthest_gate_turn": 237,
@@ -5414,6 +5684,7 @@
       "pewter_reached": 3.525487,
       "brock_defeated": 4.139049
     },
+    "gate_list_costs_usd": null,
     "avg_inputs_per_turn": 11.143459915611814,
     "input_counts": {
       "up": 810,
@@ -5495,7 +5766,7 @@
     "leg_distance_min": null,
     "leg_distance_open": null,
     "termination_reason": null,
-    "projection_version": 13,
+    "projection_version": 15,
     "continued_from": null,
     "resumed": false,
     "harness": "append_compact",
