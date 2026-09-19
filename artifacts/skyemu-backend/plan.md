@@ -50,7 +50,10 @@ The experiment this builds on lives in [`v2-experiments/`](../../v2-experiments/
 | **mGBA savestates load in SkyEmu** | ❌ | `/load` on `configs/saves/pokebench-v1/emulator.state` → `failed` |
 | **x/y moving as the player walks** | ✅ | from the P3 start state: `(6,6)` → three `down` → `(6,8)`, reload → `(6,6)` (2026-09-19) |
 | **A FireRed start state exists on SkyEmu** | ✅ | `configs/saves/skyemu/firered-pokebench-v2/`, replayed from cold boot in 8,598 frames / 15.5 s |
-| GBA accuracy / determinism vs mGBA over a long run | ⬜ **untested** | the main risk, §6 |
+| **Replaying a savestate is bit-exact** | ✅ | load→run→load→run: 0 bytes differ, FireRed and Platinum, to 38,400 frames |
+| **GBA `/load` is not an exact inverse of `/save`** | ⚠️ **defect** | live-vs-reloaded: 55 bytes at 864 frames, **3,131 at 31,200** and growing. `/screen` unaffected. §6.2 |
+| **NDS cold boot carries host-dependent state** | ⚠️ bounded | ~10 bytes at six fixed addresses near `0x02101d2c`, present with no inputs, does not grow |
+| GBA accuracy vs mGBA over a long run | ⬜ **untested** | the main risk, §6 |
 | Audio | ⬜ **untested** | spectate has a mute toggle; SkyEmu headless audio unknown |
 
 ---
@@ -370,10 +373,34 @@ produces is the thing that decides whether it should be.
    30-hour runs with battles, scripted events and saves. SkyEmu is a good emulator but
    mGBA is the reference. *Mitigation: P5's long run with the referee latching, before
    any of the surrounding work is polished.*
-2. **Determinism.** v1 is not reproducible either (wall-clock sleeps), and v2 ought to
-   be *more* so, but "ought to" is untested. *Mitigation: run the same scripted input
-   sequence twice from one savestate and diff the memory. A cheap, decisive check —
-   worth doing in P1, before anything is built on top.*
+2. **Determinism — measured 2026-09-19, and it splits in two.** `v2-experiments/determinism.py`.
+
+   **The good half, and it is the half a benchmark needs.** Load a state, run a fixed
+   input sequence, load it again, run the same sequence: **0 bytes differ**, on FireRed
+   and on Platinum, out to 38,400 frames. Two cold FireRed processes running the same
+   sequence also agree exactly. So *a run started from a savestate is reproducible*,
+   which is the property the ladder rests on, and it is one v1 cannot claim.
+
+   **The defect.** On GBA, `/load` is **not an exact inverse of `/save`**. A machine that
+   keeps running from the moment of a `/save` and the same machine after `/load` diverge:
+   **55 bytes at 864 frames, 3,131 at 31,200** (3,103 of them IWRAM), and growing. The
+   cold-booted arm agrees with the *live* arm, so the reloaded machine is the odd one out
+   — the defect is in `/load`, not in emulation. `/screen` stays byte-identical
+   throughout, so nothing visible has diverged yet at these horizons; which 55 bytes
+   they are is not identified.
+
+   **Where it bites: `--continue`.** Within a run nothing reloads, so scores are
+   unaffected. But a continued run resumes from a savepoint, and on this evidence it does
+   not resume the machine it left. That needs its own phase before v2 supports
+   `--continue`, and it is a candidate SkyEmu bug report.
+
+   **NDS**, separately: two cold Platinum boots differ by ~10 bytes at six fixed addresses
+   near `0x02101d2c`, present with no inputs at all, not growing, and not scaling with the
+   gap between launches. Bounded and unexplained.
+
+   Not covered: 38,400 frames is not the ~6.5 M of a 30-hour run, and one residue already
+   grows inside the range tested. One host, one build. No battle, no battery save, no
+   observable game outcome. Emulator reproducibility is not run reproducibility.
 3. **One request at a time.** Every consumer — turn loop, OCR, referee poll, spectate,
    recorder — serialises through the step loop. In v1 a lock made this convenient; in
    v2 it is a hard constraint. Any future "watch it while it runs" feature has to be
