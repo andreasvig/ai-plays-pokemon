@@ -256,7 +256,9 @@ inside a `1/1` stage (`SimpleView.svelte:725`) reads well next to the turn box �
 **Advanced (Spectate)** — one real defect: `Spectate.svelte:776` hardcodes
 `.gba { aspect-ratio: 240/160 }`. A 256×384 stacked DS frame letterboxes into a
 sliver of that box. Fix by driving the aspect from the frame's natural size, the
-way SimpleView already does.
+way SimpleView already does. **Done in `2191066`** — and see the S5 note in §6:
+the aspect fix alone was not the answer, because the stacked frame itself is the
+wrong shape for a landscape view.
 
 **Not defects, worth naming so nobody "fixes" them:**
 
@@ -380,7 +382,40 @@ No human step in any of them. `pokemon app --config configs/config-v2-firered.ya
 --rom black2` boots the whole control center on a DS game and reports
 `backend: skyemu, console: NDS, awaiting_lua: false`.
 
-**S4, S5, S6 — not started.**
+**S5 shipped** (`2191066`), and it turned out to be two changes, not one.
+
+`Spectate.svelte`'s emulator box now takes its aspect from the decoded frame
+instead of `240/160` — which fixes GB as well as NDS, and follows a cartridge
+swap for free. But driving the box from the frame only removes the bars *around*
+the picture; it does not make a 2:3 portrait stack a good thing to watch in a
+landscape dashboard, and Andreas said so the same afternoon: *"for ds games the
+watching experience is not that good … change the 'scale'/ratio between upper and
+lower screen, such that the upper screen is at least twice as wide?"*
+
+So `frame.spectate_frame` re-lays the DS capture out for a watcher: the two
+screens side by side, top at 2×, 768×384 instead of 256×384. It is a **second
+function, not a flag on `prepare`** — `prepare` is what the model is shown, the
+prompt describes a vertical stack, and `image_row_to_touch_y` maps a row of that
+image to a stylus tap, so a side-by-side frame reaching a turn would aim every
+tap at the wrong screen and never fail visibly. Two functions means no call site
+where a default picks the wrong one. It hangs off `StreamFileWriter`, the one
+hand the bytes pass through between emulator and stream file, so the live view,
+the simple view and both recorders get it at once. `emulator.ds_layout: stacked`
+opts out.
+
+**Also shipped, and not from this list** (`62ce888`): the console no longer
+stands still while the model thinks. *"i dont think the game should be paused,
+while we wait for inpits, it shoudl jsut run."* `spectate.FreeRunner` steps the
+machine through the public `SkyEmuClient.step` — lock per chunk, released
+between — for the length of every model call in the run loop (player turn,
+TaskMaster cold start, handoff), and is stopped and joined before the loop
+presses anything. This is the one clock knob that **does** change a run's
+content: machine state at each input becomes a function of model latency again,
+exactly as it was for every run on the v1 board. `--no-free-run` /
+`emulator.free_run: false` keeps the machine frozen for a determinism
+measurement. Measured live on SoulSilver: 59.1 fps against the console's 60.
+
+**S4, S6 — not started.**
 
 ---
 
