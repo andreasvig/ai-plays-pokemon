@@ -229,6 +229,13 @@ class SkyEmuClient:
         #: frames is the interval: 2 gives 30 fps of a 60 fps console.
         self.sampler: Optional[Any] = None
         self.sample_every = 2
+        #: Attach a callable to throttle. Called with the frames just advanced,
+        #: on the same chunk boundary as the sampler — a stepped emulator runs
+        #: as fast as the host allows, and a spectator wants the console's clock
+        #: (``dashboard/spectate.RealtimePacer``). It can only decide WHEN the
+        #: next ``/step`` is sent, never what it computes, so a paced run and an
+        #: unpaced one differ in duration and in nothing else.
+        self.pacer: Optional[Any] = None
 
         self._trace_rows: list[tuple[str, list[bytes]]] = []
 
@@ -414,6 +421,15 @@ class SkyEmuClient:
         )
         self.last_frame_meta = meta
         return img
+
+    def screen_png(self) -> bytes:
+        """The current frame as SkyEmu's own PNG bytes, unmodified.
+
+        The same bytes :attr:`sampler` is handed. Public so a spectate feed can
+        publish a frame WITHOUT a step — a stepped emulator shows nothing at all
+        until something advances it (``dashboard/spectate.SpectateFeed.prime``).
+        """
+        return self._get("/screen")
 
     def read_memory(self, addr: int, length: int) -> bytes:
         """``length`` raw bytes at bus address ``addr`` — the referee's entire
@@ -828,12 +844,16 @@ class SkyEmuClient:
         because SkyEmu handles one request at a time: a ``/screen`` sent from
         another thread during a long ``/step`` does not answer until the step
         finishes, so sampling has to be interleaved, never concurrent.
+
+        A :attr:`pacer` chunks it for the same reason from the other end: a
+        throttle applied once to a 300-frame ``wait`` would stall five seconds
+        in one lump, which is a freeze, not real time.
         """
         frames = int(frames)
         if frames <= 0:
             return
         self.frames_stepped += frames
-        if self.sampler is None:
+        if self.sampler is None and self.pacer is None:
             self._get("/step", {"frames": frames})
             return
         left = frames
@@ -841,10 +861,18 @@ class SkyEmuClient:
             n = min(self.sample_every, left)
             self._get("/step", {"frames": n})
             left -= n
-            try:
-                self.sampler(self._get("/screen"))
-            except Exception:
-                pass   # a recorder must never stop a run
+            # Neither hook may end a run: a spectator and a recorder are
+            # observers of the benchmark, never participants in it.
+            if self.sampler is not None:
+                try:
+                    self.sampler(self._get("/screen"))
+                except Exception:
+                    pass
+            if self.pacer is not None:
+                try:
+                    self.pacer(n)
+                except Exception:
+                    pass
 
     def _set_inputs(self, levels: dict[str, Any]) -> None:
         """Hold or release inputs. Keys are SkyEmu's own names."""

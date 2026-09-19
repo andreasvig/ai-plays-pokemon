@@ -1,0 +1,273 @@
+"""Live spectate (and, for free, video) for a stepped backend — plan §4.
+
+THE CONTRACT IS A PNG FILE THAT KEEPS CHANGING. That is the whole of it:
+
+    lua/socketserver-1.lua:346  →  /tmp/mgba_stream_1.png  (mGBA, every frame)
+    screen_stream.py            →  polls the mtime, validates the IEND marker
+    server.py ws_screen         →  forwards each new PNG to every WS client
+
+Nothing in that chain names an emulator, asks one a question, or holds a handle
+to one. So "SkyEmu can be spectated" is not a feature of the dashboard — it is
+one callable that writes that file. ``SkyEmuClient._step`` is the single place
+every advance of the machine goes through and it already carries a ``sampler``
+hook, so one attachment covers presses, waits and screen-settling alike.
+
+The same file is also the recorder's game rectangle: ``recorder.maybe_start``
+hands ``RunRecorder`` ``screen_source=session.streamer``, and the streamer is
+reading this file. So the dashboard MP4 recorder needs nothing new either —
+``v2-experiments/harness/record.py`` stays where it is, as the headless-only
+path that has no dashboard to render around the game.
+
+Two things are not free, and both live here:
+
+1. **Sampling costs throughput.** Every capture is an HTTP round trip and
+   SkyEmu answers one request at a time, so an attached sampler turns one long
+   ``/step`` into ``frames/sample_every`` step+screen pairs. Measured ~54
+   captures/s, hence ``sample_every = 2`` → 30 fps of a 60 fps console.
+2. **Pacing** — decision B: fast by default, a spectated run opts into
+   ``realtime``. See :class:`RealtimePacer`.
+
+The property worth protecting, and the reason pacing is allowed to exist at
+all: **pacing changes a run's duration, not its content.** The emulator is
+frozen between ``/step`` calls, so throttling only decides when the next call
+is made, never what it computes. A spectator cannot change a score.
+"""
+
+from __future__ import annotations
+
+import os
+import time
+from pathlib import Path
+from typing import Any, Callable, Optional
+
+#: The console's own clock. Every backend in this repo emulates a 60 Hz machine.
+CONSOLE_FPS = 60.0
+
+#: Where a stepped run's spectate feed is written, inside the run dir. Not
+#: ``/tmp``: the mGBA path uses a fixed ``/tmp`` name because Lua's capture
+#: target is baked into the script, and one file per run means two backends can
+#: be up at once (which is the point of SkyEmu not taking slot 1's port).
+STREAM_FILE = "stream.png"
+
+PACES = ("fast", "realtime")
+DEFAULT_PACE = "fast"
+
+
+# ───────────────────────────── pacing ──────────────────────────────
+
+
+def resolve_pace(config: dict) -> str:
+    """``emulator.pace``, defaulted to ``fast`` (decision B).
+
+    An unknown value RAISES rather than falling back. A typo silently meaning
+    "fast" would make a spectated run quietly un-spectatable, and the run would
+    look normal the whole way through.
+    """
+    raw = (config.get("emulator") or {}).get("pace", DEFAULT_PACE)
+    if raw is None:
+        return DEFAULT_PACE
+    pace = str(raw).strip().lower()
+    if pace not in PACES:
+        raise ValueError(
+            f"unknown emulator.pace {raw!r} (expected: {', '.join(PACES)})"
+        )
+    return pace
+
+
+class RealtimePacer:
+    """Throttle a stepped backend to the console's wall clock.
+
+    Called with the frame count that was just advanced. It keeps a deadline in
+    *game* time and sleeps the difference, so the host's own stepping cost is
+    inside the budget rather than on top of it.
+
+    **Debt is never banked.** While the model thinks, nothing steps, so the
+    deadline falls arbitrarily far behind. Carrying that debt forward would let
+    the next turn run at full speed to "catch up" — the precise opposite of what
+    a spectator asked for. Any overshoot re-anchors the deadline to now, so the
+    pacer throttles the next stretch of play and forgives everything before it.
+
+    ``clock`` / ``sleep`` are injectable so the behaviour can be tested without
+    spending the wall clock it is about.
+    """
+
+    def __init__(
+        self,
+        fps: float = CONSOLE_FPS,
+        *,
+        clock: Callable[[], float] = time.monotonic,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
+        if fps <= 0:
+            raise ValueError(f"pacer fps must be positive, got {fps!r}")
+        self._fps = float(fps)
+        self._clock = clock
+        self._sleep = sleep
+        self._deadline: Optional[float] = None
+        #: Wall-clock seconds this pacer has spent waiting. The cost of realtime.
+        self.slept = 0.0
+        #: Times the host could not keep up and the deadline was re-anchored.
+        self.behind = 0
+
+    def reset(self) -> None:
+        """Forget the deadline. The next call starts a fresh budget."""
+        self._deadline = None
+
+    def __call__(self, frames: int) -> float:
+        """Wait out ``frames`` of game time. Returns the seconds actually slept."""
+        frames = int(frames)
+        if frames <= 0:
+            return 0.0
+        now = self._clock()
+        if self._deadline is None:
+            self._deadline = now
+        self._deadline += frames / self._fps
+        delay = self._deadline - now
+        if delay > 0:
+            self._sleep(delay)
+            self.slept += delay
+            return delay
+        self._deadline = now
+        self.behind += 1
+        return 0.0
+
+
+# ───────────────────────── the spectate feed ───────────────────────
+
+
+class StreamFileWriter:
+    """The sampler: PNG bytes in, a file whose mtime keeps moving out.
+
+    The write is a temp file plus ``os.replace``, not a truncate-and-write.
+    ``ScreenStreamer`` already guards against a torn read by checking for the
+    IEND marker — but that guard DROPS the frame it catches, and at 30 fps the
+    reader and the writer overlap often. An atomic rename means the poller only
+    ever stats a complete PNG, so the guard never has to fire.
+    """
+
+    def __init__(self, path: str | Path) -> None:
+        self.path = Path(path)
+        # Same directory, so the rename stays on one filesystem (os.replace is
+        # only atomic within one).
+        self._tmp = self.path.with_name(self.path.name + ".part")
+        #: Frames written. The evidence that a feed ran at all.
+        self.frames = 0
+        #: Writes that failed. A recorder must never stop a run, so failures are
+        #: counted rather than raised; a nonzero count is what a report needs.
+        self.errors = 0
+        self.last_error: Optional[str] = None
+        self.closed = False
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+
+    def __call__(self, png: bytes) -> None:
+        if self.closed or not png:
+            return
+        try:
+            with open(self._tmp, "wb") as fh:
+                fh.write(png)
+            os.replace(self._tmp, self.path)
+            self.frames += 1
+        except OSError as exc:
+            self.errors += 1
+            self.last_error = f"{type(exc).__name__}: {exc}"
+
+    def close(self) -> None:
+        """Stop writing and drop the temp file. The last frame stays."""
+        self.closed = True
+        try:
+            self._tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+class SpectateFeed:
+    """What :func:`attach` left on the emulator, and how to take it back off."""
+
+    def __init__(
+        self,
+        emu: Any,
+        writer: StreamFileWriter,
+        pacer: Optional[RealtimePacer],
+        pace: str,
+    ) -> None:
+        self.emu = emu
+        self.writer = writer
+        self.pacer = pacer
+        self.pace = pace
+
+    @property
+    def stream_path(self) -> Path:
+        return self.writer.path
+
+    @property
+    def frames(self) -> int:
+        return self.writer.frames
+
+    def prime(self) -> bool:
+        """Publish one frame NOW, before anything has stepped.
+
+        A stepped emulator produces no frames while nothing steps, and a run
+        does not step until the model has answered its first turn — ten or more
+        seconds after the run registers. mGBA has no equivalent gap: Lua writes
+        the stream file from the moment the emulator is running, whoever is or
+        is not watching.
+
+        That gap is not cosmetic. It is what broke the MP4 recorder twice on
+        2026-09-19: ``RunRecorder.start`` gives the page 8 s to report the game
+        image's natural size, the image has no size until a frame has arrived,
+        and the recorder disabled itself with "simple view never exposed its
+        game-screen rectangle" before turn 1 had pressed anything.
+        """
+        getter = getattr(self.emu, "screen_png", None)
+        if getter is None:
+            return False
+        before = self.writer.frames
+        try:
+            self.writer(getter())
+        except Exception:
+            return False
+        return self.writer.frames > before
+
+    def detach(self) -> None:
+        """Unhook from the emulator. Sequential runs share one backend process,
+        so a feed left attached would keep writing into a finished run's dir."""
+        self.writer.close()
+        if getattr(self.emu, "sampler", None) is self.writer:
+            self.emu.sampler = None
+        if self.pacer is not None and getattr(self.emu, "pacer", None) is self.pacer:
+            self.emu.pacer = None
+
+
+def attach(emu: Any, config: dict, run_dir: str | Path) -> SpectateFeed:
+    """Point ``emu``'s sampler at this run's stream file, and pace it.
+
+    Also stamps ``config['paths']['stream']``, which is what ``start_dashboard``
+    reads to build the run's ``ScreenStreamer`` — so this must run BEFORE the
+    dashboard session is created. The path is re-stamped every run rather than
+    reused: sequential runs share one config dict, and run 2 pointing the
+    dashboard at run 1's file is a live feed of a finished game.
+    """
+    pace = resolve_pace(config)
+    stream_path = Path(run_dir) / STREAM_FILE
+    config.setdefault("paths", {})["stream"] = str(stream_path)
+
+    writer = StreamFileWriter(stream_path)
+    emu.sampler = writer
+    pacer = RealtimePacer() if pace == "realtime" else None
+    emu.pacer = pacer
+    feed = SpectateFeed(emu, writer, pacer, pace)
+    feed.prime()
+    return feed
+
+
+__all__ = [
+    "CONSOLE_FPS",
+    "DEFAULT_PACE",
+    "PACES",
+    "STREAM_FILE",
+    "RealtimePacer",
+    "SpectateFeed",
+    "StreamFileWriter",
+    "attach",
+    "resolve_pace",
+]

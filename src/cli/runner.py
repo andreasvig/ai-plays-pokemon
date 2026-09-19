@@ -813,9 +813,10 @@ def run_single_loop(
         paths["screenshot"] = slot_cfg["screenshot_path"]
         paths["lua"] = str(slot_cfg["lua_path"])
         config["emulator"]["port"] = slot_cfg["port"]
-    # SkyEmu writes no stream file (spectate is P4) and has no Lua script, and
-    # its port is the one its own config names — stamping slot 1's 8888 over it
-    # would point this loop's config at whatever else is on that port.
+    # SkyEmu has no Lua script, and its port is the one its own config names —
+    # stamping slot 1's 8888 over it would point this loop's config at whatever
+    # else is on that port. Its stream file is stamped later, once run_dir is
+    # known: it lives IN the run dir, one per run (see the spectate block below).
 
     # Last-resort resolution of {{game_name}}, for configs that arrive without
     # having gone through ``roms.apply_rom`` — i.e. every `pokemon run`. The
@@ -900,6 +901,18 @@ def run_single_loop(
 
         ocr_runner = OCRRunner(config, screenshot_fn=_ocr_screenshot)
         ocr_runner.start()
+
+    # Live spectate for the stepped backend (plan §4). BEFORE start_dashboard,
+    # because this is what stamps `paths.stream` — the file the run's
+    # ScreenStreamer is built to poll. The whole feed is the emulator's sampler
+    # writing a PNG that keeps changing; nothing in screen_stream.py, ws_screen
+    # or recorder.py learns which emulator wrote it.
+    _spectate = None
+    if _backend_type(config) != "mgba":
+        from src.dashboard import spectate as _spectate_mod
+
+        _spectate = _spectate_mod.attach(emu, config, run_dir)
+        print(f"  Spectate feed: {_spectate.stream_path} (pace: {_spectate.pace})")
 
     # Fresh dashboard session per run. open_browser=False on runs 2..N in
     # sequential mode — user keeps the dashboard index (http://localhost:3420/)
@@ -1053,6 +1066,11 @@ def run_single_loop(
         # event + screen sockets, which blanks the recorder's page. Stopping first
         # keeps the final settled screen as the last frame instead of a dead view.
         _recorder.finish(_rec)
+        # After the video, because the last frame the recorder writes is the one
+        # the feed left behind. Sequential runs share one backend process, so a
+        # feed left attached would keep writing into a finished run's directory.
+        if _spectate is not None:
+            _spectate.detach()
         # A continue's footage is spliced onto the source run's video so the
         # newest run dir holds the whole lineage (recorder.splice_continued);
         # a fresh run has no `_continued_from` and this is a no-op.
