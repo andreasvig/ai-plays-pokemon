@@ -91,7 +91,19 @@ class ObservedGraph:
         self.runs.append(run_id)
         prev: Optional[Tile] = None
         for s in _drop_map_flicker(_drop_impossible_maps(list(samples), self), self):
+            # Counted BEFORE the gap check: an input the run made is an input
+            # the run made whether or not its position could be read. Counting
+            # only survivors here while build()'s contractless branch counted
+            # raw samples put two graphs in one summary on two denominators.
             self.inputs += 1
+            if s is _GAP:
+                # A dropped sample still consumed an INPUT, and the player's
+                # position during it is exactly what we could not read. So the
+                # samples either side are not consecutive observations and
+                # nothing may be minted between them — the same rule an
+                # unreadable sample already gets, for the same reason.
+                prev = None
+                continue
             tile = _tile_of(s)
             if tile is None:
                 self.unreadable += 1
@@ -170,8 +182,8 @@ def _drop_impossible_maps(samples: list[dict], g: "ObservedGraph") -> list[dict]
     """
     if not g.invalid_maps:
         return samples
-    keep = [s for s in samples if _map_of(s) not in g.invalid_maps]
-    g.impossible += len(samples) - len(keep)
+    keep = [_GAP if _map_of(s) in g.invalid_maps else s for s in samples]
+    g.impossible += sum(1 for s in keep if s is _GAP)
     return keep
 
 
@@ -209,12 +221,24 @@ def _drop_map_flicker(samples: list[dict], g: "ObservedGraph") -> list[dict]:
             after = _map_of(samples[i + 1]) if i + 1 < len(samples) else None
             if m != before and m != after:
                 g.flickers += 1
+                keep.append(_GAP)
                 continue
         keep.append(s)
     return keep
 
 
+#: What a dropped sample leaves behind. It is not removed, because removing it
+#: would make the samples either side look consecutive: the player spent an
+#: input somewhere we could not read, so a move across the hole is one move for
+#: all we know, or three. A fabricated warp between two maps no door connects
+#: is worse than a missing one — the graph's whole claim is that every edge in
+#: it is a proof.
+_GAP: dict = {"__gap__": True}
+
+
 def _map_of(s: dict) -> Optional[tuple]:
+    if s is _GAP:
+        return None
     if s.get("map_id") is not None:
         return (s["map_id"],)
     g, n = s.get("map_group"), s.get("map_num")
