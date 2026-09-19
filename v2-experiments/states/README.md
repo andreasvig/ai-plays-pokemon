@@ -15,6 +15,7 @@ scripts are the source of truth and they verify their own output.
 | platinum | NDS | the bedroom upstairs in Twinleaf Town | 18,936 frames, 42 s |
 | soulsilver | NDS | the bedroom upstairs in New Bark Town | 13,120 frames, 35 s |
 | black | NDS | the bedroom, between Cheren and Bianca | 19,100 frames, 147 s |
+| black2 | NDS | the player's room in Aspertia City | 21,934 frames, 188 s |
 
 FireRed's lives at `configs/saves/skyemu/firered-pokebench-v2/` because it is the
 one a benchmark already runs from; `v2-experiments/make_start_state.py` writes it.
@@ -67,8 +68,9 @@ finder uses.
   and Jude. Its sequence types the name instead, pressing the keyboard cursor's
   own starting letter twice for AA. **Black has no default at all**: START only
   moves the cursor to OK, and OK on an empty field is refused with "Please enter
-  the name." So three of six games break it, and the rule is really "type
-  something unless you have checked".
+  the name." **Black 2 refuses it the same way.** So four of seven games break
+  it, and the rule is really "type something unless you have checked". Black 2
+  also *pre-fills* its rival's name (Hugh), which is accepted unchanged.
 - **Timing is part of the sequence, not decoration.** A tap's hold and gap change
   which frame the RNG is sampled on; lengthening SoulSilver's taps changed the
   name it rolled. A screenshot is not free either — one inserted mid-sequence
@@ -82,7 +84,11 @@ finder uses.
   wrap back to where they started, so the same macro is a no-op on the prompts it
   is not meant for.
 - **Presses right after a warp are swallowed** by the transition — budget two.
-- **Taps are not always needed.** Gen 5's keyboard is fully button-navigable (A
-  types the highlighted letter, START jumps to OK), so Black needs no taps at
-  all, while SoulSilver's professor menu is touch-only and cannot be answered
-  with the d-pad. Check before assuming either.
+- **Taps are not always needed.** Gen 5's keyboards are fully button-navigable (A
+  types the highlighted letter, START jumps to OK), so neither Black nor Black 2
+  needs a single tap, while SoulSilver's professor menu is touch-only and cannot
+  be answered with the d-pad at all. Check before assuming either.
+- **"Starts in a bedroom" is not universal.** Black 2 opens on a street in
+  Aspertia City, where *Mom* takes a call, and only then puts the player in
+  control indoors. The room is still the first controllable frame, so the target
+  is the same — but it is reached without walking through a door.

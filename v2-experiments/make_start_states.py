@@ -110,6 +110,24 @@ BUTTON = {"a": "a", "b": "b", "s": "start",
 
 GAMES: dict[str, dict] = {
     # --- GBC ------------------------------------------------------------------
+    "black2": {
+        "rom": "v2-experiments/roms/Pokemon - Black Version 2 (USA, Europe) (NDSi Enhanced).nds",
+        "console": "NDS",
+        "where": "the player's room in Aspertia City",
+        # Black 2 does not OPEN in a bedroom: after the season card it plays a
+        # street scene in Aspertia where Mom takes Bianca's call, and only then
+        # places the player, in control, indoors. So the room is reached without
+        # walking through any door.
+        #
+        # No taps. Both keyboards are button-driven: START moves the cursor to OK
+        # and A confirms. No default name either — an empty field is refused with
+        # "Please enter the name." — so ACE is typed with A, right-2 to C,
+        # right-2 to E. The RIVAL name is pre-filled as Hugh and accepted as-is.
+        "spec": ("w1800,w1800,w1800,s1,w300,a1,w300,a32,w200,a1,w60,r2,w60,a1,"
+                 "w60,r2,w60,a1,w60,s1,w120,a1,w240,a7,w200,s1,w120,a1,w240,"
+                 "a18,w1200,a4,w900,a60,w180"),
+        "player_name": "ACE",
+    },
     "crystal": {
         "rom": "v2-experiments/roms/Pokemon - Crystal Version (USA).gbc",
         "console": "GB",
