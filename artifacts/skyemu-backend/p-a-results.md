@@ -224,3 +224,69 @@ a running emulator. Writing that test also turned up a genuine fragility: the
 block-pointer chooser looked for movement only in the round-trip probe, and both
 cartridges happen to leave the block displaced there, so a game that restored it
 exactly would have lost its pointer form.
+
+## 10. Crystal and the DS games
+
+Four consoles now, and the method has not needed changing — only its ranking.
+
+| game | console | x | y | map id | scan |
+|---|---|---|---|---|---|
+| FireRed | GBA | 4 | 3 | **rank 1** of 27 in-block runs | 16 s |
+| Emerald | GBA | 4 | 4 | **rank 1** of 56 | 16 s |
+| **Crystal** | GBC | 3 | 3 | **rank 1** of 82 | **8 s** |
+| **Platinum** | NDS | 14 | 13 | not yet — see below | **2 min** |
+
+### Crystal is the one that changed the tool
+
+Gen 2 does not shuffle its blocks, so there is no pointer to scan inside and
+every candidate is a raw address — the in-block filter that carries both GBA
+games does not exist. Run-length ranking alone left the answer somewhere in 82
+runs.
+
+What fixed it was noticing that the finder had already found the answer twice
+without knowing it. Two independent searches returned
+
+    0xdcb7  y        (the axis search)
+    0xdcb8  x        (the axis search)
+    0xdcb5  0xdcb6   (the map search, buried in the list)
+
+— four adjacent bytes, in the documented Gen 2 order, none of it looked up. So
+**a map candidate within 8 bytes of a coordinate now ranks first**, and that
+prior was read off three cartridges rather than guessed from one:
+
+    Crystal   0xdcb5 group, 0xdcb6 number, 0xdcb7 y, 0xdcb8 x
+    FireRed   block +0x0000 x, +0x0002 y, +0x0004 group, +0x0005 number
+    Emerald   the same offsets, at a different block
+
+FireRed went from rank 9 to rank 1, Emerald stayed at 1, Crystal went from
+buried to 1. It also surfaced FireRed's **second** independent copy of the whole
+record at `0x02036e40` as rank 2 — something run length had never brought into
+view.
+
+### NDS works, and is a wait rather than a wall
+
+Main RAM is 4 MB against the GBA's 288 KB. Measured: **15 seconds a snapshot**,
+so a ten-probe run is minutes, not hours. Platinum's axes came back in about two
+minutes, and Gen 4's shape is visible in the answer — x at +0 and y at **+8**,
+32-bit fields, with the many duplicate candidates being the entity list rather
+than noise (13 of them, against 3–4 on a GBA game).
+
+`map` (9 = ARM9, 7 = ARM7) makes no difference to `/read_byte` here; the default
+returns the same bytes.
+
+**Platinum's map id is not done.** Scanning every route within ±6 tiles of the
+bedroom found no transition, so either the stairs need a longer route than that
+or the address used for navigation is not the tile coordinate. The axes are
+solid; the Gen 4 map id is open.
+
+## 11. Start states for every game
+
+`v2-experiments/states/README.md` has the table. Seven games, each replayed from
+cold boot to the first frame where the player has control, verified against an
+**idle control** — the same state advanced the same number of frames with
+nothing held — because the obvious version of that check could not fail.
+
+The one that matters for this document: a finder needs a tile free in all four
+directions, and a save state rarely sits on one. Emerald's van is five tiles
+wide with boxes on three sides; FireRed's bedroom start has a bed above it. Both
+needed a scouted prelude before the axis search returned anything at all.
