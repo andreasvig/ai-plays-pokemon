@@ -601,6 +601,119 @@ What none of this covers, stated plainly:
 - **Nothing about the model.** Emulator reproducibility is not run reproducibility; the
   model's sampling is the other half and is out of scope here.
 
+## `/load` resumes one frame late — 2026-09-19. The divergent bytes are load-bearing
+
+The section above found that on FireRed a reloaded machine drifts from a live one and
+stopped at the byte count, noting that "**which 55 bytes these are has not been
+identified**, and no test here shows whether the divergence changes any observable game
+outcome". [`load_divergence.py`](load_divergence.py) is that step. It reproduced the 55
+bytes exactly — same count, same 40 runs, the same address set on two independent
+repetitions — and then named them.
+
+### The headline: `gRngValue` is one of them
+
+`0x03005000`–`0x03005003` is in the divergent set every time, with wholly different
+values (`0xdcb64200` live against `0xeee85e65` reloaded — not a drift, a different
+number). That address is FireRed's RNG, established by measurement rather than by a
+symbol table this repo does not carry: stepping one frame and searching all 8,192 IWRAM
+words for one obeying the Gen-3 LCG `x' = 0x41C64E6D·x + 0x6073` returns **exactly one
+hit**, at `0x03005000`, twice over. It also sits 8 bytes below `gSaveBlock1Ptr`
+(`0x03005008`, `src/referee/referee.py`), which is where pret's common-symbol order puts
+`gRngValue` and `gRng2Value`.
+
+The other 51 bytes are almost all downstream of it. The save blocks are DMA-shuffled to
+an offset that differs by `0x5c` between the two arms, and that one offset accounts for
+`gSaveBlock1Ptr`, `gSaveBlock2Ptr`, the word at `0x03005010` (pret's common-symbol
+order puts `gPokemonStoragePtr` there; not independently verified), a table of
+copies at `0x030053b0`–`0x03005418`, and five cached EWRAM pointers at
+`0x0203988c`–`0x020398ac` — every one of them differing by exactly `0x5c`. So the 55
+bytes are roughly: 4 bytes of RNG, ~30 bytes of "the save blocks moved", one byte of
+`gMain+0x24`, and a dozen unidentified singletons.
+
+### What `/load` actually gets wrong: nothing, except *when* it resumes
+
+The defect is not corruption. Comparing the reloaded machine at frame *k* against the
+live machine at frame *k+1* over the whole 288 KB gives **zero bytes differing, at every
+k, on both a cold title screen and the benchmark's own start state**:
+
+| | live+0 | live+1 | live+2 | live+3 |
+|---|---|---|---|---|
+| **reloaded+0** | 522 | **0** | 537 | 963 |
+| **reloaded+1** | 942 | 537 | **0** | 489 |
+| **reloaded+2** | 1379 | 963 | 489 | **0** |
+
+`/load` restores the machine perfectly and resumes it **one frame ahead** of where
+`/save` was taken. Consistent with that, `TM0CNT_L` and `TM1CNT_L` differ across a
+`/load` (by 1 and by ~0x4941) while `DISPSTAT` and `VCOUNT` do not — and FireRed seeds
+`gRngValue` from `REG_TM1CNT_L | REG_TM2CNT_L << 16`.
+
+**That does not make it benign.** With nothing but `/step`, the one-frame shift stays a
+pure shift — phase-corrected difference 0 at 864 frames. With a single button press it
+does not: the harness counts input frames from the resume point, so a machine one frame
+further along receives every press at a different point in its own frame, and the two
+machines genuinely part company (phase-corrected difference 60 bytes at 864 frames, up
+from 0). A resumed run is therefore not a delayed copy of the run it resumes; it is a
+different run.
+
+### The outcome test, which the section above did not have
+
+Both arms take the **same** inputs from the **same** savepoint, and every comparison
+carries a control — a second `/load` of the same file — which came out at zero
+everywhere.
+
+- **`/screen` is not identical.** Standing where nothing moves it is, which is what the
+  single-frame check above measured. At a Pallet Town vantage chosen for motion (30
+  distinct frames per 600, against 1 at a still spot), **16 of 121 sampled frames differ**
+  between live and resumed. The differing pixels are the water animation at the south
+  edge, so this is visible but cosmetic on its own.
+- **A battle is fought differently.** Playing the opening to the rival battle at the lab
+  door — Charmander 19 HP against Squirtle 19 HP — and then taking 160 identical `A`
+  presses on each arm: the traces disagree from turn 36, **no shift from −3 to +3 aligns
+  them** (121–124 of ~160 turns disagree at every shift, so this is not a timing
+  artifact), and the HP trajectories are different numbers throughout — live
+  19→14→9→5→3, resumed 19→16→13→10→9→7. Charmander wins both times but finishes on
+  **5 HP live and 9 HP resumed**. The damage rolls differ; a critical hit landing on the
+  other side of a knockout would flip the result outright.
+
+The recipe that reaches that battle is in `load_divergence.py` as a fixed input script
+with `expect_*` assertions at each landmark (routes computed from
+`data/firered-walkgraph.json`), so it fails loudly rather than drifting into a state that
+looks fine and tests nothing.
+
+### The workaround, measured
+
+If the live run **also** does a `/save` immediately followed by a `/load` at every
+savepoint, both arms have paid the same one-frame cost and agree by construction. Run as
+a fourth arm of the outcome test: **0 bytes, 0 screens, 0 RNG samples differing** across
+the whole observation window. This is a harness-side fix and needs no change to SkyEmu —
+but it has to be applied when the savepoint is *written*, not when it is read, so it
+belongs next to `save_savepoint`, and it changes the live run (by one frame) rather than
+leaving it alone.
+
+### What this corrects in the section above
+
+- "**the defect is in `/load`**" — right about which call, wrong about what it does.
+  `/load` restores state exactly; it resumes one frame late.
+- "**it grows, 55 → 3,131**" — the growth is real but it is not accumulating corruption;
+  it is two machines that parted company at the first press and then diverged like any
+  two machines running different RNG streams.
+- "**The `/screen` PNG is byte-identical at both horizons, so nothing about it is
+  visible**" — false as a general claim. It holds only for a static scene.
+- "**3 KB of IWRAM is enough to change an RNG stream**" — understated. 4 bytes of it
+  *are* the RNG stream, from the first frame.
+
+### Still not covered
+
+- **One frame, always?** Measured as exactly one at two different save points. Not
+  measured across a wider variety of states, and not measured on NDS (where `/load` is
+  already exact, which is itself a hint that the one-frame skip is GBA-specific).
+- **Where the frame is lost.** Whether `/save` writes a state one frame ahead of the
+  machine or `/load` emulates a frame on the way in is not distinguished here; the two
+  are indistinguishable from the HTTP side and the harness consequence is identical.
+- **The battle test is n=1.** One battle, one savepoint. The control (a second `/load`)
+  is clean and the alignment sweep rules out a timing artifact, but a second battle from
+  a different savepoint has not been run.
+
 ## Sources
 
 - [SkyEmu](https://github.com/skylersaleh/SkyEmu) · [HTTP Control Server docs](https://github.com/skylersaleh/SkyEmu/blob/dev/docs/HTTP_CONTROL_SERVER.md) · [issue #576](https://github.com/skylersaleh/SkyEmu/issues/576) · [releases](https://github.com/skylersaleh/SkyEmu/releases)
