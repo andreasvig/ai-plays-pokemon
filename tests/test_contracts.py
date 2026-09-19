@@ -7,6 +7,7 @@ not fail loudly — it would read six bytes from a slightly wrong place inside a
 live save block and report coordinates.
 """
 
+import dataclasses
 import struct
 
 import pytest
@@ -58,10 +59,37 @@ def test_no_contract_decodes_nothing_rather_than_guessing():
 
 def test_a_contract_without_a_battle_flag_reports_overworld_not_unknown():
     """`None` would make derive() file every input under battle_edge and report
-    a turn that moved nowhere; False costs only the census. See the decoder."""
-    d = trace.decode_samples([("R", [bytes([1, 0, 4, 9])])], None, CRYSTAL)[0]
+    a turn that moved nowhere; False costs only the census. See the decoder.
+
+    The contract is synthetic because as of 2026-09-20 every SHIPPED one has a
+    flag — and that is exactly why the property still needs a test: the rule
+    belongs to the decoder, not to whichever cartridge happened to lack a flag
+    when it was written. Crystal used to be this test's example."""
+    flagless = dataclasses.replace(CRYSTAL, spec=("0xdcb5:4",), battle_flag=None)
+    d = trace.decode_samples([("R", [bytes([1, 0, 4, 9])])], None, flagless)[0]
     assert d["in_battle"] is False
-    assert CRYSTAL.census_ok is False and FIRERED.census_ok is True
+    assert flagless.census_ok is False and FIRERED.census_ok is True
+
+
+def test_every_shipped_contract_can_tell_a_battle_press_from_an_overworld_one():
+    """The input census is on for all three cartridges. Stated as an assertion
+    so that adding a fourth contract without a flag is a failing test and a
+    decision, not a silent downgrade of what the census covers."""
+    assert {g: c.census_ok for g, c in CONTRACTS.items()} == {g: True for g in CONTRACTS}
+
+
+def test_crystals_battle_flag_is_a_mode_byte_so_the_mask_must_carry_both_bits():
+    """0 overworld, 1 wild, 2 trainer. mask=0x01 passes every wild battle and
+    reports the rival fight as the overworld — the silent battle_mask typo in
+    a new costume, and the reason the live check carries a trainer state."""
+    def seen(raw: int, mask: int) -> bool:
+        c = dataclasses.replace(CRYSTAL, battle_mask=mask)
+        row = ("A", [bytes([24, 3, 4, 9]), bytes([raw])])
+        return trace.decode_samples([row], None, c)[0]["in_battle"]
+
+    assert CRYSTAL.battle_mask == 0x03
+    assert [seen(v, 0x03) for v in (0, 1, 2)] == [False, True, True]
+    assert [seen(v, 0x01) for v in (0, 1, 2)] == [False, True, False]
 
 
 def test_crystal_reads_one_unsigned_byte_per_axis_in_gen_2_order():

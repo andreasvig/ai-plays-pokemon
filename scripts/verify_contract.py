@@ -35,6 +35,7 @@ import argparse
 import os
 import sys
 from pathlib import Path
+from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -50,6 +51,26 @@ BINARY = "~/Applications/SkyEmu.app/Contents/MacOS/SkyEmu"
 # `/load -> failed` for every one of those. The SkyEmu-replayed equivalent is
 # the v2 state, so the default ROM needs the one override in this table.
 SNAPSHOT_OVERRIDE = {"firered": "configs/saves/skyemu/firered-pokebench-v2"}
+
+# A state the player is IN A BATTLE in, per ROM. The battle flag is the one
+# field a position walk cannot exercise — the walk never leaves the overworld,
+# so a contract with a wrong mask passes every check above and then reports a
+# game with no battles forever. Each of these was labelled from a SCREENSHOT of
+# the state as loaded, never from a turn number: Crystal's turn_120 savepoint
+# is NOT in a battle even though the turn-120 screenshot is, because savepoints
+# lag the screenshots by a press.
+_RUNS = "local/runs/2026-09-19_22-48-56_config-v2-%s__gemini-3-8-flash-minimal"
+# Crystal carries BOTH a wild and a TRAINER battle on purpose. Its flag is a
+# mode byte (0 overworld, 1 wild, 2 trainer), so a check that only ever sees a
+# wild battle passes just as happily with mask 0x01 — and mask 0x01 reports
+# every trainer battle as "not in battle". The second state is what makes this
+# check able to fail under the wrong mask. Verified by eye: turn_200 is the
+# rival's Totodile against our Cyndaquil and the byte reads 0x02.
+BATTLE_STATE = {
+    "emerald": [f"{_RUNS % 'emerald'}/savepoints/turn_160/emulator.state"],
+    "crystal": [f"{_RUNS % 'crystal'}/savepoints/turn_140/emulator.state",   # wild
+                f"{_RUNS % 'crystal'}/savepoints/turn_200/emulator.state"],  # trainer
+}
 
 
 def snapshot_for(rom) -> str:
@@ -70,7 +91,7 @@ def machine(rom, port: int):
             "rom_stage_dir": f"local/verify-contract/{rom.id}",
         },
         "screenshot": {"grid_overlay": False},
-        "valid_inputs": ["A", "B", "U", "D", "L", "R", "START", "SELECT"],
+        "valid_inputs": ["A", "B", "U", "D", "L", "R", "START", "SELECT", "WAIT"],
     }
     Path(f"local/verify-contract/{rom.id}").mkdir(parents=True, exist_ok=True)
     return make_emulator(cfg)
@@ -83,6 +104,50 @@ def tiles(emu, contract, presses: list[str]) -> list[tuple]:
     emu.wait_for_stable_screen()
     samples = trace_mod.decode_samples(emu.fetch_trace(), None, contract)
     return [(s["x"], s["y"], contract.map_key(s)) for s in samples]
+
+
+def battle_flag_both_ways(emu, rom, contract) -> Optional[bool]:
+    """Read the in-battle flag where it must be SET and where it must be CLEAR.
+
+    Testing one direction only is how a mask that is always-false passes: an
+    overworld state reports "not in battle" whether the contract is right or
+    the flag is misread. Both states, or no verdict.
+    """
+    if contract.battle_flag is None:
+        print("  battle flag: none on this contract — the input census is off.")
+        return None
+    paths = [p for p in BATTLE_STATE.get(rom.id, []) if Path(p).exists()]
+    if not paths:
+        print(f"  battle flag: no labelled battle state for {rom.id}; UNTESTED.")
+        return None
+
+    def read_flag() -> Optional[bool]:
+        # Sample the spec WITHOUT playing an input. The first version pressed
+        # B, which on the labelled Emerald state dismissed a "Got away safely!"
+        # message and ENDED the battle before the read — the flag was right and
+        # the probe was wrong. A probe that can change the thing it measures is
+        # not a probe. Pressing "wait" instead recorded no trace row at all, so
+        # this drives the emulator's own sampler directly and then decodes it
+        # through the production path, which is the point of the check.
+        emu.fetch_trace()
+        emu._trace_sample("probe")
+        got = trace_mod.decode_samples(emu.fetch_trace(), None, contract)
+        return got[-1]["in_battle"] if got else None
+
+    out_of_battle = read_flag()          # still on the walk state from above
+    print(f"  battle flag {contract.battle_flag!r} mask {contract.battle_mask:#04x}: "
+          f"overworld={out_of_battle}")
+    got = []
+    for path in paths:
+        emu.load_state(path)
+        emu.wait_for_stable_screen()
+        got.append(read_flag())
+        print(f"    battle={got[-1]}  ({path})")
+    if all(v is True for v in got) and out_of_battle is False:
+        print(f"  PASS: set in {len(got)} battle state(s), clear out of battle.")
+        return True
+    print("  FAIL: the flag does not separate the states.")
+    return False
 
 
 def check(rom, port: int, snapshot: str | None = None) -> bool:
@@ -160,6 +225,10 @@ def check(rom, port: int, snapshot: str | None = None) -> bool:
             print(f"  PASS: one map throughout, key {keys.pop()} (correctness needs a transition).")
         else:
             print(f"  NOTE: {len(keys)} distinct map keys in one room: {keys} — suspicious.")
+            ok = False
+
+        # Last, because it loads a different state and so ends the walk.
+        if battle_flag_both_ways(emu, rom, contract) is False:
             ok = False
         return ok
     finally:

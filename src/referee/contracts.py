@@ -164,6 +164,18 @@ class GameMemory:
 
 _GMAIN_IN_BATTLE = 0x03003529  # gMain + 0x439, FireRed (src/referee/battles.py)
 _IN_BATTLE_BIT = 1             # bit INDEX, as battles.in_battle_from_byte uses it
+# Emerald's gMain, MEASURED rather than quoted. struct Main carries a 1 KB OAM
+# shadow at +0x38 that is DMA'd to OAM every vblank, so reading OAM
+# (0x07000000, 1 KB) and searching IWRAM for the same bytes locates the struct:
+# the hit is at 0x030022f8 in every state tried, giving base 0x030022c0. Two
+# free corroborations at that base: the seven callback slots all read as ROM
+# pointers, and callback1/2 hold one pair in every overworld state and another
+# in every battle state. The +0x439 offset and the bit index are pret's struct
+# layout, already encoded at src/referee/battles.py:GMAIN_IN_BATTLE_BYTE; what
+# is measured here is the byte's BEHAVIOUR — 0x02 in battle, 0x00 out of it,
+# across 6 battle and 70 non-battle samples including menus and dialogue.
+_EMERALD_GMAIN = 0x030022C0
+_EMERALD_IN_BATTLE = _EMERALD_GMAIN + 0x439  # 0x030026f9
 _FIRERED_SB1 = 0x03005008
 _EMERALD_SB1 = 0x03005D8C
 _SB1_GAME_STATS = 0x1200
@@ -197,11 +209,13 @@ EMERALD = GameMemory(
     # spellings by proximity to the x anchor, and the block shuffles here too
     # (0x02025a54 downstairs, 0x02025a64 up) — so the pointer form is load
     # bearing on this cartridge and not copied from FireRed out of symmetry.
-    spec=(f"*{_EMERALD_SB1:#x}+0:6",),
+    spec=(f"*{_EMERALD_SB1:#x}+0:6", f"{_EMERALD_IN_BATTLE:#x}:1"),
     x=Field(0, 0, "<h"),
     y=Field(0, 2, "<h"),
     map_group=Field(0, 4, "<B"),
     map_num=Field(0, 5, "<B"),
+    battle_flag=Field(1, 0, "<B"),
+    battle_mask=1 << _IN_BATTLE_BIT,
     notes=(
         "x/y/map_num found by search (4, 4 and rank-1 candidates). map_group at "
         "+0x0004 is INFERRED, not measured: both maps reachable from the probe "
@@ -209,8 +223,12 @@ EMERALD = GameMemory(
         "them cannot move the byte and the scan is blind to it by construction. "
         "It is where FireRed keeps it and where the layout says it should be — "
         "a symmetry argument, and the one value here that a second map "
-        "transition would upgrade from inferred to found. No battle flag: gMain "
-        "has not been located on this cartridge."
+        "transition would upgrade from inferred to found. That upgrade has "
+        "since happened: the first real Emerald run crossed (25,40) -> (0,9) "
+        "-> (1,0) — the moving van, Littleroot Town, Brendan's house 1F, "
+        "matching the pokeemerald constants — so the group byte is MEASURED "
+        "and the paragraph above is history, not a caveat. Battle flag located "
+        "2026-09-20, see the gMain comment above."
     ),
 )
 
@@ -223,7 +241,7 @@ CRYSTAL = GameMemory(
     # search returned 0xdcb5/0xdcb6, and neither was told about the other.
     # Gen 2 does not shuffle its blocks, so these are raw addresses and there is
     # no pointer to dereference.
-    spec=("0xdcb5:4",),
+    spec=("0xdcb5:4", "0xd22d:1"),
     map_group=Field(0, 0, "<B"),
     map_num=Field(0, 1, "<B"),
     y=Field(0, 2, "<B"),
@@ -232,10 +250,27 @@ CRYSTAL = GameMemory(
     # a 4-run Crystal corpus held 38 such samples, some in stretches of six,
     # every one with all four bytes zero.
     invalid_maps=((0, 0),),
+    # wBattleMode. NOT a bit — a MODE byte: 0 overworld, 1 wild, 2 trainer. So
+    # the mask is 0x03, and 0x01 would report every TRAINER battle as "not in
+    # battle" — the silent battle_mask typo wearing a new costume. The search
+    # found it without being told: of the four WRAM bytes zero in all 95
+    # non-battle samples and non-zero in all 8 battle ones, this is the only
+    # one whose values partition wild from trainer consistently.
+    #
+    # It sits in 0xd000-0xdfff, the switchable bank, so it carries the same
+    # hazard as the position bytes above: on 1 of 174 labelled samples the page
+    # collapsed and it read 0 mid-battle. It fails in the SAFE direction, and
+    # it fails at the same instant the map key goes invalid, so a consumer can
+    # see it. 0xc15a mask 0x01 agreed on 174/174 and lives in the always-mapped
+    # bank, but it is an unidentified byte in the sprite area — robustness
+    # without provenance. Provenance won; if the 0.6% ever matters, that is the
+    # alternative and this is the note that says so.
+    battle_flag=Field(1, 0, "<B"),
+    battle_mask=0x03,
     notes=(
         "Gen 2 keeps a coordinate in ONE byte and does not DMA-shuffle, so this "
         "is the only contract here with no pointer. Coordinates are unsigned. "
-        "No battle flag located."
+        "Battle flag located 2026-09-20 and it is a MODE byte, not a bit."
     ),
 )
 
