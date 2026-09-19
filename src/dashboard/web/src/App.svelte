@@ -331,6 +331,7 @@
 </main>
 
 <AddRunDialog open={dialogOpen && !STATIC} continueFrom={dialogContinueFrom} {models} {configs} {benchmarks} {checkpoints} {roms} {starts} {profiles} {submitError}
+  officialBlocked={emulator.official_blocked ?? null}
   onclose={() => { dialogOpen = false; dialogContinueFrom = null; submitError = null }} onsubmit={submitRun} />
 
 <style>

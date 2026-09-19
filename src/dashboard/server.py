@@ -1193,6 +1193,64 @@ async def api_queue_get():
     return JSONResponse(payload)
 
 
+def _official_blocked_reason() -> str | None:
+    """Why an official run cannot run on THIS control center, or None if it can.
+
+    One function so the enqueue door and the new-run dialog cannot disagree:
+    the door raises it as a 400, ``/api/emulator/status`` ships it so the dialog
+    can grey the Benchmark option out with the same words. A disabled button with
+    no reason is worse than no button.
+
+    A benchmark is frozen to ``executor.OFFICIAL_CONFIG`` (config-5.1,
+    ``emulator.type: mgba``) and to ``executor.CANONICAL_SAVE``, an mGBA
+    savestate. On a SkyEmu control center neither holds: the run would execute
+    against the SUPERVISOR's emulator — SkyEmu — while its saved config claims
+    mGBA, and it would die loading a savestate SkyEmu refuses (``/load ->
+    failed``). Whichever way that landed it would be wrong: a crash deep in
+    dispatch at best, and a leaderboard row labelled with the wrong emulation
+    core at worst.
+
+    So it is refused at the door, where the message can say why. This is the
+    branch's own decision made enforceable rather than a new one: ``plan.md`` §5
+    already holds that a SkyEmu run is a DIFFERENT ARM — different core, no OCR,
+    its own start states — that does not post to the v1 board.
+
+    None when the backend cannot be determined (no supervisor, a test fake, a
+    handle without a config): an unanswerable check must not become a refusal.
+    """
+    from src.app.executor import OFFICIAL_CONFIG
+
+    executor = _CONTROL.get("executor")
+    supervisor = getattr(executor, "supervisor", None)
+    live = getattr(supervisor, "backend", None)
+    if not isinstance(live, str) or not live:
+        return None
+
+    from src.cli.runner import _backend_type
+    from src.config import load_config
+
+    try:
+        wanted = _backend_type(load_config(OFFICIAL_CONFIG))
+    except Exception:
+        return None
+    if live == wanted:
+        return None
+    return (
+        f"This control center runs the {live} backend; the frozen benchmark is "
+        f"{wanted}, and starts from a savestate {live} refuses. A run here is a "
+        f"different arm — different emulation core, no OCR, its own start states "
+        f"— and does not post to the v1 board. Run it casually, or start the "
+        f"control center on the benchmark's own config."
+    )
+
+
+def _refuse_official_off_the_official_backend() -> None:
+    """400 an official run when the live supervisor is not the frozen backend."""
+    reason = _official_blocked_reason()
+    if reason:
+        raise HTTPException(status_code=400, detail=reason)
+
+
 def _enqueue_kwargs(spec: dict) -> dict:
     """Validate one enqueue ``spec`` → kwargs for ``QueueManager.enqueue``.
 
@@ -1222,6 +1280,7 @@ def _enqueue_kwargs(spec: dict) -> dict:
     record = _validate_record(spec.get("record"))
 
     if kind == RunKind.official:
+        _refuse_official_off_the_official_backend()
         benchmark = _validate_benchmark_id(spec.get("benchmark"))
         # Base profile only (decision Q3) — 400, not a silent drop like
         # config/max_turns, because a variant is a request for DIFFERENT
@@ -2042,6 +2101,7 @@ async def api_emulator_status():
                 "awaiting_lua": False,
                 "backend": "",
                 "console": None,
+                "official_blocked": None,
             }
         )
 
@@ -2090,6 +2150,10 @@ async def api_emulator_status():
     # window is the ~0.3 s between launching and the first /ping answering, and
     # telling an operator to load a Lua script there would send them looking for
     # a window that does not exist.
+    # Whether a BENCHMARK can be queued here at all, and why not. Same function
+    # the enqueue door raises from, so the greyed-out button and the 400 can
+    # never say different things.
+    payload["official_blocked"] = _official_blocked_reason()
     payload["awaiting_lua"] = (
         payload.get("backend", "mgba") == "mgba"
         and bool(payload["process_up"])

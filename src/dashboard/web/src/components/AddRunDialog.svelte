@@ -22,7 +22,7 @@
   // SUBMITERROR is the server's 400 detail from the last failed enqueue. The
   // dialog used to close before the request was sent, so a rejected run left no
   // trace anywhere in the UI (finding #5).
-  let { open = false, continueFrom = null, models = [], configs = [], benchmarks = [], checkpoints = [], roms = [], starts = [], profiles = null, submitError = null, onclose, onsubmit } = $props()
+  let { open = false, continueFrom = null, models = [], configs = [], benchmarks = [], checkpoints = [], roms = [], starts = [], profiles = null, submitError = null, officialBlocked = null, onclose, onsubmit } = $props()
   const MODELS = $derived(models)
   const CONFIGS = $derived(configs)
   const BENCHMARKS = $derived(benchmarks)
@@ -247,7 +247,22 @@
   // how the backend resolves a rom whose registry rows set no explicit default.
   const defaultStart = $derived(romStarts.find((s) => s.default) ?? romStarts[0] ?? null)
   const selectedRom = $derived(ROMS.find((r) => r.id === rom) ?? null)
-  const romCanBenchmark = $derived(selectedRom ? selectedRom.benchmark_ok !== false : true)
+  // Two independent reasons a benchmark may not be runnable, and they are not
+  // interchangeable: the GAME may have no ladder authored for it, or THIS
+  // control center may be on a backend the frozen benchmark config cannot use
+  // (a SkyEmu app — a different arm that does not post to the v1 board).
+  // `officialBlocked` is the server's own sentence, from the same function the
+  // enqueue door raises with, so a greyed button and a 400 cannot disagree.
+  const romCanBenchmark = $derived(
+    !officialBlocked && (selectedRom ? selectedRom.benchmark_ok !== false : true)
+  )
+  const noBenchmarkReason = $derived(
+    officialBlocked
+      ? officialBlocked
+      : (selectedRom && selectedRom.benchmark_ok === false
+          ? `No gate ladder is authored for ${selectedRom.name} yet`
+          : null)
+  )
   // Worth showing the picker at all only when there's a choice to make.
   const showRomPicker = $derived(!isContinue && ROMS.length > 1)
 
@@ -260,6 +275,11 @@
     const picked = ROMS.find((r) => r.id === id)
     if (picked && picked.benchmark_ok === false) kind = 'casual'
   }
+
+  // A blocked backend has to snap the kind too, and unlike pickRom this cannot
+  // live in a handler: nothing is clicked. The dialog seeds kind='official' on
+  // open, so without this it would open on a disabled segment and submit a 400.
+  $effect(() => { if (officialBlocked && kind === 'official') kind = 'casual' })
 
   // The picked model row + its thinking levels (second-axis dropdown).
   const selectedModel = $derived(MODELS.find((m) => m.model === modelBase) ?? null)
@@ -490,8 +510,8 @@
         <div class="seg">
           <button class:on={isOfficial} disabled={!romCanBenchmark}
                   onclick={() => pickKind('official')}
-                  title={romCanBenchmark ? null : `No gate ladder is authored for ${selectedRom?.name} yet`}>
-            <b>Benchmark</b><small>{romCanBenchmark ? 'gated · leaderboard' : 'no ladder for this game'}</small>
+                  title={noBenchmarkReason}>
+            <b>Benchmark</b><small>{romCanBenchmark ? 'gated · leaderboard' : (officialBlocked ? 'not on this backend' : 'no ladder for this game')}</small>
           </button>
           <button class:on={!isOfficial} onclick={() => pickKind('casual')}>
             <b>Casual</b><small>free config · max-turns · no gates</small>
