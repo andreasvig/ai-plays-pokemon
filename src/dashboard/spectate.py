@@ -33,7 +33,15 @@ Two things are not free, and both live here:
    spectatable. ``--pace fast`` (or ``emulator.pace: fast``) is the opt-out.
    See :class:`RealtimePacer`.
 
-3. **Free-running while the model thinks** — ``FreeRunner``, added 2026-09-19.
+3. **Laying a DS frame out for a watcher** — ``frame.spectate_frame``, added
+   2026-09-19. SkyEmu's NDS capture is 256x384, a portrait stack in a landscape
+   dashboard and a 16:9 recording. The spectate feed publishes the two screens
+   side by side with the top one at 2x instead. It is the only transform between
+   the emulator and the stream file, and it is invisible to the model, which is
+   shown ``frame.prepare``'s stacked image. ``emulator.ds_layout: stacked`` opts
+   out.
+
+4. **Free-running while the model thinks** — ``FreeRunner``, added 2026-09-19.
    A stepped emulator is a still photograph for the length of every LLM call.
    Andreas: *"i dont think the game should be paused, while we wait for inputs,
    it should just run."* This is the one of the three that DOES change a run's
@@ -61,6 +69,8 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from src.emulator.backends.frame import spectate_frame
+
 #: The console's own clock. Every backend in this repo emulates a 60 Hz machine.
 CONSOLE_FPS = 60.0
 
@@ -84,6 +94,19 @@ DEFAULT_PACE = "realtime"
 #: inputs, it should just run."* mGBA never had this property to lose: its
 #: emulator runs at 60 Hz whoever is or is not asking it anything.
 DEFAULT_FREE_RUN = True
+
+#: How a DS frame is laid out for a WATCHER. ``wide`` puts the two screens side
+#: by side with the top one at 2x, because a 256x384 stack letterboxes into a
+#: sliver in a landscape dashboard and a 16:9 recording (Andreas, 2026-09-19:
+#: *"for ds games the watching experience is not that good ... the upper screen
+#: is at least twice as wide"*). ``stacked`` publishes SkyEmu's capture
+#: untouched, which is also what every GB and GBA frame gets either way.
+#:
+#: It changes the SPECTATE feed only. What the model is shown is
+#: ``frame.prepare``'s stacked image, and a tap's row-to-touch_y conversion is
+#: against that one; the two never meet.
+DS_LAYOUTS = ("wide", "stacked")
+DEFAULT_DS_LAYOUT = "wide"
 
 #: Frames per free-run chunk. The lock is released between chunks, so this is
 #: also the worst-case wait for a driver thread that wants the emulator back —
@@ -134,6 +157,23 @@ def resolve_free_run(config: dict) -> bool:
             f"unknown emulator.free_run {raw!r} (expected a boolean)"
         )
     return bool(raw)
+
+
+def resolve_ds_layout(config: dict) -> str:
+    """``emulator.ds_layout``, defaulted to :data:`DEFAULT_DS_LAYOUT` (``wide``).
+
+    Unknown values raise, as with ``pace``: a typo meaning "stacked" would leave
+    the DS games looking exactly as they did when he reported them.
+    """
+    raw = (config.get("emulator") or {}).get("ds_layout", DEFAULT_DS_LAYOUT)
+    if raw is None:
+        return DEFAULT_DS_LAYOUT
+    layout = str(raw).strip().lower()
+    if layout not in DS_LAYOUTS:
+        raise ValueError(
+            f"unknown emulator.ds_layout {raw!r} (expected: {', '.join(DS_LAYOUTS)})"
+        )
+    return layout
 
 
 class RealtimePacer:
@@ -349,8 +389,21 @@ class StreamFileWriter:
     ever stats a complete PNG, so the guard never has to fire.
     """
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(
+        self,
+        path: str | Path,
+        *,
+        transform: Optional[Callable[[bytes], Optional[bytes]]] = None,
+    ) -> None:
         self.path = Path(path)
+        #: Re-lay each frame out before publishing it. Returning None means
+        #: "not mine" and the original bytes are written — see
+        #: ``frame.spectate_frame``. Held here rather than applied by the caller
+        #: because this writer IS the sampler: there is no other hand the bytes
+        #: pass through between the emulator and the file.
+        self._transform = transform
+        #: Frames the transform declined or failed on, published as they came.
+        self.untransformed = 0
         # Same directory, so the rename stays on one filesystem (os.replace is
         # only atomic within one).
         self._tmp = self.path.with_name(self.path.name + ".part")
@@ -366,6 +419,12 @@ class StreamFileWriter:
     def __call__(self, png: bytes) -> None:
         if self.closed or not png:
             return
+        if self._transform is not None:
+            laid_out = self._transform(png)
+            if laid_out is None:
+                self.untransformed += 1
+            else:
+                png = laid_out
         try:
             with open(self._tmp, "wb") as fh:
                 fh.write(png)
@@ -470,7 +529,12 @@ def attach(emu: Any, config: dict, run_dir: str | Path) -> SpectateFeed:
     # changed once.
     config.setdefault("emulator", {})["pace"] = pace
 
-    writer = StreamFileWriter(stream_path)
+    ds_layout = resolve_ds_layout(config)
+    config.setdefault("emulator", {})["ds_layout"] = ds_layout
+    writer = StreamFileWriter(
+        stream_path,
+        transform=spectate_frame if ds_layout == "wide" else None,
+    )
     emu.sampler = writer
     pacer = RealtimePacer() if pace == "realtime" else None
     emu.pacer = pacer
@@ -492,8 +556,10 @@ def attach(emu: Any, config: dict, run_dir: str | Path) -> SpectateFeed:
 
 __all__ = [
     "CONSOLE_FPS",
+    "DEFAULT_DS_LAYOUT",
     "DEFAULT_FREE_RUN",
     "DEFAULT_PACE",
+    "DS_LAYOUTS",
     "FREE_RUN_CHUNK",
     "PACES",
     "STREAM_FILE",
@@ -502,6 +568,7 @@ __all__ = [
     "SpectateFeed",
     "StreamFileWriter",
     "attach",
+    "resolve_ds_layout",
     "resolve_free_run",
     "resolve_pace",
 ]

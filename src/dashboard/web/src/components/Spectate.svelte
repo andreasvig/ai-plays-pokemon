@@ -79,6 +79,19 @@
   let screenConnected = $state(false)
   let eventsConnected = $state(false)
   let screenUrl = $state(null)
+  // The emulator box follows the FRAME's shape, it does not impose one. Hardcoded
+  // 240/160 (GBA) was fine while every run was FireRed; a DS frame is 2:1 once the
+  // spectate feed lays it out side by side (frame.spectate_frame), a GB frame is
+  // 10:9, and `object-fit: contain` turns any mismatch into bars around a picture
+  // that is smaller than the space it was given. Read off the decoded image so it
+  // needs no table of consoles and follows a mid-run cartridge swap for free.
+  let screenAspect = $state('240 / 160')
+  function onScreenLoad(e) {
+    const img = e.currentTarget
+    if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+      screenAspect = `${img.naturalWidth} / ${img.naturalHeight}`
+    }
+  }
   let startedAtMs = $state(null)
   let elapsedS = $state(0)
   // Client clock, republished every second (see the elapsed $effect). The trace
@@ -690,9 +703,9 @@
           {/if}
         </div>
 
-        <div class="gba">
+        <div class="gba" style="aspect-ratio: {screenAspect}">
           {#if screenUrl}
-            <img class="screen" src={screenUrl} alt="emulator screen" />
+            <img class="screen" src={screenUrl} alt="emulator screen" onload={onScreenLoad} />
           {:else}
             <div class="ph">emulator screen<br /><span class="faint">connecting to live stream…</span></div>
           {/if}
@@ -773,6 +786,8 @@
   .main { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow: hidden; }
   /* emulator flexes to fill leftover height and shrinks on short screens;
      .screen uses object-fit:contain so it never overflows. */
+  /* aspect-ratio is set inline from the decoded frame (see onScreenLoad); the
+     value here is only what the box looks like before the first frame lands. */
   .gba { flex: 1; min-height: 0; aspect-ratio: 240/160; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); display: flex; align-items: center; justify-content: center; overflow: hidden; }
   .screen { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; }
   .ph { color: var(--faint); text-align: center; font-size: 15px; line-height: 1.7; }

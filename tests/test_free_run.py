@@ -1,4 +1,10 @@
-"""The console keeps running while the model thinks.
+"""Two things reported the same afternoon about watching a v2 run.
+
+The console keeps running while the model thinks, and a DS frame is laid out for
+a human rather than stacked. Both are about the SPECTATOR's experience of a run
+and neither may change what the model is shown — which is why they share a file:
+the failure that matters for both is the transform or the thread leaking into
+the benchmark.
 
 Reported 2026-09-19, watching a v2 run: *"i dont think the game should be
 paused, while we wait for inputs, it should just run."*
@@ -367,3 +373,150 @@ def test_the_runner_is_stopped_even_when_the_turn_blows_up():
             time.sleep(0.05)
             raise KeyboardInterrupt
     assert not runner.running
+
+
+# ── and the second thing he asked for the same day: the DS layout ───────────
+#
+# *"for ds games the watching experience is not that good ... change the
+# 'scale'/ratio between upper and lower screen, such that the upper screen is at
+# least twice as wide?"*
+#
+# These live here rather than in test_spectate.py because the risk they guard is
+# not about the feed: it is that a re-laid-out frame reaches the MODEL, whose
+# prompt describes a vertical stack and whose taps are mapped against one.
+
+
+def _nds_png(top=(200, 30, 30), bottom=(30, 30, 200)) -> bytes:
+    from PIL import Image
+    import io as _io
+
+    img = Image.new("RGB", (256, 384), bottom)
+    img.paste(Image.new("RGB", (256, 192), top), (0, 0))
+    buf = _io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _size(png: bytes):
+    from PIL import Image
+    import io as _io
+
+    return Image.open(_io.BytesIO(png)).size
+
+
+def test_the_spectate_frame_puts_the_top_screen_beside_the_touch_screen():
+    """The ask, measured: the upper screen is twice the lower one's width."""
+    from src.emulator.backends.frame import NDS_SCREEN, spectate_frame
+
+    out = spectate_frame(_nds_png())
+    assert out is not None
+    w, h = _size(out)
+    assert (w, h) == (NDS_SCREEN[0] * 3, NDS_SCREEN[1] * 2)   # 768x384, 2:1
+    # top occupies [0, 512), touch [512, 768) — 2x the width, and not stacked.
+    assert w - NDS_SCREEN[0] == 2 * NDS_SCREEN[0]
+
+
+def test_both_screens_survive_the_relayout():
+    """A layout that dropped or duplicated a screen would still be 768x384 and
+    would still be "twice as wide". Sample a pixel from each region instead."""
+    from PIL import Image
+    import io as _io
+    from src.emulator.backends.frame import spectate_frame
+
+    img = Image.open(_io.BytesIO(spectate_frame(_nds_png()))).convert("RGB")
+    assert img.getpixel((256, 192)) == (200, 30, 30)    # middle of the big top
+    assert img.getpixel((640, 192)) == (30, 30, 200)    # middle of the touch screen
+
+
+def test_the_model_still_sees_a_vertical_stack():
+    """THE regression this pair of functions exists to prevent.
+
+    The prompt tells the model the bottom half of its image is the touch screen,
+    and ``image_row_to_touch_y`` converts a row of THAT image into the normalised
+    y SkyEmu wants. Hand it a side-by-side frame and every tap lands on the wrong
+    screen — silently, because a tap always "works"."""
+    from src.emulator.backends.frame import image_row_to_touch_y, prepare
+
+    img, meta = prepare(_nds_png())
+    assert img.height > img.width, "the model's frame stopped being a stack"
+    assert meta["touch_top_row"] > 0
+    assert image_row_to_touch_y(meta["touch_top_row"], meta) == 0.0
+    assert image_row_to_touch_y(
+        meta["touch_top_row"] + meta["touch_height"] - 1, meta
+    ) == pytest.approx(1.0, abs=0.01)
+
+
+def test_a_frame_the_layout_does_not_handle_is_published_unchanged():
+    """GB and GBA captures, and a torn or unexpected one. A frame is worth less
+    than the run: the feed publishes what it was given rather than stalling."""
+    from PIL import Image
+    import io as _io
+    from src.emulator.backends.frame import spectate_frame
+
+    for size in ((240, 160), (160, 144), (256, 192)):
+        buf = _io.BytesIO()
+        Image.new("RGB", size, (1, 2, 3)).save(buf, format="PNG")
+        assert spectate_frame(buf.getvalue()) is None, size
+    assert spectate_frame(b"not a png at all") is None
+    assert spectate_frame(b"") is None
+
+
+def test_the_writer_publishes_the_relaid_out_frame(tmp_path):
+    """End to end through the sampler, which is where the transform actually
+    sits — the emulator hands bytes to the writer and nothing else touches them."""
+    from src.dashboard.spectate import StreamFileWriter
+    from src.emulator.backends.frame import spectate_frame
+
+    path = tmp_path / "stream.png"
+    writer = StreamFileWriter(path, transform=spectate_frame)
+    writer(_nds_png())
+    assert _size(path.read_bytes()) == (768, 384)
+    assert writer.frames == 1
+    assert writer.untransformed == 0
+
+
+def test_the_writer_publishes_a_gba_frame_untouched(tmp_path):
+    """The control. Three of the seven games in the registry are not DS, and the
+    transform must be invisible to them — including in the counters, so
+    ``untransformed`` means "declined", not "failed"."""
+    from PIL import Image
+    import io as _io
+    from src.dashboard.spectate import StreamFileWriter
+    from src.emulator.backends.frame import spectate_frame
+
+    buf = _io.BytesIO()
+    Image.new("RGB", (240, 160), (9, 9, 9)).save(buf, format="PNG")
+    raw = buf.getvalue()
+
+    path = tmp_path / "stream.png"
+    writer = StreamFileWriter(path, transform=spectate_frame)
+    writer(raw)
+    assert path.read_bytes() == raw
+    assert writer.untransformed == 1
+
+
+def test_attach_lays_ds_frames_out_by_default_and_can_be_told_not_to(tmp_path):
+    from src.dashboard.spectate import DEFAULT_DS_LAYOUT, attach, resolve_ds_layout
+    from src.emulator.backends.frame import spectate_frame
+
+    assert DEFAULT_DS_LAYOUT == "wide"
+    assert resolve_ds_layout({}) == "wide"
+    with pytest.raises(ValueError, match="ds_layout"):
+        resolve_ds_layout({"emulator": {"ds_layout": "sideways"}})
+
+    emu = FakeSkyEmu(_config())
+    config = {"emulator": {"type": "skyemu"}}
+    feed = attach(emu, config, tmp_path)
+    try:
+        assert feed.writer._transform is spectate_frame
+        assert config["emulator"]["ds_layout"] == "wide"
+    finally:
+        feed.detach()
+
+    emu2 = FakeSkyEmu(_config())
+    config2 = {"emulator": {"type": "skyemu", "ds_layout": "stacked"}}
+    feed2 = attach(emu2, config2, tmp_path / "b")
+    try:
+        assert feed2.writer._transform is None
+    finally:
+        feed2.detach()

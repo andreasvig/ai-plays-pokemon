@@ -49,6 +49,32 @@ UPSCALE = {"GB": 6, "GBA": 6, "NDS": 3}
 SEAM_PX = 4                      # at final scale
 SEAM_COLOR = (90, 90, 96)
 
+# --- the spectator's frame, which is NOT the model's -----------------------
+#
+# A stacked DS frame is 256x384 — taller than it is wide, in a dashboard whose
+# emulator box and whose 16:9 recording are both landscape. It letterboxes into
+# a sliver with the interesting screen a third of the height it could be.
+# Andreas, 2026-09-19: *"for ds games the watching experience is not that good
+# ... change the scale/ratio between upper and lower screen, such that the upper
+# screen is at least twice as wide."*
+#
+# So for a WATCHER the two screens go side by side with the top one at 2x: the
+# world gets the space, the touch screen keeps its own pixels beside it, and the
+# result is 2:1 instead of 2:3.
+#
+# **This never reaches the model.** ``prepare`` is what a turn is shown and it is
+# untouched — the stacked frame is what the prompt describes, and
+# ``image_row_to_touch_y`` maps a row in THAT image to a tap. A model reasoning
+# about a side-by-side frame would aim the stylus at the wrong screen. The two
+# layouts are deliberately different functions rather than one with a flag, so
+# there is no call site where the wrong one can be selected by a default.
+SPECTATE_TOP_SCALE = 2
+SPECTATE_BACKDROP = (16, 17, 19)
+#: PNG effort for a frame that lives ~33 ms. Level 1 is ~3 ms/frame on a real
+#: capture against ~9 ms at the default 6, and this runs inside the emulator
+#: lock, where the whole sampling chunk has 33 ms to spend.
+SPECTATE_COMPRESS = 1
+
 
 def geometry(png: bytes) -> tuple[str, int, int]:
     """('NDS'|'GBA'|'GB', width, height) — the system, measured not asked.
@@ -121,6 +147,43 @@ def prepare(png: bytes, upscale: Optional[int] = None,
     }
 
 
+def spectate_frame(png: bytes) -> Optional[bytes]:
+    """Re-lay a raw NDS capture out for a human watcher. ``None`` for anything else.
+
+    Top screen at :data:`SPECTATE_TOP_SCALE` (so it is twice the touch screen's
+    width), touch screen at native size beside it and vertically centred. 256x384
+    in, 768x384 out.
+
+    **Returns None rather than raising for a frame it does not handle** — GB and
+    GBA captures, a torn read, a capture whose shape changed. This sits on the
+    spectate feed's hot path, where a frame is worth less than the run: the
+    caller publishes the original bytes and the viewer sees an un-relaid frame
+    rather than a stalled feed. ``prepare`` takes the opposite line and raises on
+    an unknown geometry, because THAT frame is evidence a benchmark is scored on.
+
+    Does not draw the seam ``prepare`` draws: side by side, the two screens no
+    longer abut, so there is no boundary to mark.
+    """
+    try:
+        img = Image.open(io.BytesIO(png))
+        img.load()
+        if img.size != (NDS_SCREEN[0], NDS_SCREEN[1] * 2):
+            return None
+        img = img.convert("RGB")
+        top, bottom = split_nds(img)
+        top = _scale(top, SPECTATE_TOP_SCALE)
+        out = Image.new(
+            "RGB", (top.width + bottom.width, top.height), SPECTATE_BACKDROP
+        )
+        out.paste(top, (0, 0))
+        out.paste(bottom, (top.width, (top.height - bottom.height) // 2))
+        buf = io.BytesIO()
+        out.save(buf, format="PNG", compress_level=SPECTATE_COMPRESS)
+        return buf.getvalue()
+    except Exception:
+        return None
+
+
 def image_row_to_touch_y(row: int, meta: dict) -> float:
     """An image row in the prepared frame -> the touch_y SkyEmu wants.
 
@@ -145,9 +208,13 @@ __all__ = [
     "NDS_SCREEN",
     "SEAM_COLOR",
     "SEAM_PX",
+    "SPECTATE_BACKDROP",
+    "SPECTATE_COMPRESS",
+    "SPECTATE_TOP_SCALE",
     "UPSCALE",
     "geometry",
     "image_row_to_touch_y",
+    "spectate_frame",
     "prepare",
     "split_nds",
 ]
