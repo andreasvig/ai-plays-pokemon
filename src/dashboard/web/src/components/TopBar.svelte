@@ -20,7 +20,6 @@
   // Showing "pokebench-v1.1" over a SkyEmu queue is exactly the confusion this
   // chip exists to remove.
   const isV2 = $derived(!STATIC && emulator.backend === 'skyemu')
-  const cartridge = $derived([emulator.rom?.name, emulator.console].filter(Boolean).join(' · '))
 </script>
 
 <svelte:head>
@@ -38,9 +37,6 @@
         <span class="ver mono">{BENCH_VERSION}</span>
       {/if}
     </button>
-    {#if isV2 && cartridge}
-      <span class="cart mono" title="The cartridge the emulator is holding right now. Each queued run loads the game it needs.">{cartridge}</span>
-    {/if}
   </div>
 
   <div class="center">
@@ -55,7 +51,13 @@
   </div>
 
   <nav class="right">
-    <!-- The game is chosen per RUN in Add run, not here: the executor loads
+    <!-- Nor is the loaded cartridge NAMED here (tried and removed 2026-09-19).
+         It is true only of this instant: while the queue is idle it is whatever
+         ROM the app booted with, which means nothing, and it changes under you
+         the moment a run dispatches. Andreas, seeing it: "what does this mean at
+         the top of the interface?" — which is the answer. The game belongs on a
+         RUN, where History and Spectate already show it.
+         The game is chosen per RUN in Add run, not here: the executor loads
          whichever cartridge the queued item needs (`_ensure_rom_loaded`), so a
          separate global switcher could only ever disagree with the run about to
          start. What survives is the one state a person has to ACT on — a ROM
@@ -106,7 +108,7 @@
     color: var(--accent); background: var(--accent-soft);
     border: 1px solid var(--accent); font-weight: 700;
   }
-  .cart { font-size: 10px; color: var(--faint); border: 1px solid var(--border); padding: 2px 6px; border-radius: var(--radius-sm); white-space: nowrap; }
+
 
   .spectate {
     display: inline-flex; align-items: center; gap: 8px;
