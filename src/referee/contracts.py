@@ -409,8 +409,54 @@ BLACK2 = GameMemory(
     ),
 )
 
+# The last of the seven, and the one the search could NOT find on its own. Both
+# of find_map_id's priors are false in Gen 5: the coordinates live in an
+# overworld ACTOR rather than a save block, so proximity ranking just returns
+# the actor's own fields; and Black STREAMS map data as the camera moves, so
+# "constant while you walk inside a map" holds for almost nothing — 297,710
+# bytes take one value on both visits to the living room and another on both
+# visits to the town, and none of them survives a three-tile walk. A strict
+# pairwise search with four revisit oracles got it down to 1,651 candidates,
+# all allocator bookkeeping. A shortlist, not an answer.
+#
+# What found it was the STRUCTURE. Black 2's block is map, x, height, y at +0,
+# +4, +8, +12, and Black's actor has x, height, y at +4, +8, +12 of
+# 0x0224f90c — so +0 is where the map id goes on the sibling cartridge. The
+# search had already surfaced that word and set it aside as a heap-nesting
+# counter, which was a guess; reading it says otherwise. Measured over the six
+# fixtures: 391 for both bedroom tiles, 390 for both living-room tiles, 389 for
+# both town tiles, constant through a six-press walk on two of those maps while
+# x and y track every step.
+#
+# The registered START state also reads 391, and it was saved BEFORE both rival
+# battles while the bedroom fixtures were saved after 220 presses of story. So
+# this is not the monotone story counter that a sequential three-state design
+# is confounded with — that one is 0x0214678f, which reads 9/23/27/28 across
+# the same chain and never returns.
+_BLACK_ACTOR = 0x0224F90C
+
+BLACK = GameMemory(
+    game="black-us",
+    console="NDS",
+    spec=(f"{_BLACK_ACTOR:#x}:16",),
+    map_id=Field(0, 0, "<I"),
+    x=Field(0, 4, "<i", shift=16),
+    y=Field(0, 12, "<i", shift=16),
+    notes=(
+        "Gen 5, same block shape as Black 2 at a different base: map id +0, x "
+        "+4, height +8, y +12, coordinates 16.16 fixed point. The actor is also "
+        "reachable through four pointers (*0x02258284, *0x022582c0, "
+        "*0x022584f0, *0x02330464), all holding this address in every state "
+        "dumped, so the raw form is a choice and not a gamble. Raw addresses "
+        "survive a map load for the ACTOR; map-scoped memory does NOT, because "
+        "Gen 5 streams it. Outdoor coordinates are global (782, 749 in Nuvema "
+        "Town), interiors local. Map ids seen: 391 bedroom, 390 living room, "
+        "389 Nuvema Town. No battle flag located."
+    ),
+)
+
 CONTRACTS: dict[str, GameMemory] = {
-    c.game: c for c in (FIRERED, EMERALD, CRYSTAL, PLATINUM, SOULSILVER, BLACK2)}
+    c.game: c for c in (FIRERED, EMERALD, CRYSTAL, PLATINUM, SOULSILVER, BLACK2, BLACK)}
 
 
 def contract_for(game: Optional[str]) -> Optional[GameMemory]:
@@ -463,5 +509,5 @@ def attach(emu: Any, contract: Optional[GameMemory]) -> Optional[GameMemory]:
     return contract
 
 
-__all__ = ["Field", "GameMemory", "CONTRACTS", "FIRERED", "EMERALD", "CRYSTAL", "PLATINUM", "SOULSILVER", "BLACK2",
+__all__ = ["Field", "GameMemory", "CONTRACTS", "FIRERED", "EMERALD", "CRYSTAL", "PLATINUM", "SOULSILVER", "BLACK2", "BLACK",
            "attach", "contract_for", "contract_for_rom_path"]

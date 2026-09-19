@@ -65,6 +65,10 @@ SNAPSHOT_OVERRIDE = {
     # a down-leg walks through it. The city fixture stands south of the line
     # that fires Hugh's scripted scene.
     "black2": "v2-experiments/states/black2/probe.state",
+    # Black's registered start has Bianca on the player's left and Cheren on
+    # his right — both bodies, so x cannot move and the axis search returned
+    # NO CANDIDATES from it. The living-room fixture is free on all four sides.
+    "black": "v2-experiments/states/black/probe.state",
 }
 
 # A state the player is IN A BATTLE in, per ROM. The battle flag is the one

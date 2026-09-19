@@ -90,6 +90,7 @@ def test_which_cartridges_can_tell_a_battle_press_from_an_overworld_one():
         "platinum-us": False,
         "soulsilver-us": False,
         "black2-us": False,
+        "black-us": False,
     }
 
 

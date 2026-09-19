@@ -27,6 +27,8 @@ import json
 import os
 import struct
 import time
+
+import pytest
 from pathlib import Path
 
 from src.app import observed
