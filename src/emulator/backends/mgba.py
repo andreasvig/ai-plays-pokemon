@@ -29,6 +29,8 @@ from typing import Any, Optional
 import numpy as np
 from PIL import Image
 
+from src.emulator.inputs import TAP_INPUT
+
 
 class ProtocolError(RuntimeError):
     """Lua answered ERROR:, or the reply stream could not be realigned."""
@@ -61,6 +63,22 @@ class EmulatorClient:
         self.grid_overlay = screenshot_config.get("grid_overlay", False)
 
         self.valid_inputs = set(config.get("valid_inputs", []))
+        # The stylus has no delivery path here, on ANY ROM: the Lua bridge
+        # speaks PRESS:<name> against mGBA's GBA/GB key set, and neither
+        # console has a touch screen. So this is not "unsupported today" — it
+        # is unsupportable, and the earliest honest moment to say so is the
+        # moment the config is turned into a client, before a server binds, a
+        # ROM loads or a token is billed. (The skyemu backend refuses
+        # ``grid_overlay: true`` in its own constructor for the same reason:
+        # a config that asks for something the backend cannot do must not run
+        # with the request silently dropped.)
+        if TAP_INPUT in {str(v).strip().upper() for v in self.valid_inputs}:
+            raise ValueError(
+                f"valid_inputs lists {TAP_INPUT!r}, and the mgba backend has no touch "
+                "screen to tap: mGBA runs GBA/GB ROMs, which have no stylus, and the "
+                "Lua bridge can only send button names. Remove it, or run this config "
+                "on emulator.type: skyemu with an NDS ROM."
+            )
 
         # Screen stability detection config
         stability = config.get("screen_stability", {})

@@ -123,12 +123,18 @@ def _input_stats(run_dir: Path) -> tuple[float | None, dict[str, int] | None]:
         return None, None
     if not per_turn:
         return None, None
+    # A tap carries its coordinates in the action string (``tap:0.500,0.420``),
+    # so counting distinct strings would render a run of 40 taps as 40 buckets
+    # of 1 and push every real button off the card. ``census_key`` collapses
+    # them to one ``tap`` bucket; for every other input it is ``.strip().lower()``
+    # exactly as before.
+    from src.emulator.inputs import census_key
     counts: dict[str, int] = {}
     total = 0
     for action in per_turn.values():
         total += len(action)
         for a in action:
-            key = str(a).strip().lower()
+            key = census_key(a)
             counts[key] = counts.get(key, 0) + 1
     return total / len(per_turn), dict(sorted(counts.items(), key=lambda kv: -kv[1]))
 

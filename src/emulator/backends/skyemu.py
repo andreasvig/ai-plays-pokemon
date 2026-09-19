@@ -45,6 +45,11 @@ Where this backend's meaning differs from mGBA's
   seam. The v2 frame is not v1's frame.
 * There is no ``pause``/``unpause``: a stepped emulator is paused whenever
   nothing is stepping it, which is what ``pause_during_thinking`` wanted.
+* **There is a stylus** (P3b). ``press_button_list`` accepts a
+  ``tap:<x>,<y>`` element alongside the button names, and only when the config
+  put ``TAP`` in ``valid_inputs`` AND the loaded ROM measures as NDS. The mGBA
+  backend refuses ``TAP`` in its constructor; this one refuses a non-NDS ROM in
+  :meth:`_probe_system`, which is the first moment the console is knowable.
 """
 
 from __future__ import annotations
@@ -66,8 +71,21 @@ import numpy as np
 from PIL import Image
 
 from src.emulator.backends import frame as frame_mod
+from src.emulator.inputs import TAP_INPUT, format_tap, is_tap, parse_tap
 
 DEFAULT_BINARY = "~/Applications/SkyEmu.app/Contents/MacOS/SkyEmu"
+
+# The SkyEmu input this project's patch added for the stylus, and the two
+# coordinate parameters that ride with it. They do NOT exist upstream.
+# ``touch_x``/``touch_y`` are normalised over the TOUCH SCREEN, not over the
+# 256x384 capture — see :mod:`src.emulator.inputs`.
+SKYEMU_TAP = "Tap Screen (NDS)"
+SKYEMU_TOUCH_X = "touch_x"
+SKYEMU_TOUCH_Y = "touch_y"
+
+#: The only system with a touch screen. ``frame.geometry`` measures it from the
+#: capture's shape; ``/status`` does not name the console.
+TOUCH_SYSTEM = "NDS"
 
 # This harness's short codes -> the names SkyEmu's /input answers to. The short
 # codes are the ones ``normalize_button_list`` produces, so this table is the
@@ -111,6 +129,11 @@ class SkyEmuClient:
         self.gap_frames = emu_config.get("frames_between_inputs", 30)
         self.ab_hold_frames = emu_config.get("ab_hold_frames", 50)
         self.ab_gap_frames = emu_config.get("ab_gap_frames", 30)
+        # A stylus tap is held longer than a button press: the harness probe
+        # settled on 20/24 against Platinum and SoulSilver, and a shorter hold
+        # was the difference between a menu registering the touch and not.
+        self.tap_hold_frames = emu_config.get("tap_hold_frames", 20)
+        self.tap_gap_frames = emu_config.get("tap_gap_frames", 24)
         # Duration of the "WAIT" pseudo-input, in seconds of GAME time — it is
         # stepped, not slept, so it costs whatever the host needs and the game
         # sees exactly this many seconds.
@@ -153,6 +176,16 @@ class SkyEmuClient:
         self.screen_divider = screenshot_config.get("nds_screen_divider", True)
 
         self.valid_inputs = set(config.get("valid_inputs", []))
+        #: True when the config asked for the stylus (``TAP`` in valid_inputs).
+        #: Unlike every other entry this one is a CAPABILITY claim as well as a
+        #: permission: it asserts the ROM about to be loaded has a touch screen,
+        #: and :meth:`wait_for_connection` checks that against the frame the
+        #: console actually renders before turn 1.
+        self.touch_enabled = TAP_INPUT in {
+            str(v).strip().upper() for v in self.valid_inputs
+        }
+        #: "NDS" / "GBA" / "GB" once a frame has been measured, else None.
+        self.system: Optional[str] = None
 
         stability = config.get("screen_stability", {})
         # Kept for parity with the mGBA backend, which also reads and never uses
@@ -272,9 +305,54 @@ class SkyEmuClient:
             self.disconnect()
             raise
 
-        if self.boot_frames:
-            self._step(self.boot_frames)
-        print(f"SkyEmu ready on port {self.port} (booted {self.boot_frames} frames)")
+        try:
+            if self.boot_frames:
+                self._step(self.boot_frames)
+            self._probe_system()
+        except BaseException:
+            self.disconnect()
+            raise
+        print(f"SkyEmu ready on port {self.port} — {self.system}, "
+              f"booted {self.boot_frames} frames"
+              + (", stylus enabled" if self.touch_enabled else ""))
+
+    def _probe_system(self) -> None:
+        """Measure which console is loaded, and refuse a stylus it cannot hold.
+
+        This is the second of the two "no touch screen here" checks and the one
+        that needs a running machine. The first — ``TAP`` on the mGBA backend —
+        is answerable from the config alone and lives in that backend's
+        constructor. This one is not: ``emulator.type: skyemu`` is compatible
+        with a stylus, and whether THIS RUN has one depends on the ROM. SkyEmu's
+        ``/status`` does not name the console, so the only way to know is to
+        measure a frame (``frame.geometry``) — which means after the process
+        answers and has stepped at least one frame.
+
+        It still runs before turn 1, before a savestate is loaded and before a
+        single token is billed, which is the whole point: a config that asks a
+        GBA cartridge for a stylus dies here with the system named, instead of
+        forty turns later with a rejected action the model cannot interpret.
+
+        The probe runs unconditionally, not only when ``touch_enabled`` — one
+        ``/screen`` is cheap and :attr:`system` is worth having on every run.
+        """
+        try:
+            self.system = frame_mod.geometry(self._get("/screen"))[0]
+        except Exception as exc:
+            if not self.touch_enabled:
+                return       # diagnostics only; do not fail a run over them
+            raise RuntimeError(
+                f"valid_inputs asks for {TAP_INPUT!r} but the console could not be "
+                f"identified from a capture, so whether it has a touch screen is "
+                f"unknown: {exc}"
+            ) from exc
+        if self.touch_enabled and self.system != TOUCH_SYSTEM:
+            raise ValueError(
+                f"valid_inputs lists {TAP_INPUT!r} but {self.rom_path.name} is a "
+                f"{self.system} ROM, and only {TOUCH_SYSTEM} has a touch screen. "
+                f"Remove {TAP_INPUT!r} from valid_inputs, or point emulator.rom_path "
+                "at an NDS ROM."
+            )
 
     def disconnect(self) -> None:
         """Kill the process and remove the staged ROM. Safe to call twice."""
@@ -487,14 +565,45 @@ class SkyEmuClient:
     def normalize_button_list(self, buttons: list[str]) -> list[str]:
         """Full names (``["left", "up", "a"]``) -> short codes (``["L","U","A"]``).
 
-        Byte-identical in behaviour to the mGBA backend's method: the model's
-        action vocabulary must not depend on which emulator is behind it.
+        Byte-identical in behaviour to the mGBA backend's method for buttons:
+        the model's action vocabulary must not depend on which emulator is
+        behind it.
+
+        A tap is the exception, and it stays IN PLACE in the returned list — a
+        tap between two presses has to run between them, so it cannot be split
+        off into a separate pass. It normalises to its canonical token
+        (``tap:0.500,0.400``) rather than to a short code, because there is no
+        short code that carries two coordinates.
+
+        Three ways a tap is refused here, all ``ValueError`` so that
+        ``turn.py`` rejects the model's action rather than half-running it:
+        the run never asked for the stylus (``TAP`` not in ``valid_inputs``),
+        the console has none (:attr:`system` is not NDS), or the coordinates are
+        malformed / off the screen (:func:`src.emulator.inputs.parse_tap`).
         """
         ALIASES = {"UP": "U", "DOWN": "D", "LEFT": "L", "RIGHT": "R"}
         result = []
         for btn in buttons:
+            if is_tap(btn):
+                if not self.touch_enabled:
+                    raise ValueError(
+                        f"Invalid button: {btn!r} — this run did not enable the stylus. "
+                        f"Add {TAP_INPUT!r} to valid_inputs to allow taps."
+                    )
+                if self.system is not None and self.system != TOUCH_SYSTEM:
+                    raise ValueError(
+                        f"Invalid button: {btn!r} — the loaded ROM is {self.system}, "
+                        f"which has no touch screen."
+                    )
+                result.append(format_tap(*parse_tap(btn)))
+                continue
             normalized = btn.strip().upper()
             normalized = ALIASES.get(normalized, normalized)
+            if normalized == TAP_INPUT:
+                raise ValueError(
+                    f"Invalid button: {btn!r} — {TAP_INPUT} is a verb, not a button. "
+                    "A tap carries its target: 'tap:<x>,<y>', e.g. 'tap:0.5,0.4'."
+                )
             if normalized not in self.valid_inputs:
                 raise ValueError(f"Invalid button: {btn!r} (normalized to {normalized!r})")
             result.append(normalized)
@@ -512,8 +621,11 @@ class SkyEmuClient:
         ``frames_between_inputs``.
 
         ``"wait"`` presses nothing and steps ``wait_input_seconds * 60`` frames.
-        Invalid names raise ``ValueError`` before anything is pressed, so a
-        model's bad action is rejected rather than half-executed.
+        A ``tap:<x>,<y>`` element is a stylus touch at that point of the touch
+        screen (:meth:`tap`), run in its position in the list — a tap between
+        two presses happens between them. Invalid names raise ``ValueError``
+        before anything is pressed, so a model's bad action is rejected rather
+        than half-executed.
 
         **This blocks for the whole input**, where mGBA returned while the game
         was still catching up (base.py names this). Nothing downstream depended
@@ -538,6 +650,11 @@ class SkyEmuClient:
 
         with self._lock:
             for btn in normalized:
+                if is_tap(btn):
+                    x, y = parse_tap(btn)
+                    self._tap(x, y)
+                    self._trace_sample(btn)
+                    continue
                 if btn == "WAIT":
                     # No trace row: the Lua bridge samples per QUEUED input and
                     # WAIT never enters its queue. A WAIT row would land in
@@ -564,6 +681,47 @@ class SkyEmuClient:
             if btn in DIRECTION_BUTTONS:
                 self.facing = DIRECTION_BUTTONS[btn]
                 break
+
+    def tap(self, x: float, y: float) -> None:
+        """Touch the bottom screen at (x, y), each normalised 0..1.
+
+        The coordinates are normalised over the **touch screen**, not over the
+        256x384 capture — the touch screen is the bottom half of that image, so
+        an image row *r* maps to ``(r - 192) / 192``
+        (:func:`src.emulator.backends.frame.image_row_to_touch_y` does it, and
+        is the only thing that should).
+
+        Shaped like a press: set the input level, step the hold, clear it, step
+        the gap. An input on SkyEmu is a LEVEL, not an edge — a set-and-clear
+        inside one call registers nothing at all.
+
+        Public for the same reason :meth:`step` is: the scripted probes drive it
+        directly. The turn loop reaches it through ``press_button_list`` with a
+        ``tap:<x>,<y>`` token, which is what keeps a tap ordered among presses.
+        """
+        with self._lock:
+            self._tap(x, y)
+
+    def _tap(self, x: float, y: float) -> None:
+        if not self.touch_enabled:
+            raise ValueError(
+                f"This run did not enable the stylus: add {TAP_INPUT!r} to valid_inputs."
+            )
+        if self.system is not None and self.system != TOUCH_SYSTEM:
+            raise ValueError(
+                f"The loaded ROM is {self.system}, which has no touch screen."
+            )
+        # Round through the canonical token so the coordinate on the wire is the
+        # coordinate in the log, to the digit. Also the range check.
+        x, y = parse_tap(format_tap(x, y))
+        self._set_inputs({SKYEMU_TAP: 1, SKYEMU_TOUCH_X: x, SKYEMU_TOUCH_Y: y})
+        self._step(self.tap_hold_frames)
+        # Only the tap level is cleared. touch_x/touch_y are coordinates, not a
+        # held input; SkyEmu reads them while the tap level is 1 and ignores
+        # them otherwise, so re-sending them as 0 would claim a touch at the
+        # top-left corner rather than no touch.
+        self._set_inputs({SKYEMU_TAP: 0})
+        self._step(self.tap_gap_frames)
 
     # --- savestates -------------------------------------------------------
 

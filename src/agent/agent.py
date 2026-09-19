@@ -2,14 +2,26 @@
 
 import json
 from dataclasses import dataclass
-from typing import Any, Literal, Optional
-from pydantic import BaseModel, Field, field_validator
+from typing import Annotated, Any, Literal, Optional, Union
+from pydantic import BaseModel, Field, StringConstraints, create_model, field_validator
 from pydantic_ai import Agent, ModelRetry, NativeOutput, PromptedOutput, RunContext
 from pydantic_ai.models.openai import OpenAIModel
 
 from src.agent.coerce import coerce_object_to_json_string, coerce_stringified_object
+from src.emulator.inputs import TAP_INPUT, TAP_PATTERN, TAP_SYNTAX
 
 Button = Literal["up", "down", "left", "right", "a", "b", "start", "select", "wait"]
+
+# The stylus (plan §3.5). A tap is the first action that is not one string from
+# a fixed enum: it is a verb plus two floats, carried as a `tap:<x>,<y>` token
+# so that `inputs` stays a list[str] end to end (see src/emulator/inputs.py for
+# why a structured element was rejected).
+#
+# `TapInput`'s pattern is the SCHEMA-facing half of the grammar: it makes an
+# off-screen coordinate unrepresentable rather than merely rejected after the
+# model has been billed for it.
+TapInput = Annotated[str, StringConstraints(pattern=TAP_PATTERN)]
+TouchInput = Union[Button, TapInput]
 
 # Apply patches before creating any models
 from src.core.patches import apply_patches
@@ -121,6 +133,84 @@ class _LegacyGameAction(GameAction):
 # Drop the TM-only field from the legacy model so it never reaches the model.
 del _LegacyGameAction.model_fields["return_to_taskmaster"]
 _LegacyGameAction.model_rebuild(force=True)
+
+
+# --- The stylus (plan §3.5) ------------------------------------------------
+
+TAP_INPUT_DESCRIPTION = (
+    "The buttons to press this turn. One element may also be a stylus tap, "
+    'written "tap:<x>,<y>" — x and y are decimals from 0 to 1 across and down '
+    "the TOUCH SCREEN (the lower half of the image, below the grey seam), NOT "
+    'the whole picture: "tap:0,0" is the seam\'s left end and "tap:1,1" the '
+    'bottom-right corner of the console. Example: ["tap:0.5,0.42", "a"] taps '
+    "the middle of the touch screen and then presses A."
+)
+
+
+def touch_output_model(base: type[GameAction]) -> type[GameAction]:
+    """``base`` with `inputs` widened to accept a tap token.
+
+    A separate model rather than a flag on the existing one, for the reason
+    ``_LegacyGameAction`` exists: a run WITHOUT a touch screen must see the
+    schema it saw before this capability landed, byte for byte. FireRed is what
+    this branch is measured on, and an arm whose output schema grew an
+    unusable action is not the same arm.
+
+    It is also the answer to "an mGBA/GBA run that is OFFERED a tap must fail
+    loudly": on those runs there is nothing to fail on, because the tap is
+    never in the schema and never in the prompt's button list. The two backends
+    then refuse a tap that arrives anyway (a prompted-output model can emit one
+    regardless of schema) — see `EmulatorClient.__init__` and
+    `SkyEmuClient._probe_system`.
+
+    Built with `create_model` on the SAME base so every other field, validator
+    and description is inherited rather than restated; only `inputs` moves.
+    """
+    touched = create_model(
+        base.__name__,
+        __base__=base,
+        inputs=(list[TouchInput], Field(description=TAP_INPUT_DESCRIPTION)),
+    )
+    # `_LegacyGameAction` drops `return_to_taskmaster` by DELETING it from
+    # `model_fields` after the class is built — and pydantic re-collects fields
+    # from the whole MRO when you subclass, so a naive subclass of it gets the
+    # TaskMaster field back, and back as REQUIRED (the `default=None` was
+    # dropped with the field). Measured, not feared: the first version of this
+    # function did exactly that. Re-apply the base's own field set.
+    for name in list(touched.model_fields):
+        if name not in base.model_fields:
+            del touched.model_fields[name]
+    # The docstring is the other thing a subclass does not inherit, and it
+    # becomes the schema's `description`, which the legacy path pins on purpose.
+    # (`model_config` IS inherited, so the pinned title="GameAction" survives.)
+    touched.__doc__ = base.__doc__
+    touched.model_rebuild(force=True)
+    return touched
+
+
+def touch_enabled(config: dict[str, Any]) -> bool:
+    """True when this run's ``valid_inputs`` asks for the stylus.
+
+    One config key drives the offer (this function) and the delivery (both
+    backends read the same list), so the prompt, the schema and the emulator
+    cannot disagree about whether a tap is available.
+    """
+    return TAP_INPUT in {
+        str(v).strip().upper() for v in (config.get("valid_inputs") or [])
+    }
+
+
+def button_list(config: dict[str, Any]) -> str:
+    """The ``{{button_list}}`` the system prompt shows.
+
+    ``valid_inputs`` verbatim, except that ``TAP`` is rendered with its
+    arguments. A bare "TAP" in the list would be the one entry a model cannot
+    act on: every other name IS the action, and this one is a verb missing its
+    target.
+    """
+    names = [str(v) for v in (config.get("valid_inputs") or [])]
+    return ", ".join(TAP_SYNTAX if n.strip().upper() == TAP_INPUT else n
+                     for n in names)
 
 
 # --- Agent dependencies (passed to tools via RunContext) ---
@@ -251,7 +341,9 @@ def create_agent(config: dict[str, Any]) -> tuple[Agent, Any, list[str]]:
         # the ROM registry (``src.app.roms.apply_rom``); the fallback is the
         # default ROM's game, for a config prepared outside the app.
         game_name=config.get("game_name") or "Pokemon FireRed",
-        button_list=", ".join(config.get("valid_inputs", [])),
+        # `TAP` renders as `TAP:<x>,<y>` — a bare verb is the one entry in this
+        # list a model cannot act on. See `button_list`.
+        button_list=button_list(config),
         current_task=config.get("task", {}).get("goal", "Play the game."),
         previous_turns_description=previous_turns_description,
         mode_guidelines=_player_mode_guidelines(config),
@@ -268,6 +360,10 @@ def create_agent(config: dict[str, Any]) -> tuple[Agent, Any, list[str]]:
     # validator is attached, so the legacy single-agent path is unchanged.
     tm_enabled = bool(config.get("task_master", {}).get("enabled", False))
     OutputModel = GameAction if tm_enabled else _LegacyGameAction
+    # The stylus is offered in the SCHEMA only when the config asked for it, so
+    # a GBA run's model-facing schema is byte-for-byte what it was before P3b.
+    if touch_enabled(config):
+        OutputModel = touch_output_model(OutputModel)
 
     # Output mode: registry can override per-model. Default "tool" path uses
     # tool_choice="required" — strongest schema enforcement, broadest support.
