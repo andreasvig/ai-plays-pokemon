@@ -102,3 +102,59 @@ reports 21% vs 36% and calls the mechanism confirmed.
    on this arm 40 does not reach it either. 55 would, on these three runs' slope.
 3. **Do not tune v2 toward v1 on this evidence.** Decision C stands: the gap is a thing
    to measure, and one arm of a three-arm design is not a reason to change anything.
+
+---
+
+## 6. A2 landed, and it reverses §4 (2026-09-19, later the same day)
+
+Andreas stopped the control center, so A2 (mGBA, `ocr.enabled: false`,
+`configs/config-a2-mgba-noocr.yaml` — config-5.1 with one key changed) could run.
+**n=1**, so this is a direction, not a measurement.
+
+| arm | inputs to `route1_reached` | turn | battle span | inputs/turn | `blocked_by_actor` |
+|---|---|---|---|---|---|
+| A1 mGBA + OCR | 186 | 16 | 5–6 | 10.8–11.8 | 9 |
+| **A2 mGBA − OCR** | **185** | 19 | 7 | 10.0 | 3 |
+| A3 SkyEmu − OCR | 240 | 28–29 | 11 | 8.2–8.8 | 16 |
+
+**A1 → A2 = −1 input. The OCR channel costs essentially nothing on the primary
+statistic. A2 → A3 = +55 inputs, +30%, and that is the backend.**
+
+### This is why the statistic was changed
+
+On **turns**, the story is "OCR costs 3, the backend costs 9" — the effect looks
+shared. On **inputs**, OCR costs nothing at all: without the text log the model
+spreads the *same* presses over more turns, which is a change in how it batches, not
+in how much work it does. Only the input statistic separates "thinks in smaller
+chunks" from "has to press more buttons". The revision that `paired-comparison.md` §3
+made on an adversarial reading, before any of this ran, is what made the attribution
+possible.
+
+### The mechanism, and it is the one Andreas named
+
+`blocked_by_actor` — a directional press that moved nothing and was not a wall — is
+**16 on SkyEmu against 3 on mGBA**, on comparable step counts (99 vs 107). Presses are
+landing while the game is in a state that ignores them.
+
+That has a specific, pre-identified cause. mGBA's `press_button_list` is
+fire-and-forget: it sends the sequence and sleeps `total_frames/60 + **0.5 s**`. The
+SkyEmu backend steps `total_frames` exactly. **That half-second — about 30 extra
+frames after every sequence — was doing work nobody had named.** P1 hit it
+independently while building: a single `up` on the stairs tile does *not* complete the
+warp in 36 exact frames, and mGBA had been handing the game ~30 more.
+
+So v2 is not slower at playing; **it is pressing buttons into moments the game is not
+listening**, and then having to press them again. Andreas raised exactly this before
+A2 ran: *"teh duration of button presses, too cirectly move aroudn and turn."*
+
+### What this makes next
+
+1. **Calibrate input timing empirically** — `cross-game-plan.md` §3 already specifies
+   the sweep (smallest hold where x changes = the move threshold). It was written for
+   porting to new games; it turns out FireRed on SkyEmu needs it too.
+2. **Then re-run A3.** The +30% is a hypothesis about timing until a calibrated arm
+   either closes the gap or does not.
+3. **Do not conclude the backend is unfaithful.** Nothing here says SkyEmu emulates
+   wrongly. It says the harness's input timing was tuned — accidentally — against
+   mGBA's sleep, and the exact clock removed the padding.
+4. **n=1.** A2 needs its other two runs before any of this is a number.
