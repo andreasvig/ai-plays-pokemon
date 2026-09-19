@@ -45,9 +45,26 @@ def _pids_listening_on(port: int) -> list[int]:
     return pids
 
 
-def _pids_matching(pattern: str, *, ignore_case: bool = False) -> list[int]:
-    """PIDs whose full command line matches `pattern` (via pgrep -f). Excludes self."""
-    cmd = ["pgrep", "-f"]
+def _pids_matching(
+    pattern: str, *, ignore_case: bool = False, full: bool = True
+) -> list[int]:
+    """PIDs matching `pattern`, excluding self.
+
+    ``full=True`` is ``pgrep -f``: matches the whole command line, which is what
+    a pattern with ARGUMENTS in it needs (``caffeinate -i -w``).
+
+    ``full=False`` matches the EXECUTABLE NAME only, and anything hunting a
+    process by its name must use it. ``pgrep -f skyemu`` also matches every
+    shell, editor and tail whose command line happens to contain the word — and
+    these hits get SIGKILLed. Measured 2026-09-19: two consecutive control-center
+    boots reported "Found stale processes: SkyEmu (pid N)" and killed a shell,
+    because the command that started the app sat in a process tree where the word
+    appeared. The emulator sweep was searching for an emulator and finding a
+    sentence about one.
+    """
+    cmd = ["pgrep"]
+    if full:
+        cmd.append("-f")
     if ignore_case:
         cmd.append("-i")
     cmd.append(pattern)
@@ -88,10 +105,14 @@ def _find_stale_processes(web_port: int, emu_port: int) -> dict[int, str]:
     for pid in _pids_listening_on(emu_port):
         if pid != me:
             found[pid] = f"emulator socket on :{emu_port}"
-    for pid in _pids_matching("mgba", ignore_case=True):
+    # By EXECUTABLE NAME, never by command line: these hits are SIGKILLed, and a
+    # command-line match would take out any shell that merely mentions the word.
+    for pid in _pids_matching("mgba", ignore_case=True, full=False):
         found.setdefault(pid, "mGBA")
-    for pid in _pids_matching("skyemu", ignore_case=True):
+    for pid in _pids_matching("skyemu", ignore_case=True, full=False):
         found.setdefault(pid, "SkyEmu")
+    # This one genuinely needs the arguments — `caffeinate` alone would match a
+    # keep-awake someone else started for their own reasons.
     for pid in _pids_matching("caffeinate -i -w"):
         found.setdefault(pid, "caffeinate (keep-awake)")
     return found
