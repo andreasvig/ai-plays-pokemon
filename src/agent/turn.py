@@ -1,6 +1,7 @@
 """Turn manager: orchestrates the agent turn loop."""
 
 import asyncio
+import contextlib
 import json
 import logging
 import random
@@ -1672,7 +1673,8 @@ class TurnManager:
         # rate yet). Skipped when TaskMaster is disabled OR a continued run
         # already restored a current_task from task_master_state.json.
         if self.task_master_enabled and self.current_task is None:
-            await self._cold_start()
+            with self._free_running():
+                await self._cold_start()
 
         for _ in range(limit):
             # Cooperative stop: a UI/executor stop request halts at the next turn
@@ -1708,7 +1710,8 @@ class TurnManager:
             print(f"  Turn {self.turn_number}")
             print(f"{'─'*60}")
 
-            result = await self._run_turn_or_stop()
+            with self._free_running():
+                result = await self._run_turn_or_stop()
             if result is None:
                 if self.append_agent is not None and self._budget_stopped:
                     break
@@ -1748,7 +1751,8 @@ class TurnManager:
                     # per-task reason buffer, since we `continue` past it).
                     if getattr(result, "reasoning", None):
                         self._cur_task_player_reasons.append(result.reasoning)
-                    await self._handle_handoff(result, handoff)
+                    with self._free_running():
+                        await self._handle_handoff(result, handoff)
                     if self._referee_should_break():
                         break
                     continue
@@ -2009,6 +2013,43 @@ class TurnManager:
             # Daemon thread, so even a turn wedged in a blocking call (which we
             # deliberately abandoned) can't keep the process alive past exit.
             thread.join(timeout=2.0)
+
+    @contextlib.contextmanager
+    def _free_running(self):
+        """Let the console keep running for the length of a model call.
+
+        A stepped backend (SkyEmu) is frozen between ``/step`` calls, so without
+        this the game is a still photograph for the ten-plus seconds of every
+        LLM round trip — the live feed stops, the recording records a freeze
+        frame, and the run visibly stutters one turn at a time. Andreas, 2026-09-19:
+        *"i dont think the game should be paused, while we wait for inputs, it
+        should just run."*
+
+        Nothing here knows which backend it has. ``free_runner`` is hung on the
+        emulator by ``dashboard/spectate.attach`` exactly like ``sampler`` and
+        ``pacer``; mGBA has none and needs none, because its core is already
+        running at 60 Hz whether or not anyone is asking it anything.
+
+        The runner is STOPPED (and joined) on the way out, including when the
+        turn is cancelled mid-flight — the loop presses buttons the moment this
+        returns, and two threads stepping one machine would interleave a press
+        with somebody else's frames.
+
+        Note the turn's screenshot is captured a beat AFTER this starts, not
+        before. It is taken under the emulator's lock so it is always a whole
+        frame, and the screen it captures has just been declared stable by
+        ``wait_for_stable_screen`` — a stable screen two frames later is the
+        same screen.
+        """
+        runner = getattr(self.emulator, "free_runner", None)
+        if runner is None:
+            yield None
+            return
+        runner.start()
+        try:
+            yield runner
+        finally:
+            runner.stop()
 
     async def _run_turn_or_stop(self) -> Optional[GameAction]:
         """Run one turn, but abort it the instant a stop is requested mid-turn.

@@ -33,6 +33,13 @@ Two things are not free, and both live here:
    spectatable. ``--pace fast`` (or ``emulator.pace: fast``) is the opt-out.
    See :class:`RealtimePacer`.
 
+3. **Free-running while the model thinks** — ``FreeRunner``, added 2026-09-19.
+   A stepped emulator is a still photograph for the length of every LLM call.
+   Andreas: *"i dont think the game should be paused, while we wait for inputs,
+   it should just run."* This is the one of the three that DOES change a run's
+   content, and it is the v1 behaviour being restored rather than a new risk —
+   see the class docstring. ``emulator.free_run: false`` opts out.
+
 The property worth protecting, and the reason pacing is allowed to exist at
 all: **pacing changes a run's duration, not its content.** The emulator is
 frozen between ``/step`` calls, so throttling only decides when the next call
@@ -49,6 +56,7 @@ untouched.
 from __future__ import annotations
 
 import os
+import threading
 import time
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -68,6 +76,20 @@ PACES = ("fast", "realtime")
 #: Crystal run was unwatchable. Since every v2 run is spectatable and recordable,
 #: the watchable rate is the sensible default and speed is the opt-in.
 DEFAULT_PACE = "realtime"
+
+#: 2026-09-19: the console keeps running while the model thinks. A stepped
+#: backend is frozen between ``/step`` calls, so without this a spectator (and
+#: the recorder) watch a still photograph for the ten-plus seconds of every LLM
+#: call — Andreas: *"i dont think the game should be paused while we wait for
+#: inputs, it should just run."* mGBA never had this property to lose: its
+#: emulator runs at 60 Hz whoever is or is not asking it anything.
+DEFAULT_FREE_RUN = True
+
+#: Frames per free-run chunk. The lock is released between chunks, so this is
+#: also the worst-case wait for a driver thread that wants the emulator back —
+#: 2 frames is 33 ms of game time and ~19 ms of host time, the same chunk the
+#: spectate sampler already uses during gameplay.
+FREE_RUN_CHUNK = 2
 
 
 # ───────────────────────────── pacing ──────────────────────────────
@@ -91,6 +113,29 @@ def resolve_pace(config: dict) -> str:
     return pace
 
 
+def resolve_free_run(config: dict) -> bool:
+    """``emulator.free_run``, defaulted to :data:`DEFAULT_FREE_RUN` (on).
+
+    Unlike :func:`resolve_pace` this one accepts anything truthy-looking,
+    because it is a boolean and a config author writing ``no`` means no. The
+    strings are spelled out rather than trusting ``bool("false")``, which is
+    True.
+    """
+    raw = (config.get("emulator") or {}).get("free_run", DEFAULT_FREE_RUN)
+    if raw is None:
+        return DEFAULT_FREE_RUN
+    if isinstance(raw, str):
+        text = raw.strip().lower()
+        if text in ("false", "no", "off", "0", ""):
+            return False
+        if text in ("true", "yes", "on", "1"):
+            return True
+        raise ValueError(
+            f"unknown emulator.free_run {raw!r} (expected a boolean)"
+        )
+    return bool(raw)
+
+
 class RealtimePacer:
     """Throttle a stepped backend to the console's wall clock.
 
@@ -98,11 +143,14 @@ class RealtimePacer:
     *game* time and sleeps the difference, so the host's own stepping cost is
     inside the budget rather than on top of it.
 
-    **Debt is never banked.** While the model thinks, nothing steps, so the
-    deadline falls arbitrarily far behind. Carrying that debt forward would let
-    the next turn run at full speed to "catch up" — the precise opposite of what
-    a spectator asked for. Any overshoot re-anchors the deadline to now, so the
-    pacer throttles the next stretch of play and forgives everything before it.
+    **Debt is never banked.** Any overshoot re-anchors the deadline to now, so
+    the pacer throttles the next stretch of play and forgives everything before
+    it. Carrying debt forward would let a turn run at full speed to "catch up"
+    — the precise opposite of what a spectator asked for. This mattered most
+    before :class:`FreeRunner`, when nothing stepped during an LLM call and the
+    deadline fell arbitrarily far behind; a free-running console now keeps the
+    deadline live across that gap, and the re-anchor is left in place for the
+    case it was written for — a host that simply cannot keep up.
 
     ``clock`` / ``sleep`` are injectable so the behaviour can be tested without
     spending the wall clock it is about.
@@ -147,6 +195,145 @@ class RealtimePacer:
         self._deadline = now
         self.behind += 1
         return 0.0
+
+
+
+#: How long :meth:`FreeRunner.stop` waits for the worker to finish its chunk.
+#: Generous: with a pacer attached the chunk's wait happens under the emulator
+#: lock, so a stop lands one chunk late by design.
+FREE_RUN_JOIN_TIMEOUT = 5.0
+
+
+class FreeRunner:
+    """Keep the console running while nobody is driving it.
+
+    A stepped backend is frozen between ``/step`` calls, which is the property
+    that makes a v2 run reproducible — every wait is an exact frame count rather
+    than a wall-clock sleep. It also means that for the ten-plus seconds of each
+    LLM call the emulator is a **still photograph**: the spectate feed stops, the
+    recording records a freeze frame, and the game visibly stutters one turn at a
+    time. mGBA never had this to lose; its core runs at 60 Hz whoever is or is
+    not asking it anything, and v1 ran that way for the whole benchmark.
+
+    So this thread steps the machine while the turn loop waits for a model, and
+    stops before the turn loop touches the emulator again.
+
+    **What it gives back, and it is the whole tradeoff.** A frozen emulator makes
+    a run's content independent of how long the model took; a free-running one
+    does not. The screen the model was shown is the screen at the START of its
+    call, and the presses land on the screen at the END of it — so machine state
+    at each input becomes a function of model latency again, exactly as in v1.
+    Every v1 run on the board was played that way, and Pokémon is almost entirely
+    input-gated (nothing advances in an overworld or a battle menu while nobody
+    presses anything), so in practice what changes is animations, the Gen 2+
+    real-time clock and auto-advancing cutscenes. ``emulator.free_run: false``
+    restores the frozen behaviour for a run that needs it — a determinism
+    measurement, or a scored run whose protocol says so.
+
+    **It never ends a run.** A chunk that raises is counted and the thread
+    returns; an observer of the benchmark may not be a participant in it.
+
+    Threading: one worker, started and stopped by the turn loop. It advances the
+    emulator through the PUBLIC :meth:`step`, which takes the emulator's lock for
+    each chunk and releases it in between — so a driver thread that wants the
+    machine back waits at most one chunk, and never mid-press.
+    """
+
+    def __init__(
+        self,
+        emu: Any,
+        *,
+        chunk: int = FREE_RUN_CHUNK,
+        fps: float = CONSOLE_FPS,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        if fps <= 0:
+            raise ValueError(f"free-run fps must be positive, got {fps!r}")
+        self.emu = emu
+        self.chunk = max(1, int(chunk))
+        self._fps = float(fps)
+        self._clock = clock
+        self._guard = threading.Lock()
+        self._stop = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+        #: Frames advanced while nobody was driving. The evidence it ran at all.
+        self.frames = 0
+        #: Chunks that raised, and the last reason. Never re-raised.
+        self.errors = 0
+        self.last_error: Optional[str] = None
+        #: Times :meth:`stop` gave up waiting for the worker.
+        self.stalled = 0
+
+    @property
+    def running(self) -> bool:
+        t = self._thread
+        return t is not None and t.is_alive()
+
+    def start(self) -> None:
+        """Begin advancing. Idempotent — a second call while running is a no-op."""
+        with self._guard:
+            if self._thread is not None:
+                return
+            self._stop.clear()
+            self._thread = threading.Thread(
+                target=self._loop, name="free-run", daemon=True
+            )
+            self._thread.start()
+
+    def stop(self) -> None:
+        """Stop advancing and wait for the worker. Idempotent.
+
+        Must complete before the caller touches the emulator, which is why it
+        joins rather than only setting the flag: two threads stepping the same
+        machine would interleave a press with somebody else's frames.
+        """
+        with self._guard:
+            thread, self._thread = self._thread, None
+        if thread is None:
+            return
+        self._stop.set()
+        thread.join(timeout=FREE_RUN_JOIN_TIMEOUT)
+        if thread.is_alive():
+            self.stalled += 1
+
+    def __enter__(self) -> "FreeRunner":
+        self.start()
+        return self
+
+    def __exit__(self, *exc: Any) -> bool:
+        self.stop()
+        return False
+
+    def _loop(self) -> None:
+        deadline: Optional[float] = None
+        while not self._stop.is_set():
+            try:
+                self.emu.step(self.chunk)
+            except Exception as exc:   # never kill the run over a spectator
+                self.errors += 1
+                self.last_error = f"{type(exc).__name__}: {exc}"
+                return
+            self.frames += self.chunk
+            # Free-run is held to the CONSOLE's clock whatever the run's pace.
+            # ``pace: fast`` is about not spending wall clock on gameplay, and
+            # idle frames cost none either way — stepping them at host speed
+            # would just burn minutes of in-game clock per model call.
+            #
+            # A deadline rather than a per-chunk sleep, and that is what keeps
+            # this from fighting ``emu.pacer``: when a pacer is attached it has
+            # ALREADY waited out the chunk inside ``step``, so the deadline here
+            # is behind and re-anchors to now without waiting again. A plain
+            # ``sleep(chunk/fps)`` would double every wait and run the feed this
+            # exists for at half speed.
+            now = self._clock()
+            if deadline is None:
+                deadline = now
+            deadline += self.chunk / self._fps
+            delay = deadline - now
+            if delay > 0:
+                self._stop.wait(delay)   # wait, not sleep: a stop lands at once
+            else:
+                deadline = now
 
 
 # ───────────────────────── the spectate feed ───────────────────────
@@ -206,11 +393,13 @@ class SpectateFeed:
         writer: StreamFileWriter,
         pacer: Optional[RealtimePacer],
         pace: str,
+        free_runner: Optional[FreeRunner] = None,
     ) -> None:
         self.emu = emu
         self.writer = writer
         self.pacer = pacer
         self.pace = pace
+        self.free_runner = free_runner
 
     @property
     def stream_path(self) -> Path:
@@ -248,6 +437,13 @@ class SpectateFeed:
     def detach(self) -> None:
         """Unhook from the emulator. Sequential runs share one backend process,
         so a feed left attached would keep writing into a finished run's dir."""
+        # The free runner first, and unconditionally: it is a live THREAD, and
+        # one left stepping after its run ended advances the next run's start
+        # state before that run has pressed anything.
+        if self.free_runner is not None:
+            self.free_runner.stop()
+            if getattr(self.emu, "free_runner", None) is self.free_runner:
+                self.emu.free_runner = None
         self.writer.close()
         if getattr(self.emu, "sampler", None) is self.writer:
             self.emu.sampler = None
@@ -278,19 +474,34 @@ def attach(emu: Any, config: dict, run_dir: str | Path) -> SpectateFeed:
     emu.sampler = writer
     pacer = RealtimePacer() if pace == "realtime" else None
     emu.pacer = pacer
-    feed = SpectateFeed(emu, writer, pacer, pace)
+
+    # Hung on the emulator beside ``sampler`` and ``pacer``, and for the same
+    # reason: the turn loop holds an emulator, not a spectate feed, and the two
+    # backends must differ only in what is attached to them. mGBA never gets one
+    # (this function is not called for it) and does not need one — its core is
+    # already running.
+    free_run = resolve_free_run(config)
+    config.setdefault("emulator", {})["free_run"] = free_run
+    runner = FreeRunner(emu) if free_run else None
+    emu.free_runner = runner
+
+    feed = SpectateFeed(emu, writer, pacer, pace, runner)
     feed.prime()
     return feed
 
 
 __all__ = [
     "CONSOLE_FPS",
+    "DEFAULT_FREE_RUN",
     "DEFAULT_PACE",
+    "FREE_RUN_CHUNK",
     "PACES",
     "STREAM_FILE",
+    "FreeRunner",
     "RealtimePacer",
     "SpectateFeed",
     "StreamFileWriter",
     "attach",
+    "resolve_free_run",
     "resolve_pace",
 ]

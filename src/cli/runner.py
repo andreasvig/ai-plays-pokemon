@@ -941,7 +941,11 @@ def run_single_loop(
         from src.dashboard import spectate as _spectate_mod
 
         _spectate = _spectate_mod.attach(emu, config, run_dir)
-        print(f"  Spectate feed: {_spectate.stream_path} (pace: {_spectate.pace})")
+        _free = "free-run" if _spectate.free_runner is not None else "frozen between turns"
+        print(
+            f"  Spectate feed: {_spectate.stream_path} "
+            f"(pace: {_spectate.pace}, {_free})"
+        )
 
     # The run config arrived describing whichever emulator its own file names;
     # the one that ran is the handle's. Correct it before the config is written
@@ -1557,6 +1561,19 @@ model you can actually start — `pokemon ls models` for the full list):
              "which are wall clock; the resolved pace is recorded on the run. "
              "Ignored by mGBA, which only runs at real time.",
     )
+    parser.add_argument(
+        "--no-free-run", dest="no_free_run", action="store_true",
+        help="Stepped backends only (emulator.type: skyemu). Freeze the console "
+             "while the model thinks, instead of letting it keep running. ON by "
+             "default since 2026-09-19 — a frozen emulator makes the live feed and "
+             "the recording a still photograph for the length of every LLM call, "
+             "and mGBA never behaved that way. Unlike --pace this DOES change what "
+             "happens in a run: the screen the model was shown is the screen at the "
+             "start of its call and its presses land on the screen at the end, so "
+             "machine state at each input depends on model latency (which is how "
+             "every v1 run on the board was played). Turn it off for a determinism "
+             "measurement, or for a protocol that requires a frozen machine.",
+    )
     args = parser.parse_args()
 
     if args.continue_from:
@@ -1614,6 +1631,14 @@ model you can actually start — `pokemon ls models` for the full list):
     if args.pace:
         for c in prepared:
             c.setdefault("emulator", {})["pace"] = args.pace
+
+    # Free-run: same reasoning as --pace, same key-sharing discipline. Only the
+    # OFF direction is a flag, because on is the default and a flag that spells
+    # the default is a flag nobody types (and one more way for two sources to
+    # disagree). `emulator.free_run: true` in a config is how you say it loudly.
+    if args.no_free_run:
+        for c in prepared:
+            c.setdefault("emulator", {})["free_run"] = False
 
     # Spend ceiling: rides on the config under the same public key the queue
     # executor writes (`_apply_max_spend`), so TurnManager has exactly one place

@@ -256,6 +256,12 @@ class SkyEmuClient:
         #: next ``/step`` is sent, never what it computes, so a paced run and an
         #: unpaced one differ in duration and in nothing else.
         self.pacer: Optional[Any] = None
+        #: Attach a ``dashboard/spectate.FreeRunner`` to keep the console
+        #: advancing while the turn loop waits for a model. Third hook of the
+        #: same kind and hung here for the same reason: the turn loop holds an
+        #: emulator, not a spectate feed. None means the machine stays frozen
+        #: between turns, which is this backend's own default state.
+        self.free_runner: Optional[Any] = None
 
         self._trace_rows: list[tuple[str, list[bytes]]] = []
 
@@ -864,6 +870,9 @@ class SkyEmuClient:
 
         Public because the start-state tooling and the smoke tests drive it
         directly; the turn loop never calls it — it presses buttons and settles.
+        ``FreeRunner`` calls it once per chunk, which is why the lock is taken
+        HERE rather than around a whole stretch of play: it has to be released
+        between chunks or the turn loop could not take the machine back.
         """
         with self._lock:
             self._step(frames)
