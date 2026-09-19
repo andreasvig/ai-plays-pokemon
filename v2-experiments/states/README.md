@@ -13,6 +13,7 @@ scripts are the source of truth and they verify their own output.
 | crystal | GBC | the bedroom upstairs in New Bark Town | 9,156 frames, 7 s |
 | emerald | GBA | the moving van, and the house in Littleroot | 17,172 + 4,944 frames, 34 s |
 | platinum | NDS | the bedroom upstairs in Twinleaf Town | 18,936 frames, 42 s |
+| soulsilver | NDS | the bedroom upstairs in New Bark Town | 13,120 frames, 35 s |
 
 FireRed's lives at `configs/saves/skyemu/firered-pokebench-v2/` because it is the
 one a benchmark already runs from; `v2-experiments/make_start_state.py` writes it.
@@ -41,9 +42,20 @@ finder uses.
 
 ## What every opening had in common
 
-- **START on an empty name field is the "accept the default" verb.** FireRed KAY,
-  Emerald TERRY, Platinum TODD. Crystal is the exception: Gen 2 offers a preset
-  *menu* rather than a keyboard, so the sequence picks CHRIS from it.
+- **START on an empty name field is *usually* the "accept the default" verb** —
+  FireRed KAY, Emerald TERRY, Platinum TODD — but it is a convention, not a rule,
+  and two of six games break it. Crystal offers a preset *menu* rather than a
+  keyboard, so the sequence picks CHRIS from it. **SoulSilver rolls a RANDOM
+  suggestion**: four runs of near-identical sequences produced Ash, Ash, Terell
+  and Jude. Its sequence types the name instead, pressing the keyboard cursor's
+  own starting letter twice for AA.
+- **Timing is part of the sequence, not decoration.** A tap's hold and gap change
+  which frame the RNG is sampled on; lengthening SoulSilver's taps changed the
+  name it rolled. A screenshot is not free either — one inserted mid-sequence
+  perturbs the same thing — so previews are taken only at the end.
+- **A touch-only menu cannot be answered with the d-pad.** Platinum's professor
+  menu has a cursor; SoulSilver's has none, and no A-mash escapes it. The trick
+  that works on one Gen 4 game does not work on the other.
 - **A professor's "would you like to know more?" menu traps an A-mash forever**,
   because the default option shows a page and returns to the menu. Answered by
   moving to the last option (`d2,w60,a1`). Two downs on a two-item YES/NO prompt

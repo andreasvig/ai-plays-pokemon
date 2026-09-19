@@ -50,6 +50,15 @@ found by hand pastes in here unchanged:
                 half of the 256x384 NDS capture, so t50_51 is dead centre
     S           screenshot (ignored here; the tools use it)
 
+**The exact hold and gap of every token are part of the sequence, not
+decoration.** A tap here is hold 20 / gap 24 / settle 90 because that is what
+the exploration tool uses, and SoulSilver showed the difference is not cosmetic:
+running its sequence with a longer tap changed the frame the game's RNG was
+sampled on, and it rolled a different player name. For the same reason a
+screenshot is NOT free — inserting one mid-sequence perturbs timing — which is
+why the `S` token is ignored in this file and the preview is taken only at the
+end.
+
 Emerald is not here, deliberately
 ---------------------------------
 `v2-experiments/make_emerald_state.py` owns it, because its opening produces TWO
@@ -114,6 +123,25 @@ GAMES: dict[str, dict] = {
         "player_name": "CHRIS",
     },
     # --- NDS ------------------------------------------------------------------
+    "soulsilver": {
+        "rom": "v2-experiments/roms/Pokemon - SoulSilver Version (Europe).nds",
+        "console": "NDS",
+        "where": "the bedroom upstairs in New Bark Town",
+        # Two taps, both verified against off-target controls. t50_79 is NO INFO
+        # NEEDED on Oak's three-button menu — which here is TOUCH-ONLY, with no
+        # cursor to move, so Platinum's d2,w60,a1 does not work at all. t25_48 is
+        # the BOY portrait on the gender screen.
+        #
+        # The name is TYPED, not defaulted, and that is the interesting part.
+        # "START on an empty field accepts the game's default" holds for FireRed,
+        # Emerald, Crystal and Platinum and is FALSE here: HGSS rolls a RANDOM
+        # suggestion, and four runs of near-identical sequences produced Ash,
+        # Ash, Terell and Jude. So the keyboard cursor's own starting letter is
+        # pressed twice instead, giving AA every time.
+        "spec": ("w1800,w1800,s1,w600,a1,w400,t50_79,a42,w200,t25_48,w200,a2,"
+                 "w600,a2,w200,s1,w200,a1,w300,a2,w200,a12,w400"),
+        "player_name": "AA",
+    },
     "platinum": {
         "rom": "v2-experiments/roms/Pokemon - Platinum Version (USA).nds",
         "console": "NDS",
@@ -144,9 +172,9 @@ def play(emu: SkyEmu, spec: str, log=print) -> int:
             continue
         if tok[0] == "t":
             x, y = (int(v) / 100 for v in tok[1:].split("_"))
-            emu.tap(x, y, hold=30, gap=30)
-            emu.step(150)
-            frames += 210
+            emu.tap(x, y, hold=20, gap=24)
+            emu.step(90)
+            frames += 134
             continue
         kind, n = tok[0], int(tok[1:] or 1)
         if kind == "w":
