@@ -24,11 +24,24 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from src.cli.launch import find_mgba
 from src.config import load_config
 from src.core import SnapshotManager
-from src.emulator import make_emulator
+from src.emulator import DEFAULT_BACKEND, make_emulator
 
 
 def launch_and_connect(config):
-    """Launch mGBA and wait for connection."""
+    """Launch the emulator this config asks for and wait for it to be ready.
+
+    A backend that hosts its own emulator (SkyEmu) needs none of the mGBA
+    ceremony below — no window, no Scripting menu, no Lua script for the user to
+    load — so it returns with ``None`` where mGBA returns its process. Every
+    caller here only ever passes that back to ``terminate``, which is guarded.
+    """
+    if config["emulator"].get("type", DEFAULT_BACKEND) != "mgba":
+        emu = make_emulator(config)
+        emu.start_server()
+        emu.wait_for_connection(timeout=300.0)
+        print("Connected!\n")
+        return emu, None
+
     rom_path = config["emulator"]["rom_path"]
     mgba_path = find_mgba()
 
@@ -60,6 +73,15 @@ def launch_and_connect(config):
     return emu, mgba_proc
 
 
+def _terminate(proc) -> None:
+    """Stop mGBA. ``None`` when the backend owns its own emulator and already
+    killed it in ``disconnect`` — a no-op, not an error."""
+    if proc is None or proc.poll() is not None:
+        return
+    proc.terminate()
+    proc.wait(timeout=5)
+
+
 def _add_rom_arg(parser) -> None:
     """``--rom <id>`` — snapshot a game other than the config's own ROM."""
     parser.add_argument(
@@ -89,8 +111,7 @@ def cmd_save(args, config):
     print(f"Preview screenshot saved.")
 
     emu.disconnect()
-    mgba_proc.terminate()
-    mgba_proc.wait(timeout=5)
+    _terminate(mgba_proc)
 
 
 def cmd_load(args, config):
@@ -108,16 +129,18 @@ def cmd_load(args, config):
     print("\nGame is running. Press Ctrl+C to stop.")
     try:
         while True:
-            if mgba_proc.poll() is not None:
+            # mGBA: the user closed the window. Self-hosted: the process the
+            # backend owns went away, which ``ping`` is the only report of.
+            if mgba_proc is not None and mgba_proc.poll() is not None:
+                break
+            if mgba_proc is None and not emu.ping():
                 break
             time.sleep(1)
     except KeyboardInterrupt:
         pass
 
     emu.disconnect()
-    if mgba_proc.poll() is None:
-        mgba_proc.terminate()
-        mgba_proc.wait(timeout=5)
+    _terminate(mgba_proc)
 
 
 def cmd_list(args, config):

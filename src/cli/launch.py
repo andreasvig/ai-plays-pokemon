@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.cli.slots import get_slot
 from src.config import load_config
-from src.emulator import make_emulator
+from src.emulator import DEFAULT_BACKEND, make_emulator
 from src.referee.trace import TRACE_SPEC
 
 
@@ -65,6 +65,42 @@ def open_scripting_window_for_pid(pid: int) -> None:
         pass
 
 
+def _launch_self_hosted(config: dict, saves_dir: Path, snapshot: str | None) -> None:
+    """`pokemon launch` for a backend that launches its own emulator.
+
+    Same shape as the mGBA path below — start, connect, optionally load a
+    snapshot, then idle on ``ping`` until the emulator dies or the user
+    interrupts — minus every step that only means something for a GUI app
+    driven by macOS Accessibility.
+    """
+    # Before make_emulator: the backend reads its config block in __init__, so a
+    # key set afterwards is a key the backend never sees.
+    config["emulator"].setdefault("rom_stage_dir", str(saves_dir))
+    emu = make_emulator(config)
+    emu.trace_spec = list(TRACE_SPEC)
+    emu.start_server()
+    try:
+        emu.wait_for_connection(timeout=300.0)
+        print("=== Connected! ===\n")
+
+        snapshot_path = snapshot or config.get("load_snapshot")
+        if snapshot_path:
+            state_file = os.path.join(snapshot_path, "emulator.state")
+            if os.path.exists(state_file):
+                emu.load_state(state_file)
+                print(f"Snapshot loaded: {snapshot_path}")
+
+        print(f"Ping: {'OK' if emu.ping() else 'FAILED'}")
+        print("Press Ctrl+C to stop.\n")
+        while emu.ping():
+            time.sleep(2)
+        print("Emulator closed.")
+    except KeyboardInterrupt:
+        print("\nShutting down...")
+    finally:
+        emu.disconnect()
+
+
 def main():
     parser = argparse.ArgumentParser(description="Launch AI Plays Pokemon")
     parser.add_argument("--snapshot", type=str, default=None,
@@ -80,14 +116,23 @@ def main():
         print(f"ERROR: ROM not found at {rom_path}")
         sys.exit(1)
 
-    slot_cfg = get_slot()
-    config["emulator"]["port"] = slot_cfg["port"]
-
     # Ephemeral work dir for per-launch save paths.
     timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
     work_dir = Path("local/launch") / timestamp
     saves_dir = work_dir / "saves"
     saves_dir.mkdir(parents=True, exist_ok=True)
+
+    # The factory picks the backend; the launch around it does not follow for
+    # free. mGBA is a GUI app this function drives through Accessibility, and
+    # none of that applies to a backend that launches itself — so the whole
+    # middle of this function is mGBA's, and a self-hosting backend takes the
+    # short path.
+    if config["emulator"].get("type", DEFAULT_BACKEND) != "mgba":
+        _launch_self_hosted(config, saves_dir, args.snapshot)
+        return
+
+    slot_cfg = get_slot()
+    config["emulator"]["port"] = slot_cfg["port"]
 
     mgba_path = find_mgba()
 

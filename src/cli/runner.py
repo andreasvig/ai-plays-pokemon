@@ -126,21 +126,28 @@ def _print_crash_banner(exc: BaseException, turn_mgr, config: dict, run_dir, han
     print(f"  Run dir:     {run_dir}")
     print(f"  Events log:  {Path(run_dir) / 'events.jsonl'}")
     # Emulator liveness: distinguish an agent/LLM fault from a game-side death.
-    mgba_proc = (handle or {}).get("mgba_proc")
-    if mgba_proc is not None:
-        rc = mgba_proc.poll()
+    # Both backends keep a process and a log; the label follows the backend so
+    # the banner never says "mGBA" about a SkyEmu run.
+    if (handle or {}).get("skyemu_proc") is not None:
+        emu_label, emu_proc = "SkyEmu", handle["skyemu_proc"]
+        emu_log = (handle or {}).get("skyemu_log_path")
+    else:
+        emu_label, emu_proc = "mGBA", (handle or {}).get("mgba_proc")
+        emu_log = (handle or {}).get("mgba_log_path")
+    if emu_proc is not None:
+        rc = emu_proc.poll()
+        pad = " " * max(0, len("mGBA") - len(emu_label))
         if rc is None:
-            print("  mGBA:        still running (fault is agent/LLM-side, not the game)")
+            print(f"  {emu_label}:{pad}        still running (fault is agent/LLM-side, not the game)")
         else:
-            print(f"  mGBA:        DIED (exit code {rc}) — the emulator/game crashed")
-            log_path = (handle or {}).get("mgba_log_path")
-            if log_path:
-                _print_mgba_log_tail(log_path)
+            print(f"  {emu_label}:{pad}        DIED (exit code {rc}) — the emulator/game crashed")
+            if emu_log:
+                _print_mgba_log_tail(emu_log)
     print(bar + "\n")
 from src.cli.slots import get_slot
 from src.config import default_config_stem, example_model_aliases, load_config
 from src.core import RunLogger, StateManager
-from src.emulator import make_emulator, VisionPipeline, OCRRunner
+from src.emulator import DEFAULT_BACKEND, make_emulator, VisionPipeline, OCRRunner
 from src.referee.trace import TRACE_SPEC
 from src.agent import TurnManager
 
@@ -581,12 +588,32 @@ def prepare_config(
     return config
 
 
-def run_prepare_phase(config: dict, saves_dir: Path) -> dict:
-    """One-time setup: TCP server, mGBA launch, AppleScript window positioning.
+def _backend_type(config: dict) -> str:
+    """``emulator.type``, defaulted the way the factory defaults it.
 
-    Returns a handle dict for downstream phases: emu, mgba_proc,
-    caffeinate_proc, slot_cfg. Reusable across multiple `run_single_loop` calls.
+    One reader, so the launch path and the factory can never disagree about
+    which backend a config asks for.
     """
+    return (config.get("emulator") or {}).get("type", DEFAULT_BACKEND)
+
+
+def run_prepare_phase(config: dict, saves_dir: Path) -> dict:
+    """One-time setup, forked on ``emulator.type``.
+
+    mGBA: TCP server, GUI launch, AppleScript window positioning, Lua script
+    loading. SkyEmu: launch the binary with the ROM as argv — no window, no
+    Accessibility permission, no script to load (plan §2.3).
+
+    Returns a handle dict for downstream phases. Both branches carry ``emu``,
+    ``caffeinate_proc`` and ``slot_cfg``; the mGBA branch adds ``mgba_proc`` /
+    ``mgba_log_path`` and the SkyEmu branch ``skyemu_proc`` / ``skyemu_log_path``,
+    so a caller that reaches for ``mgba_proc`` (supervisor.py's window drive)
+    gets None rather than a process it cannot drive. Reusable across multiple
+    `run_single_loop` calls.
+    """
+    if _backend_type(config) != "mgba":
+        return _run_prepare_phase_skyemu(config, saves_dir)
+
     slot_cfg = get_slot(1)
     config["emulator"]["port"] = slot_cfg["port"]
     paths = config.setdefault("paths", {})
@@ -656,8 +683,61 @@ def run_prepare_phase(config: dict, saves_dir: Path) -> dict:
     }
 
 
+def _run_prepare_phase_skyemu(config: dict, saves_dir: Path) -> dict:
+    """The SkyEmu launch: one Popen and a ping loop.
+
+    Everything the mGBA branch does between "launch" and "connected" —
+    positioning the window, opening the Scripting window, loading the Lua
+    connector, waiting for a socket to dial in — has no counterpart here. SkyEmu
+    takes the ROM as argv and answers HTTP; ``SkyEmuClient.start_server``
+    launches it and ``wait_for_connection`` polls ``/ping``.
+
+    The slot's port is NOT applied. Slot 1's 8888 is the mGBA/Lua pairing's
+    port; a SkyEmu run uses the port its own config names, so the two backends
+    can be up at once. The slot is still carried in the handle because
+    ``run_single_loop`` reads its stream path for the OCR poller — which v2 does
+    not start (``ocr.enabled: false``, decision C′).
+    """
+    slot_cfg = get_slot(1)
+
+    emu_config = config.setdefault("emulator", {})
+    # The battery save lands beside the ROM, and SkyEmu has no savegamePath
+    # switch — so point the ROM copy at this run's saves dir and the .sav lands
+    # there instead of in roms/. This is the analogue of mGBA's
+    # ``-C savegamePath=``, not an extra.
+    emu_config.setdefault("rom_stage_dir", str(saves_dir))
+
+    emu = make_emulator(config)
+    # Per-input trace of tile + in-battle bit after every button
+    # (src/referee/trace.py). Set BEFORE the connection, as on mGBA.
+    emu.trace_spec = list(TRACE_SPEC)
+    emu.start_server()
+
+    caffeinate_proc = None
+    proc = getattr(emu, "proc", None)
+    if sys.platform == "darwin" and proc is not None:
+        caffeinate_proc = subprocess.Popen(
+            ["caffeinate", "-i", "-w", str(proc.pid)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+
+    return {
+        "emu": emu,
+        "backend": "skyemu",
+        "skyemu_proc": proc,
+        "skyemu_log_path": getattr(emu, "log_path", None),
+        "caffeinate_proc": caffeinate_proc,
+        "slot_cfg": slot_cfg,
+    }
+
+
 def run_connect_phase(handle: dict, timeout: float = 300.0) -> None:
-    """Block until the Lua client connects to the TCP server."""
+    """Block until the backend is ready to take commands.
+
+    mGBA: wait for the Lua client to dial into the TCP server. SkyEmu: the same
+    call, but it is a ``/ping`` loop against a process this harness already
+    launched — there is nothing for a human to click.
+    """
     handle["emu"].wait_for_connection(timeout=timeout)
     print("Connected.")
 
@@ -728,10 +808,14 @@ def run_single_loop(
     # dashboard's ScreenStreamer reads /tmp/mgba_stream_1.png (where Lua
     # writes) instead of falling back to <run_dir>/mgba_stream.png.
     paths = config.setdefault("paths", {})
-    paths["stream"] = slot_cfg["stream_path"]
-    paths["screenshot"] = slot_cfg["screenshot_path"]
-    paths["lua"] = str(slot_cfg["lua_path"])
-    config["emulator"]["port"] = slot_cfg["port"]
+    if _backend_type(config) == "mgba":
+        paths["stream"] = slot_cfg["stream_path"]
+        paths["screenshot"] = slot_cfg["screenshot_path"]
+        paths["lua"] = str(slot_cfg["lua_path"])
+        config["emulator"]["port"] = slot_cfg["port"]
+    # SkyEmu writes no stream file (spectate is P4) and has no Lua script, and
+    # its port is the one its own config names — stamping slot 1's 8888 over it
+    # would point this loop's config at whatever else is on that port.
 
     # Last-resort resolution of {{game_name}}, for configs that arrive without
     # having gone through ``roms.apply_rom`` — i.e. every `pokemon run`. The
@@ -983,7 +1067,14 @@ def run_single_loop(
 
 
 def cleanup_handle(handle: dict) -> None:
-    """Disconnect emu, terminate mGBA + caffeinate. Idempotent."""
+    """Disconnect emu, terminate the emulator + caffeinate. Idempotent.
+
+    ``SkyEmuClient.disconnect`` already kills its own child — a headless SkyEmu
+    does NOT exit when its client goes away, and an orphan holding the port
+    makes the next run answer against a half-loaded ROM. The explicit terminate
+    below is the belt to that braces: it costs nothing when disconnect worked
+    and it is the difference between a leaked emulator and none when it raised.
+    """
     emu = handle.get("emu")
     if emu is not None:
         try:
@@ -991,13 +1082,14 @@ def cleanup_handle(handle: dict) -> None:
         except Exception:
             pass
 
-    mgba_proc = handle.get("mgba_proc")
-    if mgba_proc is not None and mgba_proc.poll() is None:
-        mgba_proc.terminate()
-        try:
-            mgba_proc.wait(timeout=5)
-        except Exception:
-            pass
+    for key in ("mgba_proc", "skyemu_proc"):
+        proc = handle.get(key)
+        if proc is not None and proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except Exception:
+                pass
 
     caffeinate_proc = handle.get("caffeinate_proc")
     if caffeinate_proc is not None and caffeinate_proc.poll() is None:
