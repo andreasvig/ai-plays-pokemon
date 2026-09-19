@@ -1,0 +1,47 @@
+{
+  "game": "black-us",
+  "runs": [
+    "2026-09-19_17-50-54_config-5.1__gpt-6-astra-low",
+    "2026-09-19_19-17-45_config-5.1__gemini-3-8-flash-minimal",
+    "2026-09-20_01-40-28_config-v2-black__gemini-3-8-flash-minimal"
+  ],
+  "inputs": 128,
+  "unreadable_inputs": 28,
+  "maps": 1,
+  "tiles": 2,
+  "edges": [],
+  "warps": [
+    [
+      "391|5|7",
+      "391|4|6",
+      1
+    ]
+  ],
+  "blocked_observations": 4,
+  "midwarp_samples_dropped": 1,
+  "per_map": [
+    {
+      "map": [
+        391
+      ],
+      "tiles": 2,
+      "bounds": [
+        4,
+        6,
+        5,
+        7
+      ]
+    }
+  ],
+  "nodes": [
+    "391|4|6",
+    "391|5|7"
+  ],
+  "blocked": [
+    [
+      "391|5|7",
+      "up",
+      4
+    ]
+  ]
+}
