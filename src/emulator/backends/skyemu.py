@@ -285,6 +285,7 @@ class SkyEmuClient:
             )
         if not self.rom_path.is_file():
             raise FileNotFoundError(f"ROM not found at {self.rom_path}")
+        self._refuse_an_occupied_port()
 
         rom = self._stage_rom()
         self._log_file = tempfile.NamedTemporaryFile(
@@ -297,6 +298,67 @@ class SkyEmuClient:
         )
         self._launched_rom = rom
         print(f"SkyEmu launched (PID {self.proc.pid}) on port {self.port} — log: {self.log_path}")
+
+    def _refuse_an_occupied_port(self) -> None:
+        """Refuse to launch onto a port that is already serving SkyEmu.
+
+        **A launch that cannot bind does not fail — it succeeds against somebody
+        else's emulator.** SkyEmu's http_server exits quietly when the port is
+        taken, ``/ping`` then answers from the incumbent, and every check below
+        passes: the client is "connected", ``/load`` works, ``/step`` works. The
+        run drives another process's machine.
+
+        Cost, 2026-09-19: a throwaway probe of mine defaulted to the port the
+        control center was already on, loaded a SoulSilver savestate, and Andreas
+        watched his live Black 2 run render a New Bark Town bedroom from turn 17.
+        Nothing raised, and nothing in the log said anything was wrong.
+
+        ``wait_for_connection``'s docstring already named the hazard ("an orphan
+        on the port makes the NEXT launch answer against a half-loaded ROM") and
+        the guard it grew was ``self.proc.poll()`` — which only catches a child
+        that has ALREADY exited by the time we look, and the incumbent answers
+        the first ping long before that. A port is not an identity; what is on it
+        has to be identified. Cf. ``_refuse_someone_elses_emulator``.
+        """
+        try:
+            reply = self._text(self._get("/ping", timeout=2.0))
+        except OSError:
+            return          # nothing listening — the normal case
+        if reply != "pong":
+            return          # something else entirely; the launch will fail loudly
+        raise RuntimeError(
+            f"port {self.port} is already serving a SkyEmu. Launching here would "
+            f"silently drive THAT emulator: the new process exits when it cannot "
+            f"bind, /ping answers from the incumbent, and every check passes. "
+            f"Stop it first, or give this backend its own emulator.port."
+        )
+
+    def _refuse_someone_elses_emulator(self) -> None:
+        """After connecting, check the machine is running the ROM we launched.
+
+        The port guard above closes the window at launch time; this closes it at
+        CONNECT time, which is the one that survives a race (two launches in the
+        same second) and an orphan that appeared between the two. ``/status``
+        names ``rom-path``, so the check is exact and costs one request per run.
+
+        Compared on the file name: the path is relative to SkyEmu's own cwd, and
+        the failure worth catching is a DIFFERENT GAME, not a different directory.
+        """
+        if self._launched_rom is None:
+            return
+        try:
+            serving = json.loads(self._get("/status", timeout=5.0)).get("rom-path")
+        except Exception:
+            return          # a status we cannot read is not evidence of anything
+        if not serving:
+            return
+        mine, theirs = self._launched_rom.name, Path(serving).name
+        if mine != theirs:
+            raise ConnectionError(
+                f"the SkyEmu on port {self.port} is running {theirs!r}, not the "
+                f"{mine!r} this backend launched — it is somebody else's emulator "
+                f"and driving it would corrupt their run"
+            )
 
     def wait_for_connection(self, timeout: float = 60.0) -> None:
         """Poll ``/ping`` until the process answers, then step ``boot_frames``.
@@ -339,6 +401,7 @@ class SkyEmuClient:
             raise
 
         try:
+            self._refuse_someone_elses_emulator()
             if self.boot_frames:
                 self._step(self.boot_frames)
             self._probe_system()

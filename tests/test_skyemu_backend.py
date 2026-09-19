@@ -582,3 +582,141 @@ def test_a_sampler_chunks_the_step_instead_of_running_beside_it():
     emu.step(10)
     assert emu.steps() == [2, 2, 2, 2, 2]
     assert len(captured) == 5
+
+
+# ── the port is not an identity ─────────────────────────────────────────────
+#
+# 2026-09-19, and it cost a live run. A throwaway probe of mine defaulted to the
+# port the control center was already on. SkyEmu's http_server EXITS when it
+# cannot bind — quietly — so the launch "succeeded", /ping answered from the
+# incumbent, /load took a SoulSilver savestate, and Andreas watched his Black 2
+# run render a New Bark Town bedroom from turn 17. Nothing raised anywhere.
+#
+# wait_for_connection's docstring already named this hazard ("an orphan on the
+# port makes the NEXT launch answer against a half-loaded ROM"); the guard it
+# grew was `self.proc.poll()`, which only catches a child that has already exited
+# by the time we look — and the incumbent answers long before that.
+
+
+class _Wire(SkyEmuClient):
+    """A client whose only fake is the wire, so start_server's real body runs."""
+
+    def __init__(self, config, answers):
+        super().__init__(config)
+        self.answers = answers          # path -> bytes, or an exception to raise
+        self.asked: list[str] = []
+
+    def _get(self, path, params=None, timeout=600.0):
+        self.asked.append(path)
+        a = self.answers.get(path, b"ok\x00")
+        if isinstance(a, BaseException):
+            raise a
+        return a
+
+
+def test_launching_onto_a_port_that_already_serves_skyemu_is_refused(tmp_path):
+    """THE regression. The launch must not happen at all — by the time a client
+    has talked to the incumbent it has already driven someone else's machine."""
+    rom = tmp_path / "game.gba"
+    rom.write_bytes(b"\x00" * 64)
+    emu = _Wire(_config(rom_path=str(rom)), {"/ping": b"pong\x00"})
+    with pytest.raises(RuntimeError, match="already serving a SkyEmu"):
+        emu.start_server()
+    assert emu.proc is None, "a process was launched despite the refusal"
+
+
+def test_a_free_port_is_not_refused(tmp_path):
+    """THE control. A guard that refused every launch would also 'fix' this."""
+    rom = tmp_path / "game.gba"
+    rom.write_bytes(b"\x00" * 64)
+    emu = _Wire(_config(rom_path=str(rom)), {"/ping": OSError("connection refused")})
+    emu._stage_rom = lambda: rom                      # no copying in a unit test
+    import subprocess as _sp
+
+    launched = {}
+
+    def _popen(cmd, **kw):
+        launched["cmd"] = cmd
+
+        class _P:
+            pid = 4242
+
+            def poll(self):
+                return None
+        return _P()
+
+    real, _sp.Popen = _sp.Popen, _popen
+    try:
+        emu.start_server()
+    finally:
+        _sp.Popen = real
+    assert emu.proc is not None
+    assert str(emu.port) in [str(c) for c in launched["cmd"]]
+
+
+def test_a_port_serving_something_that_is_not_skyemu_is_left_to_the_launch(tmp_path):
+    """The guard is about SkyEmu specifically. Anything else on the port makes
+    the bind fail loudly, which is already handled — and refusing here would turn
+    a clear error into a confusing one."""
+    rom = tmp_path / "game.gba"
+    rom.write_bytes(b"\x00" * 64)
+    emu = _Wire(_config(rom_path=str(rom)), {"/ping": b"<!doctype html>"})
+    emu._stage_rom = lambda: rom
+    import subprocess as _sp
+
+    real, _sp.Popen = _sp.Popen, lambda cmd, **kw: type("P", (), {"pid": 1, "poll": lambda s: None})()
+    try:
+        emu.start_server()
+    finally:
+        _sp.Popen = real
+    assert emu.proc is not None
+
+
+def test_connecting_to_an_emulator_running_another_rom_is_refused(tmp_path):
+    """The second door, and the one that survives a race: two launches in the
+    same second both see a free port. /status names rom-path, so the machine can
+    be asked what it is actually running."""
+    import json as _json
+
+    emu = _Wire(_config(), {
+        "/status": _json.dumps({"rom-path": "saves/Pokemon - Black 2.nds"}).encode(),
+    })
+    emu._launched_rom = Path("staged/Pokemon - SoulSilver Version (Europe).nds")
+    with pytest.raises(ConnectionError, match="somebody else's emulator"):
+        emu._refuse_someone_elses_emulator()
+
+
+def test_connecting_to_our_own_emulator_is_fine(tmp_path):
+    """THE control, and it has to tolerate a different DIRECTORY: /status reports
+    a path relative to SkyEmu's cwd, while the backend holds the staged copy."""
+    import json as _json
+
+    emu = _Wire(_config(), {
+        "/status": _json.dumps(
+            {"rom-path": "local/app/_session_x/saves/Pokemon - Black 2.nds"}
+        ).encode(),
+    })
+    emu._launched_rom = Path("/tmp/stage/Pokemon - Black 2.nds")
+    emu._refuse_someone_elses_emulator()          # must not raise
+
+
+def test_an_unreadable_status_is_not_treated_as_a_mismatch():
+    """A /status that cannot be parsed is no evidence either way, and failing
+    closed there would make the backend unusable against any build whose status
+    shape differs."""
+    emu = _Wire(_config(), {"/status": b"not json"})
+    emu._launched_rom = Path("game.nds")
+    emu._refuse_someone_elses_emulator()
+    emu2 = _Wire(_config(), {"/status": OSError("boom")})
+    emu2._launched_rom = Path("game.nds")
+    emu2._refuse_someone_elses_emulator()
+
+
+def test_wait_for_connection_checks_the_rom_before_stepping():
+    """Order matters: the check has to happen before boot_frames, or the first
+    thing a mis-pointed backend does is step somebody else's machine."""
+    import inspect
+
+    src = inspect.getsource(SkyEmuClient.wait_for_connection)
+    assert "_refuse_someone_elses_emulator()" in src
+    assert src.index("_refuse_someone_elses_emulator()") < src.index("self._step(self.boot_frames)")
