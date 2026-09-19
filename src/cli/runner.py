@@ -140,7 +140,7 @@ def _print_crash_banner(exc: BaseException, turn_mgr, config: dict, run_dir, han
 from src.cli.slots import get_slot
 from src.config import default_config_stem, example_model_aliases, load_config
 from src.core import RunLogger, StateManager
-from src.emulator import EmulatorClient, VisionPipeline, OCRRunner
+from src.emulator import make_emulator, VisionPipeline, OCRRunner
 from src.referee.trace import TRACE_SPEC
 from src.agent import TurnManager
 
@@ -594,7 +594,7 @@ def run_prepare_phase(config: dict, saves_dir: Path) -> dict:
     paths["screenshot"] = slot_cfg["screenshot_path"]
     paths["lua"] = str(slot_cfg["lua_path"])
 
-    emu = EmulatorClient(config)
+    emu = make_emulator(config)
     # Per-input trace of tile + in-battle bit after every button (src/referee/trace.py).
     emu.trace_spec = list(TRACE_SPEC)
     emu.start_server()

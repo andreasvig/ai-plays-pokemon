@@ -15,7 +15,7 @@ Button = Literal["up", "down", "left", "right", "a", "b", "start", "select", "wa
 from src.core.patches import apply_patches
 apply_patches()
 
-from src.emulator import EmulatorClient, OCRRunner
+from src.emulator import EmulatorBackend, OCRRunner
 from src.core import RunLogger, StateManager
 
 
@@ -129,7 +129,7 @@ _LegacyGameAction.model_rebuild(force=True)
 class AgentDeps:
     """Dependencies available to all agent tools."""
     # Shared infrastructure (immutable per run)
-    emulator: EmulatorClient
+    emulator: EmulatorBackend
     state: StateManager
     logger: RunLogger
     ocr: Optional[OCRRunner] = None

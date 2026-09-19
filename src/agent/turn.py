@@ -36,7 +36,7 @@ from src.agent.task_master import (
     create_task_master_agent,
     render_input as render_task_master_input,
 )
-from src.emulator import EmulatorClient, VisionPipeline, OCRRunner
+from src.emulator import EmulatorBackend, VisionPipeline, OCRRunner
 from src.core import RunLogger, StateManager
 from src.core.prompts import fill_prompt
 from src.core.snapshots import SnapshotManager
@@ -876,7 +876,7 @@ class TurnManager:
         self._task_master_runner = task_master_runner
 
         # These get set during setup
-        self.emulator: Optional[EmulatorClient] = None
+        self.emulator: Optional[EmulatorBackend] = None
         self.state: Optional[StateManager] = None
         self.vision: Optional[VisionPipeline] = None
         self.logger: Optional[RunLogger] = None
@@ -971,7 +971,7 @@ class TurnManager:
 
     def setup(
         self,
-        emulator: EmulatorClient,
+        emulator: EmulatorBackend,
         state: StateManager,
         vision: VisionPipeline,
         logger: RunLogger,

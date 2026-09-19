@@ -215,9 +215,11 @@ def test_run_single_loop_runs_against_injected_handle_without_launching(
 
     monkeypatch.setattr(runner.subprocess, "Popen", _no_popen)
 
-    # Stub EmulatorClient so even an accidental construction can't open sockets.
+    # Stub the emulator factory so even an accidental construction can't open
+    # sockets. `make_emulator` replaced `EmulatorClient` as runner's constructing
+    # global when the backend seam landed (P0) — same claim, renamed target.
     monkeypatch.setattr(
-        runner, "EmulatorClient", lambda *a, **k: (_ for _ in ()).throw(
+        runner, "make_emulator", lambda *a, **k: (_ for _ in ()).throw(
             AssertionError("run_single_loop must not construct an emulator")
         ),
     )

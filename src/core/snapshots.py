@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-from src.emulator.emulator import EmulatorClient
+from src.emulator import EmulatorBackend
 
 
 class SnapshotManager:
@@ -19,7 +19,7 @@ class SnapshotManager:
     - metadata.json: timestamp, description, task info
     """
 
-    def __init__(self, config: dict[str, Any], emulator: EmulatorClient):
+    def __init__(self, config: dict[str, Any], emulator: EmulatorBackend):
         self.snapshots_dir = Path(config.get("snapshots_directory", "snapshots"))
         self.state_file = Path(config.get("state_file", "state/state.json"))
         self.emulator = emulator

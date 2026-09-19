@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.cli.slots import get_slot
 from src.config import load_config
-from src.emulator import EmulatorClient
+from src.emulator import make_emulator
 from src.referee.trace import TRACE_SPEC
 
 
@@ -91,7 +91,7 @@ def main():
 
     mgba_path = find_mgba()
 
-    emu = EmulatorClient(config)
+    emu = make_emulator(config)
     # Per-input trace of tile + in-battle bit after every button (src/referee/trace.py).
     emu.trace_spec = list(TRACE_SPEC)
     emu.start_server()

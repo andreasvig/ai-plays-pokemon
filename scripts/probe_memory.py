@@ -145,18 +145,18 @@ def _flag_bits(flag_array: bytes) -> set[int]:
 # --------------------------------------------------------------------------- #
 
 def _connect(host: str, port: int, timeout: float):
-    """Build an EmulatorClient and wait for the mGBA Lua bridge to connect.
+    """Build the configured emulator backend and wait for the mGBA Lua bridge.
 
     Prints a clear instruction and exits non-zero if no connection arrives.
     Imported lazily so ``--help`` and the ``rom`` subcommand never touch the
     network stack.
     """
-    from src.emulator import EmulatorClient
+    from src.emulator import make_emulator
 
-    # Minimal config: EmulatorClient only needs the emulator host/port (+ the
+    # Minimal config: the mGBA backend only needs host/port (+ the
     # optional timing/inputs keys, which default fine for a read-only probe).
     config = {"emulator": {"host": host, "port": port}}
-    emu = EmulatorClient(config)
+    emu = make_emulator(config)
 
     print(f"Starting TCP server on {host}:{port} and waiting for mGBA…")
     print(

@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from src.cli.launch import find_mgba
 from src.config import load_config
 from src.core import SnapshotManager
-from src.emulator import EmulatorClient
+from src.emulator import make_emulator
 
 
 def launch_and_connect(config):
@@ -32,7 +32,7 @@ def launch_and_connect(config):
     rom_path = config["emulator"]["rom_path"]
     mgba_path = find_mgba()
 
-    emu = EmulatorClient(config)
+    emu = make_emulator(config)
     emu.start_server()
 
     mgba_proc = subprocess.Popen(
