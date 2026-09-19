@@ -1,158 +1,208 @@
 # The paired comparison, fixed before it is run
 
 > Source: conversation 2026-09-19 (Andreas + Marvin). Written at the START of the
-> branch, deliberately: `plan.md` §8 question 3 says this wants fixing **before**
-> P0, "because a comparison designed after seeing its first result is not a
-> comparison". At the time of writing **no SkyEmu run has been scored at all** —
-> the only v2 plays that exist are the 10-turn NDS experiments in
-> `v2-experiments/plays/`, which have no referee, no checkpoints and no score.
-> Everything below is therefore a prediction, not a rationalisation.
+> branch, per `plan.md` §8 question 3 — "a comparison designed after seeing its
+> first result is not a comparison". **Revision 2, same day**: the first draft was
+> put to an adversarial review before anything ran, and the review broke its
+> primary statistic with a run from our own corpus. §3 is the replacement and §7
+> records what was wrong, because a design doc that quietly absorbs its own
+> refutation teaches nothing. At the time of writing **no SkyEmu run has been
+> scored**.
 
 ## 1. The confound that decides the design
 
 Decision C′ turns OCR off in v2. v1's scored config has it on
-(`configs/config-5.1.yaml:61`). So a naive two-arm comparison — "v1 as it is
-today" against "v2 as it will be" — measures **the backend and the text channel
-at once**, and cannot say which moved the number.
-
-That is not a reason to re-port OCR. It is a reason to run a third arm:
+(`configs/config-5.1.yaml:61`). So a two-arm comparison would measure **the backend
+and the text channel at once** and could not say which moved the number.
 
 | Arm | Backend | OCR | What the arm is for |
 |---|---|---|---|
-| **A1** | mGBA | on | The board's actual configuration. The thing v2 is compared against. |
-| **A2** | mGBA | **off** | The control. Isolates the OCR channel with the backend held fixed. |
+| **A1** | mGBA | on | The board's actual configuration. |
+| **A2** | mGBA | **off** | The control. Isolates OCR with the backend fixed. |
 | **A3** | SkyEmu | off | v2 as decision C′ defines it. |
-
-Then the decomposition is arithmetic rather than argued:
 
 ```
 A1 → A2   the OCR effect      (backend held fixed)
 A2 → A3   the backend effect  (text channel held fixed)
-A1 → A3   the total drift     — the number §5 of the plan is about
+A1 → A3   the total drift     — the number plan §5 is about
 ```
 
-Without A2, "accept the drift" would mean accepting a number nobody can
-attribute. Decision C says do not *tune* v2 toward v1; it explicitly does not say
-do not *know*.
+**All three get an acceptance criterion in §4**, including A1 → A3. Revision 1 named
+A1 → A3 as the headline and then only wrote a rule for A3-vs-A2.
 
-## 2. Model and length — chosen for the reason, not the vibe
+## 2. Model and length
 
-**Model: `gpt-6-astra-low`.** Three reasons, in order:
+**Model: `gpt-6-astra(low)`** — the only model with two completed FireRed runs on
+disk, so the arm's own run-to-run spread is measured rather than assumed; already
+authorised for spend; and it finishes.
 
-1. It is the only model with **two completed FireRed runs already on disk**, four
-   days apart, so the v1 arm's own run-to-run spread is measured rather than
-   assumed — and a backend gap only means something measured against it.
-2. Andreas has already authorised spending on astra runs at this length.
-3. It finishes. Both runs reached Brock — 138 turns on the 09-15 run, and 145 on
-   the 09-11 one, though that second number is **a human adjudication, not a
-   referee reading** (see the note under the table). The early ladder is not a
-   model failing to play.
+**Length: a 40-turn cap.** Revision 1 said 30. `viridian_reached` lands at 26, 28 and
+29 across the three reference runs — one of them **one turn** under a 30-cap, so the
+gate would be censored by a run that was slightly slow. 40 uncensors it. Cost below.
 
-**Length: a 30-turn cap.** From the two existing runs, turn 30 sits just past
-`viridian_reached` — seven of the twelve gates, through the bedroom, the lab, the
-starter, a real battle, an overworld route and a town. It exercises navigation,
-battle and dialogue, which is everything a backend could plausibly break, and it
-costs about **$1.60 a run** (v1 run 2: $7.30 for 138 turns).
+**Cost: $1.43 a run at 30 turns, ≈$1.9 at 40.** Revision 1 said $1.60, derived by
+multiplying a whole-run average by 30. That is wrong in a knowable direction: per-turn
+cost is a sawtooth on the 20-turn compaction period and the opening block is the
+cheapest of the run — $0.374 for turns 1–10 against $0.561 for 11–20. The naive
+extrapolation over-estimates by 12–15%. **Nine runs ≈ $17.**
 
-Nine runs at that length is roughly **$15 for the whole comparison**. The full
-ladder to Brock would be $70 and would add its variance, not its signal.
+## 3. The statistic — inputs, not turns
 
-## 3. The two statistics, and why the primary one is the boring gate
+The reference runs, measured over `run_summary.turns[].action` (the model's requested
+input list, present on every run in the corpus) and `turn_input_trace` (the executed
+census, present on only 3 of 21):
 
-The v1 arm's gate turns, read off the two runs on disk plus `astra-medium` as a
-third reference point:
+| | astra-low 09-11 | astra-low 09-15 | astra-med 09-11 | gemini-3.8-flash(high) |
+|---|---|---|---|---|
+| turns to `route1_reached` | 16 | 16 | 15 | **13** |
+| **inputs requested to that gate** | **188** | **185** | 170 | **291** |
+| inputs/turn | 11.8 | 11.6 | 11.3 | 22.4 |
+| inputs the census says moved nothing | *(no census)* | 18 of 180 (10.0%) | *(no census)* | **53 of 276 (19.2%)** |
 
-| Gate | astra-low (09-11) | astra-low (09-15) | astra-medium (09-11) |
-|---|---|---|---|
-| left_bedroom | 3 | 2 | 2 |
-| left_house | 5 | 4 | 4 |
-| oaks_lab_entered | 7 | 6 | 7 |
-| starter_chosen | 10 | 10 | 9 |
-| rival1_done | 14 | 15 | 13 |
-| **route1_reached** | **16** | **16** | **15** |
-| viridian_reached | 26 | 29 | 28 |
-| pokedex_received | 52 | 47 | 50 |
-| viridian_forest_reached | 84 | 69 | 82 |
-| pewter_reached | 124 | 124 | 135 |
-| brock_defeated | 145 † | 138 | 150 |
+**Primary statistic: emulator inputs requested to `route1_reached`.**
 
-† The 09-11 astra-low run's Brock figure is adjudicated, not latched. The model
-won the gym battle at T144 and the game printed "Player received the
-BOULDERBADGE from BROCK!", but it never dismissed the text box — the post-battle
-script that sets the badge flag runs only on dismissal, so the referee saw
-nothing and the run ran on to a leg cap at T224 with 80 empty-action turns.
-Andreas credited completion at T145 by hand on 2026-09-11 and the cost was
-re-summed over turns ≤ 145. Its `checkpoints.brock_defeated` is therefore `None`
-while `furthest` says `brock_defeated`.
+The replicate pair is **188 and 185** — sd 2.12, CV 1.1%, on a base of 186. That is the
+same stability the turn count has (16 and 16) at **12× the resolution**.
 
-That is worth knowing here for two reasons. It is a **flag** gate failing on a
-model behaviour rather than on emulation, so it would fail the same way on either
-backend — and it is exactly why the primary statistic below is an early **map**
-gate, which latches on the player standing somewhere and cannot be held hostage
-by an undismissed dialogue box.
+**Why turns had to go.** Revision 1 made turns-to-gate the primary on the argument that
+FireRed railroads the opening, so the gate mostly counts inputs spent. The corpus says
+otherwise: inputs to that gate run 170 → 291 across models, batch size runs 11 → 22
+inputs per turn, and there is no cap on sequence length (`src/agent/agent.py:57`) while
+the prompt actively tells the model to lengthen sequences that pay off
+(`config-5.1.yaml:136,153`). A turn is one decision whatever it contains, so **input-level
+damage is absorbed inside a turn.**
 
-**Primary statistic: turns to `route1_reached`.** 16, 16, 15 across three runs,
-including a run at a different reasoning effort. That stability is not the model
-being consistent — it is FireRed railroading the opening: the game demands a
-near-fixed number of inputs to get out of the house and past Oak, so the gate
-mostly measures *how many inputs the harness had to spend*, which is exactly the
-quantity a backend swap can move. A gate that is nearly deterministic under the
-model is the most sensitive instrument available for the thing being tested.
+The decisive case is `gemini-3-8-flash(high)`, 2026-09-15: **19.2% of its inputs moved
+nothing**, and it latched the gate at **T13 — the fastest in the corpus, three turns
+better than the astra baseline.** By turn 30 it had lost 159 of 572 inputs (27.8%) and
+still reached `viridian_reached` three turns ahead of astra. On the turn statistic it
+would have passed every alignment test comfortably.
 
-**Secondary statistic: gates latched within 30 turns.** v1 reaches seven in both
-runs. This one is coarse but it is the one that answers "does the referee work at
-all on the new backend", which is P5's actual question.
+So a backend that silently dropped one press in five would have scored **better than
+baseline**. A design that cannot fail is not a design, and that one could be beaten by
+the defect it exists to detect.
 
-Both statistics are reported per run. No averaging across arms before the per-run
-numbers are shown.
+The input statistic inverts correctly. A press that does nothing has to be re-requested,
+so a lossy backend drives requested inputs **up** — gemini's 291 against astra's 185 is
+exactly that signal, correctly signed, while the turn count read it backwards.
 
-## 4. The decision rule, written down now
+**Companion statistic: `inputs_lost / inputs` over the capped run**, from the
+`turn_input_trace` census. astra-low 09-15: 8.6%. gemini: 27.8%. The corpus brackets the
+band — but thinly, from three runs, which is the weakest part of this document.
 
-n = 3 per arm (A1 gets one fresh run; its two runs on disk are cited as prior
-observations, not as arm members, because they were cut from a different commit —
-*a measurement must see one code version*).
+**`fetch_trace` is a precondition, not an option.** `turn.py:1897` reaches it through
+`getattr` and `base.py` declares it off the required protocol, so an A3 run could pass
+every criterion with the census **silently absent** — the most sensitive instrument
+missing from the arm being judged. An arm run without a trace is void.
 
-The arms are **aligned** if both hold:
+## 4. The decision rule
 
-- The A3 median turns-to-`route1_reached` is within **±3 turns** of A2's median.
-  (±3 is the observed v1 spread of 15–16 widened by one turn in each direction.
-  It is set here so it cannot be set later.)
-- A3 latches **≥ 6 of the 7 early gates within 30 turns in at least 2 of 3 runs**.
+n = 3 per arm. A1's two runs on disk are **prior observations, not arm members** (cut
+from a different commit), so A1 gets 3 fresh runs too: nine runs.
 
-If aligned: the backends are close enough that merging the arms becomes a
-decision with evidence behind it, per plan §5.
+**The band is a rule fixed now, not a number fixed now.** Revision 1 pre-committed
+±3 turns, justified as "the observed spread widened by one". The observed spread *within
+the arm* was 0 — both astra-low runs read 16 — and the 15 that manufactured the width
+came from a different reasoning effort. Worse, a simulation of that rule accepts a true
+3-turn backend penalty 88% of the time. Pre-registering an unfounded number is not more
+honest than pre-registering none; it is the same guess with a date on it.
 
-If not aligned: **that is a result, not a failure.** The number gets published
-with the branch and the arms stay separate. The one outcome that is not
-acceptable is adjusting this rule after seeing A3.
+So, decided now:
 
-**A1 → A2 is reported whatever it says.** If turning OCR off moves the primary
-statistic more than the backend does, the headline of this whole branch changes,
-and that possibility is named here before it can be quietly dropped.
+> **Band = 3 × the within-arm standard deviation of A2's three runs, with a floor of
+> ±6 requested inputs (3 × the 2.12 sd of the on-disk replicate pair).** A2 is run
+> first, its sd sets the band, and the band is written down before A3 is run.
 
-## 5. What this does not cover, stated up front
+This resolves the tension the review could not: you cannot know σ without running, and
+you cannot set a band without σ. The control arm estimates it, and A3 is judged against
+a band it could not have influenced.
 
-- **30 turns is not 30 hours.** Nothing here speaks to GBA accuracy over a long
-  run, which is risk #1 in plan §6. That needs a full ladder run and it is not
-  this experiment.
-- **One model.** A backend difference that only bites a model with different
-  timing habits would not show up.
-- **One game.** FireRed only. NDS carries no referee yet.
-- **Different start states.** A3 begins from a re-created SkyEmu savestate
-  (plan §3.4), not a copy of v1's. Two states that look identical on screen can
-  differ in RNG state, and no part of this design can rule that out.
+**Aligned** if all three hold:
+
+1. **A2 → A3**: |median inputs(A3) − median inputs(A2)| ≤ band.
+2. **A2 → A3**: A3's `inputs_lost` rate is within 3 percentage points of A2's.
+3. **A1 → A3**: reported with the same band, and stated as a number whether or not it
+   passes. This is the drift plan §5 accepts; the criterion exists so "accept" does not
+   silently become "do not measure".
+
+Revision 1's "≥ 6 of 7 gates within 30 turns" clause is **dropped**. Against a baseline
+of 16 turns it allowed +88% of slack and could not bite unless the primary had already
+failed catastrophically.
+
+**If not aligned, that is a result.** The number is published with the branch and the
+arms stay separate. The one unacceptable outcome is adjusting this rule after seeing A3.
+
+## 5. Held fixed, and what cannot be
+
+**Pin the frame budget and log it per arm.** This is the confound the first draft missed
+entirely, and it is larger than the start state. `pause_during_thinking` is declared in
+five configs and **read by nothing**; `pause()`/`unpause()` have zero call sites; and
+`lua/socketserver-1.lua:112`'s PAUSE handler body is `respond("OK:Paused")`. So mGBA runs
+free at 60 fps through the model's latency, the settle poll, the screenshot and the
+referee poll. Over the first 30 turns of the astra runs, LLM latency (139 s) plus settle
+(122 s) is **at least 15,660 frames of game time nobody asked for** — a floor, since the
+measured 27.8 s/turn wall clock accounts for only 8.7 s/turn. On SkyEmu that number is
+exactly zero unless someone steps it. Both arms therefore log frames-per-turn explicitly,
+and the difference is reported rather than absorbed.
+
+Two more, both fixable and both to be fixed before the arms run:
+
+- **`press_button_list` slack.** mGBA sleeps `total_frames/60 + 0.5 s`; SkyEmu's
+  `step(total_frames)` is exact — about 30 extra frames a turn on the mGBA side.
+- **Screenshot post-processing lives inside the mGBA backend** (`backends/mgba.py:629–663`:
+  ×6 upscale, the 16 px grid on an 8 px offset). GBA frames are 240×160 on both backends,
+  so this is portable — but only if it is hoisted into a shared layer. Reimplemented, the
+  model sees a different image and the comparison is of two prompts, not two backends.
+
+Irreducible, and stated rather than fixed:
+
+- **Different start state.** A3 begins from a re-created savestate (plan §3.4). Two states
+  that look identical on screen can differ in RNG state.
+- **Different emulation.** Two cores are two games.
+- **The settle criterion is renderer-dependent.** `_capture_raw_frame` compares 120×80
+  greyscale at a 0.98–1.00 threshold; two cores differ at the pixel level. Report the
+  settle-frame distribution per arm as a result, not an implementation detail.
+- **A1 → A2 is not only the text channel.** The OCR poller captures every **0.2 s**
+  (`ocr.capture_interval`, not the 0.4 s plan §3.3 claims) through the same lock as the
+  turn loop, so switching it off also removes a competing consumer and changes real input
+  timing. Measurable — log press wall-clock in both arms — not removable.
 
 ## 6. Operational note — the v1 arms are blocked on this machine (2026-09-19)
 
-A1 and A2 both need mGBA, and mGBA's harness binds TCP port **8888** (slot 1,
-`src/cli/slots.py`). That port is held by Andreas's own long-running
-`pokemon app --no-browser` control center — up for 2½ days at the time of
-writing. Starting a v1 run would either fail on `Address already in use` (it
-did: `emulator.py:101`, verified) or require stopping his app, which is not a
-thing to do unattended.
+A1 and A2 need mGBA, whose harness binds TCP port **8888** (`src/cli/slots.py`). That port
+is held by Andreas's own long-running `pokemon app --no-browser` control center, up for
+2½ days. Starting a v1 run fails on `Address already in use` (verified), and stopping his
+app unattended is not a thing to do.
 
-So **A3 comes first**, and A1/A2 are run when the machine is free. This does not
-weaken the design — the decision rule in §4 was fixed before any arm ran, which
-is the property that mattered — but it does mean the first SkyEmu numbers will
-land with nothing to compare them against yet, and they must not be reported as
-a comparison until A2 exists.
+So **A3 runs first**, and A1/A2 follow when the machine is free. The decision rule above was
+fixed before any arm ran, which is the property that mattered. But note the consequence: §4
+requires A2's sd to set the band, so **A3's numbers are not a verdict until A2 exists** —
+they are a measurement waiting for its control.
+
+## 7. What revision 1 got wrong
+
+Kept here deliberately. Four of these were caught by an adversarial review of this document
+before it spent anything, and the rest by checking its own numbers against the corpus.
+
+1. **The primary statistic could not fail.** Turns-to-gate rewards a backend that eats
+   inputs (§3). This is the one that mattered.
+2. **"The opening is railroaded" was false.** Inputs to the gate span 170–291 and batch
+   size spans 11–22 per turn; the gate counts model decisions, not inputs the game demands.
+3. **±3 turns was manufactured.** The within-arm spread was 0; the width came from a
+   different reasoning effort, and simulation puts its acceptance of a real 3-turn penalty
+   at 88%.
+4. **The 30-turn cap censored `viridian_reached`** by one turn on a real run.
+5. **The secondary criterion was inert** — +88% slack against a ±19% primary band.
+6. **The cost was over-estimated by 12–15%**, by extrapolating a whole-run average across
+   the cheapest block of the run.
+7. **The free-running-frames confound was missing entirely**, and it is bigger than the
+   start state that §5 did name.
+8. **Internal incoherence**: the on-disk runs were excluded as arm members and then used to
+   set the threshold and the cap; and A1 → A3 was called the headline but given no rule.
+
+One correction in the other direction. The review reported the replicate pair as 188 and
+185 executed inputs; checked against the corpus, **188 is a requested-input count and the
+09-11 run has no execution census at all** — only 3 of 21 runs carry `turn_input_trace`.
+The pair is 188/185 on one instrument (requested), which is what §3 now says, and the
+execution census for 09-15 reads 180 against its own 185 requested. The sd survives; the
+instrument had to be named.
