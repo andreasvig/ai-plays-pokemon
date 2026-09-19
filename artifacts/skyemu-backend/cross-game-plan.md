@@ -27,6 +27,16 @@ That is small enough to find **empirically**, by controlled experiment on a runn
 machine, instead of from a disassembly that may not exist for the game. Which
 matters most for Black/Black 2, where community data is thinnest.
 
+**Correction (audit, 2026-09-19): four values is not the whole per-game contract —
+there is a fifth.** `TRACE_SPEC` (`src/referee/trace.py:56-62`) is a module constant
+built from FireRed's SaveBlock1 pointer, its `gMain` in-battle byte and
+`gameStats[7]`, and it is wired into every run unconditionally at
+`src/cli/runner.py:626,713` and `src/cli/launch.py:80,141` — **there is no config
+path and no injection point.** Ship it unchanged to another game and the per-input
+trace goes blind (`trace.py:211`): `overworld_steps` is `None` on every turn, and
+the input census — the thing the whole comparison rests on — measures nothing. It
+needs the same per-game treatment as the four addresses.
+
 ## 1. The method: differential memory search
 
 We have already done this once, successfully, and it is the template. `gRngValue`
@@ -66,7 +76,45 @@ Four things are Python or absent today.
 | 1 | **The memory map** | module constants in `src/referee/referee.py:58-90`, commented "FireRed BPRE-US v1.0 == v1.1" | a per-game block: direct addresses *and* pointer+offset forms. The referee's backend contract (`read_memory`) does not change. |
 | 2 | **Input timing** | `emulator.button_hold_frames` etc. in `configs/config-*.yaml` — per **run**, not per **game** | a per-game home, most naturally `configs/roms.yaml`, which already keys everything off `game:` |
 | 3 | **ROM identification** | `game_code`, the 4-byte GBA header at `0x080000AC` (`roms.yaml`, `src/app/roms.py`) | per-console: GB/GBC have a title+checksum in the cartridge header, NDS has its own game code at a different offset |
-| 4 | **The ladder schema** | `configs/checkpoints-*.yaml`, signatures of type `flag` / `var` / `map` / `party` | `map` and `party` are portable as-is. `flag` and `var` are Gen-3 structures and a shallow ladder does not need them — so **the shallow ladder is expressible in today's schema**, which is the single luckiest fact in this document. |
+| 4 | **The ladder schema** | `configs/checkpoints-*.yaml`, signatures of type `flag` / `var` / `map` / `party` | `party` is portable as-is. `map` is portable through Gen 2–3 only — see §2.1. `flag` and `var` are Gen-3 structures and a shallow ladder does not need them. |
+
+### 2.1 The one schema change, and where it bites
+
+Revision 1 of this document claimed the shallow ladder needs no schema change at
+all. **That is true for Gen 2 and Gen 3 and false for Gen 4/5**, and it was the
+happiest claim here, so it is the one worth getting right.
+
+`_REQUIRED_SIGNATURE_FIELDS["map"]` hard-requires **both** `map_group` and
+`map_num` (`src/referee/checkpoints.py:29`), and `_satisfied` compares both
+(`referee.py:695-699`). That pair is a Gen-2/Gen-3 shape. A Gen 4 map is a single
+id. So Platinum's "reached the first city" gate cannot be *written* in today's
+schema — `map_id` has to become an accepted alternative to the pair, in the
+validator and in the detector.
+
+Small — two places, a handful of lines — but it is a code change on the path to
+the NDS games, not zero, and it should be counted as such.
+
+*(The Gen-2-pair / Gen-4-single-id claim is from general knowledge, not from this
+repo. P-A's first map-id probe on a real Gen 4 dump confirms or kills it in five
+minutes, and it costs nothing to check then.)*
+
+### 2.2 A wrong walk graph is worse than a missing one
+
+`referee.py:98` loads `data/firered-walkgraph.json` unconditionally. `graph_path`
+is a constructor argument **nobody passes** — the one production site
+(`src/agent/turn.py:1021-1032`) omits it, and `src/app/route.py:64-67` has no such
+parameter at all. Nodes are keyed `(map_group, map_num, x, y)` with **no game
+field and no check at load**.
+
+So an Emerald run would not degrade — it would *succeed wrongly*. Emerald's map
+`(3,0)` hits FireRed's `"3:0"` = Pallet Town, and the referee reports `on_graph:
+true` with confident nonsense distances. A **missing** graph is safe and designed
+for (`src/app/projection.py:457-482` leaves `progress` at `None` and the board
+falls back to the gate count); a wrong one is silent corruption of the headline
+score.
+
+**Gate the graph load on the game before the first cross-game run, not after.**
+Five lines.
 
 ## 3. Input timing is measurable, not guessable
 
@@ -84,6 +132,34 @@ census (`turns_to_face` vs `overworld_steps`):
 
 Runs in a couple of minutes per game, gives a defensible number per game, and the
 result is a table we can commit rather than a constant someone tuned by eye.
+
+**The sweep needs two numbers per game, not one.** Revision 1 measured only the
+hold threshold. `frames_between_inputs` is the second, and it is independently
+calibrated to FireRed: `lua/socketserver-1.lua:33` says *"400ms gap — walk
+animation is ~16 frames (267ms)"*, and `:253-256` says the gap exists **so the walk
+animation finishes before the trace samples the tile**. Set it shorter than the
+game's animation and the trace reads the *old* tile: `overworld_steps`
+under-counts and the press is filed under `blocked_by_actor` or `walls_hit`. So:
+hold threshold, turn threshold, and animation length.
+
+**And the metric itself changes meaning, which is the part that does not announce
+itself.** `turns_to_face` is a **free** bucket (`trace.py:34-36,185-198`) whose
+justification is a stated FireRed fact — *"In FireRed that only turns the player,
+and turning to face a sign or an NPC is a necessary input, so it is never
+charged."* Two ways that goes wrong on another game, neither loud:
+
+- Game needs **more** than 12 frames to move → every first press becomes a turn,
+  the run burns double the inputs, and the census records them as **free**. The
+  score drops and the instrument reports nothing wrong.
+- Game has **no** turn-in-place → a press that moved nothing while facing
+  elsewhere is booked as a free turn when it was actually a wall. `walls_hit` —
+  the only *charged* bucket (`trace.py:242`) — silently under-counts, and movement
+  efficiency is flattered.
+
+One piece of good news: facing is inferred in software in exactly one place
+(`trace.py:152,204`). The backends' own `facing` attribute is vestigial — its only
+reader (`turn.py:1818`) sets it to `None` and nothing reads the value — so
+changing the facing model means changing one function.
 
 **Do this before any scored cross-game run.** A wrong hold time does not fail
 loudly — it produces a run that plays badly, which looks like a bad model.
@@ -116,23 +192,40 @@ in a real run. First city, then starter.
 **P-F. The rest of the games.** Repeat P-B through P-E. Tedious, not hard, *if* P-A
 worked.
 
-## 5. Which second game
+## 5. Which second game — Emerald. Decided.
 
-Deliberately not decided here — an audit of the cross-game assumptions is running and
-should answer it with file:line evidence rather than my impression. The candidates and
-what each would cost:
+The audit answered this with file:line evidence, and the margin is larger than I
+expected: **Emerald is the only candidate that needs no new emulator backend, no
+new start-state authoring, no console work, and no schema change.**
 
-- **Emerald (GBA)** — already in `configs/roms.yaml` and on disk. Same console, same
-  generation, the same SaveBlock+DMA shape as FireRed, and the registry says a ROM
-  becomes benchmark-capable the moment a ladder declares its game. Almost certainly
-  the cheapest, and the one that tests the *plumbing* rather than the emulator.
-- **Crystal (GBC)** — furthest from FireRed's structures, but Gen 2 has no DMA shuffle,
-  so its addresses are static. Tests whether the contract's *simple* form suffices.
-- **Platinum / SoulSilver (NDS)** — the ones the branch exists for, and the only ones
-  that exercise the stylus and the stacked frame. Also the least-documented.
+Already done, not merely plausible: registered (`configs/roms.yaml:35-48`), on
+disk, `game_code: BPEE` verified against the actual file by
+`tests/test_rom_registry.py:70-82`, a committed start save
+(`configs/saves/emerald-truck`), and `roms.yaml:47-48` states in the repo's own
+words that authoring a ladder is the *whole* of what is missing.
 
-A defensible order is Emerald to prove the machinery, then Crystal to prove the
-contract generalises across consoles, then NDS.
+What it still needs, exactly — and nothing here is a surprise:
+
+| Need | Size |
+|---|---|
+| A per-game block for the 4+1 values. `GSAVEBLOCK1_PTR` differs from FireRed's `0x03005008`; `PLAYER_PARTY_COUNT` differs; the SB1 field offsets probably match Gen 3 but must be checked | P-A applied once. Emerald is the only candidate with a decomp (`pret/pokeemerald`) to check the finder's answer against |
+| A `game: emerald-us` ladder YAML, 2–4 gates, listed in `configs/benchmarks.yaml:12-15` | Half an hour of typing, **no code change** |
+| A timing sweep (§3) | Minutes, once the sweep exists |
+| The walk-graph gate (§2.2) | **Skip the graph itself for the first run** — the degradation is designed for. Just don't let FireRed's answer it |
+| A `rom_sha1` check that actually runs | ~10 lines — see §8 |
+
+**Crystal is the more informative second game and still comes third-of-three-firsts.**
+Emerald proves the *plumbing*; Crystal proves the *abstraction* — no DMA shuffle,
+static addresses, a second console, and the first game where `GAME_CODE_ADDR`
+(`src/app/roms.py:38`) returns garbage, because GB/GBC carts have no game code at
+all (`v2-experiments/roms/MANIFEST.md` lists `—` for both, a title string and a
+header checksum instead). Then NDS.
+
+One thing the audit found that removes a whole worry: **"which console" is already
+solved.** The SkyEmu backend identifies it by measuring the frame —
+`src/emulator/backends/frame.py:40` `GEOMETRY = {(240,160):"GBA", (160,144):"GB",
+(256,384):"NDS"}`, used at `skyemu.py:347`, populated on every run at `:188`. It is
+"which *cartridge*" that has no per-console answer yet.
 
 ## 6. What is genuinely unknown
 
@@ -157,3 +250,22 @@ sink the plan.
 Andreas, 2026-09-19: *"okay jsut full ignore OCR for now. we will reimplemnt it
 smarter soon."* No text channel on any game. v2 is vision-only until that is
 redesigned, and nothing here should be built to accommodate the old OCR service.
+
+## 8. Two defects found on the way, worth fixing regardless
+
+Neither is cross-game work; both were turned up by the audit and both are the kind
+that stay invisible until they have already cost something.
+
+1. **`configs/roms.yaml:15-16` documents a `rom_sha1` check that does not exist.**
+   It says the hash is "Checked against the ladder's `rom_sha1` before a benchmark
+   arms". `Rom.sha1` is declared (`roms.yaml:32,41`) and the ladder's `rom_sha1` is
+   loaded and shape-validated (`checkpoints.py:135,437-439`) — and compared to
+   nothing. The only ROM `hashlib.sha1` in the tree is in
+   `tests/test_rom_registry.py:80`. With one game that is rhetorical; with two
+   scorable games, "which dump produced this score" stops being.
+
+2. **The walk-graph fetcher ignores its own pin.** `scripts/build_walkgraph.py:89`
+   builds its URL with a literal `/master/`, while `scripts/render_gamemaps.py:112`
+   correctly interpolates the pinned `{ref}`. So the committed walk graph and the
+   committed map atlas can be built from different revisions of `pret/pokefirered`
+   with nothing noticing.
