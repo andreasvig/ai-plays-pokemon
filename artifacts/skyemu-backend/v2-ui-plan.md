@@ -1,0 +1,375 @@
+# v2 UI — a queue that plays every game
+
+> Source: conversation 2026-09-19, after the cross-game work landed. Andreas,
+> verbatim: *"imagine when we start a run (lets jsut start with causal, bounded
+> by eiteh rturns or budget) we shoudl now be able to choose from all games. i
+> also woudl want all spectate interfaces both simpel and advanced to work with
+> all games. for now i woudl liek all of tehse to uns to stay qued such taht we
+> only have oen run running at a tiem, but tehy shodul be abel to excnahge as
+> they wwant such that i coudl sepctate finishe a gen 3 run and teh next run
+> would be gen 4 or 5 run. aditinlly i owuld want the same logging for all
+> models and teh agnet cli should also be able to start these runs add add tehm
+> to teh que."*
+
+Branch `skyemu-backend`.
+Companion to [cross-game-plan.md](cross-game-plan.md) (the memory-address work,
+P-A…P-F) and [p-a-results.md](p-a-results.md) (what was actually measured).
+
+---
+
+## 0. Headline
+
+**Four of the five asks are already built and one is not.**
+
+The control center was designed for mixed-game queues before the cross-game work
+started: `QueuedRun.rom` / `.start` / `.max_turns` / `.max_spend_usd` exist
+(`src/app/models.py:317-408`), the new-run dialog already has a game picker
+(`AddRunDialog.svelte:103`), the executor already reconciles the cartridge before
+every dispatch (`executor.py:486`), and `pokemon queue add --rom … --start …
+--max-turns … --max-spend …` already posts to the same API the dialog does
+(`src/cli/queue.py:151`). None of that has to be built.
+
+What is missing is in three places, in descending size:
+
+1. **The supervisor holds one emulator, chosen once, and it is mGBA**
+   (`src/cli/app.py:308-323`, `src/app/supervisor.py`). mGBA cannot run an NDS
+   ROM at all, so "spectate a gen 3 run finish and have the next one be gen 4"
+   is not a ROM switch — it is a **backend** switch, which nothing in the app can
+   do. This is the whole of ask (c) and it is the only structural change.
+2. **The per-game memory contract does not exist** — `TRACE_SPEC`
+   (`src/referee/trace.py:56-62`) is FireRed's addresses, wired unconditionally
+   at `runner.py:626,713` and `launch.py:80,141`. Run it on Emerald and it does
+   not fail; it records **junk that looks like data** and feeds
+   `overworld_steps`, `walls_hit` and `movement_efficiency`. This is ask (d).
+3. **Registry + packaging** — `configs/roms.yaml` has two entries and the seven
+   start states are raw `.state` files rather than savepoint dirs. Mechanical.
+
+Everything else is small: one hardcoded CSS aspect ratio, one missing index
+field, six `or "Pokemon FireRed"` fallbacks.
+
+---
+
+## 1. What already works, verified
+
+Claimed here only where I read the code, with the line.
+
+| Ask | Where it already lives |
+|---|---|
+| Pick a game when starting a casual run | `AddRunDialog.svelte:103` (`rom`), fed by `GET /api/roms` (`server.py:1680` → `roms.list_roms`) |
+| Pick an opening within that game | `AddRunDialog.svelte:100` (`start`), `GET /api/starts` (`server.py:1704`), registry `configs/starts.yaml` |
+| Bound a run by turns **or** budget | `QueuedRun.max_turns` + `.max_spend_usd` (`models.py:332,344`), applied at `executor.py:565,583` — "whichever lands first ends the run" |
+| Bound a run by a story event | `QueuedRun.stop_at`, catalog at `catalog.py:192` |
+| One run at a time | `RunExecutor.drain_once` is a no-op while `supervisor.status().busy` (locked decision #1) |
+| A freely reorderable queue that switches cartridge between items | `_ensure_rom_loaded` (`executor.py:486`) calls `switch_rom(…, force=True)` once per dispatch. Deliberately at dispatch, not enqueue, "so the queue stays freely editable" |
+| Benchmark-capability derived, never flagged | `roms.benchmark_games()` — a ROM can score iff some ladder declares its `game:`. Authoring a ladder is the only step |
+| CLI enqueues into the same queue | `pokemon queue add --kind casual --rom … --start … --max-turns … --max-spend … --stop-at … --record …` (`src/cli/queue.py:151-239`), same `POST /api/queue` |
+| CLI can name everything a flag asks for | `pokemon ls models\|roms\|configs\|events\|benchmarks\|starts` |
+| The frame pipeline knows three consoles | `src/emulator/backends/frame.py` — GB / GBA / NDS measured from the capture's shape, NDS stacked with a seam, `touch_top_row` in the meta |
+| The backend refuses a stylus on a cartridge | `skyemu.py:_probe_system` — the console is **measured**, not asked |
+
+So **ask (e), the agent CLI, needs no work at all.** It inherits every new ROM
+the registry gains, for free.
+
+---
+
+## 2. The one structural problem: the supervisor is welded to mGBA
+
+`pokemon app` builds its config with `prepare_config(None, …)` — "the LATEST
+config" (`app.py:316`), which resolves to `config-5.1.yaml`, which is
+`emulator.type: mgba`. That config is handed to one `AppSupervisor` at
+`app.py:415` and lives for the process's lifetime.
+
+The supervisor is mGBA-shaped throughout:
+
+- `_process_up()` (`supervisor.py:331`) reads `handle["mgba_proc"]`. A SkyEmu
+  handle carries `skyemu_proc` (`runner.py:727`), so a supervised SkyEmu would
+  report the fake-handle branch — "treat presence of the handle as up" — and
+  never notice a dead emulator.
+- `_swap_rom_in_place()` (`supervisor.py:231`) drives mGBA's File → Recent over
+  AppleScript and verifies through the Lua socket. There is no SkyEmu path.
+- `verify_loaded_rom()` (`supervisor.py:274`) reads the 4-byte code at
+  `0x080000AC` — **a GBA cartridge-header fact**. Crystal (GBC) and the DS games
+  keep their identity somewhere else entirely.
+
+And the load-bearing fact: **mGBA cannot run an NDS ROM.** So the queue Andreas
+described — gen 3 finishes, gen 4 starts — cannot be served by switching
+cartridges. It has to switch emulators.
+
+### 2.1 The good news
+
+`run_prepare_phase` **already forks on `emulator.type`** (`runner.py:600-615`),
+and the SkyEmu branch is one `Popen` plus a `/ping` loop with **no window, no
+Accessibility permission, no Lua script for a human to load**
+(`_run_prepare_phase_skyemu`, `runner.py:686`). A backend switch is therefore
+*cheaper* than the mGBA cartridge switch the app already supports — the expensive
+half of `switch_rom` is exactly the half SkyEmu does not have.
+
+### 2.2 Decision D1 — one backend, or two?
+
+**Recommendation: the control center runs SkyEmu only, on this branch.**
+
+| | SkyEmu for everything | mGBA for GBA, SkyEmu for GB/NDS |
+|---|---|---|
+| Switch matrix | one path | four combinations, each its own failure mode |
+| Human in the loop | never | every relaunch into mGBA needs the Lua script re-loaded |
+| Start states | one dialect (SkyEmu refuses mGBA states) | two dialects per game, and nothing on a savepoint says which |
+| Timing | one calibration per game | two per game |
+| Cost | re-bases the FireRed casual arm onto a different core | keeps v1 FireRed bit-for-bit |
+
+The cost is real but already paid: `plan.md` §5 established that a SkyEmu run is
+**a different arm, not a continuation of the v1 board**, and the FireRed SkyEmu
+start state already exists (`configs/saves/skyemu/firered-pokebench-v2`).
+`CANONICAL_SAVE` is a constructor argument on `RunExecutor`, so pointing the app
+at the SkyEmu save is configuration, not a code change.
+
+If Andreas wants v1 FireRed preserved live, the fallback is two control centers
+on different ports — which the branch already supports (`dashboard.port: 3430`,
+and SkyEmu deliberately does not take slot 1's 8888).
+
+### 2.3 The change, if D1 = SkyEmu-only
+
+Contained, because `_ensure_rom_loaded` is the single call site.
+
+- `Rom` gains `console` (`GB` / `GBA` / `NDS`) and the registry's `game_code`
+  becomes console-scoped — or, better, **drops out of the supervisor entirely**:
+  SkyEmu already measures the console from the capture (`_probe_system`), and
+  what we actually want to verify is "the right ROM is loaded", which `/status`
+  answers by name.
+- `AppSupervisor` learns the backend from its handle rather than assuming:
+  `_process_up` reads whichever of `mgba_proc` / `skyemu_proc` is present;
+  `switch_rom` becomes `switch_target(rom)` comparing `(backend, rom_path)`, and
+  takes the shutdown→start path whenever the backend differs.
+- `app.py` grows `--config` (it has `--rom` already, `app.py:343`) so the
+  supervisor can be pointed at `config-v2-firered.yaml`, or
+  `_build_supervisor_config` learns to prefer a v2 config.
+
+**A control on this is cheap and mandatory**: enqueue Emerald then Platinum, and
+assert the second run's `/status` names the Platinum ROM and its capture measures
+`NDS`. Nothing about a backend switch is observable from the run's own logs
+otherwise — it would silently play the wrong cartridge and look fine.
+
+---
+
+## 3. "The same logging for all games"
+
+**Read as: a run on any game produces the same event and summary shape.** (If
+Andreas meant the same logging across LLM *models*, that is already true — the
+event pipeline never branches on the model — and this section is instead the
+answer to a question he did not ask. Worth one line of confirmation.)
+
+### 3.1 What is already game-independent
+
+Everything that is not derived from emulator memory. `events.jsonl`,
+`run_summary.json`, per-turn timings, cost and token accounting, the screenshots,
+the conversation and its compactions, the recording — none of it branches on the
+game. A Black 2 run today would produce all of it correctly.
+
+### 3.2 What is FireRed's addresses wearing a general name
+
+| Module | What it hardcodes |
+|---|---|
+| `referee/trace.py:56-62` | `GSAVEBLOCK1_PTR = 0x03005008`, `gMain` in-battle byte, `gameStats[7]` |
+| `referee/battles.py` | `GMAIN_IN_BATTLE_BYTE`, `SB1_GAME_STATS`, the XOR key layout |
+| `referee/referee.py` | the poll addresses behind `referee_position` |
+| `referee/walkgraph.py:29` | `data/firered-walkgraph.json` |
+| `app/catalog.py:189`, `app/projection.py:33`, `app/replay.py:51`, `app/executor.py:58` | four fallbacks to a FireRed ladder path |
+
+The trace one is the dangerous member. It is wired **unconditionally** — there is
+no config path to it — so on Emerald `*0x03005008` dereferences something that is
+not SaveBlock1 and the harness records a plausible-looking tile stream. That
+stream then becomes `overworld_steps`, `walls_hit`, `charged_steps` and
+`movement_efficiency` on the run's index row. **A wrong number is worse than a
+missing one**, and every one of these fields already has a documented "None →
+omit the row, do not draw zero" contract (`models.py:198-210`) that would handle
+absence correctly if absence were what it got.
+
+### 3.3 The fix, and the precedent for it
+
+The walk-graph game gate shipped this session (`7aacb6a`) is the shape: the graph
+carries a `game:`, `_load_default_graph` returns `None` on mismatch, and the
+referee runs without it rather than with the wrong one. **Do the same for the
+trace spec and the referee poll addresses: absent means "this game records no
+trace", never "use FireRed's".**
+
+That means one module — call it `src/referee/contracts.py` — holding, per
+`game:` key, the address block P-A measured, and `TRACE_SPEC` becoming
+`trace_spec_for(game)` returning `None` for a game with no entry. `runner.py:626`
+and `:713` then set `emu.trace_spec` only when there is one.
+
+### 3.4 What each game can honestly log today
+
+From [p-a-results.md](p-a-results.md). This is the *measured* state, not a plan.
+
+| Game | Position | Map id | Battles | Walk graph | ⇒ logging tier |
+|---|---|---|---|---|---|
+| FireRed | ✅ `*0x03005008` +0/+2 | ✅ +4/+5 | ✅ | ✅ | **full** — gates, route, movement, battles |
+| Emerald | ✅ `*0x03005d8c` +0/+2 | ⚠️ +4/+5, **group inferred, not measured** | ✗ | ✗ | position + steps; needs the group control |
+| Crystal | ✅ `0xdcb7`/`0xdcb8` raw | ✅ `0xdcb5`/`0xdcb6` | ✗ | ✗ | position + steps |
+| Platinum | ✅ +0/+8 (32-bit) | ✗ **not found** | ✗ | ✗ | position only — no tile identity across maps |
+| SoulSilver | ✗ | ✗ | ✗ | ✗ | universal layer only |
+| Black | ✗ | ✗ | ✗ | ✗ | universal layer only |
+| Black 2 | ✗ | ✗ | ✗ | ✗ | universal layer only |
+
+So "the same logging for all games" is achievable **as a declared tier**, not as
+a uniform number set — and the tier belongs on the run record, so a report can
+say *"this game records no movement"* rather than showing a blank where FireRed
+shows a figure. That is the honest version of the ask and I would build it that
+way unless told otherwise.
+
+### 3.5 `RunSummary` cannot say which game a run played
+
+`models.py:117-274` has no `game` or `rom` field. `config.json` carries both
+(`game_name` and `emulator.rom_path`, stamped by `apply_rom`, `roms.py:290`), so
+the projection can derive it — and the re-projection mechanism already exists
+(`projection_version`, `models.py:242`, which rebuilds stored rows when the
+projection learns a field). One field, one bump, no migration.
+
+Without it History and the run list are game-blind, and a mixed queue makes every
+row ambiguous the moment it finishes.
+
+### 3.6 The six FireRed fallbacks
+
+`turn.py:674`, `agent.py:343`, `task_master.py:178,423`, `append_agent.py:629`,
+`runner.py:837`, `tools/ask_perplexity.py:45` all read
+`config.get("game_name") or "Pokemon FireRed"`.
+
+With one game that was harmless. With seven it means any path reaching an agent
+without `apply_rom` **tells the model it is playing FireRed**, and the model will
+act on it. These should raise or resolve to `None`, not to a game name — a run
+that cannot say what it is playing should fail loudly at turn 0, not play Black 2
+under a FireRed system prompt.
+
+---
+
+## 4. Spectate on every game
+
+Both views, checked against the code.
+
+**Simple view** — already aspect-agnostic. `SimpleView.measureShot`
+(`SimpleView.svelte:521-540`) measures the rendered picture from
+`naturalWidth`/`naturalHeight` and publishes `--shotw`; the recorder does the
+same measurement from the page (`recorder.py:726`). A stacked NDS frame will be
+*measured* correctly. The open question is only whether a 2:3 portrait frame
+inside a `1/1` stage (`SimpleView.svelte:725`) reads well next to the turn box —
+**that is a look-at-it question, not a defect**, and the answer is a screenshot.
+
+**Advanced (Spectate)** — one real defect: `Spectate.svelte:776` hardcodes
+`.gba { aspect-ratio: 240/160 }`. A 256×384 stacked DS frame letterboxes into a
+sliver of that box. Fix by driving the aspect from the frame's natural size, the
+way SimpleView already does.
+
+**Not defects, worth naming so nobody "fixes" them:**
+
+- The gate HUD reads the ladder from `/runs/{id}/api/config` and hides itself
+  when there is none (`Spectate.svelte:574`, comment: *"real, never hardcoded"*).
+  A casual Black 2 run correctly shows no gates.
+- `lib/gates.js` is the hardcoded Kanto ladder, imported by ten modules — but
+  those are **board, report and history** surfaces, not spectate. They matter for
+  the leaderboard, which is out of scope here (casual runs never reach it).
+- `RouteMap` / `mapatlas.js` draw on FireRed artwork and are fed by `route.json`,
+  which is fed by `referee_position`. On a game with no contract there is no
+  route, and the panel must be **absent**, not empty — same rule as
+  `charged_steps` and `walls_hit`.
+
+---
+
+## 5. Registry and packaging
+
+Mechanical, and the prerequisite for everything above being visible.
+
+1. **Five ROM entries** in `configs/roms.yaml`: crystal, platinum, soulsilver,
+   black, black2 — each with `game`, `game_name`, `sha1`, `start_save`. The
+   `game_code` field needs the console decision from §2.3 first (it is a GBA
+   header offset and means nothing for the other four).
+2. **Package the seven start states as savepoint dirs.** Today they are bare
+   `v2-experiments/states/<game>/start.state`. A savepoint dir is three files
+   (`starts.py:38`: `emulator.state`, `state.json`, `tasks.json`) — FireRed's
+   SkyEmu one is the template (`configs/saves/skyemu/firered-pokebench-v2/`,
+   whose `state.json` is literally `{}`). Rename, add two small files, commit
+   under `configs/saves/skyemu/<game>/`.
+3. **Emerald's state needs choosing**: the registry currently points casual
+   Emerald at `configs/saves/emerald-truck`, which is an **mGBA** state. Under
+   D1 = SkyEmu-only it must point at the SkyEmu truck state instead.
+4. **`configs/starts.yaml`** gains an entry per game so the picker preselects
+   something with a name and a description rather than falling through to
+   `start_save`.
+5. The picker already filters on `on_disk` (`AddRunDialog.svelte:32`), so a game
+   whose dump is not on this machine disappears by itself. No new gating needed.
+
+Two incidental defects found in the earlier audit, still open, both one-liners:
+
+- `configs/roms.yaml:15-16` documents a `rom_sha1` check that **does not exist**
+  anywhere in `src/`.
+- `scripts/build_walkgraph.py:89` fetches `/master/` while
+  `scripts/render_gamemaps.py:112` honours the pinned SHA.
+
+---
+
+## 6. Order of work
+
+Each step is independently shippable and each ends in something observable.
+
+**S1 — make the games pickable (no new capability).**
+Registry entries + packaged savepoint dirs + starts.yaml. Ends when
+`pokemon ls roms` shows seven and the dialog's picker shows the ones whose dumps
+are present. Nothing runs yet on gen 4/5.
+
+**S2 — `RunSummary.game`.**
+One projection field + `projection_version` bump. Ends when History shows the
+game on every row, including the old ones. Do this *before* S3 so a mixed queue's
+output is legible the moment it exists.
+
+**S3 — the backend switch (D1).**
+Supervisor learns its backend from the handle; `switch_target(rom)` compares
+`(backend, rom_path)`; `app.py --config`. Ends with **the control**: enqueue
+Emerald then Platinum, watch the first finish, assert the second comes up on NDS.
+This is the one Andreas actually described and the only structural change.
+
+**S4 — the per-game contract, absent-by-default.**
+`contracts.py`, `trace_spec_for(game)`, `runner.py:626,713` conditional, the six
+FireRed fallbacks made loud. Ends when an Emerald run records **no** trace rather
+than a wrong one — verified by the absence, which is the harder assertion and the
+one that matters.
+
+**S5 — spectate geometry.**
+`Spectate.svelte:776` driven from the frame; look at a DS run in both views and
+decide whether the simple view's square stage needs anything.
+
+**S6 — fill the contract in, per game.**
+Emerald first (the group control that P-A left inferred), then Crystal. Platinum
+needs its map-id route, which is open work from the cross-game plan. This is the
+long tail and it is additive: each game that gains a contract gains its movement
+numbers without anything else changing.
+
+S1 + S2 + S5 are a day's work. S3 is the real one. S4 is the one that decides
+whether the numbers on the board can be trusted.
+
+---
+
+## 7. Decisions for Andreas
+
+**D1 — one backend or two?** Recommend SkyEmu-only in the control center on this
+branch (§2.2). It removes the switch matrix, the human Lua step and the two
+savestate dialects. Cost: the FireRed casual arm re-bases onto a different core,
+which `plan.md` §5 already treats as a separate arm.
+
+**D2 — which games appear in the picker at launch?** Every game has a verified
+start state, but **nothing has played any of the five new ones past turn 1** —
+the states were verified by measuring that the four directions respond, not by
+playing. Options: (a) all seven immediately, (b) all seven but the four with no
+memory contract are labelled as recording no movement, (c) only the games with a
+contract (FireRed, Emerald, Crystal). I lean (b): the picker tells the truth and
+nothing is hidden.
+
+**D3 — "the same logging for all models".** Read here as *all games* (§3). If it
+meant across LLM models, that is already true and the section answers the wrong
+question — one line settles it.
+
+---
+
+## Related
+
+- [cross-game-plan.md](cross-game-plan.md) — P-A…P-F, the address work
+- [p-a-results.md](p-a-results.md) — what was measured per game
+- [plan.md](plan.md) — the SkyEmu backend port, §5 on arms
+- `v2-experiments/states/README.md` — the seven start states
