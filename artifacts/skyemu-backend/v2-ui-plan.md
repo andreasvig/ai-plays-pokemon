@@ -344,6 +344,44 @@ numbers without anything else changing.
 S1 + S2 + S5 are a day's work. S3 is the real one. S4 is the one that decides
 whether the numbers on the board can be trusted.
 
+### Progress (2026-09-19)
+
+**S1 ✅ `528e51d`** — all seven games registered, states packaged as savepoint
+dirs under `configs/saves/skyemu/<game>/`, `console` added to the registry and
+`game_code` made optional (a GB/GBC cartridge has none). `pokemon ls roms` shows
+seven; the picker shows seven.
+
+**S2 ✅ `02f6853`** — `RunSummary.game` / `game_name` / `console`, derived at
+projection time, `PROJECTION_VERSION` 13 → 14 so boot re-projects. Five of the
+eight tests are the negative control: the projection must NOT fall back to
+FireRed the way six sites in `src/` still do.
+
+**S3 ✅ `faaa34e`** — and the finding is that the plan overestimated it. **A
+mixed queue needs no backend switch**, because SkyEmu holds every console the
+registry declares; Emerald → Platinum changes cartridge, not emulator. What it
+needed was for the supervisor to stop being mGBA-shaped by assumption (liveness
+read `mgba_proc`, so a dead SkyEmu reported healthy forever) and a hard refusal
+for the case that fails *silently*: mGBA given a `.nds` comes up with no
+cartridge, the Lua connector still dials in, and the run plays a black screen for
+its whole turn budget with every health check green.
+
+Verified live rather than against fakes — cartridges changed across three
+consoles, each console **measured from the rendered frame**, not read back from
+the config just written:
+
+| | declared | measured | time |
+|---|---|---|---|
+| start (emerald) | GBA | GBA | — |
+| → platinum | NDS | NDS | 0.8 s |
+| → crystal | GB | GB | 0.3 s |
+| → black2 | NDS | NDS | 1.5 s (536 MB, incl. staging) |
+
+No human step in any of them. `pokemon app --config configs/config-v2-firered.yaml
+--rom black2` boots the whole control center on a DS game and reports
+`backend: skyemu, console: NDS, awaiting_lua: false`.
+
+**S4, S5, S6 — not started.**
+
 ---
 
 ## 7. Decided (2026-09-19, Andreas)

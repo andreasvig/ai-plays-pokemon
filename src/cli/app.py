@@ -71,9 +71,14 @@ def _find_stale_processes(web_port: int, emu_port: int) -> dict[int, str]:
     """Detect processes left over from a prior `pokemon app` launch.
 
     Returns {pid: human-label}. At pre-flight (before this process binds the
-    server or launches mGBA) we own none of these, so every hit is genuinely
-    stale. Detects: a server still holding the web or emulator-socket port, a
-    leftover mGBA, and the keep-awake `caffeinate -i -w` the app spawns.
+    server or launches the emulator) we own none of these, so every hit is
+    genuinely stale. Detects: a server still holding the web or emulator port, a
+    leftover emulator of EITHER backend, and the keep-awake `caffeinate -i -w`.
+
+    Both backends are swept by name as well as by port because the two miss
+    different strays: a process that died before binding holds no port, and a
+    SkyEmu is itself an HTTP server on ``emu_port`` so it is caught either way —
+    but one that crashed mid-launch is caught only by name.
     """
     found: dict[int, str] = {}
     me = os.getpid()
@@ -85,6 +90,8 @@ def _find_stale_processes(web_port: int, emu_port: int) -> dict[int, str]:
             found[pid] = f"emulator socket on :{emu_port}"
     for pid in _pids_matching("mgba", ignore_case=True):
         found.setdefault(pid, "mGBA")
+    for pid in _pids_matching("skyemu", ignore_case=True):
+        found.setdefault(pid, "SkyEmu")
     for pid in _pids_matching("caffeinate -i -w"):
         found.setdefault(pid, "caffeinate (keep-awake)")
     return found
@@ -106,7 +113,8 @@ def _reclaim_stale_processes(web_port: int, emu_port: int, *, do_kill: bool) -> 
     if not do_kill:
         print(f"ERROR: stale processes from a previous launch are still running: {desc}")
         print("  Re-run without --no-reclaim to stop them automatically, or manually:")
-        print('    pkill -9 -f "src.cli.main app"; pkill -9 -f mGBA; pkill -9 -f "caffeinate -i -w"')
+        print('    pkill -9 -f "src.cli.main app"; pkill -9 -f mGBA; '
+              'pkill -9 -f SkyEmu; pkill -9 -f "caffeinate -i -w"')
         return False
 
     print(f"Found stale processes from a previous launch: {desc}")
