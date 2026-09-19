@@ -57,6 +57,22 @@ class WalkGraph:
             meta={k: v for k, v in data.items() if k not in ("nodes", "adj", "maps")},
         )
 
+    @property
+    def game(self) -> Optional[str]:
+        """The `game:` key this graph was built for, joining to `configs/roms.yaml`.
+
+        None for a graph built before the field existed. A node is keyed
+        `(map_group, map_num, x, y)` with nothing in it that says which
+        cartridge, so two games' graphs are indistinguishable once loaded —
+        Emerald's map (3, 0) collides with FireRed's Pallet Town key. That makes
+        the wrong graph WORSE than no graph: a missing one degrades to
+        `progress: None` by design (`src/app/projection.py:457-482`), while a
+        wrong one answers every distance query confidently and incorrectly.
+        Whoever loads a graph is expected to check this.
+        """
+        value = self.meta.get("game")
+        return value if isinstance(value, str) and value else None
+
     @classmethod
     def load(cls, path: Path | str) -> "WalkGraph":
         with open(path) as f:

@@ -87,18 +87,32 @@ EWRAM_BROAD_HI = 0x02040000
 _SB1_READ_LEN = SB1_GAME_STATS + NUM_GAME_STATS * 4  # 0x1300
 
 
-def _load_default_graph(path: Optional[Any] = None) -> Optional[WalkGraph]:
+def _load_default_graph(path: Optional[Any] = None,
+                       game: Optional[str] = None) -> Optional[WalkGraph]:
     """Best-effort load of the committed walk graph; None on any failure.
 
     The graph only adds between-gate granularity — a missing or broken file
     must never stop a run, so every error collapses to "no graph" and the
     tracker degrades to positions-only.
+
+    ``game`` is the ladder's ``game:`` key and it is a REFUSAL, not a
+    preference. Graph nodes are keyed ``(map_group, map_num, x, y)`` and carry
+    nothing that says which cartridge they came from, so loading FireRed's graph
+    under Emerald does not fail — Emerald's map (3, 0) hits the key
+    ``"3:0"`` that FireRed calls Pallet Town, and the referee then reports
+    ``on_graph: true`` with confident nonsense distances. A missing graph is
+    safe and designed for; a wrong one silently corrupts the headline score, so
+    a mismatch (and a graph that declares no game at all) collapses to None the
+    same way a missing file does.
     """
     try:
         target = Path(path) if path is not None else REPO_ROOT / DEFAULT_GRAPH_PATH
-        return WalkGraph.load(target)
+        graph = WalkGraph.load(target)
     except Exception:
         return None
+    if game is not None and graph.game != game:
+        return None
+    return graph
 
 
 class Referee:
@@ -120,6 +134,7 @@ class Referee:
         stop_at: Optional[str] = None,
         walkgraph: Optional[WalkGraph] = None,
         graph_path: Optional[Any] = None,
+        game: Optional[str] = None,
     ) -> None:
         # ``nodes`` is the ladder as authored: an ordered mix of single
         # Checkpoint rungs and MultiGate (any-order) rungs. A plain list of
@@ -142,8 +157,11 @@ class Referee:
         # hand-build a tiny one); None loads the committed file from
         # ``graph_path`` or the repo default. Loading never raises: no graph →
         # positions are still recorded, distances are None, progress is None.
+        # ``game`` is the ladder's own ``game:`` key. Passed, it makes the
+        # default load refuse a graph built for another cartridge; an explicitly
+        # injected ``walkgraph`` is the caller's business and is not checked.
         self.walkgraph: Optional[WalkGraph] = (
-            walkgraph if walkgraph is not None else _load_default_graph(graph_path)
+            walkgraph if walkgraph is not None else _load_default_graph(graph_path, game)
         )
         self.progress = ProgressTracker(self.walkgraph, self.nodes)
         # Battle telemetry (plan: artifacts/battle-and-movement-fidelity/plan.md).

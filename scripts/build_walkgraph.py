@@ -51,6 +51,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from src.referee.walkgraph import WalkGraph  # noqa: E402
 
+GAME = "firered-us"  # joins to configs/roms.yaml
 PRET = "pret/pokefirered"
 CACHE = REPO_ROOT / "local" / "pret-cache"
 OUT = REPO_ROOT / "data" / "firered-walkgraph.json"
@@ -379,6 +380,11 @@ def build(*, offline: bool) -> WalkGraph:
 
     meta = {
         "version": 2,
+        # Joins to `configs/roms.yaml` and to a ladder's `game:`. Without it a
+        # graph is anonymous, and an anonymous graph loaded under another game
+        # answers every query with confident nonsense (referee.py
+        # _load_default_graph).
+        "game": GAME,
         "source": f"{PRET}@{pret_sha(offline=offline)}",
         "built": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         "rules": "collision0+notwater; ledges one-way; MB_IMPASSABLE_*; elevation 0/15 wild; warps 1 step; connections stitched",

@@ -1029,6 +1029,11 @@ class TurnManager:
                 # Casual `--stop-at`: end the run when this gate latches. None
                 # on every official run — a benchmark ends at its own ladder.
                 stop_at=referee_cfg.get("stop_at") or None,
+                # The ladder says which cartridge it grades; the walk graph has
+                # to agree or it is not loaded at all. Graph node keys carry no
+                # game, so a mismatch would otherwise answer distance queries
+                # confidently and wrongly rather than degrading to None.
+                game=ladder.game,
             )
 
         # tasks.json supersession (plan.md "Reconciliation"): when TaskMaster is
