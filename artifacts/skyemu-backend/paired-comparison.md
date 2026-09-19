@@ -124,3 +124,18 @@ and that possibility is named here before it can be quietly dropped.
 - **Different start states.** A3 begins from a re-created SkyEmu savestate
   (plan §3.4), not a copy of v1's. Two states that look identical on screen can
   differ in RNG state, and no part of this design can rule that out.
+
+## 6. Operational note — the v1 arms are blocked on this machine (2026-09-19)
+
+A1 and A2 both need mGBA, and mGBA's harness binds TCP port **8888** (slot 1,
+`src/cli/slots.py`). That port is held by Andreas's own long-running
+`pokemon app --no-browser` control center — up for 2½ days at the time of
+writing. Starting a v1 run would either fail on `Address already in use` (it
+did: `emulator.py:101`, verified) or require stopping his app, which is not a
+thing to do unattended.
+
+So **A3 comes first**, and A1/A2 are run when the machine is free. This does not
+weaken the design — the decision rule in §4 was fixed before any arm ran, which
+is the property that mattered — but it does mean the first SkyEmu numbers will
+land with nothing to compare them against yet, and they must not be reported as
+a comparison until A2 exists.
