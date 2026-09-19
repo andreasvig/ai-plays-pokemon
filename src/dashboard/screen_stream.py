@@ -7,15 +7,33 @@ from typing import Optional
 
 
 class ScreenStreamer:
-    """Polls a PNG file written by Lua and serves it via WebSocket.
+    """Polls a PNG file the emulator writes and serves it via WebSocket.
 
-    The Lua script in mGBA auto-captures to /tmp/mgba_stream.png at 30fps.
-    This thread watches the file for changes and reads the raw bytes directly —
-    no decode/re-encode needed since Lua already writes PNG.
+    Two writers produce that file and this class knows about neither: mGBA's Lua
+    script auto-captures to /tmp/mgba_stream_1.png at 30fps, and the stepped
+    (SkyEmu) backend's spectate sampler writes one per run into the run dir
+    (``src/dashboard/spectate.py``). This thread watches for changes and reads
+    the raw bytes — no decode/re-encode, both writers already produce PNG.
+
+    **It will not serve a frame written before it started.** A stream file
+    outlives the run that wrote it: /tmp/mgba_stream_1.png is a fixed path reused
+    by every mGBA run on the machine, so a streamer pointed at it by mistake
+    finds a perfectly valid PNG of a DIFFERENT GAME and serves it forever. That
+    happened (2026-09-19): a Crystal run on the SkyEmu control center showed a
+    four-hour-old FireRed frame, because its config named mGBA and nothing was
+    writing the file it therefore watched. The run was fine; only the picture
+    lied, which is the hard kind of wrong to notice.
+
+    So the first frame has to be NEWER than this object. A live feed then shows
+    nothing until the emulator actually draws — which is the honest answer, and
+    an obviously broken feed beats a convincingly wrong one.
     """
 
     def __init__(self, stream_path: str = "/tmp/mgba_stream.png"):
         self._path = stream_path
+        # Frames at or before this are somebody else's run. Nanosecond mtimes,
+        # compared against the same clock st_mtime_ns reports.
+        self._started_ns: int = time.time_ns()
         self._last_mtime: int = 0
         self._frame: Optional[bytes] = None
         self._lock = threading.Lock()
@@ -43,7 +61,14 @@ class ScreenStreamer:
             try:
                 st = os.stat(self._path)
                 mtime = st.st_mtime_ns
-                if mtime != self._last_mtime:
+                # `and` rather than an early `continue`: the sleep at the
+                # bottom of this loop is the only thing keeping it off a core,
+                # and skipping it while a stale file sits there would busy-spin
+                # for the whole run. Written before this streamer existed means
+                # a leftover from an earlier run, not this one's screen — and it
+                # is re-checked every poll rather than latched, because the
+                # writer for THIS run may still be about to touch the same path.
+                if mtime > self._started_ns and mtime != self._last_mtime:
                     self._last_mtime = mtime
                     with open(self._path, "rb") as f:
                         data = f.read()

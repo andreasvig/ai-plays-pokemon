@@ -588,6 +588,33 @@ def prepare_config(
     return config
 
 
+def _handle_backend(handle: dict, config: dict) -> str:
+    """Which backend is ACTUALLY executing this run.
+
+    The handle wins over the config, and the difference is not academic. Under
+    the control center the emulator belongs to the long-lived
+    :class:`~src.app.supervisor.AppSupervisor` and is built from ITS config,
+    while each run arrives with its own — so a casual run on ``config-5.1``
+    (``type: mgba``) dispatched into a SkyEmu supervisor executes on SkyEmu while
+    its own config says otherwise. Every emulator setting in the run's config is
+    already inert for that reason: ``make_emulator`` ran once, in the prepare
+    phase, against the supervisor's config.
+
+    Reading the config here cost a real bug (2026-09-19): a Crystal run on a
+    SkyEmu control center took the mGBA branch below, which stamps
+    ``paths.stream`` to the file mGBA's Lua script writes and skips attaching the
+    stepped backend's spectate feed. Nothing wrote that file, so the live screen
+    served a FOUR-HOUR-OLD FireRed frame left there by an unrelated v1 run, while
+    the run itself played Crystal correctly. A stale picture of another game is
+    worse than no picture: it is not obviously broken.
+
+    Falls back to the config when the handle does not say — a hand-built handle
+    in a test, or one prepared before either branch stamped it.
+    """
+    backend = handle.get("backend")
+    return backend if isinstance(backend, str) and backend else _backend_type(config)
+
+
 def _backend_type(config: dict) -> str:
     """``emulator.type``, defaulted the way the factory defaults it.
 
@@ -676,6 +703,7 @@ def run_prepare_phase(config: dict, saves_dir: Path) -> dict:
 
     return {
         "emu": emu,
+        "backend": "mgba",
         "mgba_proc": mgba_proc,
         "mgba_log_path": mgba_log.name,
         "caffeinate_proc": caffeinate_proc,
@@ -808,7 +836,8 @@ def run_single_loop(
     # dashboard's ScreenStreamer reads /tmp/mgba_stream_1.png (where Lua
     # writes) instead of falling back to <run_dir>/mgba_stream.png.
     paths = config.setdefault("paths", {})
-    if _backend_type(config) == "mgba":
+    backend = _handle_backend(handle, config)
+    if backend == "mgba":
         paths["stream"] = slot_cfg["stream_path"]
         paths["screenshot"] = slot_cfg["screenshot_path"]
         paths["lua"] = str(slot_cfg["lua_path"])
@@ -908,11 +937,18 @@ def run_single_loop(
     # writing a PNG that keeps changing; nothing in screen_stream.py, ws_screen
     # or recorder.py learns which emulator wrote it.
     _spectate = None
-    if _backend_type(config) != "mgba":
+    if backend != "mgba":
         from src.dashboard import spectate as _spectate_mod
 
         _spectate = _spectate_mod.attach(emu, config, run_dir)
         print(f"  Spectate feed: {_spectate.stream_path} (pace: {_spectate.pace})")
+
+    # The run config arrived describing whichever emulator its own file names;
+    # the one that ran is the handle's. Correct it before the config is written
+    # to the run dir, or every reader downstream — a report, a replay, a person
+    # opening config.json to ask why a run looked wrong — is told the wrong core.
+    if (config.get("emulator") or {}).get("type") != backend:
+        config.setdefault("emulator", {})["type"] = backend
 
     # Fresh dashboard session per run. open_browser=False on runs 2..N in
     # sequential mode — user keeps the dashboard index (http://localhost:3420/)
