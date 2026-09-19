@@ -80,11 +80,11 @@
   let eventsConnected = $state(false)
   let screenUrl = $state(null)
   // The emulator box follows the FRAME's shape, it does not impose one. Hardcoded
-  // 240/160 (GBA) was fine while every run was FireRed; a DS frame is 2:1 once the
-  // spectate feed lays it out side by side (frame.spectate_frame), a GB frame is
-  // 10:9, and `object-fit: contain` turns any mismatch into bars around a picture
-  // that is smaller than the space it was given. Read off the decoded image so it
-  // needs no table of consoles and follows a mid-run cartridge swap for free.
+  // 240/160 (GBA) was fine while every run was FireRed; a GB frame is 10:9 and a
+  // laid-out DS frame is PORTRAIT (frame.spectate_frame: a double-height top screen
+  // over the touch screen), and `object-fit: contain` turns any mismatch into bars
+  // around a picture smaller than the space it was given. Read off the decoded image
+  // so it needs no table of consoles and follows a mid-run cartridge swap for free.
   let screenAspect = $state('240 / 160')
   function onScreenLoad(e) {
     const img = e.currentTarget
@@ -787,8 +787,13 @@
   /* emulator flexes to fill leftover height and shrinks on short screens;
      .screen uses object-fit:contain so it never overflows. */
   /* aspect-ratio is set inline from the decoded frame (see onScreenLoad); the
-     value here is only what the box looks like before the first frame lands. */
-  .gba { flex: 1; min-height: 0; aspect-ratio: 240/160; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+     value here is only what the box looks like before the first frame lands.
+     `align-self: center` + `width: auto` is what makes the CARD hug the picture
+     rather than the picture float in a full-width card: with the height fixed by
+     flex, a definite aspect gives the width. It matters for a portrait DS frame,
+     where stretching leaves a bordered box half again as wide as the game inside
+     it; a landscape frame clamps at max-width and behaves exactly as before. */
+  .gba { flex: 1; min-height: 0; align-self: center; width: auto; max-width: 100%; aspect-ratio: 240/160; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); display: flex; align-items: center; justify-content: center; overflow: hidden; }
   .screen { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; }
   .ph { color: var(--faint); text-align: center; font-size: 15px; line-height: 1.7; }
 

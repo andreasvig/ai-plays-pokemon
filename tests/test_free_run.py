@@ -404,28 +404,63 @@ def _size(png: bytes):
     return Image.open(_io.BytesIO(png)).size
 
 
-def test_the_spectate_frame_puts_the_top_screen_beside_the_touch_screen():
-    """The ask, measured: the upper screen is twice the lower one's width."""
-    from src.emulator.backends.frame import NDS_SCREEN, spectate_frame
+def test_the_spectate_frame_doubles_the_top_screen_and_keeps_them_stacked():
+    """Both halves of the ask, measured.
+
+    *"the upper screen is at least twice as wide"* — 512 against the touch
+    screen's 256. And *"i still think on top of each other is best"*, which is
+    the correction to the first cut of this: a side-by-side layout also doubles
+    the top screen's width, and he looked at it and said no. So the assertion is
+    on the SHAPE, not only on the ratio — a frame wider than it is tall would
+    satisfy "twice as wide" and be the thing he rejected.
+    """
+    from src.emulator.backends.frame import (
+        NDS_SCREEN, SPECTATE_GAP_PX, SPECTATE_TOP_SCALE, spectate_frame,
+    )
 
     out = spectate_frame(_nds_png())
     assert out is not None
     w, h = _size(out)
-    assert (w, h) == (NDS_SCREEN[0] * 3, NDS_SCREEN[1] * 2)   # 768x384, 2:1
-    # top occupies [0, 512), touch [512, 768) — 2x the width, and not stacked.
-    assert w - NDS_SCREEN[0] == 2 * NDS_SCREEN[0]
+    assert w == NDS_SCREEN[0] * SPECTATE_TOP_SCALE == 2 * NDS_SCREEN[0]
+    assert h == NDS_SCREEN[1] * SPECTATE_TOP_SCALE + SPECTATE_GAP_PX + NDS_SCREEN[1]
+    assert h > w, "the screens ended up side by side again"
 
 
 def test_both_screens_survive_the_relayout():
-    """A layout that dropped or duplicated a screen would still be 768x384 and
-    would still be "twice as wide". Sample a pixel from each region instead."""
+    """A layout that dropped or duplicated a screen would have the same size and
+    the same ratio. Sample a pixel from each region instead."""
     from PIL import Image
     import io as _io
     from src.emulator.backends.frame import spectate_frame
 
-    img = Image.open(_io.BytesIO(spectate_frame(_nds_png()))).convert("RGB")
-    assert img.getpixel((256, 192)) == (200, 30, 30)    # middle of the big top
-    assert img.getpixel((640, 192)) == (30, 30, 200)    # middle of the touch screen
+    img = Image.open(_io.BytesIO(spectate_frame(_nds_png()))).convert("RGBA")
+    assert img.getpixel((256, 192)) == (200, 30, 30, 255)   # middle of the big top
+    assert img.getpixel((256, 490)) == (30, 30, 200, 255)   # middle of the touch screen
+
+
+def test_everything_that_is_not_a_screen_is_transparent():
+    """*"dont fill out with a black colour just let it be transparent so we can
+    see the background paper colour."*
+
+    Two regions, and both matter: the gap between the screens (which is the
+    divider — there is no drawn seam here) and the bars either side of the touch
+    screen, which is half the frame's width. Filled, those bars are a dark slab
+    down the middle of a light page.
+    """
+    from PIL import Image
+    import io as _io
+    from src.emulator.backends.frame import SPECTATE_GAP_PX, spectate_frame
+
+    out = spectate_frame(_nds_png())
+    img = Image.open(_io.BytesIO(out))
+    assert img.mode == "RGBA", "an RGB frame cannot be transparent at all"
+    top_h = 192 * 2
+    assert img.getpixel((256, top_h + SPECTATE_GAP_PX // 2))[3] == 0   # the gap
+    assert img.getpixel((10, top_h + SPECTATE_GAP_PX + 96))[3] == 0    # left bar
+    assert img.getpixel((502, top_h + SPECTATE_GAP_PX + 96))[3] == 0   # right bar
+    # ...and the screens themselves are still opaque, or the game is a ghost.
+    assert img.getpixel((256, 192))[3] == 255
+    assert img.getpixel((256, 490))[3] == 255
 
 
 def test_the_model_still_sees_a_vertical_stack():
@@ -470,7 +505,7 @@ def test_the_writer_publishes_the_relaid_out_frame(tmp_path):
     path = tmp_path / "stream.png"
     writer = StreamFileWriter(path, transform=spectate_frame)
     writer(_nds_png())
-    assert _size(path.read_bytes()) == (768, 384)
+    assert _size(path.read_bytes()) == (512, 586)
     assert writer.frames == 1
     assert writer.untransformed == 0
 
@@ -499,8 +534,8 @@ def test_attach_lays_ds_frames_out_by_default_and_can_be_told_not_to(tmp_path):
     from src.dashboard.spectate import DEFAULT_DS_LAYOUT, attach, resolve_ds_layout
     from src.emulator.backends.frame import spectate_frame
 
-    assert DEFAULT_DS_LAYOUT == "wide"
-    assert resolve_ds_layout({}) == "wide"
+    assert DEFAULT_DS_LAYOUT == "big-top"
+    assert resolve_ds_layout({}) == "big-top"
     with pytest.raises(ValueError, match="ds_layout"):
         resolve_ds_layout({"emulator": {"ds_layout": "sideways"}})
 
@@ -509,12 +544,12 @@ def test_attach_lays_ds_frames_out_by_default_and_can_be_told_not_to(tmp_path):
     feed = attach(emu, config, tmp_path)
     try:
         assert feed.writer._transform is spectate_frame
-        assert config["emulator"]["ds_layout"] == "wide"
+        assert config["emulator"]["ds_layout"] == "big-top"
     finally:
         feed.detach()
 
     emu2 = FakeSkyEmu(_config())
-    config2 = {"emulator": {"type": "skyemu", "ds_layout": "stacked"}}
+    config2 = {"emulator": {"type": "skyemu", "ds_layout": "native"}}
     feed2 = attach(emu2, config2, tmp_path / "b")
     try:
         assert feed2.writer._transform is None

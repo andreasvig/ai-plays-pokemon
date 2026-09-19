@@ -34,12 +34,12 @@ Two things are not free, and both live here:
    See :class:`RealtimePacer`.
 
 3. **Laying a DS frame out for a watcher** — ``frame.spectate_frame``, added
-   2026-09-19. SkyEmu's NDS capture is 256x384, a portrait stack in a landscape
-   dashboard and a 16:9 recording. The spectate feed publishes the two screens
-   side by side with the top one at 2x instead. It is the only transform between
-   the emulator and the stream file, and it is invisible to the model, which is
-   shown ``frame.prepare``'s stacked image. ``emulator.ds_layout: stacked`` opts
-   out.
+   2026-09-19. SkyEmu's NDS capture gives the two screens equal billing, which
+   spends half the picture on a menu. The spectate feed publishes the top screen
+   at 2x with the touch screen centred underneath and everything else
+   transparent. It is the only transform between the emulator and the stream
+   file, and it is invisible to the model, which is shown ``frame.prepare``'s
+   equal-sized stack. ``emulator.ds_layout: native`` opts out.
 
 4. **Free-running while the model thinks** — ``FreeRunner``, added 2026-09-19.
    A stepped emulator is a still photograph for the length of every LLM call.
@@ -95,18 +95,18 @@ DEFAULT_PACE = "realtime"
 #: emulator runs at 60 Hz whoever is or is not asking it anything.
 DEFAULT_FREE_RUN = True
 
-#: How a DS frame is laid out for a WATCHER. ``wide`` puts the two screens side
-#: by side with the top one at 2x, because a 256x384 stack letterboxes into a
-#: sliver in a landscape dashboard and a 16:9 recording (Andreas, 2026-09-19:
-#: *"for ds games the watching experience is not that good ... the upper screen
-#: is at least twice as wide"*). ``stacked`` publishes SkyEmu's capture
-#: untouched, which is also what every GB and GBA frame gets either way.
+#: How a DS frame is laid out for a WATCHER. ``big-top`` draws the top screen at
+#: 2x with the touch screen centred underneath and the rest transparent, because
+#: two equal screens spend half the picture on a menu (Andreas, 2026-09-19: *"the
+#: upper screen is at least twice as wide"*, then *"i still think on top of each
+#: other is best"*). ``native`` publishes SkyEmu's capture untouched, which is
+#: also what every GB and GBA frame gets either way.
 #:
 #: It changes the SPECTATE feed only. What the model is shown is
-#: ``frame.prepare``'s stacked image, and a tap's row-to-touch_y conversion is
-#: against that one; the two never meet.
-DS_LAYOUTS = ("wide", "stacked")
-DEFAULT_DS_LAYOUT = "wide"
+#: ``frame.prepare``'s equal-sized stack, and a tap's row-to-touch_y conversion
+#: is against that one; the two never meet.
+DS_LAYOUTS = ("big-top", "native")
+DEFAULT_DS_LAYOUT = "big-top"
 
 #: Frames per free-run chunk. The lock is released between chunks, so this is
 #: also the worst-case wait for a driver thread that wants the emulator back —
@@ -160,15 +160,15 @@ def resolve_free_run(config: dict) -> bool:
 
 
 def resolve_ds_layout(config: dict) -> str:
-    """``emulator.ds_layout``, defaulted to :data:`DEFAULT_DS_LAYOUT` (``wide``).
+    """``emulator.ds_layout``, defaulted to :data:`DEFAULT_DS_LAYOUT` (``big-top``).
 
-    Unknown values raise, as with ``pace``: a typo meaning "stacked" would leave
+    Unknown values raise, as with ``pace``: a typo meaning ``native`` would leave
     the DS games looking exactly as they did when he reported them.
     """
     raw = (config.get("emulator") or {}).get("ds_layout", DEFAULT_DS_LAYOUT)
     if raw is None:
         return DEFAULT_DS_LAYOUT
-    layout = str(raw).strip().lower()
+    layout = str(raw).strip().lower().replace("_", "-")
     if layout not in DS_LAYOUTS:
         raise ValueError(
             f"unknown emulator.ds_layout {raw!r} (expected: {', '.join(DS_LAYOUTS)})"
@@ -533,7 +533,7 @@ def attach(emu: Any, config: dict, run_dir: str | Path) -> SpectateFeed:
     config.setdefault("emulator", {})["ds_layout"] = ds_layout
     writer = StreamFileWriter(
         stream_path,
-        transform=spectate_frame if ds_layout == "wide" else None,
+        transform=spectate_frame if ds_layout == "big-top" else None,
     )
     emu.sampler = writer
     pacer = RealtimePacer() if pace == "realtime" else None

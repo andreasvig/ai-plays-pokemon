@@ -51,25 +51,40 @@ SEAM_COLOR = (90, 90, 96)
 
 # --- the spectator's frame, which is NOT the model's -----------------------
 #
-# A stacked DS frame is 256x384 — taller than it is wide, in a dashboard whose
-# emulator box and whose 16:9 recording are both landscape. It letterboxes into
-# a sliver with the interesting screen a third of the height it could be.
-# Andreas, 2026-09-19: *"for ds games the watching experience is not that good
-# ... change the scale/ratio between upper and lower screen, such that the upper
-# screen is at least twice as wide."*
+# Both DS screens are 256x192, and SkyEmu stacks them equally. Andreas, watching
+# a SoulSilver run on 2026-09-19: *"for ds games the watching experience is not
+# that good ... change the 'scale'/ratio between upper and lower screen, such
+# that the upper screen is at least twice as wide."*
 #
-# So for a WATCHER the two screens go side by side with the top one at 2x: the
-# world gets the space, the touch screen keeps its own pixels beside it, and the
-# result is 2:1 instead of 2:3.
+# So for a WATCHER the top screen is drawn at 2x and the touch screen at its own
+# size underneath. The world gets the space; the menu keeps its pixels and stops
+# claiming half the picture.
 #
-# **This never reaches the model.** ``prepare`` is what a turn is shown and it is
-# untouched — the stacked frame is what the prompt describes, and
-# ``image_row_to_touch_y`` maps a row in THAT image to a tap. A model reasoning
-# about a side-by-side frame would aim the stylus at the wrong screen. The two
-# layouts are deliberately different functions rather than one with a flag, so
-# there is no call site where the wrong one can be selected by a default.
+# **They stay stacked.** The first cut of this put them side by side, which is
+# the other way to give the top screen twice the width — he looked at it and
+# said no: *"i still think on top of each other is best for the spectate view
+# for the ds game."* Vertical is how a DS is held and how every screenshot of
+# one reads.
+#
+# **The padding is transparent, not black** — *"dont fill out with a black
+# colour just let it be transparent so we can see the background paper colour."*
+# The touch screen is half the width of the frame, so a filled backdrop would
+# paint two dark bars beside it in a light dashboard and a dark slab around it in
+# the simple view's paper stage. Transparent means the page decides, and the gap
+# between the screens becomes a separator without a line being drawn — which is
+# why there is no seam here, unlike ``prepare``.
+#
+# **None of this reaches the model.** ``prepare`` is what a turn is shown and it
+# is untouched — equal screens, a drawn seam, and ``image_row_to_touch_y`` maps a
+# row of THAT image to a tap. A model reasoning about a 2x top screen would put
+# every stylus tap in the wrong place, and a tap always "works", so it would
+# never fail visibly. The two layouts are deliberately different FUNCTIONS rather
+# than one with a flag, so there is no call site where a default selects the
+# wrong one.
 SPECTATE_TOP_SCALE = 2
-SPECTATE_BACKDROP = (16, 17, 19)
+#: Transparent rows between the two screens. The paper colour showing through is
+#: the divider, so this replaces ``prepare``'s drawn seam rather than adding to it.
+SPECTATE_GAP_PX = 10
 #: PNG effort for a frame that lives ~33 ms. Level 1 is ~3 ms/frame on a real
 #: capture against ~9 ms at the default 6, and this runs inside the emulator
 #: lock, where the whole sampling chunk has 33 ms to spend.
@@ -150,9 +165,10 @@ def prepare(png: bytes, upscale: Optional[int] = None,
 def spectate_frame(png: bytes) -> Optional[bytes]:
     """Re-lay a raw NDS capture out for a human watcher. ``None`` for anything else.
 
-    Top screen at :data:`SPECTATE_TOP_SCALE` (so it is twice the touch screen's
-    width), touch screen at native size beside it and vertically centred. 256x384
-    in, 768x384 out.
+    Top screen at :data:`SPECTATE_TOP_SCALE` — twice the touch screen's width —
+    with the touch screen at native size centred underneath it. 256x384 in,
+    512x586 out, RGBA, and **everything that is not a screen is transparent**:
+    the two bars beside the touch screen and the gap between them.
 
     **Returns None rather than raising for a frame it does not handle** — GB and
     GBA captures, a torn read, a capture whose shape changed. This sits on the
@@ -160,23 +176,24 @@ def spectate_frame(png: bytes) -> Optional[bytes]:
     caller publishes the original bytes and the viewer sees an un-relaid frame
     rather than a stalled feed. ``prepare`` takes the opposite line and raises on
     an unknown geometry, because THAT frame is evidence a benchmark is scored on.
-
-    Does not draw the seam ``prepare`` draws: side by side, the two screens no
-    longer abut, so there is no boundary to mark.
     """
     try:
         img = Image.open(io.BytesIO(png))
         img.load()
         if img.size != (NDS_SCREEN[0], NDS_SCREEN[1] * 2):
             return None
-        img = img.convert("RGB")
-        top, bottom = split_nds(img)
+        top, bottom = split_nds(img.convert("RGB"))
         top = _scale(top, SPECTATE_TOP_SCALE)
         out = Image.new(
-            "RGB", (top.width + bottom.width, top.height), SPECTATE_BACKDROP
+            "RGBA",
+            (top.width, top.height + SPECTATE_GAP_PX + bottom.height),
+            (0, 0, 0, 0),
         )
         out.paste(top, (0, 0))
-        out.paste(bottom, (top.width, (top.height - bottom.height) // 2))
+        out.paste(
+            bottom,
+            ((top.width - bottom.width) // 2, top.height + SPECTATE_GAP_PX),
+        )
         buf = io.BytesIO()
         out.save(buf, format="PNG", compress_level=SPECTATE_COMPRESS)
         return buf.getvalue()
@@ -208,8 +225,8 @@ __all__ = [
     "NDS_SCREEN",
     "SEAM_COLOR",
     "SEAM_PX",
-    "SPECTATE_BACKDROP",
     "SPECTATE_COMPRESS",
+    "SPECTATE_GAP_PX",
     "SPECTATE_TOP_SCALE",
     "UPSCALE",
     "geometry",
