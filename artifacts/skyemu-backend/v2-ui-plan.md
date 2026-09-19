@@ -438,10 +438,62 @@ Checked against the pret org today:
 | Crystal | `pret/pokecrystal` | **yes** — `maps/` and `data/` are in the tree | a second builder. Gen 2 collision is per-*block*, not gen 3's per-tile u16, so it is a new extractor, not a parameterisation |
 | Platinum | `pret/pokeplatinum` | **no** — the repo is `src`/`include`/`res` and builds against a `platinum.us` baserom | the decomp gives the format and the NARC indices; the data comes out of **our own ROM**, so it needs a NARC extractor first |
 | SoulSilver | `pret/pokeheartgold` | **no** — same shape (`heartgold.us` / `soulsilver.us` baserom dirs) | as Platinum |
-| Black / Black 2 | **none exists** | — | map data is at NARC `/a/0/0/8`, with the format documented only in community ROM-hacking threads. Genuinely open-ended |
+| Black / Black 2 | **none exists** | — | no decomp, but the format is implemented in working open source — §8.3.1 |
 
 So L4 is: *tractable* for Crystal, *a NARC pipeline* for Platinum and SoulSilver,
-and *research* for the gen 5 pair.
+and *a NARC pipeline plus a format port* for the gen 5 pair.
+
+#### 8.3.1 Gen 5 maps are gettable — correcting "research"
+
+Checked properly (2026-09-19, after the first pass called this open-ended).
+**A decomp is not what a walk graph needs; a format is.** For gen 5 the format
+exists in working, maintained code.
+
+[`Trifindo/Pokemon-DS-Map-Studio`](https://github.com/Trifindo/Pokemon-DS-Map-Studio)
+(Java, 269 stars, last commit 2026-08-30) carries a dedicated
+`src/main/java/formats/collisions/bw/` package — `CollisionsBW3D.java`,
+`CollisionHandlerBW.java`, `CParam2D.java`, plus `CollisionsColorsBW.txt`. It
+reads and writes gen 5 `.per` collision files, one per map.
+
+The format, read off that code: **per tile, a collision type plus an index into a
+table of four corner heights** (a ~1000-entry float table in `CollisionsBW3D`).
+The four corners are gen 5's overworld being genuinely 3D — tiles have slopes,
+which gen 3 tiles do not. A walk graph needs the passability and the warps, not
+the rendering, so most of that table is irrelevant to us; the type byte is the
+part that matters.
+
+The pipeline is therefore: NARC `a/0/0/8` → extract (Tinke, or ~100 lines of
+Python — NARC is a simple container) → parse `.per` with our own reader → the
+same graph builder shape as FireRed's.
+
+**Licensing, stated plainly: the repo carries no license.** So this is *read the
+format, write our own parser* — a file format is not copyrightable, an
+implementation is. No code gets copied.
+
+That makes gen 5 the most expensive of the seven, but **not open-ended**. What it
+is NOT is the thing standing between us and a playable Black run: that is L1+L2,
+which needs none of this.
+
+#### 8.3.2 There is no published gen 5 RAM map, and that is fine
+
+Data Crystal has RAM-map pages for Red/Blue, Crystal and FireRed. It has **none
+for Black/White** (404). So nothing external will hand us the addresses.
+
+This is not a blocker, because **the finder never used a decomp as input.**
+`FIRERED_TRUTH` is touched only by `--stage verify` — a check on the *tool*, not
+a dependency for a new game. Platinum's x/y came out of a 4 MB scan in ~2 minutes
+with zero external data.
+
+One gen-5-specific risk worth a control before we trust a result: gen 5's
+overworld is 3D (see the corner-height table above), so position may be stored as
+fixed-point sub-tile rather than a plain tile integer. `MAX_TILE_DELTA = 4` in
+`find_addresses.py` would then **reject the right answer**. Gen 4 turned out to
+store plain tile ints in 32-bit fields (Platinum x at +0, y at +8), so the risk
+may not materialise — but the ablation already measured that *magnitude* does
+most of the filtering (x: 4 → 24 candidates without it), which is exactly the
+condition that would misfire. The cheap control: add fixed-point forms to `FORMS`,
+relax magnitude, and **re-run Platinum, where the answer is already known**,
+before pointing it at Black.
 
 ### 8.4 One schema change blocks every DS ladder
 
