@@ -53,7 +53,24 @@ that closes its last dialogue:
 | dialogue closed | R L U D | R L U D |
 | dialogue **open** | **none** | R L U D |
 
-Every state also writes a `preview.png` that a human looks at once. Emerald's van fails it on purpose —
+Every state also writes a `preview.png` that a human looks at once.
+
+## The savestate FILE is not reproducible; the game state is
+
+Regenerating produces a `.state` that differs from the committed one in most of
+its bytes and is not even the same length, while the `preview.png` comes out
+**byte-identical**. That looks alarming and is not.
+
+Measured on Crystal: load both states and diff the whole of WRAM, and **7 bytes
+of 8,192 differ** — `0xd03f`, `0xd464`–`0xd468`, `0xd4b7`–`0xd4b9`. The position
+record at `0xdcb5`–`0xdcb8` is identical in both. Crystal has a real-time clock
+and the state captures the host's time of day; the file-level difference is that
+plus whatever the container compresses differently around it.
+
+Two things follow. A `.state` is **not** a useful thing to diff or to check for
+drift — compare memory, or compare the preview. And on a game with an RTC, *time
+of day is part of the start state*, which matters for a benchmark because Gen 2
+and Gen 4 gate encounters and events on it. Emerald's van fails it on purpose —
 five tiles wide with boxes on three sides — which is why `make_emerald_state.py`
 also produces the Littleroot house state, and why that is the one the address
 finder uses.
