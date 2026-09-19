@@ -428,6 +428,179 @@ suggests it will.
 The per-game **referee address maps** remain the real cost, exactly as
 [`roms/MANIFEST.md`](roms/MANIFEST.md) said — and that cost is unchanged by this result.
 
+## Determinism — 2026-09-19. Replays are reproducible; each system has one defect
+
+Risk #2 in [the backend plan](../artifacts/skyemu-backend/plan.md) §6: v1 (mGBA driven
+by wall-clock sleeps) is not reproducible, v2 *ought* to be because `/step?frames=N` is
+an exact frame count and not a `time.sleep`, and "ought to" had never been measured.
+[`determinism.py`](determinism.py) is the measurement — one control and four
+experiments, no API key, about five minutes per system. Run here on **FireRed** (GBA)
+and **Platinum** (NDS).
+
+What is compared: EWRAM `0x02000000`+`0x40000` and IWRAM `0x03000000`+`0x8000` on GBA
+(288 KB); two 256 KB windows of ARM9 main RAM at `0x02000000` and `0x02100000` on NDS
+(512 KB). By SHA-256 first and, on any mismatch, byte by byte — "not identical" is a
+much weaker claim than "10 bytes differ, all inside a 378-byte window", and only the
+second one tells you what to do about it.
+
+The headline: **replaying a savestate is bit-exact on both systems**, and each system
+has exactly one defect, and they are mirror images. On **GBA**, `/load` is not an exact
+inverse of `/save` — a reloaded machine diverges from the live one, and the gap grows.
+On **NDS**, `/load` is exact but two *cold processes* end up ten bytes apart.
+
+### The control, and the two times it bit
+
+Two *different* input sequences of the *same* frame count from the *same* savestate. The
+equal frame count is the point: everything that advances per frame — the RNG, vblank
+counters, animation timers — reaches the same value in both arms, so every byte that
+differs differs because of the **inputs**. If the arms came out equal, the snapshot
+region would not be where the game lives and every "identical" below would be vacuous.
+
+| | arms | result |
+|---|---|---|
+| FireRed | `START, A×8` vs `START, A, A, B×6` | **7,463 / 294,912 differ (2.53%)** — 4,891 EWRAM in 717 runs, 2,572 IWRAM in 660 runs |
+| Platinum | `START, A×8` vs `B×9` | **20,977 / 524,288 (4.00%)**, 427 runs |
+
+It bit twice, and both were the test's fault rather than the backend's — which is the
+only reason the passes below are worth anything:
+
+- **At 3,000 boot frames Platinum is still inside its opening cinematic** — the Pokémon
+  logo over a town scene. Nine presses there changed **6 of 524,288 bytes**: the machine
+  was running, and nothing the player did mattered. Measured in 600-frame steps, the
+  title art is up by **6,000** frames and the PRESS START prompt by **7,200**, which is
+  where the experiments now boot to. The "Using it" figure above — 4,000–5,000 frames to
+  a title screen — is low for this game.
+- **FireRed's second arm is a no-op on Platinum.** `START, A, A, B×6` came out
+  **byte-identical** to `START, A×8` — 0 of 524,288 — because B advances Pokémon dialogue
+  exactly as A does. A control arm *chosen* to diverge on one game silently stopped being
+  a control on another. Platinum's arm withholds START instead, so arm B sits on the
+  copyright card while arm A reaches "My name is Rowan."
+
+### E1 — savestate round trip: two claims, and they disagree
+
+"Does a savestate replay?" is two questions, and rolling them together hides the result:
+
+| | FireRed | Platinum |
+|---|---|---|
+| **replay vs replay** — load, run, load, run | **0 / 294,912** | **0 / 524,288** |
+| **live vs replay** — run on from `/save`, vs the same sequence after `/load` | **55 / 294,912** (12 EWRAM, 43 IWRAM, 40 runs) | **0 / 524,288** |
+| same, at 31,200 frames | **3,131** (28 EWRAM, **3,103 IWRAM**, 119 runs) | **0** |
+
+The first row is what the benchmark needs and it holds everywhere: two episodes started
+from the same start-state get byte-identical machines.
+
+The second row is a real defect on GBA. **`/load` does not restore the machine exactly.**
+The evidence that it is `/load` and not `/save` or stepping: the live arm's digest equals
+the cold-booted arm's digest in E2 and again at 33,600 frames, so cold boot and
+run-on-from-save agree with each other and only the reloaded machine differs. It is
+deterministic — the same 55 bytes every time, and replay-vs-replay stays at 0 — and it
+**grows**, 55 → 3,131 over 31,200 frames, almost all of it in IWRAM. The `/screen` PNG
+is byte-identical at both horizons, so nothing about it is visible.
+
+What this costs: a v2 run resumed from a savestate is not a continuation of the run that
+wrote it — it is a *different* run that starts at the same screen. For comparing models
+against each other that is fine, because every episode takes the same `/load` path. For
+"resume this exact run where it stopped", it is not, and 3 KB of IWRAM is enough to
+change an RNG stream. **Which 55 bytes these are has not been identified**, and no test
+here shows whether the divergence changes any observable game outcome.
+
+### E2 — two cold processes
+
+Two SkyEmu processes, each from a cold ROM load, each running boot frames plus the
+identical sequence. Each arm gets its own directory with a symlink to the ROM and a
+**private copy of the `.sav`**: SkyEmu writes that battery file, and on FireRed a `.sav`
+beside the ROM changes the boot path, so two arms sharing one would have a channel
+between them shaped exactly like nondeterminism.
+
+- **FireRed: 0 / 294,912 bytes differ**, `/screen` PNG byte-identical. A GBA run is
+  reproducible from the ROM, not merely resumable from RAM.
+- **Platinum: 7–10 / 524,288 differ**, `/screen` PNG still byte-identical. Six stable
+  locations inside the 378-byte window `0x02101d2c`–`0x02101ea5`.
+
+The NDS residue is one value, not six faults. Within a pair every differing location is
+off by the *same* constant — 0x44, 0x50 and 0x28 in three measured pairs — including a
+16-bit little-endian field at `0x02101ea4`. Three more things measured: it appears with
+**no inputs at all** (boot frames only); it does **not** scale with wall-clock distance
+between launches (90 s apart gave a *smaller* offset than back-to-back); and the
+later-launched process was lower every time. **What the value is has not been
+identified.** The shape fits a host-dependent seed latched at boot — Gen 4 derives its
+initial RNG seed from the DS clock and a boot delay — but that is a hypothesis with
+nothing behind it yet, and the address has not been matched to a Platinum map.
+
+### E3 — the savestate file, and why a file diff is the wrong instrument
+
+A SkyEmu savestate is a **PNG** (FireRed ~73 KB, a 1200×800 RGBA image; Platinum
+~5.9 MB). Change one byte early in a zlib stream and everything after it moves, so a raw
+file comparison reports nearly the whole file as different for nearly any cause. Another
+agent measured exactly that on this backend — "roughly 178 KB of a 180 KB file" — while
+the emulated machine was identical. `determinism.py` decompresses to the pixel payload
+first, and brackets the comparison with three controls:
+
+| | FireRed | Platinum |
+|---|---|---|
+| **writer** — two `/save` from one *frozen* machine, 2 s apart | **byte-identical file** | **byte-identical file** |
+| E2's two files, payload | 107–169 of 3,840,800, tens of runs, inside 5 of 800 image rows, every delta ≤ 4 | ~1.03 M of 25,168,896 |
+| **frame 0** — 4 cold processes, `/save` at **0 frames emulated** | 16–24 bytes apart; 7–15 offsets differ in every pair | 23–29 apart; ~15 every pair |
+| **propagation** — reload both, run 3,864 further identical frames | 0 → 0 | 10 → 10 |
+
+The writer is deterministic: no timestamp, no nondeterministic compression, and no path
+dependence — two processes handed the *identical* ROM path still differ. The savestate
+file is nevertheless **not byte-reproducible across processes** on either system, and the
+difference is already there with **zero frames emulated**, so it is not accumulated
+drift. On FireRed it never reaches game memory at all. Platinum's ~1 MB is not a separate
+finding: that machine genuinely differs by E2's ten bytes, so the file is expected to
+differ and the number means nothing until E2 is clean.
+
+**A `.state` file diff is not a determinism instrument here.** The load-bearing
+comparisons are emulated memory and the `/screen` capture.
+
+### E4 — ten minutes of console time
+
+E1 and E2 again, over 200 presses across six buttons plus a 12,000-frame tail.
+
+| | FireRed, 33,600 frames (9.3 min) | Platinum, 38,400 frames (10.7 min) |
+|---|---|---|
+| cold process vs cold process | **0 / 294,912** | **7 / 524,288**, the same six locations as at 3,264 frames |
+| replay vs replay | **0** | **0** |
+| live vs replay | **3,131**, up from 55 | **0** |
+
+So of the three residues, two are bounded — NDS's cold-start offset does not spread, and
+the savestate file's does not reach memory — and one is not: GBA's `/load` gap grows with
+the horizon.
+
+### The verdict, and what it does not cover
+
+**Reproducibility, in the sense the benchmark needs, holds on both systems.** Two
+episodes launched the same way from the same start-state produce byte-identical
+machines, and on GBA that extends to two independent cold boots, framebuffer included.
+That is strictly better than v1, where a wall-clock `sleep` decides how many frames a
+press lasts.
+
+**Two defects are now named rather than suspected**, and they sit on opposite sides:
+
+- **GBA — `/load` is not an exact inverse of `/save`.** 55 bytes at 864 frames, 3,131 at
+  31,200. Harmless for model-vs-model comparison, wrong for "resume this run".
+- **NDS — a cold boot carries ten bytes of host-dependent state.** Fixed location, does
+  not spread, invisible on screen. Avoidable entirely by starting NDS episodes from a
+  savestate, which is what the start-state system does anyway.
+
+What none of this covers, stated plainly:
+
+- **38,400 frames.** A 30-hour FireRed run is ~6.5 million — two orders of magnitude
+  further out. Nothing here bounds drift that needs a long horizon to appear, and one of
+  the three residues already grows within the range that *was* tested.
+- **One host, one build.** All of it is this machine and one SkyEmu binary.
+  Cross-machine reproducibility is untested, and is the harder claim.
+- **No battery save, no battle, no RTC.** FireRed has no real-time clock; **Emerald
+  does**, and an RTC is exactly the sort of host input that shows up on NDS here.
+  Emerald is untested.
+- **RAM only.** VRAM, OAM, palette and audio are not snapshotted. They show through
+  `/screen`, which agreed byte for byte in every comparison above, and no further.
+- **No observable outcome is tested.** Every number here is memory. Whether any of these
+  residues changes an encounter, a damage roll or a checkpoint is unmeasured.
+- **Nothing about the model.** Emulator reproducibility is not run reproducibility; the
+  model's sampling is the other half and is out of scope here.
+
 ## Sources
 
 - [SkyEmu](https://github.com/skylersaleh/SkyEmu) · [HTTP Control Server docs](https://github.com/skylersaleh/SkyEmu/blob/dev/docs/HTTP_CONTROL_SERVER.md) · [issue #576](https://github.com/skylersaleh/SkyEmu/issues/576) · [releases](https://github.com/skylersaleh/SkyEmu/releases)
