@@ -293,6 +293,7 @@ def _run_headless(args) -> None:
     _dash_server.configure_control_plane(
         queue_manager=queue_manager, executor=executor, run_index=run_index
     )
+    executor.recover_interrupted_active()
 
     _dash_server._start_server_if_needed(args.port)
     url = f"http://localhost:{args.port}/"
@@ -552,6 +553,15 @@ def main() -> None:
     _dash_server.configure_control_plane(
         queue_manager=queue_manager, executor=executor, run_index=run_index
     )
+    # Before the drain starts, not after: a persisted `active` in a fresh process
+    # is always the wreck of an interrupted run, and it blocks its own queue
+    # (peek_next skips the active id) while showing as a run you cannot kill.
+    wrecked = executor.recover_interrupted_active()
+    if wrecked is not None:
+        print(
+            f"QUEUE: removed {wrecked.queue_id} ({wrecked.model}) — it was still "
+            f"marked running from a previous session. Its folder is in History."
+        )
     drain_thread = threading.Thread(
         target=executor.drain_loop, daemon=True, name="run-executor-drain",
     )

@@ -855,3 +855,129 @@ def test_continue_dispatch_with_rebase_contract_flags_the_config(harness):
     cfg, _s, _t = executor.build_run_config(flagged)
     assert cfg["_rebase_contract"] is True
     assert cfg["_provider_profile"] == {"memory_encoding": "object"}, "no catalog here → the saved profile is kept"
+
+
+# ── the run you cannot kill, because it is not running ──────────────────────
+#
+# 2026-09-19: *"i currently have a run going 'on' which i cant kill because it is
+# not actually running ... i would love to when i kill a run which is not working
+# then actually remove it."*
+#
+# `drain_once` writes `active` to queue.json before it runs and clears it in a
+# `finally`, so a persisted `active` in a FRESH process can only mean the run was
+# interrupted. Nothing reconciled it, and two things then went wrong at once:
+# `peek_next` skips the active id, so the entry blocked its own queue forever;
+# and the UI's kill was `if (active.runId) stopRun(...)`, which with no run id
+# did nothing at all. One entry, unrunnable and unkillable, since 16:48.
+
+
+def _stale_queue(harness):
+    """A queue in the exact state his was: one item, marked active, nothing running."""
+    queue = harness["queue"]
+    item = queue.enqueue(kind=RunKind.casual, model="gemini-3.8-flash(minimal)", config="cfg", max_turns=3)
+    queue.set_active(item.queue_id)
+    assert harness["supervisor"].status().busy is False
+    return item
+
+
+def test_a_stale_active_entry_can_never_run_itself(harness):
+    """THE defect, reproduced with the fix not applied: the entry is not merely
+    mislabelled, it is unrunnable. `peek_next` returns "the first item that is
+    not the active one", so an entry that is BOTH the only item and the active
+    one answers None forever — his queue sat exactly here for two and a half
+    hours across four restarts.
+
+    Note the block is self-inflicted rather than global: with something queued
+    behind it that other item drains, and the drain then overwrites `active`
+    with its own id, which is why the wreck has to be cleared at BOOT rather
+    than left for the next drain to tidy up."""
+    queue = harness["queue"]
+    stale = _stale_queue(harness)
+
+    assert queue.peek_next() is None, "peek_next skips the active id — and it is the only one"
+    assert harness["executor"].drain_once() is None
+    assert harness["supervisor"].status().busy is False
+    assert queue.active == stale.queue_id, "still 'running', still nothing running"
+
+
+def test_recover_interrupted_active_removes_the_wreck(harness):
+    """Boot reconciliation. A fresh process owns no run, so it clears the entry
+    and says why — rather than re-queueing it, which would start a paid run
+    nobody asked for at that moment."""
+    queue = harness["queue"]
+    executor = harness["executor"]
+    stale = _stale_queue(harness)
+
+    removed = executor.recover_interrupted_active()
+
+    assert removed is not None and removed.queue_id == stale.queue_id
+    assert queue.active is None
+    assert [it.queue_id for it in queue.items] == []
+    assert executor.last_error and executor.last_error["queue_id"] == stale.queue_id
+    assert "in flight" in executor.last_error["error"]
+    # Not "Last dispatch failed": nothing failed to dispatch, the app was
+    # restarted out from under a run, and the strip must not claim otherwise.
+    assert executor.last_error["headline"] == "Run interrupted"
+
+
+def test_recovery_survives_a_reload_from_disk(harness, tmp_path):
+    """The whole point is the NEXT process. Asserting on the in-memory object
+    would pass for a fix that never reached queue.json — which is exactly the
+    latent bug in `cancel`, where the save was gated on an item being removed
+    and an `active` naming a missing item was cleared in memory only."""
+    queue = harness["queue"]
+    _stale_queue(harness)
+    harness["executor"].recover_interrupted_active()
+
+    reloaded = QueueManager(queue.queue_path)
+    assert reloaded.active is None
+    assert reloaded.items == []
+
+
+def test_clearing_an_active_id_with_no_item_behind_it_is_persisted(tmp_path):
+    """The asymmetric case `cancel` used to drop on the floor: `active` naming an
+    id that is not in `items`. Nothing was removed, so nothing was saved, so the
+    next boot loaded the same ghost."""
+    path = tmp_path / "queue.json"
+    q = QueueManager(path)
+    item = q.enqueue(kind=RunKind.casual, model="m", config="cfg", max_turns=3)
+    q.set_active(item.queue_id)
+    q.items = []          # the item is gone; active still names it
+    q.save()
+
+    assert QueueManager(path).active == item.queue_id      # the ghost, on disk
+    q2 = QueueManager(path)
+    assert q2.cancel(item.queue_id) is False               # nothing to remove...
+    assert QueueManager(path).active is None               # ...but it IS cleared
+
+
+def test_recovery_is_a_no_op_on_a_clean_queue(harness):
+    """THE control. A reconciler that cleared the queue unconditionally would
+    pass every test above and delete a perfectly good pending run at every boot."""
+    queue = harness["queue"]
+    queue.enqueue(kind=RunKind.casual, model="pending", config="cfg", max_turns=3)
+
+    assert harness["executor"].recover_interrupted_active() is None
+    assert queue.active is None
+    assert [it.model for it in queue.items] == ["pending"]
+
+
+def test_a_finished_run_leaves_nothing_to_recover(harness):
+    """The other control, and the stronger one: after a NORMAL drain there must
+    be no wreck at all, or boot recovery would be eating real history."""
+    harness["queue"].enqueue(kind=RunKind.casual, model="m", config="cfg", max_turns=3)
+    harness["executor"].drain_once()
+
+    assert harness["queue"].active is None
+    assert harness["executor"].recover_interrupted_active() is None
+
+
+def test_active_run_id_is_public_and_empty_when_nothing_runs(harness):
+    """The kill endpoint needs "is a run executing" AND "which one" together;
+    busy alone cannot tell a live run from a wreck, and the id alone is None for
+    the first seconds of a real run."""
+    executor = harness["executor"]
+    assert executor.active_run_id is None
+    _stale_queue(harness)
+    assert executor.active_run_id is None
+    assert harness["supervisor"].status().busy is False

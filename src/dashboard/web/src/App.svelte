@@ -245,8 +245,16 @@
     await loadQueue()
   }
   async function killRun() {
-    // ✕ on the active card = stop the running run; the executor auto-advances.
-    if (active?.runId) {
+    // ✕ on the active card. ONE call: the server decides whether that card has a
+    // run behind it (stop it, the executor auto-advances) or is an entry with
+    // nothing running (remove it). It used to be `if (active.runId) stopRun`,
+    // which did NOTHING AT ALL when the run id was unknown — and an entry left
+    // `active` by a process that died has no run id, shows as running forever,
+    // and blocks the queue behind it because peek_next skips the active id.
+    if (activeId) {
+      try { await api.killActiveQueued(activeId) } catch (e) { console.error('kill failed', e) }
+    } else if (active?.runId) {
+      // No active queue entry (a run started outside the queue): stop it directly.
       try { await api.stopRun(active.runId) } catch (e) { console.error('stop failed', e) }
     }
     await Promise.all([loadQueue(), loadLeaderboard().catch(() => {}), loadRuns().catch(() => {})])
@@ -294,7 +302,7 @@
 <main class:kiosk={view === 'spectate'}>
   {#if view === 'home'}
     {#if !STATIC}
-      <QueueBar {active} {queue} lastError={queueError} onkill={killRun} onremove={removeFromQueue} onreorder={reorder}
+      <QueueBar {active} {queue} running={!!emulator.busy} lastError={queueError} onkill={killRun} onremove={removeFromQueue} onreorder={reorder}
         onnew={openNew} onspectate={() => go('/spectate')} />
     {/if}
     <Leaderboard {cardRows} allRows={leaderboard} oninspect={inspect}

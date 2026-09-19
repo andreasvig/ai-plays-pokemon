@@ -1486,6 +1486,52 @@ async def api_queue_delete(queue_id: str):
     return JSONResponse({"cancelled": queue_id})
 
 
+@app.post("/api/queue/{queue_id}/kill")
+async def api_queue_kill(queue_id: str):
+    """Kill whatever the ACTIVE queue card stands for: the run, or the entry.
+
+    One door for one button, and the decision is taken here rather than in the
+    browser because the two facts it needs — is the executor busy, and does it
+    know the run's id — change together under the executor's own lock. A client
+    that polled `/api/queue` and `/api/emulator/status` separately can see a
+    state that never existed and remove a run that had just started.
+
+        *"i currently have a run going 'on' which i cant kill because it is not
+        actually running ... i would love to when i kill a run which is not
+        working then actually remove it"* — Andreas, 2026-09-19.
+
+    Three answers:
+
+    * a run is executing and its id is known → stop it gracefully, exactly as
+      ``POST /api/runs/{id}/stop`` (cancelled, voided if official);
+    * nothing is executing → the entry is a wreck: remove it, which also frees
+      the queue behind it (``peek_next`` skips the active id);
+    * a run is executing but has not published its id yet (the first seconds) →
+      409. Neither answer is safe there: stopping cannot be targeted and
+      removing would orphan a live run.
+    """
+    queue, executor, _index = _require_control()
+    if queue.active != queue_id:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{queue_id} is not the active entry; use DELETE to cancel a queued one",
+        )
+    busy = bool(executor.supervisor.status().busy)
+    run_id = getattr(executor, "active_run_id", None)
+    if busy and run_id:
+        executor.request_stop(run_id)
+        notify_control()
+        return JSONResponse({"stopping": run_id, "queue_id": queue_id})
+    if busy:
+        raise HTTPException(
+            status_code=409,
+            detail="the run is still starting and has no id yet — try again in a moment",
+        )
+    removed = queue.cancel(queue_id)
+    notify_control()
+    return JSONResponse({"removed": queue_id, "had_item": bool(removed)})
+
+
 @app.post("/api/queue/{queue_id}/move")
 async def api_queue_move(queue_id: str, body: dict):
     """Reorder ``queue_id`` to ``{to_index}``."""

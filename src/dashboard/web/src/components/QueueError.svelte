@@ -26,7 +26,7 @@
 {#if show}
   <div class="qerr" role="alert" data-testid="queue-last-error">
     <div class="qetext">
-      <b>Last dispatch failed:</b> {error.error}
+      <b>{error.headline ?? 'Last dispatch failed'}:</b> {error.error}
       <div class="qemeta">
         {#if subject}<span class="mono">{subject}</span>{/if}
         {#if error.at}<span class="faint"> · {error.at}</span>{/if}

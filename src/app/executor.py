@@ -149,7 +149,9 @@ class RunExecutor:
 
     # --- seam resolution ------------------------------------------------------
 
-    def _record_failure(self, item: QueuedRun, error: str) -> None:
+    def _record_failure(
+        self, item: QueuedRun, error: str, *, headline: str = "Last dispatch failed"
+    ) -> None:
         """Remember why an item was dequeued without producing a run, and say so.
 
         Two audiences: the terminal (one loud line, so someone watching the app
@@ -159,6 +161,11 @@ class RunExecutor:
         """
         try:
             self.last_error = {
+                # What the strip calls this. A dispatch failure and a run the app
+                # was restarted out from under are both "an item that produced no
+                # run", but only one of them failed to dispatch, and a banner
+                # that says so of the other is stating something untrue.
+                "headline": headline,
                 "queue_id": item.queue_id,
                 "kind": item.kind.value if hasattr(item.kind, "value") else str(item.kind),
                 "model": item.model,
@@ -174,7 +181,7 @@ class RunExecutor:
                 "error": error,
                 "at": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()),
             }
-            print(f"QUEUE: dispatch FAILED for {item.queue_id} ({item.model}) — {error}")
+            print(f"QUEUE: {headline} — {item.queue_id} ({item.model}) — {error}")
             self._notify_control()
         except Exception:
             pass
@@ -896,6 +903,62 @@ class RunExecutor:
             self._stop_requested_run_id = None
 
     # --- stop (locked decision #9) --------------------------------------------
+
+    @property
+    def active_run_id(self) -> Optional[str]:
+        """The run dir name of the run executing right now, or None.
+
+        Set once ``run_fn`` publishes its run dir, so it is None for the first
+        seconds of a real run as well as when nothing is running — ``supervisor
+        .status().busy`` is the signal for "a run is executing", this one for
+        "and here is which".
+        """
+        return self._active_run_id
+
+    def recover_interrupted_active(self) -> Optional[QueuedRun]:
+        """Clear a queue ``active`` left behind by a process that died mid-run.
+
+        ``drain_once`` writes ``active`` before it runs and clears it in a
+        ``finally``, so a persisted ``active`` in a FRESH process can only mean
+        one thing: that run was interrupted — a crash, a Ctrl-C, a restart. The
+        new process owns no run, so the entry is a wreck.
+
+        Left alone it is worse than cosmetic. ``peek_next`` skips the active id,
+        so the entry **blocks its own queue forever**, and the UI shows it as a
+        running run with a Kill button that has nothing to stop:
+
+            *"i currently have a run going 'on' which i cant kill because it is
+            not actually running"* — Andreas, 2026-09-19.
+
+        Removed rather than re-queued, deliberately. Re-queueing would start a
+        paid run at boot that nobody asked for at that moment, and the
+        interrupted run's own directory already holds whatever it managed —
+        ``Continue`` is the way back to it, from the history, with the savepoint.
+        The removal is recorded in ``last_error`` so the queue strip says what
+        happened instead of an entry silently vanishing.
+
+        Idempotent and safe to call when the queue is clean (returns None).
+        Must run BEFORE ``drain_loop`` starts, or the first drain claims a new
+        item and this would then clear a live one.
+        """
+        queue_id = self.queue.active
+        if queue_id is None:
+            return None
+        item = next(
+            (it for it in self.queue.items if it.queue_id == queue_id), None
+        )
+        self.queue.cancel(queue_id)
+        if item is not None:
+            self._record_failure(
+                item,
+                "the control center stopped while this run was in flight, so the "
+                "run is gone and its queue entry has been removed. Its folder is "
+                "in History — use Continue to resume it from its last savepoint.",
+                headline="Run interrupted",
+            )
+        else:
+            print(f"QUEUE: cleared a stale active id with no item behind it ({queue_id})")
+        return item
 
     def request_stop(self, run_id: str) -> bool:
         """Request the active run be finalised as ``cancelled`` (+ voided if official).

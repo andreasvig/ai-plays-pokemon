@@ -4,7 +4,15 @@
   import QueueError from './QueueError.svelte'
   // `lastError` is /api/queue's last_error (see lib/queue.js): the item that was
   // dequeued and never became a run. Rendered above the track by QueueError.
-  let { active = null, queue = [], lastError = null, onkill, onremove, onreorder, onnew, onspectate } = $props()
+  let { active = null, queue = [], lastError = null, running = true, onkill, onremove, onreorder, onnew, onspectate } = $props()
+  // `running` is the executor's own busy flag, not "is there an active card".
+  // They come apart exactly once and it is the case worth showing: a process
+  // that died mid-run leaves the ENTRY marked active with no run behind it, and
+  // the card then claims "running" forever over a button with nothing to stop.
+  // The kill still goes through one server call either way (api.killActiveQueued);
+  // this only decides what the card SAYS, so a momentary disagreement between the
+  // two polls mislabels a card for a beat and can never remove a live run.
+  const stale = $derived(!!active && !running)
   let dragIndex = $state(null)
   let overIndex = $state(null)
   // Remove needs an explicit confirm (Andreas) — clicking ✕ arms an inline
@@ -42,6 +50,8 @@
           <span class="badge {active.kind}">{label(active.kind)}</span>
           {#if isStopping}
             <span class="now stopping"><span class="dot"></span> stopping…</span>
+          {:else if stale}
+            <span class="now stale"><span class="dot"></span> not running</span>
           {:else}
             <span class="now"><span class="dot live"></span> running</span>
           {/if}
@@ -51,19 +61,23 @@
              (finding #7). "turn —" when the run has not reported one yet;
              never a fabricated 0. It does not move during a compaction:
              `turns` there is stamped by turn_start and nothing else. -->
-        <div class="cmeta faint">turn {active.currentTurn ?? '—'}</div>
+        {#if stale}
+          <div class="cmeta faint">left over from a stopped session</div>
+        {:else}
+          <div class="cmeta faint">turn {active.currentTurn ?? '—'}</div>
+        {/if}
         {#if isStopping}
           <div class="stopping-note faint">stopping after this turn — saving a savepoint…</div>
         {:else if killArmed}
           <div class="confirm" onclick={(e) => e.stopPropagation()} role="presentation">
-            <span class="confirm-q">Stop this run?</span>
+            <span class="confirm-q">{stale ? 'Remove this entry?' : 'Stop this run?'}</span>
             <div class="confirm-actions">
-              <button class="cf-yes" onclick={(e) => { e.stopPropagation(); stoppingId = active.runId; onkill(); killArmed = false }}>Stop</button>
+              <button class="cf-yes" onclick={(e) => { e.stopPropagation(); if (!stale) stoppingId = active.runId; onkill(); killArmed = false }}>{stale ? 'Remove' : 'Stop'}</button>
               <button class="cf-no" onclick={(e) => { e.stopPropagation(); killArmed = false }}>Cancel</button>
             </div>
           </div>
         {:else}
-          <button class="kill" onclick={(e) => { e.stopPropagation(); killArmed = true }} title="Stop run — starts next"><Icon name="close" size={13} /> kill</button>
+          <button class="kill" onclick={(e) => { e.stopPropagation(); killArmed = true }} title={stale ? 'Remove this entry — nothing is running' : 'Stop run — starts next'}><Icon name="close" size={13} /> {stale ? 'remove' : 'kill'}</button>
         {/if}
       </div>
     {:else}
@@ -130,6 +144,10 @@
   .now { font-size: 10.5px; font-weight: 650; color: var(--green); display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
   .now.stopping { color: var(--amber); }
   .now.stopping .dot { background: var(--amber); animation: pulse 1s ease-in-out infinite; }
+  /* Not an error — the run is simply gone. Muted, and the dot does not pulse:
+     the whole point is that nothing is happening. */
+  .now.stale { color: var(--faint); }
+  .now.stale .dot { background: var(--faint); animation: none; }
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
   .stopping-note { margin-top: 7px; font-size: 10px; line-height: 1.35; color: var(--amber); }
   .grip { color: var(--faint); display: inline-flex; }

@@ -571,6 +571,16 @@ export function stopRun(runId) {
   return send('POST', `/api/runs/${encodeURIComponent(runId)}/stop`)
 }
 
+// The active card's kill button. One door: the server decides whether there is
+// a run to stop or only an entry to remove, because the two facts that decide it
+// (is the executor busy, does it know the run's id) change together under its
+// own lock — a client joining /api/queue to /api/emulator/status can see a state
+// that never existed and remove a run that had just started.
+// -> {stopping, queue_id} | {removed, had_item} | 409 while a run is starting.
+export function killActiveQueued(queueId) {
+  return send('POST', `/api/queue/${encodeURIComponent(queueId)}/kill`)
+}
+
 // Delete a historical run: moves its folder to ~/.Trash (recoverable) and drops
 // the index entry. The server refuses the currently-running run (409).
 export function deleteRun(runId) {

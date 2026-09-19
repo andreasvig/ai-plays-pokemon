@@ -130,13 +130,20 @@ class QueueManager:
         """Remove a queued item by id. Clears ``active`` if it was active.
 
         Returns True if something was removed.
+
+        Saves when EITHER changed, not only when an item was removed: ``active``
+        can name an id that is no longer in ``items`` (a process that died
+        between the item being dequeued and the queue being written), and the
+        clear then has to reach the file or the next boot loads the same ghost
+        back and blocks the queue behind it — ``peek_next`` skips the active id.
         """
         before = len(self.items)
         self.items = [it for it in self.items if it.queue_id != queue_id]
         removed = len(self.items) != before
-        if self.active == queue_id:
+        cleared = self.active == queue_id
+        if cleared:
             self.active = None
-        if removed:
+        if removed or cleared:
             self.save()
         return removed
 

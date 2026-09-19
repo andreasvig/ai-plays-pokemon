@@ -585,3 +585,109 @@ def test_rebase_contract_is_a_continue_only_opt_in(client):
     assert r.status_code == 400 and "boolean" in r.json()["detail"]
     r = tc.post("/api/queue", json={"kind": "casual", "model": "claude-opus-5(high)", "max_turns": 5, "rebase_contract": True})
     assert r.status_code == 400 and "continue only" in r.json()["detail"]
+
+
+# ── POST /api/queue/{id}/kill — one door for the active card's button ───────
+#
+# 2026-09-19: *"i currently have a run going 'on' which i cant kill because it is
+# not actually running ... i would love to when i kill a run which is not working
+# then actually remove it."*
+#
+# The browser used to make this call itself: stop the run if it knew a run id,
+# otherwise nothing. Two problems — it did nothing at all for a wreck, and the
+# two facts that decide the answer (is the executor busy, does it know the run's
+# id) change together under the executor's lock, so a client joining
+# /api/queue to /api/emulator/status can act on a state that never existed.
+
+
+def _enqueue_active(client):
+    """One item, marked active, with the supervisor idle — his exact state."""
+    r = client["tc"].post(
+        "/api/queue", json={"kind": "casual", "model": _some_alias(), "config": "config-5.1"}
+    )
+    assert r.status_code in (200, 201), r.text
+    qid = client["queue"].items[-1].queue_id
+    client["queue"].set_active(qid)
+    return qid
+
+
+def test_killing_an_entry_with_nothing_running_removes_it(client):
+    """THE ask. Nothing is executing, so there is no run to stop — and leaving
+    the entry there is what blocked his queue for two and a half hours."""
+    qid = _enqueue_active(client)
+
+    r = client["tc"].post(f"/api/queue/{qid}/kill")
+    assert r.status_code == 200, r.text
+    assert r.json()["removed"] == qid
+    assert client["queue"].active is None
+    assert [it.queue_id for it in client["queue"].items] == []
+
+    # and it is gone from the wire, not just from memory
+    assert client["tc"].get("/api/queue").json() == {
+        "active": None, "items": [], "last_error": None,
+    }
+
+
+def test_killing_a_live_run_stops_it_and_keeps_the_entry(client):
+    """THE control, and the one that matters most: a real run must be STOPPED
+    (savepoint, finalised `cancelled`, voided if official), never yanked out of
+    the queue under the executor — which owns removing it when the run returns."""
+    qid = _enqueue_active(client)
+    executor = server._CONTROL["executor"]
+    executor.supervisor.set_busy(True)
+    executor._active_run_id = "2026-09-19_10-00-00_cfg__model"
+
+    r = client["tc"].post(f"/api/queue/{qid}/kill")
+    assert r.status_code == 200, r.text
+    assert r.json()["stopping"] == "2026-09-19_10-00-00_cfg__model"
+    assert executor._stop_requested_run_id == "2026-09-19_10-00-00_cfg__model"
+    # The entry stays: drain_once's `finally` is what removes it.
+    assert client["queue"].active == qid
+    assert [it.queue_id for it in client["queue"].items] == [qid]
+
+
+def test_a_run_that_has_not_published_its_id_yet_is_refused(client):
+    """The third state, and the reason this lives on the server. For the first
+    seconds of a real run the executor is busy but has no run id: stopping
+    cannot be targeted and removing would orphan a live run, so neither answer
+    is given. 409, and the button can be pressed again a second later."""
+    qid = _enqueue_active(client)
+    server._CONTROL["executor"].supervisor.set_busy(True)
+
+    r = client["tc"].post(f"/api/queue/{qid}/kill")
+    assert r.status_code == 409
+    assert "still starting" in r.json()["detail"]
+    assert client["queue"].active == qid, "the entry must survive a refusal"
+    assert [it.queue_id for it in client["queue"].items] == [qid]
+
+
+def test_kill_refuses_an_entry_that_is_not_the_active_one(client):
+    """A queued (not active) entry is cancelled with DELETE. Accepting it here
+    too would give one action two doors with different semantics — this one
+    stops a RUN when there is one."""
+    active = _enqueue_active(client)
+    client["tc"].post(
+        "/api/queue", json={"kind": "casual", "model": _some_alias(), "config": "config-5.1"}
+    )
+    queued = client["queue"].items[-1].queue_id
+    assert queued != active
+
+    r = client["tc"].post(f"/api/queue/{queued}/kill")
+    assert r.status_code == 409
+    assert [it.queue_id for it in client["queue"].items] == [active, queued]
+
+
+def test_the_kill_button_calls_one_endpoint(client):
+    """Source-level, and deliberately narrow: what regressed was the CALL SITE,
+    not the endpoint. `killRun` used to be `if (active.runId) stopRun(...)`,
+    which is a no-op for the case this whole thread is about."""
+    from pathlib import Path
+
+    app_src = (
+        Path(__file__).parent.parent / "src/dashboard/web/src/App.svelte"
+    ).read_text()
+    assert "api.killActiveQueued(activeId)" in app_src
+    api_src = (
+        Path(__file__).parent.parent / "src/dashboard/web/src/lib/api.js"
+    ).read_text()
+    assert "/kill`" in api_src
