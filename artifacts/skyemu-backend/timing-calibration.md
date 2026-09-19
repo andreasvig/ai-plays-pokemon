@@ -23,6 +23,28 @@ is worth quoting. The sweep scans upward rather than bisecting for exactly that
 reason: a bisection turns a non-monotone curve into a confident wrong number
 without saying so.
 
+## 0a. Emerald gives the identical three numbers
+
+| | move hold | repeat hold | gap |
+|---|---|---|---|
+| FireRed, direction R | 9 | 1 | 7 |
+| FireRed, direction L | 9 | 1 | 7 |
+| **Emerald, direction L** | **9** | **1** | **7** |
+
+Two Gen 3 GBA games agreeing is the expected result rather than a surprising
+one, and it says nothing about Crystal or Platinum — which is where the numbers
+are actually expected to move. What it does settle is that **timing is not a
+blocker for Emerald**, the cheapest second game: the committed 12/24 is above
+both thresholds on the cartridge it will next be pointed at.
+
+**A bug this row found.** Emerald was probed leftwards, and the first run
+returned an all-zero row for two of the three sweeps — no hold and no gap
+worked at any setting. The cause was in the probe, not the game: the repeat and
+gap tests compared a *signed* delta against a positive number, and x falls when
+you walk left. Half the directions read "nothing ever moved". An all-zero sweep
+is not a threshold, so the tool now says that in words instead of printing
+`None` as though it were a measurement.
+
 ## 1. The turn/walk threshold only applies to the first press
 
 **move hold is 9; repeat hold is 1.** Once the character faces the direction, a

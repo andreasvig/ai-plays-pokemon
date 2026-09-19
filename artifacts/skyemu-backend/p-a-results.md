@@ -165,3 +165,62 @@ PYTHONPATH=.:v2-experiments/harness ./venv/bin/python \
 `--control` adds the ablation table. `--stage party` takes `--state` /
 `--state-after` pairs and `--null-before` / `--null-after` for the negative
 control.
+
+## 8. And then Emerald, which is the result that matters
+
+FireRed is a rehearsal with the answers in the back of the book. This is the
+finder pointed at a cartridge nobody here has looked up, from a start state
+replayed the same afternoon (`v2-experiments/make_emerald_state.py`).
+
+| value | spelling | candidates |
+|---|---|---|
+| `gSaveBlock1Ptr` | **`*0x03005d8c`** (FireRed's is `0x03005008`) | chosen from 8 |
+| player x | `+0x0000` s16 | **4** |
+| player y | `+0x0002` s16 | **4** |
+| map number | `+0x0005` u8 | **rank 1** of 56 in-block runs |
+| map group | `+0x0004` u8 | **not measured — see below** |
+
+Ten seconds for the axes, one for the map. The block shuffles here too
+(`0x02025a54` downstairs, `0x02025a64` up), so the pointer form is doing real
+work rather than being ceremony.
+
+**The map group is inferred, not found, and that is a real gap.** Both maps
+reachable from the probe state are the house's two floors — map group 1 in both
+— so a round trip between them cannot move the byte and the scan is blind to it
+by construction. `+0x0004` is where FireRed keeps it and where the layout says
+it should be. That is a symmetry argument. Getting a second transition needs
+more scripted play than P-B has: **Emerald gates the front door until the player
+has been upstairs and set the clock.**
+
+**The chooser fix earned its keep a second time.** `*0x03005d90` scored 0.992
+against `*0x03005d8c`'s 0.920, and proximity to the anchor picked the right one
+again — the same shape as FireRed's SaveBlock2 outscoring SaveBlock1.
+
+### What this does and does not establish
+
+It establishes that the method transfers: the same probes, the same conditions
+and the same rankings produce a usable answer on a second cartridge with no
+tuning, in under a minute of emulator time.
+
+It does **not** establish that it works on a game with no disassembly. Emerald
+is still Gen 3 and still GBA — the same SaveBlock shape, the same DMA shuffle,
+the same 240x160 frame. Crystal is the first real test of the *contract* (no
+shuffle, a different console, no game code in the cartridge header at all), and
+Black 2 is the first real test of the *finder*.
+
+## 9. A correction: commit `a69058e` shipped broken
+
+The first commit of this tool did not contain `region_of`, `deref`,
+`choose_block_pointer` or `scan_map`. A slice-based edit — replace everything
+between two function definitions — took four functions with it, and the file
+still parsed and still imported. The live FireRed check quoted in that commit
+message had been run **before** the edit rather than after.
+
+It surfaced as a `NameError` the next time the map stage ran, which happened to
+be on Emerald. Restored in `a7c7c9b`, with the FireRed verify re-run against the
+restored file reproducing this document's numbers exactly, and with
+`tests/test_find_addresses.py` added so the tool has a check that does not need
+a running emulator. Writing that test also turned up a genuine fragility: the
+block-pointer chooser looked for movement only in the round-trip probe, and both
+cartridges happen to leave the block displaced there, so a game that restored it
+exactly would have lost its pointer form.

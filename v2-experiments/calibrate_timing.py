@@ -169,8 +169,13 @@ def main() -> int:
         print("hold sweep, already facing that way:")
         repeat, mono_r, trace_r = smallest(
             range(1, args.max_hold + 1),
-            lambda h: probe(emu, args.state, read, prelude,
-                            [(d, 20, 60), (d, h, 60)]) > 1,
+            # ABSOLUTE value. x falls walking left and rises walking right, and
+            # y falls walking up on both games measured -- a signed test reads
+            # "nothing ever moved" for half the directions. Caught on Emerald,
+            # where --dir L produced an all-zero row for both sweeps while the
+            # move sweep above (which already tested != 0) was fine.
+            lambda h: abs(probe(emu, args.state, read, prelude,
+                                [(d, 20, 60), (d, h, 60)])) > 1,
             label="repeat")
         out["repeat_hold"] = {"frames": repeat, "monotone": mono_r, "trace": trace_r}
 
@@ -178,11 +183,20 @@ def main() -> int:
             print(f"gap sweep at hold={move}, two presses must both land:")
             gap, mono_g, trace_g = smallest(
                 range(1, args.max_gap + 1),
-                lambda g: probe(emu, args.state, read, prelude,
-                                [(d, move, g), (d, move, 60)]) == 2,
+                lambda g: abs(probe(emu, args.state, read, prelude,
+                                    [(d, move, g), (d, move, 60)])) == 2,
                 label="gap")
             out["gap"] = {"frames": gap, "monotone": mono_g, "trace": trace_g}
 
+        # An all-zero row is not a threshold, it is a broken probe: either the
+        # direction is walled off from the probe tile or the reader is pointed
+        # at the wrong address. Say so rather than printing None as if it were
+        # a measurement.
+        for key, val in out.items():
+            if val["frames"] is None:
+                print(f"\n  {key}: NO VALUE AT ANY SETTING. The probe never moved -- "
+                      f"check the tile is free {args.dir}-wards and --x-ptr/--x-addr "
+                      f"is the coordinate.")
         print("\n--- calibration ---")
         for k, v in out.items():
             note = "" if v["monotone"] else "   NON-MONOTONE, read the trace"
