@@ -346,24 +346,130 @@ whether the numbers on the board can be trusted.
 
 ---
 
-## 7. Decisions for Andreas
+## 7. Decided (2026-09-19, Andreas)
 
-**D1 — one backend or two?** Recommend SkyEmu-only in the control center on this
-branch (§2.2). It removes the switch matrix, the human Lua step and the two
-savestate dialects. Cost: the FireRed casual arm re-bases onto a different core,
-which `plan.md` §5 already treats as a separate arm.
+All three answered in conversation. These are settled; the sections above keep
+their reasoning but the recommendations are no longer open.
 
-**D2 — which games appear in the picker at launch?** Every game has a verified
-start state, but **nothing has played any of the five new ones past turn 1** —
-the states were verified by measuring that the four directions respond, not by
-playing. Options: (a) all seven immediately, (b) all seven but the four with no
-memory contract are labelled as recording no movement, (c) only the games with a
-contract (FireRed, Emerald, Crystal). I lean (b): the picker tells the truth and
-nothing is hidden.
+**D1 — SkyEmu only.** Verbatim: *"for number 1 i woudl exect us to stop using
+mGBA in v2 so gba games shoudl work on skyemu"* and *"yes sky emulator only. yes
+we dont have towrroy about backwards combatbvilty and small behavieur chanegs.
+once we go full v2, tehn teh benchamrk itself changes majorly. so its no real
+problem for small changes"*.
 
-**D3 — "the same logging for all models".** Read here as *all games* (§3). If it
-meant across LLM models, that is already true and the section answers the wrong
-question — one line settles it.
+So §2.3 is the plan, and the caveat in §2.2 about re-basing the FireRed arm is
+**explicitly waived** — v2 changes the benchmark anyway. Consequences that follow
+automatically and should not be re-litigated later:
+
+- mGBA is not removed from `src/` (v1 still runs from `pokemon run`), but the
+  control center never selects it. `_build_supervisor_config` points at a v2
+  config.
+- `configs/saves/pokebench-v1` (an mGBA state) stops being the app's
+  `CANONICAL_SAVE`; `configs/saves/skyemu/firered-pokebench-v2` takes over. It is
+  a constructor argument on `RunExecutor`, so this is configuration.
+- `configs/saves/emerald-truck` is an mGBA state and must be replaced with the
+  SkyEmu truck state from `v2-experiments/states/emerald/truck.state`.
+- `supervisor.verify_loaded_rom` reads a **GBA** header offset. Under one backend
+  the better check is the one SkyEmu already does — `/status` names the ROM and
+  `_probe_system` measures the console — so `Rom.game_code` should stop being the
+  verification currency rather than being extended per console.
+
+**D2 — show every game, label what it cannot record.** Option (b). The
+completeness question he asked alongside it — *"what woudl it take to make tehse
+experimnets complete?"* — is §8.
+
+**D3 — all games.** Verbatim: *"yes all games"*. §3 is the right reading; the
+per-game contract is the work.
+
+**And the shape of the fix for §3**, confirmed: *"so for this we shoudl fix teh
+runner to have differnt game profiles?"* — yes. One profile per `game:` key (the
+same join key `roms.yaml` and the ladders already use), holding the memory
+contract. The runner asks the profile for a trace spec and wires nothing when
+there is none. **`RunSummary.game` is confirmed too** (*"this shoudl be added tehn
+rigt"*) — §3.5.
+
+---
+
+## 8. What "complete" costs, per game
+
+The answer to D2's follow-up. Nothing here is a plan yet; it is the price list.
+
+### 8.1 The contract is five layers, not one
+
+Each unlocks specific fields and each has its own method and cost.
+
+| Layer | Unlocks | How it is got |
+|---|---|---|
+| **L1** position + map id | `referee_position`, `route.json`, route points/coverage, gate distance, tile-change step counting, `overworld_steps`, `map`-type checkpoints | `v2-experiments/find_addresses.py` — already built, ~hours per game |
+| **L2** in-battle flag | battle/overworld separation in the trace | differential search with a battle/no-battle control — a **new probe mode**; the finder does xy/map/party only |
+| **L3** battle counters + party | `wild_battles`, `trainer_battles`, `battle_turn_share`, `party`-type checkpoints | same method; the finder's party stage is its weakest (935 → 322 → 81 candidates) and needs work |
+| **L4** walk graph | `walls_hit`, `wall_rate`, `movement_efficiency`, `shortest_steps`, `movement_legs` | full map + collision + warp data. **This is where the games diverge sharply** — §8.3 |
+| **L5** checkpoint ladder | gates, `stop_at`, benchmark capability | authoring, once L1 (+ flags/vars) exists |
+
+**L2 is not optional and is easy to underrate.** Without the in-battle bit the
+trace cannot tell a battle press from an overworld one, so every press inside a
+battle is misclassified — `walls_hit` and `wall_rate` come out *wrong*, not
+missing. A game with L1 but not L2 must record no wall accounting at all.
+
+### 8.2 Where each game stands (measured, from p-a-results.md)
+
+| Game | L1 pos | L1 map | L2 | L3 | L4 | L5 |
+|---|---|---|---|---|---|---|
+| FireRed | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Emerald | ✅ | ⚠️ group **inferred, not measured** | ✗ | ✗ | ✗ | ✗ |
+| Crystal | ✅ | ✅ | ✗ | ✗ | ✗ | ✗ |
+| Platinum | ✅ | ✗ **not found** | ✗ | ✗ | ✗ | ✗ |
+| SoulSilver | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| Black | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| Black 2 | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+
+### 8.3 L4 is the one that is not a matter of hours
+
+`scripts/build_walkgraph.py` builds FireRed's 8,473-node graph from **pret's own
+files, fetched from GitHub** — `data/layouts/<Layout>/map.bin` (one u16 per tile:
+collision in bits 10-11, elevation in 12-15), `metatile_attributes.bin`,
+`data/maps/<Map>/map.json` for warps and connections, `map_groups.json` for the
+(group, num) pair the referee reads out of SaveBlock1.
+
+Checked against the pret org today:
+
+| Game | Decomp | Ships map data in-repo? | What L4 would take |
+|---|---|---|---|
+| Crystal | `pret/pokecrystal` | **yes** — `maps/` and `data/` are in the tree | a second builder. Gen 2 collision is per-*block*, not gen 3's per-tile u16, so it is a new extractor, not a parameterisation |
+| Platinum | `pret/pokeplatinum` | **no** — the repo is `src`/`include`/`res` and builds against a `platinum.us` baserom | the decomp gives the format and the NARC indices; the data comes out of **our own ROM**, so it needs a NARC extractor first |
+| SoulSilver | `pret/pokeheartgold` | **no** — same shape (`heartgold.us` / `soulsilver.us` baserom dirs) | as Platinum |
+| Black / Black 2 | **none exists** | — | map data is at NARC `/a/0/0/8`, with the format documented only in community ROM-hacking threads. Genuinely open-ended |
+
+So L4 is: *tractable* for Crystal, *a NARC pipeline* for Platinum and SoulSilver,
+and *research* for the gen 5 pair.
+
+### 8.4 One schema change blocks every DS ladder
+
+`_REQUIRED_SIGNATURE_FIELDS["map"]` (`src/referee/checkpoints.py:29`) hard-requires
+a `map_group` + `map_num` pair. **A gen 4/5 map is a single id.** No DS ladder can
+be authored until that is a per-game shape rather than a gen-3 fact — which is the
+same lesson as the trace spec, in the checkpoint schema.
+
+### 8.5 The cheap half, and what I would actually do first
+
+Days, not weeks, with the tool that already exists:
+
+- **Emerald's map group** — the one inferred value in the whole table. Both maps
+  reachable from the truck are group 1, so it needs a route that crosses a group
+  boundary and a re-run. ~1 hour, and it closes the only ⚠️.
+- **L2 for FireRed's peers** — one new probe mode in `find_addresses.py`, then
+  Emerald and Crystal.
+- **Platinum's map id** — the open item from the cross-game plan. The adjacency
+  prior (`NEAR_ANCHOR = 8`) that found it on three games failed here, so this
+  needs a wider search and probably a longer cross-map route.
+- **L1 for SoulSilver, Black, Black 2** — the method is proven on NDS (Platinum's
+  x/y took ~2 minutes), so this is route authoring more than searching.
+
+**But before any of it**: nothing has played these games. The start states were
+verified by measuring that the four directions respond, not by playing. **One
+casual 100-turn run per game, once S1-S3 land, is worth more than any of the
+above** — it says whether a model can get out of the room at all, and a game it
+cannot leave does not need a walk graph yet.
 
 ---
 
