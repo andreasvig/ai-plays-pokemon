@@ -31,7 +31,7 @@ from pathlib import Path
 
 from src.app import observed
 from src.app.observed import DIRECTIONS, ObservedGraph, build, run_game, run_samples
-from src.app.roms import get_rom
+from src.app.roms import get_rom, load_roms
 from src.referee import trace
 from src.referee.contracts import CRYSTAL, FIRERED, contract_for
 
@@ -400,6 +400,22 @@ def test_to_dict_is_json_able_and_spells_a_tile_as_map_x_y():
 # --- reading runs off disk ----------------------------------------------------
 
 
+def a_contractless_rom() -> str:
+    """A rom id from roms.yaml whose game has no contract yet.
+
+    Chosen at test time rather than hardcoded. "platinum" was hardcoded here
+    until 2026-09-20, when Platinum got a contract and two tests that had
+    nothing to do with Platinum went red. The refusal these tests pin is about
+    a game the registry does not cover, and which game that is changes as the
+    work lands — so ask the registry, and say so out loud when the answer is
+    "none left", which is the end state this project is walking toward.
+    """
+    for rom in load_roms():
+        if contract_for(rom.game) is None:
+            return rom.id
+    pytest.skip("every rom in roms.yaml now has a contract — nothing left to refuse")
+
+
 def write_run(tmp_path: Path, name: str, rom_id: str, turns: list[list[dict]]) -> Path:
     """A run directory shaped the way a finished run leaves one: a config.json
     carrying the ROM it was launched with, and events.jsonl carrying one
@@ -518,7 +534,8 @@ def test_build_refuses_a_contractless_game_by_identity_not_by_age(tmp_path):
     and the contracted one a year ago, and the refusal follows the contract
     registry in both directions regardless."""
     walk = [[sample(0, "D", 6, 9), sample(1, "D", 6, 10)]]
-    ds = write_run(tmp_path, "ds-run", "platinum", walk)
+    blind_rom = a_contractless_rom()
+    ds = write_run(tmp_path, "ds-run", blind_rom, walk)
     gba = write_run(tmp_path, "gba-run", "firered", walk)
     now, year_ago = time.time(), time.time() - 365 * 86400
     for p in (ds, ds / "config.json", ds / "events.jsonl"):
@@ -526,10 +543,11 @@ def test_build_refuses_a_contractless_game_by_identity_not_by_age(tmp_path):
     for p in (gba, gba / "config.json", gba / "events.jsonl"):
         os.utime(p, (year_ago, year_ago))
 
-    assert contract_for("platinum-us") is None and contract_for("firered-us") is not None
+    blind_game = get_rom(blind_rom).game
+    assert contract_for(blind_game) is None and contract_for("firered-us") is not None
     graphs = build([ds, gba])
 
-    refused = graphs["platinum-us"]
+    refused = graphs[blind_game]
     assert refused.contractless is True
     assert dict(refused.visits) == {} and dict(refused.edges) == {} and dict(refused.warps) == {}
     assert refused.inputs == 2 and refused.runs == ["ds-run"]
@@ -544,9 +562,10 @@ def test_a_contractless_game_stays_refused_however_recently_it_was_recorded(tmp_
     recorded later by a stale process — which is exactly the run an age cutoff
     would wave through."""
     walk = [[sample(0, "D", 6, 9), sample(1, "D", 6, 10)]]
-    graphs = build([write_run(tmp_path, "old", "platinum", walk),
-                    write_run(tmp_path, "brand-new", "platinum", walk)])
-    g = graphs["platinum-us"]
+    blind_rom = a_contractless_rom()
+    graphs = build([write_run(tmp_path, "old", blind_rom, walk),
+                    write_run(tmp_path, "brand-new", blind_rom, walk)])
+    g = graphs[get_rom(blind_rom).game]
     assert g.contractless is True
     assert sorted(g.runs) == ["brand-new", "old"]
     assert g.inputs == 4 and dict(g.visits) == {}

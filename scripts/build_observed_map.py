@@ -199,14 +199,20 @@ def main() -> int:
         raise SystemExit("No run recorded a readable position. Every game needs a "
                          "contract in src/referee/contracts.py before it can.")
 
-    # A game with samples but no readable tile has no contract yet. Say so by
-    # name: "0 maps" in a table of results reads as a bad run, and this is not
-    # a bad run — it is a game the harness cannot see the player in.
+    # A game with samples but no readable tile is not a bad run — "0 maps" in a
+    # table of results reads like one — so say by name WHICH of the two reasons
+    # it is. They need different actions and used to print the same sentence:
+    # the day Platinum got a contract, its older runs still said NO CONTRACT,
+    # which was flatly untrue and pointed at the wrong fix.
     blind = {k: v for k, v in graphs.items() if v.contractless or not v.visits}
     graphs = {k: v for k, v in graphs.items() if not (v.contractless or not v.visits)}
     for game, g in sorted(blind.items()):
-        print(f"  {game:<13} {g.inputs:>5} inputs across {len(g.runs)} run(s) — NO CONTRACT "
-              f"(src/referee/contracts.py), so nothing here is a position. Not drawn.")
+        why = ("NO CONTRACT (src/referee/contracts.py), so nothing here is a position"
+               if g.contractless else
+               "a contract exists, but these runs were RECORDED before it did — the "
+               "spec is baked into the recording, so only a new run can be read")
+        print(f"  {game:<13} {g.inputs:>5} inputs across {len(g.runs)} run(s) — {why}. "
+              f"Not drawn.")
     if not graphs:
         raise SystemExit("No game had a readable position.")
 

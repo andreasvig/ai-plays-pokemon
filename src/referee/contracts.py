@@ -274,7 +274,49 @@ CRYSTAL = GameMemory(
     ),
 )
 
-CONTRACTS: dict[str, GameMemory] = {c.game: c for c in (FIRERED, EMERALD, CRYSTAL)}
+# The first DS contract, and the first one that is a whole published STRUCT
+# rather than a set of addresses found one axis at a time.
+#
+# pret/pokeplatinum's `struct Location` (include/location.h) is
+# {mapHeaderID, warpId, x, z, faceDirection}, five s32 in that order, and all
+# five land at 0x0227f408 in NDS main RAM. The bedroom state reads
+# (415, -1, 4, 6, 0), which is `sPlayerStartLocation` in src/location.c
+# field for field, sentinel included — and pokeplatinum's Rev 0 target sha1
+# (ce81046eda7d232513069519cb2085349896dec7) is byte-for-byte the entry in
+# configs/roms.yaml, so the decomp describes THIS dump and not a cousin of it.
+#
+# Corroboration beyond the struct: 13 states resolved to legal enum members
+# that each matched the screenshot (TWINLEAF_TOWN, ROUTE_201,
+# LAKE_VERITY_LOW_WATER, the two near-identical 2F bedrooms), and a live walk
+# moved x by one per tile while mapHeaderID held.
+#
+# Gen 4 needs NO pointer: the DS heap layout is deterministic across a map
+# load, measured, not assumed. Two things about this cartridge that the walk
+# graph has to know: Sinnoh's OVERWORLD is one global coordinate space
+# (Twinleaf z~882, Route 201 z~854, continuous across the boundary) while
+# interiors use small local coordinates, and y therefore does not fit in a
+# byte outdoors — which is why every u8 y candidate from the axis search is
+# simply wrong outside. faceDirection at +0x10 is the map-load facing, not the
+# current one, so it is left out.
+_PLATINUM_LOCATION = 0x0227F408
+
+PLATINUM = GameMemory(
+    game="platinum-us",
+    console="NDS",
+    spec=(f"{_PLATINUM_LOCATION:#x}:16",),
+    map_id=Field(0, 0, "<i"),
+    x=Field(0, 8, "<i"),
+    y=Field(0, 12, "<i"),
+    notes=(
+        "pret/pokeplatinum struct Location at 0x0227f408: mapHeaderID +0, "
+        "warpId +4, x +8, z +12, faceDirection +16, all s32. The map key is a "
+        "single id, not a (group, number) pair. No battle flag located, so the "
+        "input census is off; the field Location survives a battle unchanged, "
+        "which is what lets the walk graph work without one."
+    ),
+)
+
+CONTRACTS: dict[str, GameMemory] = {c.game: c for c in (FIRERED, EMERALD, CRYSTAL, PLATINUM)}
 
 
 def contract_for(game: Optional[str]) -> Optional[GameMemory]:
@@ -327,5 +369,5 @@ def attach(emu: Any, contract: Optional[GameMemory]) -> Optional[GameMemory]:
     return contract
 
 
-__all__ = ["Field", "GameMemory", "CONTRACTS", "FIRERED", "EMERALD", "CRYSTAL",
+__all__ = ["Field", "GameMemory", "CONTRACTS", "FIRERED", "EMERALD", "CRYSTAL", "PLATINUM",
            "attach", "contract_for", "contract_for_rom_path"]

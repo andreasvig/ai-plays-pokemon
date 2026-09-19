@@ -50,7 +50,14 @@ BINARY = "~/Applications/SkyEmu.app/Contents/MacOS/SkyEmu"
 # executor.CANONICAL_SAVE, which is an mGBA savestate, and SkyEmu answers
 # `/load -> failed` for every one of those. The SkyEmu-replayed equivalent is
 # the v2 state, so the default ROM needs the one override in this table.
-SNAPSHOT_OVERRIDE = {"firered": "configs/saves/skyemu/firered-pokebench-v2"}
+SNAPSHOT_OVERRIDE = {
+    "firered": "configs/saves/skyemu/firered-pokebench-v2",
+    # Platinum's canonical opening is the 2F bedroom, where the player is one
+    # tile from the east wall and cannot move on either axis — the check
+    # correctly calls that INCONCLUSIVE rather than passing it. The outdoor
+    # fixture is where the walk has room.
+    "platinum": "v2-experiments/states/platinum/probe.state",
+}
 
 # A state the player is IN A BATTLE in, per ROM. The battle flag is the one
 # field a position walk cannot exercise — the walk never leaves the overworld,

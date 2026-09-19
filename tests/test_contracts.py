@@ -71,11 +71,24 @@ def test_a_contract_without_a_battle_flag_reports_overworld_not_unknown():
     assert flagless.census_ok is False and FIRERED.census_ok is True
 
 
-def test_every_shipped_contract_can_tell_a_battle_press_from_an_overworld_one():
-    """The input census is on for all three cartridges. Stated as an assertion
-    so that adding a fourth contract without a flag is a failing test and a
-    decision, not a silent downgrade of what the census covers."""
-    assert {g: c.census_ok for g, c in CONTRACTS.items()} == {g: True for g in CONTRACTS}
+def test_which_cartridges_can_tell_a_battle_press_from_an_overworld_one():
+    """Spelled out per game rather than as "all of them", so that shipping a
+    contract without a battle flag is a visible decision.
+
+    It already worked once: this test was written as `all True` when the three
+    GBA/GB cartridges had flags, and Platinum landing the same night turned it
+    red — which is the point. Platinum ships census-off deliberately. Its
+    position comes from pret's `struct Location`, which carries no battle
+    field, and finding a DS battle flag is its own hunt. What census-off costs
+    is only the INPUT CENSUS: a battle's presses land in `idle_ab` and a
+    non-move cannot be told from a textbox. It costs nothing in the walk
+    graph, because the Location survives a battle unchanged."""
+    assert {g: c.census_ok for g, c in CONTRACTS.items()} == {
+        "firered-us": True,
+        "emerald-us": True,
+        "crystal-us": True,
+        "platinum-us": False,
+    }
 
 
 def test_crystals_battle_flag_is_a_mode_byte_so_the_mask_must_carry_both_bits():
