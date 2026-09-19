@@ -509,11 +509,12 @@ Checked against the pret org today:
 | Game | Decomp | Ships map data in-repo? | What L4 would take |
 |---|---|---|---|
 | Crystal | `pret/pokecrystal` | **yes** — `maps/` and `data/` are in the tree | a second builder. Gen 2 collision is per-*block*, not gen 3's per-tile u16, so it is a new extractor, not a parameterisation |
-| Platinum | `pret/pokeplatinum` | **no** — the repo is `src`/`include`/`res` and builds against a `platinum.us` baserom | the decomp gives the format and the NARC indices; the data comes out of **our own ROM**, so it needs a NARC extractor first |
+| Platinum | `pret/pokeplatinum` | **YES — corrected 2026-09-19** (this row said "no"): `res/field/maps/data/` holds 667 committed `map_data_*.bin`, each a 2048-byte 32×32 permissions block + an NSBMD model + a BDHC, and `res/field/matrices/*.json` is the world frame | parse the permissions block; no ROM, no NARC. See [../game-map-render/per-game-plan.md](../game-map-render/per-game-plan.md) §1.1 for the byte-level proof |
 | SoulSilver | `pret/pokeheartgold` | **no** — same shape (`heartgold.us` / `soulsilver.us` baserom dirs) | as Platinum |
 | Black / Black 2 | **none exists** | — | no decomp, but the format is implemented in working open source — §8.3.1 |
 
-So L4 is: *tractable* for Crystal, *a NARC pipeline* for Platinum and SoulSilver,
+So L4 is: *tractable* for Crystal **and Platinum** (§1.1 of the per-game map plan
+corrects Platinum's row above), *a NARC pipeline* for SoulSilver,
 and *a NARC pipeline plus a format port* for the gen 5 pair.
 
 #### 8.3.1 Gen 5 maps are gettable — correcting "research"

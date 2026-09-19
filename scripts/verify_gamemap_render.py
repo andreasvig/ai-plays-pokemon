@@ -54,6 +54,10 @@ from PIL import Image
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
+# The same fit the stitcher uses, from the other direction — one map, many
+# frames there; one frame, one map here.
+from src.app.stitch import fit_colour_map  # noqa: E402
+
 MAPS_DIR = REPO_ROOT / "src" / "dashboard" / "web" / "public" / "maps"
 GBA_W, GBA_H = 240, 160
 TILE = 16
@@ -121,26 +125,10 @@ def compare(shot: Path, rendered: Path, px: int, py: int) -> dict:
            "over": int((direct > TOLERANCE).sum()), "window": [ox, oy], "via": "direct"}
     if out["over"] <= 0:
         return out
-    shifted = np.abs(colour_mapped(win, small, keep) - small).max(axis=2)[keep]
+    shifted = np.abs(fit_colour_map(win, small, keep) - small).max(axis=2)[keep]
     if int((shifted > TOLERANCE).sum()) < out["over"]:
         out.update(max=int(shifted.max()), over=int((shifted > TOLERANCE).sum()), via="colour map")
     return out
-
-
-def colour_mapped(win: np.ndarray, small: np.ndarray, keep: np.ndarray) -> np.ndarray:
-    """``win`` with every colour replaced by the screenshot colour it most often
-    sits under — the shape a weather colour map has, fitted from this frame."""
-    flat_w = win.reshape(-1, 3)[keep.reshape(-1)]
-    flat_s = small.reshape(-1, 3)[keep.reshape(-1)]
-    counts: dict[tuple, dict[tuple, int]] = {}
-    for a, b in zip(map(tuple, flat_w.tolist()), map(tuple, flat_s.tolist())):
-        counts.setdefault(a, {})[b] = counts.setdefault(a, {}).get(b, 0) + 1
-    lut = {a: max(v.items(), key=lambda kv: kv[1])[0] for a, v in counts.items()}
-    out = win.copy().reshape(-1, 3)
-    for i, a in enumerate(map(tuple, win.reshape(-1, 3).tolist())):
-        if a in lut:
-            out[i] = lut[a]
-    return out.reshape(win.shape)
 
 
 def main() -> int:
