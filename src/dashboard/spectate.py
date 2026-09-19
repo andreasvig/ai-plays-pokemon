@@ -24,13 +24,26 @@ Two things are not free, and both live here:
    SkyEmu answers one request at a time, so an attached sampler turns one long
    ``/step`` into ``frames/sample_every`` step+screen pairs. Measured ~54
    captures/s, hence ``sample_every = 2`` → 30 fps of a 60 fps console.
-2. **Pacing** — decision B: fast by default, a spectated run opts into
-   ``realtime``. See :class:`RealtimePacer`.
+2. **Pacing** — ``realtime`` by default since 2026-09-19, reversing decision B.
+   Andreas, watching the first Crystal run: *"the game is executing incredibly
+   quick, could we do normal speed as a standard?"* A stepped backend advances
+   as fast as the host allows, which on a GB title is many times the console's
+   own clock — fine for a benchmark nobody watches, useless for the thing v2 is
+   for. Opting IN to watchability was the wrong way round once every run is
+   spectatable. ``--pace fast`` (or ``emulator.pace: fast``) is the opt-out.
+   See :class:`RealtimePacer`.
 
 The property worth protecting, and the reason pacing is allowed to exist at
 all: **pacing changes a run's duration, not its content.** The emulator is
 frozen between ``/step`` calls, so throttling only decides when the next call
 is made, never what it computes. A spectator cannot change a score.
+
+The flip side, and the reason the resolved pace is stamped onto the run config:
+``duration_s`` and ``avg_s_per_turn`` on a run's index row DO move, because they
+are wall clock. A realtime run and a fast run are not comparable on those two
+figures, so a finished run has to record which it was rather than leaving a
+reader to assume. Everything else — turns, cost, tokens, gates, the trace — is
+untouched.
 """
 
 from __future__ import annotations
@@ -50,14 +63,18 @@ CONSOLE_FPS = 60.0
 STREAM_FILE = "stream.png"
 
 PACES = ("fast", "realtime")
-DEFAULT_PACE = "fast"
+#: 2026-09-19: was "fast". A stepped backend with no pacer runs the game at
+#: whatever rate the host can drive HTTP, which is far above 60 Hz — the first
+#: Crystal run was unwatchable. Since every v2 run is spectatable and recordable,
+#: the watchable rate is the sensible default and speed is the opt-in.
+DEFAULT_PACE = "realtime"
 
 
 # ───────────────────────────── pacing ──────────────────────────────
 
 
 def resolve_pace(config: dict) -> str:
-    """``emulator.pace``, defaulted to ``fast`` (decision B).
+    """``emulator.pace``, defaulted to :data:`DEFAULT_PACE` (``realtime``).
 
     An unknown value RAISES rather than falling back. A typo silently meaning
     "fast" would make a spectated run quietly un-spectatable, and the run would
@@ -250,6 +267,12 @@ def attach(emu: Any, config: dict, run_dir: str | Path) -> SpectateFeed:
     pace = resolve_pace(config)
     stream_path = Path(run_dir) / STREAM_FILE
     config.setdefault("paths", {})["stream"] = str(stream_path)
+    # Record the RESOLVED pace, not just the authored one. duration_s and
+    # avg_s_per_turn are wall clock, so they mean different things under the two
+    # paces; a run that leaves the key absent forces a reader to guess which
+    # default was in force on the day it ran — and that default has already
+    # changed once.
+    config.setdefault("emulator", {})["pace"] = pace
 
     writer = StreamFileWriter(stream_path)
     emu.sampler = writer

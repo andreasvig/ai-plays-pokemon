@@ -1546,13 +1546,16 @@ model you can actually start — `pokemon ls models` for the full list):
     )
     parser.add_argument(
         "--pace", choices=["fast", "realtime"], default=None,
-        help="Stepped backends only (emulator.type: skyemu). `fast` (the default) "
-             "steps as quickly as the host allows; `realtime` throttles to 60 fps "
-             "so a spectator or a recording sees the game at its true speed. This "
-             "changes how long a run TAKES and not what happens in it — the "
-             "emulator is frozen between steps, so the game sees identical frames "
-             "either way and a watcher cannot move a score. Ignored by mGBA, "
-             "which only runs at real time.",
+        help="Stepped backends only (emulator.type: skyemu). `realtime` (the "
+             "default since 2026-09-19) throttles to 60 fps so a spectator or a "
+             "recording sees the game at its true speed; `fast` steps as quickly "
+             "as the host allows, which is many times console speed and is worth "
+             "it only for a run nobody is watching. This changes how long a run "
+             "TAKES and not what happens in it — the emulator is frozen between "
+             "steps, so the game sees identical frames either way and a watcher "
+             "cannot move a score. It does move `duration_s` and `avg_s_per_turn`, "
+             "which are wall clock; the resolved pace is recorded on the run. "
+             "Ignored by mGBA, which only runs at real time.",
     )
     args = parser.parse_args()
 

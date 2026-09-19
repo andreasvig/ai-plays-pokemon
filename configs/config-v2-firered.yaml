@@ -79,6 +79,19 @@ emulator:
   # Frames stepped once the process answers /ping, before anything reads memory
   # or loads a state. A freshly launched core has not run one instruction.
   boot_frames: 60
+  # How fast the machine is ADVANCED — not how fast it computes. A stepped
+  # backend has no clock of its own, so with no pacer it runs at whatever rate
+  # the host can drive HTTP, which is well above 60 Hz and unwatchable.
+  # `realtime` throttles each /step to the console's own clock; `fast` does not.
+  # Spelled out here rather than left to the default because it is the setting a
+  # person actually wants to change, and a default that has already moved once
+  # should not be invisible in the file that runs. See src/dashboard/spectate.py.
+  #
+  # It changes a run's DURATION, never its content: the emulator is frozen
+  # between steps, so the game sees identical frames either way. `duration_s`
+  # and `avg_s_per_turn` do move, and the resolved value is stamped onto every
+  # run's config.json so those two numbers stay interpretable.
+  pace: realtime
 screenshot:
   # null = the per-system default (6x GB/GBA, 3x NDS). An int forces one factor.
   upscale_factor: null

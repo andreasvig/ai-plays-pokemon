@@ -224,15 +224,69 @@ def test_a_pacer_never_sleeps_for_a_step_that_did_not_happen():
     assert clock.slept == []
 
 
-def test_pace_defaults_to_fast_and_refuses_a_typo():
-    """Decision B. A typo silently meaning `fast` would leave a spectated run
-    looking entirely normal while being unwatchable."""
-    assert resolve_pace({"emulator": {}}) == "fast"
-    assert resolve_pace({}) == "fast"
-    assert resolve_pace({"emulator": {"pace": None}}) == "fast"
+def test_pace_defaults_to_realtime_and_refuses_a_typo():
+    """Reversed 2026-09-19 (was `fast`, decision B). A stepped backend with no
+    pacer advances at whatever rate the host can drive HTTP — far above 60 Hz.
+    Andreas, on the first Crystal run: "the game is executing incredibly quick,
+    could we do normal speed as a standard?" Once every run is spectatable,
+    opting IN to watchability is the wrong way round.
+
+    A typo still RAISES rather than falling back: silently meaning something
+    would leave a run looking entirely normal while running at the wrong speed,
+    and that is now true in both directions."""
+    assert resolve_pace({"emulator": {}}) == "realtime"
+    assert resolve_pace({}) == "realtime"
+    assert resolve_pace({"emulator": {"pace": None}}) == "realtime"
+    # The opt-out still works, and is the half that would break silently if the
+    # flip had been done by deleting the branch rather than moving the default.
+    assert resolve_pace({"emulator": {"pace": "fast"}}) == "fast"
+    assert resolve_pace({"emulator": {"pace": "FAST"}}) == "fast"
     assert resolve_pace({"emulator": {"pace": "REALTIME"}}) == "realtime"
     with pytest.raises(ValueError, match="real-time"):
         resolve_pace({"emulator": {"pace": "real-time"}})
+
+
+def test_attach_records_the_pace_it_resolved(tmp_path):
+    """`duration_s` and `avg_s_per_turn` are wall clock, so they mean different
+    things under the two paces. A run that leaves the key absent forces a reader
+    to guess which default was in force on the day it ran — and that default has
+    already changed once."""
+    emu = FakeSkyEmu(_config(), screens=[_png()] * 100)
+    config = _config()
+    config["emulator"].pop("pace", None)
+
+    feed = attach(emu, config, tmp_path / "run")
+    try:
+        assert config["emulator"]["pace"] == "realtime"
+        assert feed.pace == "realtime"
+    finally:
+        feed.detach()
+
+    # And an explicit choice is recorded as itself, not overwritten by the
+    # default — otherwise the stamp would say the same thing for every run.
+    config2 = _config()
+    config2["emulator"]["pace"] = "fast"
+    feed2 = attach(emu, config2, tmp_path / "run-2")
+    try:
+        assert config2["emulator"]["pace"] == "fast"
+        assert feed2.pacer is None, "fast must attach no pacer"
+    finally:
+        feed2.detach()
+
+
+def test_the_default_gives_a_run_a_pacer_without_being_asked(tmp_path):
+    """The behavioural half of the flip. resolve_pace returning 'realtime' is
+    worth nothing if attach does not then hook a RealtimePacer onto the
+    emulator — that is the object that actually slows the game down."""
+    emu = FakeSkyEmu(_config(), screens=[_png()] * 100)
+    config = _config()
+    config["emulator"].pop("pace", None)
+
+    feed = attach(emu, config, tmp_path / "run")
+    try:
+        assert isinstance(emu.pacer, RealtimePacer)
+    finally:
+        feed.detach()
 
 
 # ── the step loop ───────────────────────────────────────────────────────────
@@ -294,11 +348,17 @@ def test_attach_points_the_dashboard_at_this_runs_file(tmp_path):
     live feed of a finished game."""
     emu = FakeSkyEmu(_config(), screens=[_png()] * 100)
     config = _config()
+    # Pinned, not inherited. This test is about the stream PATH; it used to read
+    # `assert emu.pacer is None  # fast is the default` as an aside, which made
+    # it fail the day the default moved (2026-09-19) for a reason that has
+    # nothing to do with what it checks. It also keeps the steps below off the
+    # wall clock.
+    config["emulator"]["pace"] = "fast"
 
     first = attach(emu, config, tmp_path / "run-1")
     assert config["paths"]["stream"] == str(tmp_path / "run-1" / "stream.png")
     assert emu.sampler is first.writer
-    assert emu.pacer is None          # fast is the default
+    assert emu.pacer is None
     emu.step(2)
     assert first.frames == 2       # the primed frame, plus one step
     assert (tmp_path / "run-1" / "stream.png").is_file()
