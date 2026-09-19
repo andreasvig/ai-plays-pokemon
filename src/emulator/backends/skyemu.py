@@ -144,6 +144,26 @@ class SkyEmuClient:
         # single instruction; ``v2-experiments/referee_proof.py`` steps 60 for
         # the same reason. 0 disables it.
         self.boot_frames = emu_config.get("boot_frames", 60)
+
+        # Frames stepped after a savestate is RESTORED, so the console has
+        # actually redrawn before anything captures. Measured 2026-09-19: after
+        # /load an NDS returns a frame whose TOP screen is not the restored one.
+        # SoulSilver and Black 2 settle on frame 4, Platinum on frame 3; Black
+        # 2's unrendered buffer reads 215 mean — bright, not black — so "is it
+        # black" is not the test, "has it redrawn" is. GB/GBA repaint
+        # immediately (Crystal is correct at 0), which is why this survived
+        # until the DS games arrived.
+        #
+        # What it costs to skip: the model's FIRST TURN sees half a screen. A
+        # SoulSilver run opened with its top screen black and the agent
+        # reasoning "the game is currently on the intro/menu screen", pressing A
+        # into a bedroom it could not see.
+        #
+        # 8 is 2x the worst measured. Deterministic and applied to every load,
+        # so a replay stays bit-exact; 0 restores the raw behaviour, which is
+        # what v2-experiments/determinism.py wants since it measures the offset
+        # a load lands at.
+        self.post_load_frames = int(emu_config.get("post_load_frames", 8))
         self.launch_timeout = emu_config.get("launch_timeout", 120.0)
 
         # SkyEmu writes the battery save (.sav) NEXT TO THE ROM — measured, a
@@ -768,6 +788,19 @@ class SkyEmuClient:
                 f"Load state failed: {exc}. A state SkyEmu refuses is usually an "
                 "mGBA state — the two formats are not interchangeable (plan §3.4)."
             ) from exc
+        # Let the console redraw. /load restores memory; it does not repaint.
+        #
+        # Deliberately NOT through ``_step``: that one feeds the spectate sampler
+        # and the pacer, and these frames are the load finishing rather than
+        # gameplay. Sampled, they publish the half-drawn frames to the live feed
+        # — the exact thing being fixed. Paced, they put a visible stall at the
+        # start of every run in exchange for nothing. ``boot_frames`` gets away
+        # with ``_step`` only because nothing is attached that early.
+        #
+        # They ARE counted in ``frames_stepped``: the machine really advanced.
+        if self.post_load_frames > 0:
+            self._get("/step", {"frames": self.post_load_frames})
+            self.frames_stepped += self.post_load_frames
 
     # --- tracing ----------------------------------------------------------
 

@@ -421,6 +421,66 @@ def test_a_refused_state_names_the_format_mismatch(tmp_path):
     assert "mGBA" in str(exc.value)
 
 
+def test_load_steps_the_console_so_it_has_redrawn(tmp_path):
+    """``/load`` restores memory; it does not repaint.
+
+    Measured 2026-09-19 on the real emulator: after a load an NDS returns a
+    frame whose TOP screen is not the restored one — SoulSilver and Black 2
+    settle on frame 4, Platinum on frame 3. Black 2's unrendered buffer reads
+    215 mean (bright, not black), so the property is "has it redrawn", not "is
+    it black". GB/GBA repaint immediately, which is why this survived until the
+    DS games arrived.
+
+    The cost of skipping it is the model's FIRST TURN seeing half a screen: a
+    SoulSilver run opened with its top screen black and the agent reasoning
+    "the game is currently on the intro/menu screen", pressing A into a bedroom
+    it could not see."""
+    state = tmp_path / "s.state"
+    state.write_bytes(b"x")
+    emu = FakeSkyEmu(_config())
+    emu.load_state(str(state))
+
+    steps = [params for path, params in emu.calls if path == "/step"]
+    assert steps, "a load that never steps leaves the console unpainted"
+    assert sum(int(p["frames"]) for p in steps) == emu.post_load_frames == 8
+
+
+def test_the_redraw_step_can_be_switched_off(tmp_path):
+    """THE control — without it the test above cannot tell a deliberate step
+    from a stepper that always runs. ``post_load_frames: 0`` restores the raw
+    behaviour, which is what v2-experiments/determinism.py needs: it measures
+    the frame offset a load lands at, and a load that advances 8 would move the
+    thing being measured."""
+    state = tmp_path / "s.state"
+    state.write_bytes(b"x")
+    cfg = _config()
+    cfg["emulator"]["post_load_frames"] = 0
+    emu = FakeSkyEmu(cfg)
+    emu.load_state(str(state))
+    assert [c for c in emu.calls if c[0] == "/step"] == []
+
+
+def test_the_redraw_step_bypasses_the_spectate_hooks(tmp_path):
+    """These frames are the load finishing, not gameplay. Through the sampler
+    they would publish half-drawn frames to the live feed; through the pacer
+    they would put a visible stall at the start of every run in exchange for
+    nothing."""
+    state = tmp_path / "s.state"
+    state.write_bytes(b"x")
+    emu = FakeSkyEmu(_config())
+    sampled, paced = [], []
+    emu.sampler = sampled.append
+    emu.pacer = paced.append
+
+    emu.load_state(str(state))
+    assert sampled == [], "the redraw frames reached the spectate feed"
+    assert paced == [], "the redraw frames were throttled"
+
+    # And the hooks still work afterwards, so this did not just unhook them.
+    emu.step(2)
+    assert paced == [2]
+
+
 # --- fetch_trace ----------------------------------------------------------
 
 
