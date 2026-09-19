@@ -20,6 +20,7 @@ from src.emulator.backends.base import EmulatorBackend, TracingEmulatorBackend
 # dependencies are not installed cannot break the backends nobody asked for.
 _BACKENDS: dict[str, str] = {
     "mgba": "src.emulator.backends.mgba:EmulatorClient",
+    "skyemu": "src.emulator.backends.skyemu:SkyEmuClient",
 }
 
 # What ``type:`` means when the config does not say. Every config in configs/

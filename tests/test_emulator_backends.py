@@ -19,10 +19,28 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.emulator import EmulatorClient, known_backends, make_emulator, resolve_backend
 from src.emulator.backends.base import EmulatorBackend, TracingEmulatorBackend
 from src.emulator.backends.mgba import EmulatorClient as MgbaClient
+from src.emulator.backends.skyemu import SkyEmuClient
 
 
 def _config(**emulator):
     return {"emulator": {"host": "127.0.0.1", "port": 8888, **emulator}}
+
+
+def _skyemu_config(**emulator):
+    """A skyemu config that does not touch the filesystem or the network.
+
+    ``valid_inputs`` is the shipped list, because ``press_button_list``
+    validates against it; ``grid_overlay`` is absent, because the backend
+    refuses a config that asks for one.
+    """
+    return {
+        "emulator": {
+            "type": "skyemu", "host": "127.0.0.1", "port": 8160,
+            "rom_path": "roms/Pokemon - FireRed Version (USA, Europe) (Rev 1).gba",
+            **emulator,
+        },
+        "valid_inputs": ["U", "D", "L", "R", "A", "B", "START", "SELECT", "WAIT"],
+    }
 
 
 def _protocol_members(proto) -> set[str]:
@@ -40,12 +58,17 @@ def test_type_mgba_builds_the_mgba_client():
     assert isinstance(make_emulator(_config(type="mgba")), MgbaClient)
 
 
+def test_type_skyemu_builds_the_skyemu_client():
+    """P1 registered it; before that ``skyemu`` was one of the unknown types."""
+    assert isinstance(make_emulator(_skyemu_config()), SkyEmuClient)
+
+
 def test_absent_type_defaults_to_mgba():
     """Hand-written configs (scripts/probe_memory.py, several tests) omit it."""
     assert isinstance(make_emulator(_config()), MgbaClient)
 
 
-@pytest.mark.parametrize("bad", ["skyemu", "mGBA", "", "MGBA", "dolphin"])
+@pytest.mark.parametrize("bad", ["sky_emu", "mGBA", "", "MGBA", "dolphin"])
 def test_unknown_type_raises_and_names_the_known_types(bad):
     """An unknown type must NOT fall through to mgba.
 
@@ -88,6 +111,20 @@ def test_mgba_backend_is_a_tracing_backend():
     assert isinstance(emu, TracingEmulatorBackend)
     assert "fetch_trace" in _protocol_members(TracingEmulatorBackend)
     assert "fetch_trace" not in _protocol_members(EmulatorBackend)
+
+
+def test_skyemu_backend_satisfies_the_protocol():
+    """Every member declared in base.py exists on a built SkyEmu client."""
+    emu = make_emulator(_skyemu_config())
+    missing = sorted(m for m in _protocol_members(EmulatorBackend) if not hasattr(emu, m))
+    assert missing == [], f"SkyEmu backend is missing: {missing}"
+    assert isinstance(emu, EmulatorBackend)
+
+
+def test_skyemu_backend_is_a_tracing_backend():
+    """``fetch_trace`` is optional at the call site but this backend has it —
+    it owns the step loop, so sampling after each input is free."""
+    assert isinstance(make_emulator(_skyemu_config()), TracingEmulatorBackend)
 
 
 # --- the compatibility shim ----------------------------------------------
