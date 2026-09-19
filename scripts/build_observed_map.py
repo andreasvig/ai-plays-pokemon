@@ -49,6 +49,7 @@ F_LABEL = _font(12)
 CELL = 11          # px per tile
 PAD = 26           # px around each map panel, leaving room for its label
 GUTTER = 18
+TARGET_W = 1500  # shelf width the packer aims for; a wider panel overrides it
 COLS = 4
 BG = (250, 249, 246)
 INK = (28, 28, 30)
@@ -128,12 +129,26 @@ def draw_map(g: ObservedGraph, map_key: tuple) -> Image.Image:
 
 def sheet(g: ObservedGraph, title: str) -> Image.Image:
     panels = [draw_map(g, m) for m in sorted(g.maps, key=lambda m: -len(g.tiles_of(m)))]
-    cols = min(COLS, len(panels)) or 1
-    cw = max(p.width for p in panels) + GUTTER
-    # Per-ROW height, not one height for every row. A 40-tile-tall Route 1 in
-    # row 1 was giving row 2 the same height and leaving half the sheet blank.
-    rows = [panels[i:i + cols] for i in range(0, len(panels), cols)]
-    row_h = [max(p.height for p in r) + GUTTER for r in rows]
+    # SHELF packing, not a fixed grid of equal columns. Maps differ in size by
+    # two orders of magnitude — a 222-tile town beside a 3-tile shop — so a
+    # column sized for the widest one left roughly 60% of the Crystal sheet
+    # empty and shrank every small map to a speck in the corner of its cell.
+    # Each row instead fills left to right at natural widths until it reaches
+    # the target, then wraps; per-ROW height is kept for the same reason.
+    widest = max(p.width for p in panels)
+    target = max(widest, TARGET_W)
+    rows, row, row_w = [], [], 0
+    for p_ in panels:
+        w = p_.width + GUTTER
+        if row and row_w + w > target:
+            rows.append(row)
+            row, row_w = [], 0
+        row.append(p_)
+        row_w += w
+    if row:
+        rows.append(row)
+    row_h = [max(p_.height for p_ in r) + GUTTER for r in rows]
+    grid_w = max(sum(p_.width + GUTTER for p_ in r) for r in rows)
 
     st = g.summary()
     caption = [
@@ -149,7 +164,7 @@ def sheet(g: ObservedGraph, title: str) -> Image.Image:
     text_w = max([probe.textlength(title, font=F_TITLE)]
                  + [probe.textlength(line, font=F_SUB) for line in caption])
     head = 34 + 15 * len(caption)
-    width = max(cols * cw, int(text_w) + GUTTER) + GUTTER
+    width = max(grid_w, int(text_w) + GUTTER) + GUTTER
 
     img = Image.new("RGB", (width, head + sum(row_h) + GUTTER), BG)
     d = ImageDraw.Draw(img)
@@ -158,8 +173,10 @@ def sheet(g: ObservedGraph, title: str) -> Image.Image:
         d.text((GUTTER, 34 + 15 * i), line, fill=FAINT, font=F_SUB)
     y = head
     for r, row in enumerate(rows):
-        for c, p in enumerate(row):
-            img.paste(p, (GUTTER + c * cw, y))
+        x = GUTTER
+        for p_ in row:
+            img.paste(p_, (x, y))
+            x += p_.width + GUTTER
         y += row_h[r]
     return img
 

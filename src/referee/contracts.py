@@ -127,6 +127,14 @@ class GameMemory:
     #: separately. FireRed-only; the decoder skips it without a key.
     battles_total: Optional[Field] = None
     battles_total_encrypted: bool = False
+    #: Map keys the cartridge does not have, so a read of one is a failed read
+    #: rather than a place. This is a per-game fact and belongs here rather than
+    #: in any consumer: Crystal's map groups are 1-based, so a group of 0 means
+    #: the four bytes came back zero — on a GBC, 0xd000-0xdfff is a SWITCHABLE
+    #: WRAM bank, and a read taken while the bank register points elsewhere
+    #: returns another bank's memory. Left in, it draws a phantom one-tile map
+    #: and two phantom warps per occurrence.
+    invalid_maps: tuple[tuple[int, ...], ...] = ()
     notes: str = ""
 
     @property
@@ -139,9 +147,11 @@ class GameMemory:
     def map_key(self, values: dict[str, Any]) -> Optional[tuple]:
         """The map part of a tile key, in whichever shape this game has."""
         if self.map_id is not None:
-            return (values.get("map_id"),) if values.get("map_id") is not None else None
-        g, n = values.get("map_group"), values.get("map_num")
-        return None if g is None or n is None else (g, n)
+            key = (values.get("map_id"),) if values.get("map_id") is not None else None
+        else:
+            g, n = values.get("map_group"), values.get("map_num")
+            key = None if g is None or n is None else (g, n)
+        return None if key is None or key in self.invalid_maps else key
 
 
 # --- the registry -------------------------------------------------------------
@@ -218,6 +228,10 @@ CRYSTAL = GameMemory(
     map_num=Field(0, 1, "<B"),
     y=Field(0, 2, "<B"),
     x=Field(0, 3, "<B"),
+    # Gen 2 numbers its map groups from 1, so (0, 0) is not a place. Measured:
+    # a 4-run Crystal corpus held 38 such samples, some in stretches of six,
+    # every one with all four bytes zero.
+    invalid_maps=((0, 0),),
     notes=(
         "Gen 2 keeps a coordinate in ONE byte and does not DMA-shuffle, so this "
         "is the only contract here with no pointer. Coordinates are unsigned. "

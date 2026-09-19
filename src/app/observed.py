@@ -80,12 +80,17 @@ class ObservedGraph:
     #: True when this game has no entry in src/referee/contracts.py, so any
     #: coordinates in its runs were decoded with another cartridge's layout.
     contractless: bool = False
+    #: Map keys the cartridge does not have, from the contract. A sample
+    #: reading one is a failed read, not a place — see GameMemory.invalid_maps.
+    invalid_maps: tuple = ()
+    #: How many samples that dropped.
+    impossible: int = 0
 
     def add_run(self, run_id: str, samples: Iterable[dict]) -> None:
         """Fold one run's per-input samples in. Order matters; runs do not."""
         self.runs.append(run_id)
         prev: Optional[Tile] = None
-        for s in _drop_map_flicker(list(samples), self):
+        for s in _drop_map_flicker(_drop_impossible_maps(list(samples), self), self):
             self.inputs += 1
             tile = _tile_of(s)
             if tile is None:
@@ -153,6 +158,23 @@ class ObservedGraph:
         }
 
 
+def _drop_impossible_maps(samples: list[dict], g: "ObservedGraph") -> list[dict]:
+    """Drop samples on a map key the cartridge does not have.
+
+    Unlike :func:`_drop_map_flicker`, which needs no per-game knowledge, this
+    one is ENTIRELY per-game knowledge — which is why the knowledge lives in
+    the contract (``GameMemory.invalid_maps``) and only the application lives
+    here. A failed read is not a short visit, so no run length makes it real
+    and the flicker rule alone cannot see it: the Crystal corpus held six
+    consecutive all-zero reads, which that rule reads as a stay.
+    """
+    if not g.invalid_maps:
+        return samples
+    keep = [s for s in samples if _map_of(s) not in g.invalid_maps]
+    g.impossible += len(samples) - len(keep)
+    return keep
+
+
 def _drop_map_flicker(samples: list[dict], g: "ObservedGraph") -> list[dict]:
     """Remove single samples whose map differs from BOTH temporal neighbours.
 
@@ -171,13 +193,21 @@ def _drop_map_flicker(samples: list[dict], g: "ObservedGraph") -> list[dict]:
     It can only ever remove a lone sample: two consecutive samples on a map
     make it real to this filter, so a genuine one-tile corridor survives as
     soon as the player spends two inputs in it.
+
+    A MISSING neighbour counts as a different map, so the rule reaches the
+    first and last sample of a run too. That is not a special case, it is the
+    same sentence: a map read that no second consecutive read confirms is not
+    proof the player was ever there, and a run's edges are no more trustworthy
+    than its middle. Leaving the ends out is what let a `0:0` tile back onto
+    the Crystal sheet after this filter was written.
     """
     keep = []
     for i, s in enumerate(samples):
         m = _map_of(s)
-        if m is not None and 0 < i < len(samples) - 1:
-            before, after = _map_of(samples[i - 1]), _map_of(samples[i + 1])
-            if before is not None and after is not None and m != before and m != after:
+        if m is not None:
+            before = _map_of(samples[i - 1]) if i > 0 else None
+            after = _map_of(samples[i + 1]) if i + 1 < len(samples) else None
+            if m != before and m != after:
                 g.flickers += 1
                 continue
         keep.append(s)
@@ -274,8 +304,11 @@ def build(run_dirs: Iterable[Path]) -> dict[str, ObservedGraph]:
         samples = list(run_samples(d))
         if not samples:
             continue
+        contract = contract_for(game)
         g = out.setdefault(game, ObservedGraph(game=game))
-        if contract_for(game) is None:
+        if contract is not None:
+            g.invalid_maps = tuple(contract.invalid_maps)
+        if contract is None:
             # The samples are read back from the run's own events, decoded by
             # whatever code was live when it ran — and before 2026-09-19 that
             # was FireRed's layout applied to EVERY cartridge
