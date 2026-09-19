@@ -43,8 +43,10 @@ do not *know*.
    days apart, so the v1 arm's own run-to-run spread is measured rather than
    assumed — and a backend gap only means something measured against it.
 2. Andreas has already authorised spending on astra runs at this length.
-3. It finishes. Both runs reached Brock (138 and 145 turns), so the early ladder
-   is not a model failing to play.
+3. It finishes. Both runs reached Brock — 138 turns on the 09-15 run, and 145 on
+   the 09-11 one, though that second number is **a human adjudication, not a
+   referee reading** (see the note under the table). The early ladder is not a
+   model failing to play.
 
 **Length: a 30-turn cap.** From the two existing runs, turn 30 sits just past
 `viridian_reached` — seven of the twelve gates, through the bedroom, the lab, the
@@ -72,7 +74,22 @@ third reference point:
 | pokedex_received | 52 | 47 | 50 |
 | viridian_forest_reached | 84 | 69 | 82 |
 | pewter_reached | 124 | 124 | 135 |
-| brock_defeated | ~145 | 138 | 150 |
+| brock_defeated | 145 † | 138 | 150 |
+
+† The 09-11 astra-low run's Brock figure is adjudicated, not latched. The model
+won the gym battle at T144 and the game printed "Player received the
+BOULDERBADGE from BROCK!", but it never dismissed the text box — the post-battle
+script that sets the badge flag runs only on dismissal, so the referee saw
+nothing and the run ran on to a leg cap at T224 with 80 empty-action turns.
+Andreas credited completion at T145 by hand on 2026-09-11 and the cost was
+re-summed over turns ≤ 145. Its `checkpoints.brock_defeated` is therefore `None`
+while `furthest` says `brock_defeated`.
+
+That is worth knowing here for two reasons. It is a **flag** gate failing on a
+model behaviour rather than on emulation, so it would fail the same way on either
+backend — and it is exactly why the primary statistic below is an early **map**
+gate, which latches on the player standing somewhere and cannot be held hostage
+by an undismissed dialogue box.
 
 **Primary statistic: turns to `route1_reached`.** 16, 16, 15 across three runs,
 including a run at a different reasoning effort. That stability is not the model
