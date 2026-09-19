@@ -74,6 +74,14 @@ class Field:
     sample: int
     offset: int
     fmt: str
+    #: Arithmetic right shift applied after unpacking. Black 2 stores a
+    #: coordinate as 16.16 FIXED POINT — the tile is ``value >> 16`` and the low
+    #: half is the sub-tile position, which is 0x8000 at rest because the player
+    #: stands at the tile centre. That makes the shift exact rather than a
+    #: rounding choice. It belongs to the field and not to the caller: a walk
+    #: graph that had to know which cartridge measures in sixteenths would be
+    #: the contract leaking back out into the code it exists to keep clean.
+    shift: int = 0
 
     @property
     def size(self) -> int:
@@ -91,7 +99,10 @@ class Field:
         raw = samples[self.sample]
         if len(raw) < self.offset + self.size:
             return None
-        return struct.unpack_from(self.fmt, raw, self.offset)[0]
+        value = struct.unpack_from(self.fmt, raw, self.offset)[0]
+        # Python's >> on a negative int floors, which is what a tile index
+        # wants: -0.5 tiles is tile -1, not tile 0.
+        return value >> self.shift if self.shift else value
 
 
 @dataclass(frozen=True)
@@ -356,8 +367,50 @@ SOULSILVER = GameMemory(
     ),
 )
 
+# Gen 5 is a different engine from Gen 4 and it shows, but the important
+# property survives: raw addresses live through a map load here too. Walked out
+# of the Aspertia front door and back in again in ONE session with no reload —
+# (5.5, 10.5) inside, (47.5, 762.5) a step later outside, (5.5, 10.5) on
+# re-entry, tracking every step between. So no pointer chase, same as Gen 4.
+#
+# What IS different: the coordinate is 16.16 fixed point. Standing still always
+# leaves 0x8000 in the low half because the player rests at the tile centre, so
+# `>> 16` is exact. And the block orders map, x, HEIGHT, y — x and y 8 apart as
+# in Gen 4, but with height between them rather than after.
+#
+# find_map_id.py did NOT find the id here, and the reason is worth keeping: it
+# sits 4 bytes BEFORE x, which is exactly what --min-anchor-dist 4 drops. Every
+# row the search did promote was the height component of some position vector.
+# It took a stricter pass — constant under four walk probes across four states,
+# equal at two tiles of one map, PAIRWISE distinct across three maps (the
+# script's `differs` only ORs against the first map), u16 < 1024 — and then the
+# round trip confirmed it: 428 -> 427 -> 428. It is not BGM or tileset either,
+# which the two house interiors rule out by sharing both and reading 428 vs 431.
+#
+# The trap in this block is 0x0223b4f4, a step counter: +1 per tile, zeroed by
+# a map load, and at rest the most map-id-shaped value in the whole struct.
+_BLACK2_LOCATION = 0x0223B444
+
+BLACK2 = GameMemory(
+    game="black2-us",
+    console="NDS",
+    spec=(f"{_BLACK2_LOCATION:#x}:16",),
+    map_id=Field(0, 0, "<I"),
+    x=Field(0, 4, "<i", shift=16),
+    y=Field(0, 12, "<i", shift=16),
+    notes=(
+        "Gen 5. map id +0, x +4, height +8, y +12; x and y are 16.16 fixed "
+        "point, so the Field carries shift=16 and the tile is value >> 16. Raw "
+        "addresses survive a map load, verified by a live round trip through "
+        "the front door. Unova's OUTDOOR coordinates are global (y=764 in a "
+        "city thirty tiles across) while interiors are local. Map ids seen: "
+        "428 player's house, 427 Aspertia City, 431 neighbour's house. No "
+        "battle flag located."
+    ),
+)
+
 CONTRACTS: dict[str, GameMemory] = {
-    c.game: c for c in (FIRERED, EMERALD, CRYSTAL, PLATINUM, SOULSILVER)}
+    c.game: c for c in (FIRERED, EMERALD, CRYSTAL, PLATINUM, SOULSILVER, BLACK2)}
 
 
 def contract_for(game: Optional[str]) -> Optional[GameMemory]:
@@ -410,5 +463,5 @@ def attach(emu: Any, contract: Optional[GameMemory]) -> Optional[GameMemory]:
     return contract
 
 
-__all__ = ["Field", "GameMemory", "CONTRACTS", "FIRERED", "EMERALD", "CRYSTAL", "PLATINUM", "SOULSILVER",
+__all__ = ["Field", "GameMemory", "CONTRACTS", "FIRERED", "EMERALD", "CRYSTAL", "PLATINUM", "SOULSILVER", "BLACK2",
            "attach", "contract_for", "contract_for_rom_path"]

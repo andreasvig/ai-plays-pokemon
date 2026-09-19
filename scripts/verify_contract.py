@@ -61,6 +61,10 @@ SNAPSHOT_OVERRIDE = {
     # walking LEFT rather than up — the outdoor fixture avoids both that and
     # the two unskippable cutscenes between the bedroom and the front door.
     "soulsilver": "v2-experiments/states/soulsilver/probe.state",
+    # Black 2's opening is indoors with the front-door warp one tile below, so
+    # a down-leg walks through it. The city fixture stands south of the line
+    # that fires Hugh's scripted scene.
+    "black2": "v2-experiments/states/black2/probe.state",
 }
 
 # A state the player is IN A BATTLE in, per ROM. The battle flag is the one

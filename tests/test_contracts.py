@@ -14,7 +14,7 @@ import pytest
 
 from src.referee import trace
 from src.referee.battles import in_battle_from_byte
-from src.referee.contracts import (CONTRACTS, CRYSTAL, EMERALD, FIRERED, Field,
+from src.referee.contracts import (BLACK2, CONTRACTS, CRYSTAL, EMERALD, FIRERED, Field,
                                    attach, contract_for)
 
 # The literal this module was extracted from (src/referee/trace.py, pre-2026-09-19).
@@ -89,6 +89,7 @@ def test_which_cartridges_can_tell_a_battle_press_from_an_overworld_one():
         "crystal-us": True,
         "platinum-us": False,
         "soulsilver-us": False,
+        "black2-us": False,
     }
 
 
@@ -104,6 +105,36 @@ def test_crystals_battle_flag_is_a_mode_byte_so_the_mask_must_carry_both_bits():
     assert CRYSTAL.battle_mask == 0x03
     assert [seen(v, 0x03) for v in (0, 1, 2)] == [False, True, True]
     assert [seen(v, 0x01) for v in (0, 1, 2)] == [False, True, False]
+
+
+def test_black2_reads_a_16_16_fixed_point_coordinate_as_a_tile():
+    """Gen 5 stores the coordinate in sixteenths. The tile is value >> 16, and
+    the low half is 0x8000 at rest because the player stands at the tile
+    CENTRE — which is what makes the shift exact rather than a rounding choice.
+
+    Without the shift the walk graph sees x jump by 65536 a step, so no two
+    samples are ever adjacent and every move is filed as a warp: the graph
+    would be empty of edges and full of doors, and it would not raise."""
+    centre = struct.pack("<IiiI", 427, (47 << 16) | 0x8000, 1, (764 << 16) | 0x8000)
+    d = trace.decode_samples([("R", [centre])], None, BLACK2)[0]
+    assert (d["x"], d["y"], d["map_id"]) == (47, 764, 427)
+    assert BLACK2.map_key(d) == (427,)
+
+
+def test_a_fixed_point_field_floors_rather_than_truncating_toward_zero():
+    """Python's >> on a negative int floors, and a tile index wants that: half
+    a tile left of the origin is tile -1, not tile 0. Pinned because a
+    hand-rolled `int(value / 65536)` would round the other way and the error
+    only ever shows up west or north of the origin."""
+    assert Field(0, 0, "<i", shift=16).read([struct.pack("<i", -(1 << 15))]) == -1
+    assert Field(0, 0, "<i", shift=16).read([struct.pack("<i", 0)]) == 0
+
+
+def test_a_field_without_a_shift_is_untouched():
+    """The control: shift defaults to 0, so every contract written before Gen 5
+    reads exactly as it did."""
+    raw = [struct.pack("<i", 12345)]
+    assert Field(0, 0, "<i").read(raw) == 12345 == Field(0, 0, "<i", shift=0).read(raw)
 
 
 def test_crystal_reads_one_unsigned_byte_per_axis_in_gen_2_order():
