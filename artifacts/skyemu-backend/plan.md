@@ -82,16 +82,29 @@ It is a **problem** in exactly one place, and that place is §3.3.
 
 ## 2. The coupling surface is small — and it is not where you'd expect
 
-### 2.1 The client interface: 12 methods, and most callers touch three
+### 2.1 The client interface: 10 methods, two attributes, and six that nothing calls
+
+*(Re-measured during P0, 2026-09-19. The earlier draft of this section said
+"12 methods" and listed six more as part of the dependency that in fact have
+**zero** call sites in `src/`. `src/emulator/backends/base.py` is now the
+authority; these numbers are derived from it.)*
 
 `EmulatorClient` exposes 18 public methods. Counting actual call sites across `src/`:
 
 ```
-read_memory       8    capture_screenshot  3    load_state     3
-press_button_list 1    wait_for_stable_screen 1  save_state    2
-ping/connect/disconnect/start_server/wait_for_connection — lifecycle
-fetch_trace / pause / unpause / resync / press_button / press_sequence
+read_memory  8   disconnect  4   start_server  3   wait_for_connection  3
+load_state   3   capture_screenshot  3   save_state  2   ping  2
+press_button_list  1   wait_for_stable_screen  1
+attributes:  trace_spec (2 writes)   facing (1 write)
+optional:    fetch_trace  (1, reached via getattr at turn.py:1897)
 ```
+
+Two things the first draft missed. **The attributes are load-bearing** — a backend
+that implements every method and neither `trace_spec` (written at `runner.py:599`,
+`launch.py:96`) nor `facing` (`turn.py:1818`) still breaks a run. And **six public
+methods have no caller at all**: `connect`, `resync`, `pause`, `unpause`,
+`press_button`, `press_sequence`. A v2 backend does not have to implement them,
+which matters more than it sounds — see §4.1.
 
 That is the whole dependency. **A backend swap is an adapter behind this interface**,
 not a rewrite of the turn loop. The referee's own contract is a single method
@@ -114,7 +127,7 @@ macOS Accessibility**, and that leaks into the app layer:
   script* in mGBA's Scripting window, with a printed manual fallback.
 - `runner.py` `load_rom_in_mgba_for_pid`, `set_mgba_mute_for_pid` — *File → Recent*,
   and audio muting, both by window automation.
-- `supervisor.py:171` `switch_rom` — a two-mechanism dance (in-place menu drive vs
+- `supervisor.py:172` `switch_rom` — a two-mechanism dance (in-place menu drive vs
   relaunch) that exists *only* because re-loading a ROM in mGBA costs the Lua
   connection.
 - `lua/socketserver-1.lua` — the wire protocol, and with it `resync()`, FIFO reply
@@ -168,7 +181,7 @@ emulator there is no "while". It would have had to stop driving itself and becom
 consumer of frames the step loop hands it.
 
 **Decision C′ removes that work from the branch.** OCR is already fully optional:
-`runner.py:809` constructs an `OCRRunner` only when `ocr.enabled`, and every consumer
+`runner.py:817` constructs an `OCRRunner` only when `ocr.enabled`, and every consumer
 guards on `self.ocr and self.ocr.enabled` (`turn.py:1799`, `:1822`, `:2094`, with cost
 accounting falling back to 0). So v2 starts with `ocr.enabled: false` and the thread
 never exists.
@@ -286,8 +299,36 @@ Three things that are not free:
 3. **Audio is unknown.** The Home and Spectate mute toggles drive mGBA via
    Accessibility. Whether SkyEmu headless produces audio at all is untested.
 
-Not a difference: the feed freezing while the model thinks. `config-5.1.yaml:46` sets
-`pause_during_thinking: true`, so mGBA is already paused there.
+### 4.1 `pause_during_thinking` does nothing, and that is a v1 finding
+
+An earlier draft of this section said the feed freezing while the model thinks is
+"not a difference", because `config-5.1.yaml` sets `pause_during_thinking: true`.
+**That was wrong, and the way it is wrong is worth more than the spectate question
+it was answering.** Checked three ways on 2026-09-19:
+
+- `grep -rn pause_during_thinking` across every `.py`, `.lua`, `.js`, `.svelte` and
+  `.md` in the repo finds it **only in the five config files**. No code reads it.
+- `EmulatorClient.pause()` and `.unpause()` have **zero call sites** in `src/`.
+- `lua/socketserver-1.lua:112` — the `PAUSE` handler's entire body is
+  `respond("OK:Paused")`. Even if something did call it, it would not pause mGBA.
+
+So in v1 **the GBA runs free at 60 fps for the entire time the model is thinking.**
+The key is at `config-5.1.yaml:44`, it has been in every config since 3.13, and it
+has never done anything.
+
+The consequence is not mainly about spectate. FireRed's RNG advances every frame, so
+**the RNG state at the moment an input lands depends on how long the model took to
+answer.** A model that thinks for 4 s and one that thinks for 40 s arrive at the
+same screen with the emulator in different states. It is bounded — nothing advances
+without input in dialogue, and no encounter fires while standing still — but it is
+real, it is unmeasured, and it is exactly the class of wall-clock leakage §1 says v2
+removes. On a stepped emulator it is structurally impossible: the machine does not
+move between `/step` calls, so a slow model and a fast one see byte-identical games.
+
+This should be surfaced to Andreas as a v1 defect in its own right, separately from
+the branch. Fixing it in v1 is one line of Lua plus two call sites; deciding whether
+to fix it is a benchmark-comparability question, because every run on the board today
+was played with it broken.
 
 ---
 
