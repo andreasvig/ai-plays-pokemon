@@ -272,6 +272,29 @@ class RunSummary(BaseModel):
     # absent from this row — while ``api.js``'s ``toRun`` already read
     # ``s.max_turns``. None on an official run: pace is its only bound.
     max_turns: int | None = None
+    # WHICH GAME the run played (2026-09-19). Until the registry grew past
+    # FireRed every row was FireRed and nothing had to say so; with a mixed queue
+    # a row without this is ambiguous the moment it finishes.
+    #
+    # Three fields because they answer three questions and two of them can be
+    # answered when the third cannot:
+    #   ``game``      the ladder join key ("firered-us"). What a benchmark, a
+    #                 walk graph and a per-game memory contract key on. None for a
+    #                 run whose ROM is not in the registry — a hand-rolled config
+    #                 pointing at an arbitrary file is legitimate, not an error.
+    #   ``game_name`` what the MODEL was told it was playing, read straight off
+    #                 ``config.json["game_name"]``. Survives an off-registry ROM
+    #                 and a ROM that has since been removed from the registry,
+    #                 which is exactly when you most want to know.
+    #   ``console``   GB / GBA / NDS. Decides what a spectate view has to render
+    #                 (an NDS frame is two stacked screens, not a 3:2 rectangle)
+    #                 and which backend could have produced the run.
+    #
+    # None on every run projected before this existed, until the app re-projects
+    # it — which it does on boot, because PROJECTION_VERSION moved with them.
+    game: str | None = None
+    game_name: str | None = None
+    console: str | None = None
 
     @property
     def rank_score(self) -> float:

@@ -96,3 +96,17 @@ export function completionLabel(r) {
   const short = (r.furthestGateName || '').replace(/ \(.*\)$/, '').replace(/^(Reached|Entered|Defeated|Cleared|Stepped outside in|Chose a|Received the|Delivered|Boarded the) /, '')
   return `${r.completion}%`.padStart(3) + (short ? ` · ${short}` : '')
 }
+
+/**
+ * A run's game, short enough for a dense row: "FireRed", "Black 2", "Crystal".
+ *
+ * Takes the display name the RUN recorded rather than the registry key, so a
+ * run whose ROM has since left the registry still says what it played. Returns
+ * null when the run recorded nothing — every caller must render a gap there and
+ * not a default, because six sites in src/ already substitute "Pokemon FireRed"
+ * for an unknown game and that is the behaviour this field exists to stop.
+ */
+export function gameShort(gameName) {
+  if (!gameName) return null
+  return String(gameName).replace(/^Pok[eé]mon\s+/i, '').trim() || null
+}

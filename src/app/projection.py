@@ -38,7 +38,7 @@ _DEFAULT_LADDER = Path("configs/checkpoints-firered-v1.yaml")
 #   1 — 2026-09-09: error / crash (why a crashed run ended).
 #   2 — 2026-09-09: record (the spec the run was recorded with, for continues).
 #   3 — 2026-09-11: open-leg fraction capped at OPEN_LEG_FRACTION_CAP.
-PROJECTION_VERSION = 13  # 13 (2026-09-15): wall presses charged against movement_efficiency + the per-run input breakdown (artifacts/wasted-inputs/plan.md); 12 (2026-09-15): legs + battles replayed from events.jsonl (src/app/replay.py), so a rule change needs no back-fill; 11: route_points / route_coverage; 10 (2026-09-14): starter leg re-scored to the ball taken (score_to reached) in every run_summary; 9: Oak's Parcel leg re-scored (scripts/backfill_parcel_leg.py); 8: gate_times_s / gate_costs_usd / movement_legs
+PROJECTION_VERSION = 14  # 14 (2026-09-19): game / game_name / console — which game a row played, for the mixed-game queue; 13 (2026-09-15): wall presses charged against movement_efficiency + the per-run input breakdown (artifacts/wasted-inputs/plan.md); 12 (2026-09-15): legs + battles replayed from events.jsonl (src/app/replay.py), so a rule change needs no back-fill; 11: route_points / route_coverage; 10 (2026-09-14): starter leg re-scored to the ball taken (score_to reached) in every run_summary; 9: Oak's Parcel leg re-scored (scripts/backfill_parcel_leg.py); 8: gate_times_s / gate_costs_usd / movement_legs
 
 # Status values the report treats as "cleared" for a gate (mirror report.py).
 _CLEARED_STATUSES = ("done", "auto")
@@ -338,6 +338,50 @@ def _record_spec(config: dict) -> dict | None:
         return None
 
 
+def _game_of(config: dict) -> tuple[str | None, str | None, str | None]:
+    """(game, game_name, console) for a finished run, from its ``config.json``.
+
+    ``game_name`` is read directly — ``apply_rom`` writes it, and it is what the
+    model was actually told. ``game`` and ``console`` need the registry, resolved
+    from ``emulator.rom_path`` (``rom_for_path`` compares resolved filesystem
+    paths, so a repo-relative registry entry matches the absolute path a saved
+    config carries).
+
+    Every one of the three can be None and none of them is an error:
+
+    - an off-registry ROM (a hand-rolled config) legitimately has no ``game``,
+      and the display name still works — which is the case you most want a name
+      for, not the one where you want a blank;
+    - a ROM REMOVED from the registry since the run leaves the same gap, and a
+      finished run's record must not change meaning because a YAML file did;
+    - a legacy run that predates ``apply_rom`` has no ``game_name`` at all.
+
+    Deliberately NOT falling back to FireRed on any of those paths. Six call
+    sites already read ``config.get("game_name") or "Pokemon FireRed"``, and with
+    seven games registered that fallback tells a reader a run played FireRed when
+    nothing recorded what it played. A blank is the honest answer; a wrong name
+    is acted on.
+    """
+    if not isinstance(config, dict):
+        return None, None, None
+    raw = config.get("game_name")
+    game_name = raw if isinstance(raw, str) and raw else None
+
+    rom_path = (config.get("emulator") or {}).get("rom_path")
+    try:
+        from src.app.roms import rom_for_path
+
+        rom = rom_for_path(rom_path if isinstance(rom_path, str) else None)
+    except (FileNotFoundError, ValueError, OSError):
+        # An unreadable or invalid registry must not stop a run from being
+        # indexed at all — the same call this makes is the one `list_roms`
+        # already treats as non-fatal for the picker.
+        rom = None
+    if rom is None:
+        return None, game_name, None
+    return rom.game, game_name or rom.game_name, rom.console
+
+
 def project_run_dir(run_dir: Path) -> RunSummary | None:
     """Project ``run_dir/run_summary.json`` into a flat :class:`RunSummary`.
 
@@ -426,6 +470,8 @@ def project_run_dir(run_dir: Path) -> RunSummary | None:
             ladder_path = Path(cp)
     total_gates = _ladder_node_count(ladder_path)
 
+    game, game_name, console = _game_of(config)
+
     # gates_reached / furthest derived the SAME way report.py counts.
     gates_reached = 0
     furthest_gate = None
@@ -488,6 +534,9 @@ def project_run_dir(run_dir: Path) -> RunSummary | None:
         model=model,
         model_resolved=model_resolved,
         config_stem=summary.get("config_stem") or _infer_config_stem(run_dir.name),
+        game=game,
+        game_name=game_name,
+        console=console,
         benchmark=benchmark,
         benchmark_version=benchmark_version,
         status=status,

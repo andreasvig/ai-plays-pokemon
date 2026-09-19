@@ -69,6 +69,14 @@ export function toRun(s) {
     modelResolved: s.model_resolved ?? null,   // OpenRouter id; the headline cards colour bars by its vendor prefix
     openSource: isOpenSource(s.model),
     config: s.config_stem ?? (s.kind === 'casual' ? null : 'pokebench-v1'),
+    // Which game the run played (2026-09-19). `game` is the registry join key
+    // ("firered-us"), `gameName` what the model was told, `console` GB/GBA/NDS.
+    // All three are null on a row projected before the field existed and on a
+    // run whose ROM is off-registry — deliberately NOT defaulted to FireRed, so
+    // a surface showing this shows a gap rather than a claim.
+    game: s.game ?? null,
+    gameName: s.game_name ?? null,
+    console: s.console ?? null,
     benchmark: s.benchmark ?? null,
     benchmarkVersion: s.benchmark_version ?? null,
     status: s.status,

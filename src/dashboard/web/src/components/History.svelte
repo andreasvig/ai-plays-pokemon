@@ -1,5 +1,5 @@
 <script>
-  import { usd, dur, perTurn, ago, dateShort, statusLabel, statusClass, legLabel, errorShort } from '../lib/format.js'
+  import { usd, dur, perTurn, ago, dateShort, statusLabel, statusClass, legLabel, errorShort, gameShort } from '../lib/format.js'
   import Icon from './Icon.svelte'
   import { STATIC } from '../lib/static.js'
   import { BENCH_VERSION } from '../lib/version.js'
@@ -116,7 +116,7 @@
         <span class="c-model">
           <span class="mname mono">{r.model}</span>
           {#if r.benchmarkVersion && r.benchmarkVersion !== BENCH_VERSION}<span class="oldver mono" title="Ran under {r.benchmarkVersion} — see the changelog">{r.benchmarkVersion.replace('pokebench-', '')}</span>{/if}
-          <span class="meta faint">{dateShort(r.startedAt)} <span class="rel">({ago(r.startedAt)})</span> · <span class="mono">{r.config}</span>{#if r.continuedFrom} · ↪ continued{/if}</span>
+          <span class="meta faint">{dateShort(r.startedAt)} <span class="rel">({ago(r.startedAt)})</span> · <span class="mono">{r.config}</span>{#if gameShort(r.gameName)} · <span class="game">{gameShort(r.gameName)}</span>{/if}{#if r.continuedFrom} · ↪ continued{/if}</span>
           {#if r.status === 'crashed' && (r.error || r.crash)}
             <!-- The CAUSE is the useful half ("Unexpected screenshot response: SEQUENCE_DONE"),
                  not the wrapper ("Action outcome uncertain…"); the full line is the tooltip. -->
@@ -224,6 +224,11 @@
     grid-template-columns: 44px minmax(180px, 1.4fr) minmax(120px, 1fr) 78px 92px 96px 96px 100px;
     align-items: center; gap: 12px;
   }
+  /* Which game a row played (2026-09-19). Un-faded against the rest of the
+     meta line because on a mixed board it is the first thing you scan for;
+     absent — not blank — on a row that recorded no game. */
+  .game { color: var(--text); }
+
   /* Public site: no kind badge, no status column. */
   .lhead.static, .row.static { grid-template-columns: minmax(180px, 1.4fr) minmax(120px, 1fr) 78px 92px 96px 100px; }
   .lhead { padding: 0 14px 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); font-weight: 700; }
