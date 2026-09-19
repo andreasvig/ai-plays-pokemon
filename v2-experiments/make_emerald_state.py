@@ -58,7 +58,13 @@ sys.path.insert(0, str(REPO / "v2-experiments" / "harness"))
 from skyemu import SkyEmu  # noqa: E402
 
 DEFAULT_ROM = REPO / "roms" / "Pokemon - Emerald Version (USA, Europe).gba"
-DEFAULT_OUT = REPO / "v2-experiments" / "states" / "emerald"
+# The two states this script writes no longer live together (2026-09-19). The
+# truck is Emerald's REGISTERED casual start, so it goes where
+# configs/roms.yaml and configs/starts.yaml point, under the savepoint-dir name
+# the executor loads (`emulator.state`). The probe is a measurement fixture for
+# find_addresses.py and nothing starts from it, so it stays in v2-experiments.
+DEFAULT_OUT = REPO / "v2-experiments" / "states" / "emerald"   # probe
+DEFAULT_START_OUT = REPO / "configs" / "saves" / "skyemu" / "emerald"   # truck
 
 # ("a"|"start"|"right"|..., n) presses that button n times; ("wait", n) advances
 # n frames with nothing held. One press is hold 12 + gap 24 = 36 frames.
@@ -167,7 +173,10 @@ def can_walk(emu: SkyEmu, state: Path) -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--rom", type=Path, default=DEFAULT_ROM)
-    ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    ap.add_argument("--out", type=Path, default=DEFAULT_OUT,
+                    help="Where the probe fixture goes.")
+    ap.add_argument("--start-out", type=Path, default=DEFAULT_START_OUT,
+                    help="Savepoint dir for the truck — Emerald's registered start.")
     ap.add_argument("--port", type=int, default=8198)
     args = ap.parse_args()
 
@@ -183,8 +192,13 @@ def main() -> int:
         with SkyEmu(rom, port=args.port) as emu:
             play(emu, TO_TRUCK, "intro")
             truck_png = emu.screen()
-            emu.save_state(args.out / "truck.state")
-            (args.out / "truck.png").write_bytes(truck_png)
+            args.start_out.mkdir(parents=True, exist_ok=True)
+            # `emulator.state` / `preview.png`, not truck.*: this directory is a
+            # savepoint dir (src/app/starts.py:REQUIRED_FILES) that the executor
+            # resumes through the same path a --continue uses. Its state.json and
+            # tasks.json are authored and are deliberately not written here.
+            emu.save_state(args.start_out / "emulator.state")
+            (args.start_out / "preview.png").write_bytes(truck_png)
             b = brightness(truck_png)
             print(f"\ntruck state: brightness {b:.1f} (want < {TRUCK_MAX_BRIGHTNESS})")
             if b >= TRUCK_MAX_BRIGHTNESS:
@@ -208,7 +222,8 @@ def main() -> int:
                     f"({walk}) -- find_addresses.py needs it to be")
 
     print(f"\nwall clock: {time.time() - wall0:.1f}s")
-    print(f"wrote {args.out}/truck.state, probe.state and their previews")
+    print(f"wrote {args.start_out}/emulator.state (the registered start) "
+          f"and {args.out}/probe.state (the measurement fixture), with previews")
     for f in failures:
         print(f"FAIL: {f}")
     return 1 if failures else 0

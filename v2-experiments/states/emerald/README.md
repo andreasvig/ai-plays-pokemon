@@ -1,4 +1,4 @@
-# Emerald start states, replayed on SkyEmu
+# Emerald's measurement fixture
 
 Written by `v2-experiments/make_emerald_state.py` from a cold boot in 34 seconds.
 Regenerate rather than edit; the script is the source of truth and it verifies
@@ -8,10 +8,12 @@ its own output.
 answers `/load -> failed`, the same refusal v1's FireRed start gets. So these
 are not ported, they are replayed.
 
+The script writes two states. Only one of them is still here:
+
 | file | where it is | what it is for |
 |---|---|---|
-| `truck.state` | inside the moving van, before the game has asked anything | the casual start `configs/roms.yaml:42-46` already describes |
 | `probe.state` | downstairs in the house in Littleroot, after Mom's greeting, no text box open | `find_addresses.py`, which needs a tile free in all four directions — the truck is five tiles wide with boxes on three sides |
+| ~~`truck.state`~~ | inside the moving van, before the game has asked anything | **moved 2026-09-19** to `configs/saves/skyemu/emerald/emulator.state`, where it is Emerald's registered casual start |
 
 The player is **TERRY**: the name field is confirmed empty with START and Emerald
 substitutes its own default. Read back off Mom's first line, not assumed.

@@ -30,6 +30,7 @@ import pytest
 
 from src.app.roms import (
     GAME_CODE_ADDR,
+    GAME_CODE_FILE_OFFSET,
     GAME_CODE_LEN,
     Rom,
     apply_rom,
@@ -51,35 +52,137 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # --- the registry --------------------------------------------------------------
 
 
-def test_registry_lists_both_games_with_firered_default():
+# The registry as it stands. Spelled out rather than derived so that ADDING a
+# game is a deliberate edit here too — the picker, the queue and the executor all
+# key off this file, and a game appearing by accident is a game a model can be
+# pointed at by accident.
+REGISTERED = {
+    "firered": "GBA",
+    "emerald": "GBA",
+    "crystal": "GB",
+    "platinum": "NDS",
+    "soulsilver": "NDS",
+    "black": "NDS",
+    "black2": "NDS",
+}
+
+
+def test_registry_lists_every_game_with_firered_default():
     roms = {r.id: r for r in load_roms()}
-    assert set(roms) == {"firered", "emerald"}
+    assert set(roms) == set(REGISTERED)
+    assert {i: r.console for i, r in roms.items()} == REGISTERED
     assert roms["firered"].is_default is True
-    assert roms["emerald"].is_default is False
+    assert sum(r.is_default for r in roms.values()) == 1
     assert default_rom().id == "firered"
 
 
 def test_each_rom_declares_a_distinct_game_and_code():
     roms = load_roms()
     assert len({r.game for r in roms}) == len(roms)
-    assert len({r.game_code for r in roms}) == len(roms)
+    # Distinct among the ones that HAVE a code. Crystal has none, and that is a
+    # cartridge fact rather than a gap: a GB/GBC header carries a title string,
+    # not a 4-character code. Counting None as a value would make this assertion
+    # pass for the wrong reason the moment a second GB game is registered.
+    codes = [r.game_code for r in roms if r.game_code is not None]
+    assert len(set(codes)) == len(codes)
     assert get_rom("firered").game_code == "BPRE"
     assert get_rom("emerald").game_code == "BPEE"
+    assert get_rom("crystal").game_code is None
 
 
-@pytest.mark.parametrize("rom_id", ["firered", "emerald"])
+@pytest.mark.parametrize("rom_id", sorted(REGISTERED))
 def test_declared_sha1_and_game_code_match_the_file_on_disk(rom_id):
-    """The registry's sha1/game_code are load-bearing — the benchmark gate reads
-    the hash and the loaded-ROM check reads the code — so assert them against
-    the real dumps rather than trusting the YAML. Skipped when the file isn't
-    there: ``roms/`` is gitignored, so a fresh clone legitimately has neither."""
+    """The registry's sha1/game_code claims, checked against the real dumps
+    rather than trusted from the YAML. Skipped when the file isn't there:
+    ``roms/`` is gitignored, so a fresh clone legitimately has none of them.
+
+    The code is read at the offset for THAT console (``GAME_CODE_FILE_OFFSET``),
+    which is the whole reason the offset is a per-console table: reading a GBA
+    offset out of an NDS card would compare two unrelated bytes and pass or fail
+    for no reason. A GB/GBC cartridge has no code at all, and the assertion is
+    then that the registry claims none — not that the check is skipped, which
+    would let a wrong code be declared and never noticed."""
     rom = get_rom(rom_id)
     path = REPO_ROOT / rom.path
     if not path.exists():
         pytest.skip(f"{rom.path} not on this machine")
-    assert hashlib.sha1(path.read_bytes()).hexdigest() == rom.sha1
-    header = path.read_bytes()[GAME_CODE_ADDR - 0x08000000 :][:GAME_CODE_LEN]
-    assert header.decode("ascii") == rom.game_code
+    blob = path.read_bytes()
+    assert hashlib.sha1(blob).hexdigest() == rom.sha1
+
+    offset = GAME_CODE_FILE_OFFSET.get(rom.console)
+    if offset is None:
+        assert rom.console == "GB"
+        assert rom.game_code is None, "a GB/GBC cartridge has no 4-character code"
+        return
+    assert blob[offset : offset + GAME_CODE_LEN].decode("ascii") == rom.game_code
+
+
+def test_registry_rejects_an_unknown_console(tmp_path):
+    """The console vocabulary is the frame module's MEASURED one, so a plausible
+    wrong spelling has to be refused rather than stored — a registry saying GBC
+    while the backend measures GB is a comparison that silently never matches."""
+    reg = tmp_path / "roms.yaml"
+    reg.write_text(
+        "roms:\n"
+        "  - {id: a, name: A, path: p, game: g, game_name: G, console: GBC,"
+        " sha1: s, default: true}\n"
+    )
+    with pytest.raises(ValueError, match="console"):
+        load_roms(reg)
+
+
+def test_registry_accepts_an_entry_with_no_game_code(tmp_path):
+    """The control for the test above it: absent is legal, empty is not."""
+    reg = tmp_path / "roms.yaml"
+    reg.write_text(
+        "roms:\n"
+        "  - {id: a, name: A, path: p, game: g, game_name: G, console: GB,"
+        " sha1: s, default: true}\n"
+    )
+    assert load_roms(reg)[0].game_code is None
+
+    reg.write_text(
+        "roms:\n"
+        "  - {id: a, name: A, path: p, game: g, game_name: G, console: GB,"
+        " game_code: '', sha1: s, default: true}\n"
+    )
+    with pytest.raises(ValueError, match="game_code"):
+        load_roms(reg)
+
+
+def test_every_start_save_is_a_complete_savepoint_dir():
+    """A ``start_save`` that is missing one of its three files fails at DISPATCH,
+    deep inside a run, long after the picker offered it. These are committed, so
+    the assertion holds on a fresh clone — unlike the ROMs, which are not."""
+    from src.app.starts import REQUIRED_FILES
+
+    for rom in load_roms():
+        if rom.start_save is None:
+            continue
+        base = REPO_ROOT / rom.start_save
+        assert base.is_dir(), f"{rom.id}: {rom.start_save} is not a directory"
+        for name in REQUIRED_FILES:
+            assert (base / name).exists(), f"{rom.id}: {rom.start_save}/{name} missing"
+
+
+def test_every_rom_with_a_start_save_offers_it_by_name():
+    """The registry's ``start_save`` and the starts registry must not drift: a
+    game whose only opening is unnamed shows an unlabelled fallthrough in the
+    picker and cannot be asked for by ``--start``. FireRed is the exception and
+    says so — its default opening IS executor.CANONICAL_SAVE, reached without a
+    ``start_save`` at all, and it is offered by name as ``boy``."""
+    from src.app.starts import starts_for_rom
+
+    for rom in load_roms():
+        labels = {s.label: s for s in starts_for_rom(rom.id)}
+        assert labels, f"{rom.id} offers no named start"
+        assert sum(s.is_default for s in labels.values()) == 1, rom.id
+        if rom.start_save is not None:
+            paths = {Path(s.path) for s in labels.values()}
+            assert Path(rom.start_save) in paths, (
+                f"{rom.id}: start_save {rom.start_save} is not offered by name; "
+                f"named starts point at {sorted(map(str, paths))}"
+            )
 
 
 def test_firered_sha1_is_one_the_ladder_accepts():
@@ -101,7 +204,7 @@ def test_registry_rejects_a_missing_default(tmp_path):
     reg = tmp_path / "roms.yaml"
     reg.write_text(
         "roms:\n"
-        "  - {id: a, name: A, path: p, game: g, game_name: G, game_code: C, sha1: s}\n"
+        "  - {id: a, name: A, path: p, game: g, game_name: G, console: GBA, game_code: C, sha1: s}\n"
     )
     with pytest.raises(ValueError, match="exactly one rom"):
         load_roms(reg)
@@ -111,9 +214,9 @@ def test_registry_rejects_two_defaults(tmp_path):
     reg = tmp_path / "roms.yaml"
     reg.write_text(
         "roms:\n"
-        "  - {id: a, name: A, path: p, game: g, game_name: G, game_code: C,"
+        "  - {id: a, name: A, path: p, game: g, game_name: G, console: GBA, game_code: C,"
         " sha1: s, default: true}\n"
-        "  - {id: b, name: B, path: q, game: h, game_name: H, game_code: D,"
+        "  - {id: b, name: B, path: q, game: h, game_name: H, console: GBA, game_code: D,"
         " sha1: t, default: true}\n"
     )
     with pytest.raises(ValueError, match="exactly one rom"):
@@ -124,9 +227,9 @@ def test_registry_rejects_a_duplicate_id(tmp_path):
     reg = tmp_path / "roms.yaml"
     reg.write_text(
         "roms:\n"
-        "  - {id: a, name: A, path: p, game: g, game_name: G, game_code: C,"
+        "  - {id: a, name: A, path: p, game: g, game_name: G, console: GBA, game_code: C,"
         " sha1: s, default: true}\n"
-        "  - {id: a, name: B, path: q, game: h, game_name: H, game_code: D, sha1: t}\n"
+        "  - {id: a, name: B, path: q, game: h, game_name: H, console: GBA, game_code: D, sha1: t}\n"
     )
     with pytest.raises(ValueError, match="duplicate rom id"):
         load_roms(reg)
@@ -189,7 +292,8 @@ def test_a_broken_benchmark_registry_still_lets_you_pick_a_game(tmp_path):
     game at all, so the picker degrades to casual-only rather than 500ing."""
     manifest = tmp_path / "nope.yaml"
     rows = list_roms(benchmarks_path=manifest)
-    assert [r["benchmark_ok"] for r in rows] == [False, False]
+    assert rows, "the picker must still list every game"
+    assert [r["benchmark_ok"] for r in rows] == [False] * len(rows)
 
 
 # --- apply_rom -----------------------------------------------------------------
@@ -338,7 +442,8 @@ def test_a_rom_without_a_start_save_boots_to_the_title_screen(tmp_path, monkeypa
     state must be None (boot the cartridge), NOT the default ROM's save."""
     bare = Rom(
         id="emerald", name="Pokemon Emerald", path="roms/e.gba", game="emerald-us",
-        game_name="Pokemon Emerald", game_code="BPEE", sha1="s", start_save=None,
+        console="GBA", game_name="Pokemon Emerald", game_code="BPEE", sha1="s",
+        start_save=None,
     )
     monkeypatch.setattr("src.app.executor.get_rom", lambda rid, path=None: bare)
     _cfg, snapshot, _turns = _executor(tmp_path).build_run_config(
@@ -355,7 +460,7 @@ def test_a_rom_with_a_start_save_uses_it(tmp_path, monkeypatch):
 
     truck = Rom(
         id="emerald", name="Pokemon Emerald", path="roms/e.gba", game="emerald-us",
-        game_name="Pokemon Emerald", game_code="BPEE", sha1="s",
+        console="GBA", game_name="Pokemon Emerald", game_code="BPEE", sha1="s",
         start_save="configs/saves/emerald-truck",
     )
     monkeypatch.setattr(roms_mod, "get_rom", lambda rid, path=None: truck)
@@ -382,7 +487,11 @@ def test_official_takes_the_benchmarks_rom_not_the_items(tmp_path):
 
 def test_rom_for_game_falls_back_rather_than_raising():
     assert rom_for_game("emerald-us").id == "emerald"
-    assert rom_for_game("crystal-us").id == "firered"
+    assert rom_for_game("crystal-us").id == "crystal"
+    # NOT a real game. This used to say "crystal-us", which stopped testing the
+    # fallback the day Crystal was registered while still passing for a while —
+    # the stand-in for "unknown" has to be a name nothing can grow into.
+    assert rom_for_game("not-a-game-us").id == "firered"
     assert rom_for_game(None).id == "firered"
 
 
@@ -747,11 +856,12 @@ def api(tmp_path):
 
 def test_roms_route_serves_the_registry(api):
     rows = {r["id"]: r for r in api.get("/api/roms").json()}
-    assert set(rows) == {"firered", "emerald"}
+    assert set(rows) == set(REGISTERED)
     assert rows["firered"]["default"] is True
     assert rows["emerald"]["benchmark_ok"] is False
+    assert {i: r["console"] for i, r in rows.items()} == REGISTERED
     assert set(rows["emerald"]) == {
-        "id", "name", "game", "game_name", "default",
+        "id", "name", "game", "console", "game_name", "default",
         "benchmark_ok", "has_start_save", "on_disk",
     }
 
@@ -767,10 +877,10 @@ def test_enqueue_accepts_a_known_rom(api):
 
 def test_enqueue_rejects_an_unknown_rom(api):
     r = api.post("/api/queue", json={
-        "kind": "casual", "model": "claude-haiku-4.5(medium)", "rom": "crystal",
+        "kind": "casual", "model": "claude-haiku-4.5(medium)", "rom": "not-a-game",
     })
     assert r.status_code == 400
-    assert "crystal" in r.json()["detail"]
+    assert "not-a-game" in r.json()["detail"]
 
 
 def test_official_enqueue_ignores_a_rom(api):
@@ -816,7 +926,7 @@ def test_switch_is_refused_mid_run(api):
 
 
 def test_switch_rejects_an_unknown_rom(api):
-    r = api.post("/api/emulator/rom", json={"rom": "crystal"})
+    r = api.post("/api/emulator/rom", json={"rom": "not-a-game"})
     assert r.status_code == 400
     assert api.sup.switched == []
 

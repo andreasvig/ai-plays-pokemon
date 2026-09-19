@@ -1679,8 +1679,8 @@ async def api_benchmarks():
 
 @app.get("/api/roms")
 async def api_roms():
-    """The ROM registry — ``[{id, name, game, game_name, default, benchmark_ok,
-    has_start_save, on_disk}, ...]``.
+    """The ROM registry — ``[{id, name, game, console, game_name, default,
+    benchmark_ok, has_start_save, on_disk}, ...]``.
 
     Backs the new-run dialog's game picker. ``benchmark_ok`` is derived (some
     ladder is authored for that game), which is what greys the dialog's Benchmark

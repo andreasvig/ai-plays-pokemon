@@ -46,3 +46,66 @@ starts:
     # start for exactly that reason.
     path: "configs/saves/firered-girl"
     description: "Bedroom, start of game, playing as Leaf. Visually distinct from the boy start — useful when filming two runs side by side."
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Added 2026-09-19 with the six non-FireRed games. One entry each, so the
+  # picker and `pokemon ls starts` have a NAME and a description for every
+  # game rather than an unlabelled fallthrough to the ROM's own `start_save`.
+  #
+  # Each points at the same directory the ROM's `start_save` does — deliberately
+  # the same file, exactly as FireRed's `boy` shares a directory with
+  # executor.CANONICAL_SAVE, so the named opening and the default opening cannot
+  # drift apart.
+  #
+  # `default: true` here means only "the option the picker preselects".
+  # RunExecutor._resolve_start does NOT consult it: a run that names no start
+  # keeps the pre-registry behaviour (the ROM's own start_save), which is the
+  # same directory anyway.
+  #
+  # Every one of these was REPLAYED headless from a measured input sequence, not
+  # converted from an mGBA state — SkyEmu refuses those. The check each passed:
+  # from the saved state, all four d-pad directions change the screen against an
+  # IDLE control of the same length. See configs/saves/skyemu/README.md.
+  # ─────────────────────────────────────────────────────────────────────────
+
+  - rom: emerald
+    label: truck
+    name: "The moving van"
+    default: true
+    path: "configs/saves/skyemu/emerald"
+    description: "In the back of the moving van arriving in Littleroot Town, before the game has asked for a name. Five tiles wide with boxes on three sides — it is the one start of the seven that cannot be used to measure movement."
+
+  - rom: crystal
+    label: bedroom
+    name: "Bedroom, New Bark Town"
+    default: true
+    path: "configs/saves/skyemu/crystal"
+    description: "Upstairs at home in New Bark Town, playing as Chris. Crystal has a real-time clock and the state carries the host's time of day with it, which Gen 2 gates encounters on."
+
+  - rom: platinum
+    label: bedroom
+    name: "Bedroom, Twinleaf Town"
+    default: true
+    path: "configs/saves/skyemu/platinum"
+    description: "Upstairs at home in Twinleaf Town, playing as Todd. The rival is named Barry by default."
+
+  - rom: soulsilver
+    label: bedroom
+    name: "Bedroom, New Bark Town"
+    default: true
+    path: "configs/saves/skyemu/soulsilver"
+    description: "Upstairs at home in New Bark Town, playing as AA. SoulSilver rolls a RANDOM name suggestion rather than offering a default, so the opening types a name instead of accepting one."
+
+  - rom: black
+    label: bedroom
+    name: "Bedroom, Nuvema Town"
+    default: true
+    path: "configs/saves/skyemu/black"
+    description: "In the bedroom between Cheren and Bianca, playing as A. The three starters are in the gift box in this room, so the first goal of the game needs no door."
+
+  - rom: black2
+    label: room
+    name: "The player's room, Aspertia City"
+    default: true
+    path: "configs/saves/skyemu/black2"
+    description: "Playing as Ace. The one game of the seven that does not open in a bedroom — Black 2 opens on a street where Mom takes a call, and the room is reached without walking through a door."

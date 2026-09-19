@@ -103,7 +103,16 @@ sys.path.insert(0, str(REPO / "v2-experiments" / "harness"))
 
 from skyemu import SkyEmu  # noqa: E402
 
-OUT_ROOT = REPO / "v2-experiments" / "states"
+# Where a finished state lands: a SAVEPOINT DIR per game under configs/saves/,
+# which is what configs/roms.yaml's `start_save` and configs/starts.yaml point
+# at (moved here 2026-09-19, from v2-experiments/states/). A savepoint dir is
+# `emulator.state` + `state.json` + `tasks.json` (src/app/starts.py:REQUIRED_FILES)
+# plus an optional preview.png; this script writes the state and the preview and
+# leaves the two JSON files alone, because the goal text is authored, not
+# measured. Regenerating a game therefore refreshes the state in place without
+# touching its task.
+OUT_ROOT = REPO / "configs" / "saves" / "skyemu"
+STATE_NAME = "emulator.state"
 BUTTON = {"a": "a", "b": "b", "s": "start",
           "u": "up", "d": "down", "l": "left", "r": "right"}
 
@@ -289,7 +298,7 @@ def make(name: str, port: int, out_root: Path, log=print) -> list[str]:
             if console != game["console"]:
                 problems.append(f"{name}: expected {game['console']}, measured {console}")
             frames = play(emu, game["spec"])
-            state = out / "start.state"
+            state = out / STATE_NAME
             emu.save_state(state)
             (out / "preview.png").write_bytes(emu.screen())
             moves = responds(emu, state)

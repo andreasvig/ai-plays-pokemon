@@ -13,6 +13,15 @@ Benchmark capability is DERIVED, never declared: a ROM can play a benchmark iff
 some ladder's ``game:`` equals the ROM's. Emerald is casual-only today purely
 because no ladder claims ``emerald-us`` — authoring one is the whole of what
 turns it on, with no flag to remember to flip.
+
+``console`` is the second join key, added when the registry grew past the GBA
+(2026-09-19). It decides which backend can hold the ROM at all — mGBA cannot run
+an NDS cartridge — and its vocabulary is deliberately
+:data:`src.emulator.backends.frame.GEOMETRY`'s, so a declared console and a
+MEASURED one are the same string and can be compared without a mapping table.
+That is why Crystal is ``GB`` and not ``GBC``: the frame module measures a GBC
+capture as 160x144, which is ``GB``, and a registry that said ``GBC`` would
+disagree with the only thing that can check it.
 """
 
 from __future__ import annotations
@@ -38,25 +47,54 @@ ROMS_FILE = CONFIGS_DIR / "roms.yaml"
 GAME_CODE_ADDR = 0x080000AC
 GAME_CODE_LEN = 4
 
+# The consoles a registry entry may declare. Deliberately the same three strings
+# ``src.emulator.backends.frame.GEOMETRY`` MEASURES from a capture's shape, so a
+# declared console can be compared with an observed one directly. A GBC
+# cartridge declares ``GB``: SkyEmu renders it at 160x144 like a DMG, which is
+# what the frame module can see, and a registry that insisted on ``GBC`` would
+# be making a claim nothing here can check.
+CONSOLES = ("GB", "GBA", "NDS")
+
+# Where a cartridge keeps its 4-character game code, as a FILE offset, per
+# console. GBA: 0xAC (the bus address GAME_CODE_ADDR above, minus the 0x08000000
+# cartridge base). NDS: 0x0C in the card header. GB/GBC is absent on purpose —
+# a DMG/CGB header has a title string at 0x0134 and no 4-character code, which is
+# why ``Rom.game_code`` is optional. Used to check a dump against the registry;
+# the mGBA runtime check reads GAME_CODE_ADDR over the bus instead.
+GAME_CODE_FILE_OFFSET: dict[str, int] = {
+    "GBA": GAME_CODE_ADDR - 0x08000000,
+    "NDS": 0x0C,
+}
+
 
 @dataclass
 class Rom:
     """One playable ROM.
 
-    ``game`` is the join key to a ladder's ``game:``; ``game_name`` is what the
-    agent prompts call it; ``game_code`` is the cartridge header code used to
-    verify the loaded ROM; ``start_save`` is an optional committed savepoint dir
-    that casual runs on this ROM start from (``None`` → boot from the title
-    screen). ``is_default`` marks the ROM the app boots with.
+    ``game`` is the join key to a ladder's ``game:``; ``console`` is the join key
+    to a BACKEND (see the module docstring); ``game_name`` is what the agent
+    prompts call it; ``start_save`` is an optional committed savepoint dir that
+    casual runs on this ROM start from (``None`` → boot from the title screen).
+    ``is_default`` marks the ROM the app boots with.
+
+    ``game_code`` is OPTIONAL, and that is a fact about cartridges rather than a
+    convenience: it is the 4-character code in a GBA or NDS header, and a GB/GBC
+    cartridge has no such field — it carries a title string instead. It was
+    required while every ROM was a GBA one. Its only readers are mGBA's in-place
+    cartridge swap and the header check that verifies it
+    (``supervisor._swap_rom_in_place`` / ``verify_loaded_rom``), both of which
+    already treat "cannot ask" as "relaunch instead" — so ``None`` degrades to
+    the slow path rather than to a wrong answer.
     """
 
     id: str
     name: str
     path: str
     game: str
+    console: str
     game_name: str
-    game_code: str
     sha1: str
+    game_code: Optional[str] = None
     start_save: Optional[str] = None
     is_default: bool = False
 
@@ -70,6 +108,7 @@ class Rom:
             "id": self.id,
             "name": self.name,
             "game": self.game,
+            "console": self.console,
             "game_name": self.game_name,
             "default": self.is_default,
             "benchmark_ok": benchmark_ok,
@@ -88,12 +127,25 @@ def _rom_from_entry(entry: Any, index: int, registry_name: str) -> Rom:
             f"{registry_name}: rom #{index} must be a mapping, "
             f"got {type(entry).__name__}"
         )
-    for field in ("id", "name", "path", "game", "game_name", "game_code", "sha1"):
+    for field in ("id", "name", "path", "game", "console", "game_name", "sha1"):
         value = entry.get(field)
         if not isinstance(value, str) or not value:
             raise ValueError(
                 f"{registry_name}: rom #{index} missing or invalid {field!r}"
             )
+    if entry["console"] not in CONSOLES:
+        raise ValueError(
+            f"{registry_name}: rom {entry['id']!r} has console "
+            f"{entry['console']!r}; known: {', '.join(sorted(CONSOLES))}. "
+            f"A GBC cartridge is 'GB' — the vocabulary is the frame module's "
+            f"MEASURED one, so that a declared console and a measured one compare."
+        )
+    game_code = entry.get("game_code")
+    if game_code is not None and (not isinstance(game_code, str) or not game_code):
+        raise ValueError(
+            f"{registry_name}: rom {entry['id']!r} has an invalid 'game_code' "
+            f"(omit the key entirely for a GB/GBC cartridge, which has none)"
+        )
     start_save = entry.get("start_save")
     if start_save is not None and (not isinstance(start_save, str) or not start_save):
         raise ValueError(
@@ -104,8 +156,9 @@ def _rom_from_entry(entry: Any, index: int, registry_name: str) -> Rom:
         name=entry["name"],
         path=entry["path"],
         game=entry["game"],
+        console=entry["console"],
         game_name=entry["game_name"],
-        game_code=entry["game_code"],
+        game_code=game_code,
         sha1=entry["sha1"],
         start_save=start_save,
         is_default=bool(entry.get("default", False)),
@@ -118,7 +171,10 @@ def load_roms(path: Union[str, Path, None] = None) -> list[Rom]:
     Validation (raises ``ValueError`` on violation):
       - top level is a mapping with a non-empty ``roms`` list;
       - every entry has non-empty string ``id``/``name``/``path``/``game``/
-        ``game_name``/``game_code``/``sha1``;
+        ``console``/``game_name``/``sha1``, and ``console`` is one of
+        :data:`CONSOLES`;
+      - ``game_code``, when present, is a non-empty string (absent is legal — a
+        GB/GBC cartridge has no 4-character code);
       - ``id`` values are unique;
       - exactly one entry sets ``default: true`` — the app has to boot SOMETHING,
         so unlike benchmarks (where zero means "first one wins") an absent

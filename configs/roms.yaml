@@ -7,26 +7,46 @@
 #              some benchmark ladder declares the same game — DERIVED, never a
 #              flag here, so adding an Emerald ladder is the only thing needed
 #              to turn Emerald's benchmarks on.
+#   console    GB / GBA / NDS. The join key to a BACKEND: mGBA cannot hold an NDS
+#              cartridge at all, so this is what lets a mixed queue know it has to
+#              switch emulator and not just ROM. The vocabulary is deliberately
+#              the one `src/emulator/backends/frame.py` MEASURES from a capture's
+#              shape, so a declared console and an observed one are the same
+#              string. That is why Crystal says GB and not GBC — SkyEmu renders a
+#              GBC at 160x144 like a DMG, and a registry that claimed GBC would be
+#              asserting something nothing here can check.
 #   game_name  what the agent prompts call it ({game_name} in the system prompt,
 #              and the TaskMaster / research tool's phrasing).
-#   game_code  the 4-byte GBA header code at 0x080000AC. Read back over the Lua
-#              socket to check which ROM mGBA ACTUALLY has loaded, rather than
-#              trusting what we launched it with.
-#   sha1       of the ROM file. Checked against the ladder's `rom_sha1` before a
-#              benchmark arms, so a score can never come from a different dump.
+#   game_code  the 4-byte header code (GBA at 0x080000AC, NDS at 0x0C). OPTIONAL:
+#              a GB/GBC cartridge has no such field — it carries a title string —
+#              so Crystal omits it. Its only readers are mGBA's in-place cartridge
+#              swap and the check that verifies it, both of which treat "cannot
+#              ask" as "relaunch instead". Under the v2 (SkyEmu-only) control
+#              center it is not the verification currency at all: the backend
+#              MEASURES the console from the frame it renders.
+#   sha1       of the ROM file. NOTE 2026-09-19: the check this line used to
+#              describe ("checked against the ladder's rom_sha1 before a benchmark
+#              arms") DOES NOT EXIST anywhere in src/. The field is a record of
+#              which dump was verified (v2-experiments/roms/MANIFEST.md), not an
+#              enforced gate. Building the gate is open work; documenting it as
+#              present was the defect.
 #   start_save a committed savepoint dir this ROM's casual runs start from.
 #              Absent → the run starts from the ROM's own boot (title screen).
 #              The default ROM deliberately has none: its start save is
 #              executor.CANONICAL_SAVE, which is also what the benchmark uses.
 #
-# The files themselves are NOT in the repo (`roms/` is gitignored) — supply your
-# own dumps at these paths.
+# The ROM files themselves are NOT in the repo (`roms/` is gitignored) — supply
+# your own dumps at these paths. On this machine the five games added in 2026-09
+# are symlinks from `roms/` into `v2-experiments/roms/`, where they were ingested;
+# `Rom.exists()` follows symlinks, and a checkout without them simply has those
+# games greyed out of the picker rather than broken.
 
 roms:
   - id: firered
     name: "Pokemon FireRed"
     path: "roms/Pokemon - FireRed Version (USA, Europe) (Rev 1).gba"
     game: firered-us
+    console: GBA
     game_name: "Pokemon FireRed"
     game_code: BPRE
     sha1: dd5945db9b930750cb39d00c84da8571feebf417   # rev 1 (v1.1)
@@ -36,13 +56,93 @@ roms:
     name: "Pokemon Emerald"
     path: "roms/Pokemon - Emerald Version (USA, Europe).gba"
     game: emerald-us
+    console: GBA
     game_name: "Pokemon Emerald"
     game_code: BPEE
     sha1: f3ae088181bf583e55daf962a92bb46f4f1d07b7
-    # Inside the moving truck at the very start (captured 2026-08-02), before the
-    # game has asked for a name or handed out a starter — the Emerald equivalent
-    # of FireRed's bedroom start, and the same kind of "everything is still ahead
-    # of you" opening. Every casual Emerald run resumes from here.
-    start_save: "configs/saves/emerald-truck"
+    # Inside the moving truck at the very start, before the game has asked for a
+    # name or handed out a starter — the Emerald equivalent of FireRed's bedroom
+    # start, and the same kind of "everything is still ahead of you" opening.
+    #
+    # Re-pointed 2026-09-19 from configs/saves/emerald-truck, which is an mGBA
+    # savestate: SkyEmu answers `/load -> failed` for every one of those, so under
+    # the SkyEmu-only control center the old path would have failed at dispatch.
+    # This one is replayed from a measured input sequence, not converted.
+    start_save: "configs/saves/skyemu/emerald"
     # No benchmark ladder declares `game: emerald-us` yet, so Emerald is casual-
     # only and the new-run dialog greys its Benchmark option out.
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Added 2026-09-19. Every one of these is casual-only (no ladder declares its
+  # game) and every one starts from a state that was REPLAYED headless rather
+  # than converted — see configs/saves/skyemu/README.md for how each was made and
+  # what check it passed. None of them has a per-game memory contract yet, so a
+  # run records turns, cost, tokens, screenshots and its conversation, and no
+  # position, route or movement figures. That is the honest gap, not a bug: see
+  # artifacts/skyemu-backend/v2-ui-plan.md §3.
+  # ───────────────────────────────────────────────────────────────────────────
+
+  - id: crystal
+    name: "Pokemon Crystal"
+    path: "roms/Pokemon - Crystal Version (USA).gbc"
+    game: crystal-us
+    console: GB          # a GBC cartridge; see the console note in the header
+    game_name: "Pokemon Crystal"
+    # No game_code: GB/GBC headers carry a title string ("PM_CRYSTAL"), not a
+    # 4-character code.
+    sha1: f4cd194bdee0d04ca4eac29e09b8e4e9d818c133
+    # The bedroom upstairs in New Bark Town. Crystal has a real-time clock and
+    # the savestate captures the host's time of day, so this opening carries a
+    # time with it — which matters, because Gen 2 gates encounters on it.
+    start_save: "configs/saves/skyemu/crystal"
+
+  - id: platinum
+    name: "Pokemon Platinum"
+    path: "roms/Pokemon - Platinum Version (USA).nds"
+    game: platinum-us
+    console: NDS
+    game_name: "Pokemon Platinum"
+    game_code: CPUE
+    sha1: ce81046eda7d232513069519cb2085349896dec7
+    # The bedroom upstairs in Twinleaf Town.
+    start_save: "configs/saves/skyemu/platinum"
+
+  - id: soulsilver
+    name: "Pokemon SoulSilver"
+    path: "roms/Pokemon - SoulSilver Version (Europe).nds"
+    game: soulsilver-us
+    console: NDS
+    game_name: "Pokemon SoulSilver"
+    # The file is named "(Europe)" and is NOT: IPGE is the USA game code (Europe
+    # would be IPGP), verified from the header. The `game` key follows the
+    # cartridge, not the filename.
+    game_code: IPGE
+    sha1: 27a25c23aa1c0ecabe48a30a004b96c9dbc97730
+    # The bedroom upstairs in New Bark Town.
+    start_save: "configs/saves/skyemu/soulsilver"
+
+  - id: black
+    name: "Pokemon Black"
+    path: "roms/Pokemon - Black Version (USA, Europe) (NDSi Enhanced).nds"
+    game: black-us
+    console: NDS
+    game_name: "Pokemon Black"
+    game_code: IRBO
+    sha1: 26ad0b9967aa279c4a266ee69f52b9b2332399a5
+    # The bedroom in Nuvema Town, standing between Cheren and Bianca. The three
+    # starters are in the gift box in this room, so the first goal needs no door.
+    start_save: "configs/saves/skyemu/black"
+
+  - id: black2
+    name: "Pokemon Black 2"
+    path: "roms/Pokemon - Black Version 2 (USA, Europe) (NDSi Enhanced).nds"
+    game: black2-us
+    console: NDS
+    game_name: "Pokemon Black 2"
+    game_code: IREO
+    sha1: e51e6dfb8678a3d19dcd2a10691b96a569ca0abb
+    # The player's room in Aspertia City. Black 2 is the one game of the seven
+    # that does NOT open in a bedroom — it opens on a street, where Mom takes a
+    # call — but the room is still the first frame the player has control in,
+    # which is what every one of these states is.
+    start_save: "configs/saves/skyemu/black2"

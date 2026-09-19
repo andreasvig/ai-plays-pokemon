@@ -75,10 +75,14 @@ def _ls_roms(args) -> int:
     if args.json:
         _emit(rows)
         return 0
-    print(f"{'id':<12} {'name':<24} {'game':<14} {'on disk':<8} {'benchmarks':<11} default")
+    print(
+        f"{'id':<12} {'name':<24} {'game':<14} {'console':<8} "
+        f"{'on disk':<8} {'benchmarks':<11} default"
+    )
     for r in rows:
         print(
             f"{r['id']:<12} {r['name']:<24} {r['game']:<14} "
+            f"{r.get('console', '?'):<8} "
             f"{('yes' if r['on_disk'] else 'NO'):<8} "
             f"{('yes' if r.get('benchmark_ok') else 'casual only'):<11} "
             f"{'*' if r.get('default') else ''}"
@@ -97,10 +101,13 @@ def _ls_starts(args) -> int:
     if args.json:
         _emit(rows)
         return 0
-    print(f"{'rom':<10} {'label':<8} {'name':<14} {'on disk':<8} {'default':<8} description")
+    print(
+        f"{'rom':<11} {'label':<8} {'name':<34} {'on disk':<8} "
+        f"{'default':<8} description"
+    )
     for r in rows:
         print(
-            f"{r['rom']:<10} {r['label']:<8} {r['name']:<14} "
+            f"{r['rom']:<11} {r['label']:<8} {r['name']:<34} "
             f"{('yes' if r['exists'] else 'NO'):<8} "
             f"{('*' if r.get('default') else ''):<8} "
             f"{r.get('description', '')}"

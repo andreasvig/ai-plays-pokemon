@@ -155,7 +155,7 @@ def test_exists_is_false_for_a_missing_dir(tmp_path):
 def _rom(rom_id="firered", *, is_default=True, start_save=None):
     return Rom(
         id=rom_id, name=rom_id, path=f"roms/{rom_id}.gba", game=f"{rom_id}-us",
-        game_name=rom_id, game_code="XXXX", sha1="0" * 40,
+        console="GBA", game_name=rom_id, game_code="XXXX", sha1="0" * 40,
         start_save=start_save, is_default=is_default,
     )
 
