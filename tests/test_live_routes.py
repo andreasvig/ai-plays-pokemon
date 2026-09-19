@@ -373,3 +373,66 @@ def test_queue_cards_render_the_real_turn_and_never_a_fabricated_zero():
         assert "active.currentTurn ?? 0" not in src, name
     api = (WEB / "lib/api.js").read_text()
     assert "active_current_turn" in api
+
+
+# ── the simple view on a PORTRAIT frame ─────────────────────────────────────
+#
+# Everything in this stage was built for a GBA frame, which is landscape and
+# nearly fills a 1:1 stage. A laid-out DS frame is 512x528 — taller than it is
+# wide — and two things that were the same rule for a landscape frame come apart:
+# how tall the picture is allowed to be, and how wide the paper elements are.
+
+
+def test_the_simple_view_reads_portrait_off_the_frame():
+    """No console table, no config key: the decision is the decoded image's own
+    shape, so it follows a cartridge swap mid-session for free."""
+    src = (WEB / "components/SimpleView.svelte").read_text()
+    assert "el.naturalHeight > el.naturalWidth" in src
+    assert "class:portrait" in src
+    assert ".stage.portrait" in src
+
+
+def test_a_portrait_frame_gets_more_height_and_the_full_width():
+    """Both levers, asserted where they are written.
+
+    Height: in a 1:1 stage a portrait picture's WIDTH is decided by the height
+    it is given, so the turn box hands back 5 points (24% -> 19%) and the game
+    goes from 56% to 66% of the stage.
+
+    Width: the paper elements stop following the picture. Pinned to a portrait
+    picture they are a narrow column with two thirds of the stage empty beside
+    them — *"maybe we could expand the interface more in width ... right now it
+    is quite squashed"* (Andreas, 2026-09-19), with the model name truncated to
+    "gemini-3.8-flash(m…" and the reasoning wrapping every seven words.
+    """
+    src = (WEB / "components/SimpleView.svelte").read_text()
+    portrait_rule = src[src.index(".stage.portrait") : src.index(".stage.portrait") + 200]
+    assert "--boxh: 19%" in portrait_rule
+    assert "--paperw: 100%" in portrait_rule
+
+
+def test_every_paper_element_follows_one_width_variable():
+    """Three elements — header card, turn box, pending strip — and they must
+    share edges in BOTH regimes. Three separate `var(--shotw)` reads is how one
+    of them gets left behind when the rule changes; there is one variable and
+    the regimes pick what it points at."""
+    src = (WEB / "components/SimpleView.svelte").read_text()
+    assert src.count("width: var(--paperw, 100%)") == 3
+    # --shotw is still MEASURED (the morph clone and the default both need it),
+    # but nothing may read it for a width any more.
+    assert "stageEl.style.setProperty('--shotw'" in src
+    assert "width: var(--shotw" not in src
+
+
+def test_a_landscape_frame_is_untouched():
+    """THE control. Everything above is inside `.stage.portrait`, so a GBA or GB
+    run gets exactly the stage it had — the two rules agree there anyway, since
+    a landscape picture nearly fills the stage."""
+    src = (WEB / "components/SimpleView.svelte").read_text()
+    base = src[src.index("  .stage {") : src.index(".stage.portrait")]
+    assert "--boxh: 24%" in base
+    assert "--paperw: var(--shotw, 100%)" in base
+    # and the stage is still square, which is what lets the recorder's 1080x1080
+    # viewport fill exactly with no crop step and no letterbox bars
+    assert "aspect-ratio: 1 / 1" in base
+    assert "width: min(100vw, 100vh)" in base

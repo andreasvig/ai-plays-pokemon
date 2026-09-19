@@ -759,12 +759,27 @@
        column, so the screen gives up less height. One 0.86em line + 1em top
        padding still fits with room. */
     --striph: 5.5%;
+    /* How wide the three PAPER elements are — header card, turn box, pending
+       strip. Normally the picture's own width (measureShot), so all four share
+       one set of edges and the frame reads as one object. */
+    --paperw: var(--shotw, 100%);
   }
-  /* See setPortrait(). Only the box budget moves — the stage stays 1:1, which is
-     what makes the recorder's square viewport fill exactly, with no crop step and
-     no letterbox bars. */
+  /* See setPortrait(). The stage stays 1:1, which is what makes the recorder's
+     square viewport fill exactly, with no crop step and no letterbox bars.
+     Two things move instead:
+
+     - the shot row gets 5 points of the turn box's height, because in a square
+       stage a portrait picture's WIDTH is decided by the height it is given;
+     - the paper elements stop following the picture and take the full content
+       width. Pinned to a portrait picture they are a narrow column with two
+       thirds of the stage empty beside them — the model name truncated to
+       "gemini-3.8-flash(m…", the reasoning wrapping every seven words.
+       Andreas, 2026-09-19: *"maybe we could expand the interface more in width
+       ... right now it is quite squashed"*. A landscape frame nearly fills the
+       stage already, so there the two rules agree and nothing moves. */
   .stage.portrait {
     --boxh: 19%;
+    --paperw: 100%;
   }
 
   /* exit: bottom-left, only while the mouse moves. Never in the recording.
@@ -895,8 +910,9 @@
   /* ── header strip ─────────────────────────────────────────────────────── */
   .meta {
     /* Picture width when measured (see measureShot), full width before the
-       first frame lands. */
-    width: var(--shotw, 100%);
+       first frame lands — and full width throughout on a portrait frame, see
+       `.stage.portrait`. */
+    width: var(--paperw, 100%);
     max-width: 100%;
     flex: none;
     display: flex;
@@ -985,9 +1001,9 @@
 
   /* ── main box ─────────────────────────────────────────────────────────── */
   .box {
-    /* Same measured picture width as the header card (see measureShot), so all
-       three paper elements share the screen's edges. */
-    width: var(--shotw, 100%);
+    /* Same width as the header card and the pending strip, whichever rule
+       `--paperw` is following. */
+    width: var(--paperw, 100%);
     max-width: 100%;
     height: var(--boxh);
     flex: none;
@@ -1079,7 +1095,7 @@
         landed. Harmonised toward the settled size — that is what is on screen
         almost all the time. `.morph` must carry the identical value. */
   .pending {
-    width: var(--shotw, 100%);
+    width: var(--paperw, 100%);
     max-width: 100%;
     height: var(--striph);
     flex: none;
