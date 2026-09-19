@@ -51,7 +51,7 @@ The experiment this builds on lives in [`v2-experiments/`](../../v2-experiments/
 | **x/y moving as the player walks** | ✅ | from the P3 start state: `(6,6)` → three `down` → `(6,8)`, reload → `(6,6)` (2026-09-19) |
 | **A FireRed start state exists on SkyEmu** | ✅ | `configs/saves/skyemu/firered-pokebench-v2/`, replayed from cold boot in 8,598 frames / 15.5 s |
 | **Replaying a savestate is bit-exact** | ✅ | load→run→load→run: 0 bytes differ, FireRed and Platinum, to 38,400 frames |
-| **GBA `/load` is not an exact inverse of `/save`** | ⚠️ **defect** | live-vs-reloaded: 55 bytes at 864 frames, **3,131 at 31,200** and growing. `/screen` unaffected. §6.2 |
+| **GBA `/load` resumes one frame late** | ⚠️ **defect, characterised** | `reloaded[k] == live[k+1]` byte-exact across all 288 KB. Displaces `gRngValue`; a resumed battle plays out differently. §6.2 |
 | **NDS cold boot carries host-dependent state** | ⚠️ bounded | ~10 bytes at six fixed addresses near `0x02101d2c`, present with no inputs, does not grow |
 | GBA accuracy vs mGBA over a long run | ⬜ **untested** | the main risk, §6 |
 | Audio | ⬜ **untested** | spectate has a mute toggle; SkyEmu headless audio unknown |
@@ -381,18 +381,49 @@ produces is the thing that decides whether it should be.
    sequence also agree exactly. So *a run started from a savestate is reproducible*,
    which is the property the ladder rests on, and it is one v1 cannot claim.
 
-   **The defect.** On GBA, `/load` is **not an exact inverse of `/save`**. A machine that
-   keeps running from the moment of a `/save` and the same machine after `/load` diverge:
-   **55 bytes at 864 frames, 3,131 at 31,200** (3,103 of them IWRAM), and growing. The
-   cold-booted arm agrees with the *live* arm, so the reloaded machine is the odd one out
-   — the defect is in `/load`, not in emulation. `/screen` stays byte-identical
-   throughout, so nothing visible has diverged yet at these horizons; which 55 bytes
-   they are is not identified.
+   **The defect, characterised** (`v2-experiments/load_divergence.py`). `/load` does not
+   corrupt anything and does not lose state. It **resumes the machine one frame late**:
+   `reloaded[k]` is byte-identical to `live[k+1]` across all 288 KB, at every k, measured
+   from a cold title screen and from the benchmark's own start state. `TM0CNT_L`/`TM1CNT_L`
+   differ across a load while `DISPSTAT`/`VCOUNT` do not.
 
-   **Where it bites: `--continue`.** Within a run nothing reloads, so scores are
-   unaffected. But a continued run resumes from a savepoint, and on this evidence it does
-   not resume the machine it left. That needs its own phase before v2 supports
-   `--continue`, and it is a candidate SkyEmu bug report.
+   That one frame is load-bearing, because **`gRngValue` is among the displaced bytes** —
+   `0x03005000`, holding an unrelated value rather than a drifted one. The address was
+   established by measurement: searching all 8,192 IWRAM words for one obeying the Gen-3
+   LCG `x' = 0x41C64E6D·x + 0x6073` across consecutive frames returns **exactly one hit**,
+   twice over, 8 bytes below `gSaveBlock1Ptr` where pret's symbol order puts it. FireRed
+   seeds it from `REG_TM1CNT_L | REG_TM2CNT_L << 16`, which is exactly what the frame skip
+   moves. Most of the rest of the 55 bytes is one fact: the DMA shuffle landed `0x5c` apart,
+   and that single offset explains both save-block pointers, a pointer table and five
+   cached EWRAM pointers.
+
+   **The game outcome differs.** A scripted opening to the rival battle (Charmander 19 HP
+   vs Squirtle 19 HP), then 160 identical `A` presses on each arm: live and resumed
+   disagree from turn 36, and **no shift from −3 to +3 frames aligns them**, so it is not a
+   timing artefact. HP trajectories are different numbers throughout — live 19→14→9→5→3,
+   resumed 19→16→13→10→9→7 — and Charmander finishes on 5 HP live against 9 HP resumed.
+   The control (a second `/load` of the same file) agrees on all 160 turns.
+
+   **Verdict on `--continue`: unsafe for "resume this exact run", safe for "resume and keep
+   playing".** Persistent state — party, position, flags, stats — is restored byte-exactly,
+   and two resumes of one savepoint are bit-identical. But the RNG is displaced from frame
+   one, so a continued run's encounters, damage and crits are a different draw. **A
+   continued run is a legitimate run; it is not the run it continues.**
+
+   **A workaround exists and was measured, not reasoned.** If the live run also does
+   `/save` immediately followed by `/load` at each savepoint, both arms pay the same
+   one-frame cost and agree by construction — run as a fourth arm: **0 bytes, 0 screens,
+   0 RNG samples differing**. It must be applied where the savepoint is *written*, not
+   where it is read, so it belongs next to `save_savepoint`; and it does perturb the live
+   run by one frame.
+
+   This is also a clean, minimal upstream bug report for SkyEmu, if we choose to file one.
+
+   **Two corrections to the first determinism report**, which was careful and whose numbers
+   all reproduced. "The defect is in `/load`" was the right call with the wrong mechanism —
+   nothing is restored incorrectly. And "`/screen` stays byte-identical, so nothing is
+   visible" is **false as a general claim**: at a Pallet Town vantage chosen for motion, 16
+   of 121 sampled frames differ. The original check happened to sample a static scene.
 
    **NDS**, separately: two cold Platinum boots differ by ~10 bytes at six fixed addresses
    near `0x02101d2c`, present with no inputs at all, not growing, and not scaling with the
