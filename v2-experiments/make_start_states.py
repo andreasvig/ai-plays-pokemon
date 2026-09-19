@@ -142,6 +142,23 @@ GAMES: dict[str, dict] = {
                  "w600,a2,w200,s1,w200,a1,w300,a2,w200,a12,w400"),
         "player_name": "AA",
     },
+    "black": {
+        "rom": "v2-experiments/roms/Pokemon - Black Version (USA, Europe) (NDSi Enhanced).nds",
+        "console": "NDS",
+        "where": "the bedroom, between Cheren and Bianca",
+        # No taps at all: Gen 5's keyboard is fully button-navigable — A types
+        # the highlighted letter, START moves the cursor to OK, A confirms.
+        #
+        # And no default name, which is the other end of the spectrum from
+        # Emerald. START on an EMPTY field does not fill anything in; it only
+        # jumps to OK, and OK on an empty field is REFUSED with "Please enter
+        # the name." So one letter is typed — whichever the cursor starts on,
+        # which is A — and the game's first bedroom line reads "Cheren: A!".
+        # Rivals are never prompted for: Cheren and Bianca are fixed.
+        "spec": ("w1800,w1800,w1800,s1,w600,s1,w600,a1,w300,a30,w200,a2,w200,"
+                 "a1,w200,s1,w200,a1,w300,a30,w1500,a32,w300"),
+        "player_name": "A",
+    },
     "platinum": {
         "rom": "v2-experiments/roms/Pokemon - Platinum Version (USA).nds",
         "console": "NDS",
@@ -196,25 +213,45 @@ def play(emu: SkyEmu, spec: str, log=print) -> int:
     return frames
 
 
-def responds(emu: SkyEmu, state: Path) -> dict[str, bool]:
-    """Which directions change the screen from this state.
+# One press is hold 12 + gap 24; the check below makes three of them and then
+# lets the screen settle, so an idle run of the same length is exactly this many
+# frames with nothing held.
+_PROBE_FRAMES = 3 * (12 + 24) + 60
 
-    Compared against the STILL frame taken from the same state, not against the
-    previous direction's frame — otherwise three identical failures would look
-    like three successes as long as the first one moved.
+
+def responds(emu: SkyEmu, state: Path) -> dict[str, bool]:
+    """Which directions change the screen from this state — against an IDLE CONTROL.
+
+    The obvious version of this check compares each direction's frame to a still
+    frame taken before pressing anything, and it is wrong. Plenty of screens
+    animate on their own: a dialogue box blinks its advance arrow, a menu blinks
+    a cursor, water tiles cycle. Against a frozen reference every direction
+    "responds", so a state with a text box still open passes a check whose whole
+    job is to notice that.
+
+    So the reference is an IDLE RUN: the same state advanced by the same number
+    of frames with nothing held. Emulation is deterministic, so a blinking arrow
+    is at the identical phase in both, and what remains is caused by the input
+    and nothing else.
+
+    Found by the agent doing Pokemon Black on 2026-09-19, which reached
+    `responds: R L U D` on a state that still had a dialogue box open.
     """
-    emu.load_state(state)
-    emu.step(40)
-    still = emu.screen()
-    out = {}
-    for name, button in (("R", "right"), ("L", "left"), ("U", "up"), ("D", "down")):
+    def frame_after(presses: str) -> bytes:
         emu.load_state(state)
         emu.step(40)
-        for _ in range(3):
-            emu.press(button, hold=12, gap=24)
-        emu.step(60)
-        out[name] = emu.screen() != still
-    return out
+        if presses:
+            for _ in range(3):
+                emu.press(presses, hold=12, gap=24)
+            emu.step(60)
+        else:
+            emu.step(_PROBE_FRAMES)
+        return emu.screen()
+
+    idle = frame_after("")
+    return {name: frame_after(button) != idle
+            for name, button in (("R", "right"), ("L", "left"),
+                                 ("U", "up"), ("D", "down"))}
 
 
 def make(name: str, port: int, out_root: Path, log=print) -> list[str]:
@@ -249,15 +286,64 @@ def make(name: str, port: int, out_root: Path, log=print) -> list[str]:
     return problems
 
 
+def selfcheck(port: int) -> int:
+    """Show that the control check rejects a state it is supposed to reject.
+
+    A check that cannot fail is not a check. This replays Platinum twice — once
+    as authored, once with the two B presses removed so its last dialogue box is
+    left OPEN — and reports both the idle-control result and what the naive
+    frozen-still comparison would have said.
+
+    Measured 2026-09-19:
+
+        dialogue closed   idle-control RLUD   frozen-still RLUD
+        dialogue OPEN     idle-control none   frozen-still RLUD
+
+    The second row is the whole argument for the idle control: the naive check
+    accepts a state with a text box on screen, because the box's blinking
+    advance arrow differs from a frozen reference no matter what is pressed.
+    """
+    good = GAMES["platinum"]["spec"]
+    bad = good.replace(",b2,w400", ",w400")
+    if bad == good:
+        print("selfcheck: Platinum's sequence no longer ends in the B that closes its "
+              "dialogue, so this control no longer constructs a bad state", file=sys.stderr)
+        return 2
+    rom_src = REPO / GAMES["platinum"]["rom"]
+    if not rom_src.is_file():
+        print("selfcheck: Platinum ROM not on this machine", file=sys.stderr)
+        return 2
+    results = {}
+    for label, spec in (("dialogue closed", good), ("dialogue OPEN", bad)):
+        with tempfile.TemporaryDirectory(prefix="selfcheck-") as tmp:
+            with SkyEmu(cold_rom(rom_src, Path(tmp)), port=port) as emu:
+                play(emu, spec)
+                state = Path(tmp) / "s.state"
+                emu.save_state(state)
+                results[label] = responds(emu, state)
+        live = "".join(k for k, v in results[label].items() if v) or "none"
+        print(f"  {label:<16} responds: {live}")
+    ok = (all(results["dialogue closed"].values())
+          and not any(results["dialogue OPEN"].values()))
+    print("selfcheck PASSES" if ok else "selfcheck FAILS — the check does not bite")
+    return 0 if ok else 1
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--game", choices=sorted(GAMES), default=None)
     ap.add_argument("--all", action="store_true")
+    ap.add_argument("--selfcheck", action="store_true",
+                    help="prove the control check can fail: replay Platinum with and "
+                         "without the B that closes its last dialogue box")
     ap.add_argument("--port", type=int, default=8290)
     ap.add_argument("--out", type=Path, default=OUT_ROOT)
     args = ap.parse_args()
-    if not args.game and not args.all:
-        ap.error("pass --game NAME or --all")
+    if not args.game and not args.all and not args.selfcheck:
+        ap.error("pass --game NAME, --all, or --selfcheck")
+
+    if args.selfcheck:
+        return selfcheck(args.port)
 
     names = sorted(GAMES) if args.all else [args.game]
     problems: list[str] = []
