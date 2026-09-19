@@ -410,6 +410,123 @@ def find_pointer_forms(snaps, regions, addr: int) -> list[dict]:
     return hits
 
 
+def collect_party(emu, pairs, null_pairs, regions, prelude=(), log=print):
+    """Save-state pairs that straddle the event, each with its own null probes.
+
+    The party count is the one value of the four that no route can produce on
+    demand -- reaching the starter is twenty minutes of scripted play, and a
+    finder that needs that before it can answer anything is not a tool. So it is
+    found the way it will be found on any game: from two save states that
+    straddle the event, which is a thing any run of the benchmark produces for
+    free.
+
+    More than one pair is worth the seconds it costs. A single pair is two
+    arbitrary moments in one run and hundreds of counters differ by one between
+    them for reasons that have nothing to do with a Pokemon; two pairs from
+    DIFFERENT runs agree only where the difference is caused by the event.
+
+    The FireRed pairs are savepoints of real v2 runs: turn_10 (Oak's lab, party
+    0) and turn_20 (same map, party 1).
+
+    The walking probes are pure null tests here -- the party count does not
+    change when you walk, and almost everything else in a machine mid-run does.
+    A direction blocked by a wall simply tests less; it does not invalidate.
+    """
+    snaps = {}
+    for idx, (before, after) in enumerate(pairs):
+        for tag, state in (("before", before), ("after", after)):
+            for name, presses in [("", []), ("R3", ["R"] * 3), ("L3", ["L"] * 3),
+                                  ("U3", ["U"] * 3), ("D3", ["D"] * 3)]:
+                key = f"{idx}_{tag}{'_' + name if name else ''}"
+                t0 = time.time()
+                snaps[key] = run_probe(emu, state, presses, regions, prelude)
+                log(f"  probe {key:<14} {time.time() - t0:5.1f}s")
+    # The negative control: a pair of states from the same run across which the
+    # party did NOT change. No walking probes -- all it has to do is catch a
+    # counter that goes up by one between any two moments, and it catches a lot.
+    for idx, (before, after) in enumerate(null_pairs):
+        for tag, state in (("nullbefore", before), ("nullafter", after)):
+            snaps[f"{idx}_{tag}"] = run_probe(emu, state, [], regions, prelude)
+            log(f"  probe {idx}_{tag:<13} (control)")
+    return snaps
+
+
+# A count is a count. The signed readings are dropped for this scan because
+# 0xFF -> 0x00 is "+1" as s8 and is a WRAP, not an increment -- 900 of the 935
+# candidates the first version returned were exactly that.
+COUNT_FORMS = [(label, w, sg) for label, w, sg in FORMS if not sg]
+
+
+def scan_party(snaps, regions, n_pairs: int, n_null: int = 0) -> list[dict]:
+    """Every value that is one higher after the Pokemon, in every pair, and
+    still while walking.
+
+    Per pair:
+      1. it reads exactly one more after the Pokemon was received,
+      2. walking does not change it in the first state,
+      3. walking does not change it in the second.
+
+    Condition 1 alone matches every counter that happened to advance by one
+    between two unrelated save points, and there are thousands. Conditions 2 and
+    3 are what make it an answer: a counter that moves with the game clock, the
+    step count or the frame does not survive being walked on twice. Requiring
+    all of it in two independent runs is the replication.
+
+    And one negative control, which is the condition that earns the most here
+    (935 candidates -> 322 with unsigned-only, -> 81 with this):
+    across a pair of states the party did NOT cross, the value must not move
+    either. Two arbitrary moments in a run differ by one in hundreds of places
+    -- a dense strided array in scratch EWRAM accounted for most of what
+    survived everything else -- and almost none of those hold still when the
+    event they are supposedly counting does not happen.
+    """
+    out = []
+    for name, base, length in regions:
+        for label, width, signed in COUNT_FORMS:
+            for off in range(length - width + 1):
+                vb = None
+                # Cross-run agreement, when there is more than one pair. The party
+                # count is a FUNCTION OF THE PARTY: two runs that both have one
+                # Pokemon must read the same number, whatever else differs about
+                # where they are and what they have done.
+                #
+                # UNTESTED. Measured on FireRed it changes nothing -- 81
+                # candidates with it and 81 without -- and the reason is not that
+                # the condition is weak but that the evidence is: the three v2
+                # runs it was given are the same model from the same start state
+                # and they took the SAME PATH, reading map 4:3 at (9,5) at turn 10
+                # in all three. Three copies of one trajectory are one
+                # observation. Re-measure this against runs from different models
+                # before believing it does anything.
+                if n_pairs > 1:
+                    firsts = {read_at(snaps[f"{i}_before"][name], off, width, signed)
+                              for i in range(n_pairs)}
+                    lasts = {read_at(snaps[f"{i}_after"][name], off, width, signed)
+                             for i in range(n_pairs)}
+                    if len(firsts) != 1 or len(lasts) != 1:
+                        continue
+                for i in range(n_pairs):
+                    b = read_at(snaps[f"{i}_before"][name], off, width, signed)
+                    a = read_at(snaps[f"{i}_after"][name], off, width, signed)
+                    if a - b != 1:
+                        break
+                    if any(read_at(snaps[f"{i}_before_{d}"][name], off, width, signed) != b
+                           for d in ("R3", "L3", "U3", "D3")):
+                        break
+                    if any(read_at(snaps[f"{i}_after_{d}"][name], off, width, signed) != a
+                           for d in ("R3", "L3", "U3", "D3")):
+                        break
+                    vb = b
+                else:
+                    if any(read_at(snaps[f"{i}_nullafter"][name], off, width, signed)
+                           != read_at(snaps[f"{i}_nullbefore"][name], off, width, signed)
+                           for i in range(n_null)):
+                        continue
+                    out.append({"spelling": "raw", "addr": base + off, "region": name,
+                                "form": label, "origin": vb, "away": [vb + 1]})
+    return out
+
+
 # --- the probe set ------------------------------------------------------------
 
 def collect(emu, state: Path, regions, out_route, back_route, alt_route=(),
@@ -466,9 +583,14 @@ def summarise(cands: list[dict], label: str, log=print) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--stage", default="verify", choices=["xy", "map", "verify"])
+    ap.add_argument("--stage", default="verify",
+                    choices=["xy", "map", "party", "verify"])
     ap.add_argument("--rom", type=Path, default=DEFAULT_ROM)
     ap.add_argument("--state", type=Path, default=DEFAULT_STATE)
+    ap.add_argument("--state-after", type=Path, default=None,
+                    help="--stage party: a state from the same game AFTER the party grew "
+                         "by one. Any run's savepoints straddle the starter. Comma-"
+                         "separated for several pairs, which is the replication control")
     ap.add_argument("--port", type=int, default=8171)
     ap.add_argument("--console", default=None, help="GBA/GB/NDS; measured if omitted")
     ap.add_argument("--out-route", default="",
@@ -488,6 +610,10 @@ def main() -> int:
     ap.add_argument("--prelude", default="",
                     help="presses that walk from the save state's tile to one free in "
                          "all four directions; prepended to every probe")
+    ap.add_argument("--null-before", default="",
+                    help="--stage party: states across which the party did NOT change, "
+                         "paired with --null-after. The negative control")
+    ap.add_argument("--null-after", default="")
     ap.add_argument("--control", action="store_true",
                     help="re-run the axis scan with each condition removed in turn and "
                          "report what each one is worth")
@@ -499,6 +625,10 @@ def main() -> int:
     alt_route = [b.strip().upper() for b in args.alt_route.split(",") if b.strip()]
     settle_route = [b.strip().upper() for b in args.walk_route.split(",") if b.strip()]
     back_route = [b.strip().upper() for b in args.back_route.split(",") if b.strip()]
+    if args.stage == "party" and not args.state_after:
+        print("--stage party needs --state-after: the count is found from a pair of "
+              "states that straddle the event, not from a route.", file=sys.stderr)
+        return 2
     if args.stage in ("map", "verify") and not out_route:
         print("--stage map needs --out-route: the finder cannot invent a route out of a "
               "room it has never seen. One transition, and the presses that undo it.",
@@ -512,6 +642,30 @@ def main() -> int:
         total = sum(n for _, _, n in regions)
         print(f"console {console}, scanning {total/1024:.0f} KB across "
               f"{len(regions)} region(s)")
+
+        if args.stage == "party":
+            befores = [Path(x) for x in str(args.state).split(",")]
+            afters = [Path(x) for x in str(args.state_after).split(",")]
+            if len(befores) != len(afters):
+                print("--state and --state-after must list the same number of paths",
+                      file=sys.stderr)
+                return 2
+            pairs = list(zip(befores, afters))
+            nb = [Path(x) for x in args.null_before.split(",") if x]
+            na = [Path(x) for x in args.null_after.split(",") if x]
+            null_pairs = list(zip(nb, na))
+            snaps = collect_party(emu, pairs, null_pairs, regions, prelude)
+            cands = rank_by_run(scan_party(snaps, regions, len(pairs), len(null_pairs)))
+            summarise_runs(cands, "party count")
+            if args.json:
+                args.json.write_text(json.dumps({"console": console, "party": cands},
+                                                indent=2))
+                print(f"\nwrote {args.json}")
+            want = FIRERED_TRUTH["party_count"]
+            got = {c["addr"] for c in cands}
+            print(f"\nFireRed keeps it at {want:#010x}: "
+                  f"{'FOUND' if want in got else 'MISSING'} among {len(got)} candidate(s)")
+            return 0
 
         snaps = collect(emu, args.state, regions, out_route, back_route,
                         alt_route, settle_route, prelude)
