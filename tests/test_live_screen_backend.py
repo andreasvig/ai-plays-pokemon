@@ -126,7 +126,7 @@ def test_a_frame_older_than_the_streamer_is_never_served(tmp_path):
     stale = tmp_path / "mgba_stream_1.png"
     _write(stale, when=time.time_ns() - 4 * 3600 * 10**9)   # four hours ago
 
-    s = ScreenStreamer(stream_path=str(stale))
+    s = ScreenStreamer(stream_path=str(stale), require_fresh=True)
     s.start()
     time.sleep(0.2)
     try:
@@ -160,7 +160,7 @@ def test_a_stale_file_that_is_then_overwritten_starts_serving(tmp_path):
     path = tmp_path / "mgba_stream_1.png"
     _write(path, when=time.time_ns() - 10**10)
 
-    s = ScreenStreamer(stream_path=str(path))
+    s = ScreenStreamer(stream_path=str(path), require_fresh=True)
     s.start()
     time.sleep(0.05)
     try:
@@ -182,10 +182,82 @@ def test_a_stale_file_does_not_spin_the_cpu(tmp_path):
     stale = tmp_path / "mgba_stream_1.png"
     _write(stale, when=time.time_ns() - 10**10)
 
-    s = ScreenStreamer(stream_path=str(stale))
+    s = ScreenStreamer(stream_path=str(stale), require_fresh=True)
     before = time.process_time()
     s.start()
     time.sleep(0.5)
     s.stop()
     used = time.process_time() - before
     assert used < 0.2, f"streamer burned {used:.2f}s of CPU in 0.5s of wall clock"
+
+
+# --- and the case the first version of that guard broke -------------------
+
+
+def test_a_per_run_path_serves_the_frame_that_is_already_there(tmp_path):
+    """THE second regression, caused by fixing the first.
+
+    The stepped backend's feed PRIMES a frame on attach, deliberately: a frozen
+    emulator does not advance until the model has answered, so without it there
+    is nothing to show for the whole first turn. ``attach()`` writes that frame
+    and only THEN does ``start_dashboard`` construct the streamer — so the
+    primed frame is always older than the streamer, and always legitimate.
+
+    Requiring freshness on a per-run path rejected it, and cost two symptoms at
+    once that look nothing like a timestamp bug: the live feed stayed blank
+    until the first turn completed, and every recording died with "simple view
+    never exposed its game-screen rectangle" (the recorder measures the page's
+    game <img>; an <img> with no frame has no natural size, and no size means no
+    crop rectangle)."""
+    primed = tmp_path / "stream.png"
+    primed.write_bytes(PNG)
+    time.sleep(0.02)
+
+    s = ScreenStreamer(stream_path=str(primed), require_fresh=False)
+    s.start()
+    try:
+        for _ in range(100):
+            if s.get_frame() is not None:
+                break
+            time.sleep(0.01)
+        assert s.get_frame() == PNG, (
+            "a frame primed by this run's own feed was rejected; the live view "
+            "and the recorder both have nothing to show for the first turn"
+        )
+    finally:
+        s.stop()
+
+
+def test_the_two_regimes_disagree_about_the_same_file(tmp_path):
+    """The two tests above in one place, on ONE file, so the flag is shown to be
+    what decides — not the fixture. A guard that behaved identically either way
+    would pass both of them separately."""
+    f = tmp_path / "stream.png"
+    f.write_bytes(PNG)
+    time.sleep(0.02)
+
+    lenient = ScreenStreamer(stream_path=str(f), require_fresh=False)
+    strict = ScreenStreamer(stream_path=str(f), require_fresh=True)
+    lenient.start()
+    strict.start()
+    time.sleep(0.2)
+    try:
+        assert lenient.get_frame() == PNG
+        assert strict.get_frame() is None
+    finally:
+        lenient.stop()
+        strict.stop()
+
+
+def test_start_dashboard_trusts_a_run_dir_path_and_doubts_a_shared_one():
+    """Which regime each backend lands in, asserted at the decision itself.
+
+    mGBA's stream path is a fixed /tmp name every run on the machine reuses —
+    that is the shared case the guard exists for. The stepped backend writes
+    <run_dir>/stream.png, which only this run can have written."""
+    import inspect
+    from src.dashboard import server
+
+    src = inspect.getsource(server.start_dashboard)
+    assert "is_relative_to(run_dir" in src
+    assert "require_fresh=shared" in src

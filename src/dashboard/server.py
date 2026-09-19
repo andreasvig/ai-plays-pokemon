@@ -524,10 +524,21 @@ def start_dashboard(
         (config.get("paths") or {}).get("stream")
         or str(run_dir / "mgba_stream.png")
     )
+    # A file inside THIS run's directory cannot hold another run's frame, so the
+    # streamer may serve what is already there — which it must, because the
+    # stepped backend's feed primes a frame before this function is reached (a
+    # frozen emulator does not advance until the model answers, so without the
+    # primed frame there is nothing to show for the whole first turn, and the
+    # recorder has no <img> to measure). A shared path — mGBA's fixed
+    # /tmp/mgba_stream_1.png — has to prove it is current instead.
+    try:
+        shared = not Path(stream_path).resolve().is_relative_to(run_dir.resolve())
+    except (OSError, ValueError):
+        shared = True   # cannot tell → the cautious half
 
     bridge = EventBridge()
     logger.add_listener(bridge.on_event)
-    streamer = ScreenStreamer(stream_path=stream_path)
+    streamer = ScreenStreamer(stream_path=stream_path, require_fresh=shared)
     streamer.start()
 
     session = RunSession(

@@ -15,24 +15,47 @@ class ScreenStreamer:
     (``src/dashboard/spectate.py``). This thread watches for changes and reads
     the raw bytes — no decode/re-encode, both writers already produce PNG.
 
-    **It will not serve a frame written before it started.** A stream file
-    outlives the run that wrote it: /tmp/mgba_stream_1.png is a fixed path reused
-    by every mGBA run on the machine, so a streamer pointed at it by mistake
-    finds a perfectly valid PNG of a DIFFERENT GAME and serves it forever. That
-    happened (2026-09-19): a Crystal run on the SkyEmu control center showed a
-    four-hour-old FireRed frame, because its config named mGBA and nothing was
-    writing the file it therefore watched. The run was fine; only the picture
-    lied, which is the hard kind of wrong to notice.
+    ``require_fresh`` decides whether a frame already on disk may be served, and
+    the answer depends entirely on whether the PATH is shared.
 
-    So the first frame has to be NEWER than this object. A live feed then shows
-    nothing until the emulator actually draws — which is the honest answer, and
-    an obviously broken feed beats a convincingly wrong one.
+    A SHARED path outlives the run that wrote it. /tmp/mgba_stream_1.png is a
+    fixed name every mGBA run on the machine reuses, so a streamer pointed at it
+    by mistake finds a perfectly valid PNG of a DIFFERENT GAME and serves it
+    forever. That happened (2026-09-19): a Crystal run on the SkyEmu control
+    center showed a four-hour-old FireRed frame. There, the first frame must be
+    newer than this object — an obviously broken feed beats a convincing wrong
+    one, and mGBA's Lua writes at 30fps so a real frame arrives in ~33ms.
+
+    A PER-RUN path (``<run_dir>/stream.png``, the stepped backend's feed) cannot
+    hold anyone else's frame: the directory is this run's. Requiring freshness
+    there rejects the run's own PRIMED frame, and that is not hypothetical — it
+    is what the first version of this guard did, hours later the same day. The
+    spectate feed primes deliberately, because a stepped emulator does not
+    advance until the model has answered: ``attach()`` writes a frame, and only
+    then does ``start_dashboard`` construct this object. So the primed frame is
+    ALWAYS older than the streamer, and always legitimate.
+
+    The cost of getting that wrong was two bugs at once, neither obviously about
+    a timestamp. The live feed stayed blank until the first turn completed
+    (Andreas: "we only get to see the live feed once the first turn has actually
+    begun"), and every recording failed with ``simple view never exposed its
+    game-screen rectangle`` — the recorder measures the page's game <img>, an
+    <img> with no frame has no natural size, and no size means no crop rectangle.
+
+    Hence the rule is about the PATH, not the clock: a file only this run can
+    have written is trusted; a shared one has to prove it is current.
     """
 
-    def __init__(self, stream_path: str = "/tmp/mgba_stream.png"):
+    def __init__(
+        self,
+        stream_path: str = "/tmp/mgba_stream.png",
+        *,
+        require_fresh: bool = True,
+    ):
         self._path = stream_path
-        # Frames at or before this are somebody else's run. Nanosecond mtimes,
-        # compared against the same clock st_mtime_ns reports.
+        self._require_fresh = require_fresh
+        # Frames at or before this are somebody else's run — consulted only when
+        # require_fresh. Nanoseconds, the same clock st_mtime_ns reports.
         self._started_ns: int = time.time_ns()
         self._last_mtime: int = 0
         self._frame: Optional[bytes] = None
@@ -64,11 +87,11 @@ class ScreenStreamer:
                 # `and` rather than an early `continue`: the sleep at the
                 # bottom of this loop is the only thing keeping it off a core,
                 # and skipping it while a stale file sits there would busy-spin
-                # for the whole run. Written before this streamer existed means
-                # a leftover from an earlier run, not this one's screen — and it
-                # is re-checked every poll rather than latched, because the
-                # writer for THIS run may still be about to touch the same path.
-                if mtime > self._started_ns and mtime != self._last_mtime:
+                # for the whole run. Re-checked every poll rather than latched,
+                # because on a shared path the writer for THIS run is usually
+                # about to overwrite the leftover.
+                fresh = not self._require_fresh or mtime > self._started_ns
+                if fresh and mtime != self._last_mtime:
                     self._last_mtime = mtime
                     with open(self._path, "rb") as f:
                         data = f.read()
