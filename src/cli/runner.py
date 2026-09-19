@@ -1508,6 +1508,16 @@ model you can actually start — `pokemon ls models` for the full list):
         "--record-show", dest="record_show", default=None,
         help="Which run facts the simple view's header strip prints: a comma list of model, elapsed, cost, or `none` for a bare frame. Default: all three. Ignored for `detailed`, which always shows them.",
     )
+    parser.add_argument(
+        "--pace", choices=["fast", "realtime"], default=None,
+        help="Stepped backends only (emulator.type: skyemu). `fast` (the default) "
+             "steps as quickly as the host allows; `realtime` throttles to 60 fps "
+             "so a spectator or a recording sees the game at its true speed. This "
+             "changes how long a run TAKES and not what happens in it — the "
+             "emulator is frozen between steps, so the game sees identical frames "
+             "either way and a watcher cannot move a score. Ignored by mGBA, "
+             "which only runs at real time.",
+    )
     args = parser.parse_args()
 
     if args.continue_from:
@@ -1556,6 +1566,15 @@ model you can actually start — `pokemon ls models` for the full list):
 
         for c in prepared:
             c["mode"] = RunExecutor.GAMEPLAY_MODES[args.gameplay]
+
+    # Pacing: the one knob a person reaches for at LAUNCH time ("I want to watch
+    # this one"), so it has to be a flag — a config-only key would mean editing a
+    # file for the single case the option exists to serve. Writes the same
+    # `emulator.pace` key spectate.resolve_pace reads, so the flag and the config
+    # cannot disagree about where the value lives.
+    if args.pace:
+        for c in prepared:
+            c.setdefault("emulator", {})["pace"] = args.pace
 
     # Spend ceiling: rides on the config under the same public key the queue
     # executor writes (`_apply_max_spend`), so TurnManager has exactly one place
