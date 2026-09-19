@@ -57,6 +57,10 @@ SNAPSHOT_OVERRIDE = {
     # correctly calls that INCONCLUSIVE rather than passing it. The outdoor
     # fixture is where the walk has room.
     "platinum": "v2-experiments/states/platinum/probe.state",
+    # SoulSilver's opening is the 2F bedroom too, and its stairs are entered by
+    # walking LEFT rather than up — the outdoor fixture avoids both that and
+    # the two unskippable cutscenes between the bedroom and the front door.
+    "soulsilver": "v2-experiments/states/soulsilver/probe.state",
 }
 
 # A state the player is IN A BATTLE in, per ROM. The battle flag is the one

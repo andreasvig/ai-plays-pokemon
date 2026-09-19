@@ -316,7 +316,48 @@ PLATINUM = GameMemory(
     ),
 )
 
-CONTRACTS: dict[str, GameMemory] = {c.game: c for c in (FIRERED, EMERALD, CRYSTAL, PLATINUM)}
+# HGSS is built on the Platinum engine, and the memory says so: the same five
+# s32 in the same order at a different base — map id +0, x +8, y +12 — found by
+# a search that was told nothing about Platinum. Two more fields fell out that
+# nobody looked for: +0x14/+0x1c/+0x20 is a PREVIOUS map/x/y triple, reading
+# "came from map 64 at (3,4)" in the 1F state, which is the exact bedroom tile
+# the stairs were entered from.
+#
+# The map id took four maps to isolate, not two. With the bedroom at (6, 6) and
+# New Bark Town at (693, 400), every position-derived field in RAM differs
+# between the two, so a two-state search left 86,193 plausible candidates and
+# the proximity prior was swamped by neighbouring coordinate fields. Four
+# pairwise-different maps plus a REVISIT control — walk back to a map by
+# another route, because a real id reads the same and a history-dependent
+# leftover does not — cut it to 16, of which exactly one sits in a coordinate
+# block. Four held-out states never used in the search then read it correctly.
+#
+# Caveat, and it is the honest one: all four maps are New Bark Town and its
+# interiors, so the id is only ever OBSERVED over 60-66. The field is a clean
+# u32 with zero high bytes in every state and the engine is Platinum's, where
+# the decomp says s32 — but "is it really 32-bit" is untested above 255, and a
+# state in a far-off town is what would settle it.
+_SOULSILVER_LOCATION = 0x0227D448
+
+SOULSILVER = GameMemory(
+    game="soulsilver-us",
+    console="NDS",
+    spec=(f"{_SOULSILVER_LOCATION:#x}:16",),
+    map_id=Field(0, 0, "<i"),
+    x=Field(0, 8, "<i"),
+    y=Field(0, 12, "<i"),
+    notes=(
+        "Same struct shape as Platinum at a different base: map id +0, x +8, "
+        "y +12, elevation +16, and a previous-map/x/y triple after it. Raw "
+        "addresses, no pointer — identical across 11 states and 4 maps. Map id "
+        "observed only over 60-66 (New Bark Town and its interiors), so its "
+        "width above 255 is inferred from the engine, not measured. No battle "
+        "flag located."
+    ),
+)
+
+CONTRACTS: dict[str, GameMemory] = {
+    c.game: c for c in (FIRERED, EMERALD, CRYSTAL, PLATINUM, SOULSILVER)}
 
 
 def contract_for(game: Optional[str]) -> Optional[GameMemory]:
@@ -369,5 +410,5 @@ def attach(emu: Any, contract: Optional[GameMemory]) -> Optional[GameMemory]:
     return contract
 
 
-__all__ = ["Field", "GameMemory", "CONTRACTS", "FIRERED", "EMERALD", "CRYSTAL", "PLATINUM",
+__all__ = ["Field", "GameMemory", "CONTRACTS", "FIRERED", "EMERALD", "CRYSTAL", "PLATINUM", "SOULSILVER",
            "attach", "contract_for", "contract_for_rom_path"]

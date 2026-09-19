@@ -88,6 +88,7 @@ def test_which_cartridges_can_tell_a_battle_press_from_an_overworld_one():
         "emerald-us": True,
         "crystal-us": True,
         "platinum-us": False,
+        "soulsilver-us": False,
     }
 
 
