@@ -52,14 +52,17 @@ import struct
 from typing import Any, Callable, Optional
 
 from src.referee.battles import GAME_STAT_TOTAL_BATTLES, GMAIN_IN_BATTLE_BYTE, SB1_GAME_STATS, in_battle_from_byte
+from src.referee.contracts import FIRERED, GameMemory
 
-GSAVEBLOCK1_PTR = 0x03005008
-
-TRACE_SPEC: list[str] = [
-    f"*{GSAVEBLOCK1_PTR:#x}+0:6",
-    f"{GMAIN_IN_BATTLE_BYTE:#x}:1",
-    f"*{GSAVEBLOCK1_PTR:#x}+{SB1_GAME_STATS + 4 * GAME_STAT_TOTAL_BATTLES:#x}:4",
-]
+#: FireRed's spec, kept as an ALIAS of its contract so the assertion in
+#: tests/test_trace.py stays a live parity check between this module's historical
+#: constant and contracts.FIRERED.
+#:
+#: NOT what a run wires in any more. Assigning this to ``emu.trace_spec`` is what
+#: made every non-FireRed run dereference 0x03005008 on a cartridge that keeps no
+#: pointer there; use ``contracts.attach(emu, contracts.contract_for_rom_path(...))``,
+#: which sets the spec and its decoder together.
+TRACE_SPEC: list[str] = list(FIRERED.spec)
 
 MAX_PLAUSIBLE_BATTLES = 10_000  # a torn read shows up as a huge number
 
@@ -80,25 +83,57 @@ MAX_TILES_PER_INPUT = 16
 DIRECTIONS = {"U": "up", "D": "down", "L": "left", "R": "right", "UP": "up", "DOWN": "down", "LEFT": "left", "RIGHT": "right"}
 
 
-def decode_samples(rows: list[tuple[str, list[bytes]]], key: Optional[int] = None) -> list[dict[str, Any]]:
-    """``[(input name, [bytes per spec entry])]`` → one dict per input."""
+def decode_samples(rows: list[tuple[str, list[bytes]]], key: Optional[int] = None,
+                   contract: Optional[GameMemory] = None) -> list[dict[str, Any]]:
+    """``[(input name, [bytes per spec entry])]`` → one dict per input.
+
+    ``contract`` (``src/referee/contracts.py``) says where each value sits in
+    the samples. It used to be this function's own ``<hhBB``, which is FireRed's
+    SaveBlock1 layout and nobody else's: Gen 2 keeps a coordinate in one
+    UNSIGNED byte and orders the record (group, number, y, x), and Gen 4 uses a
+    single map id with 32-bit fields. A decoder that knows one layout can only
+    ever be pointed at one cartridge.
+
+    ``contract=None`` decodes NOTHING — every field stays ``None`` and
+    :func:`derive` reports the turn as ``blind``. That is deliberate, and it is
+    the safe direction: the other candidate default, FireRed's layout, reads six
+    bytes from wherever the spec happened to point and returns numbers that look
+    exactly like coordinates on a cartridge that keeps none there.
+    """
     out: list[dict[str, Any]] = []
     for i, (name, samples) in enumerate(rows):
-        pos = samples[0] if len(samples) > 0 else b""
-        batt = samples[1] if len(samples) > 1 else b""
-        stat = samples[2] if len(samples) > 2 else b""
-        d: dict[str, Any] = {"i": i, "input": name, "map_group": None, "map_num": None, "x": None, "y": None,
+        d: dict[str, Any] = {"i": i, "input": name, "map_group": None, "map_num": None,
+                             "map_id": None, "x": None, "y": None,
                              "in_battle": None, "battles_total": None}
-        if len(pos) >= 6:
-            d["x"], d["y"], d["map_group"], d["map_num"] = struct.unpack_from("<hhBB", pos, 0)
-        if len(batt) >= 1:
-            d["in_battle"] = in_battle_from_byte(batt[0])
-        if len(stat) >= 4 and key is not None:
-            # A sample taken mid-warp (SaveBlock1 being relocated) can read the
-            # counter torn: live 2026-09-14 saw 1379579746 on a stair step.
-            # No run plays that many battles; drop the value, keep the tile.
-            v = struct.unpack_from("<I", stat, 0)[0] ^ (key & 0xFFFFFFFF)
-            d["battles_total"] = v if v <= MAX_PLAUSIBLE_BATTLES else None
+        if contract is not None:
+            for key_, f in (("x", contract.x), ("y", contract.y),
+                            ("map_group", contract.map_group), ("map_num", contract.map_num),
+                            ("map_id", contract.map_id)):
+                if f is not None:
+                    d[key_] = f.read(samples)
+            if contract.battle_flag is not None:
+                raw = contract.battle_flag.read(samples)
+                if raw is not None:
+                    d["in_battle"] = bool(raw & contract.battle_mask)
+            else:
+                # No flag located on this cartridge. Treating every press as an
+                # overworld press is the assumption that CANNOT corrupt
+                # ``overworld_steps`` — that figure counts tile CHANGES, and a
+                # battle changes no tile — whereas leaving it ``None`` makes
+                # ``derive`` file every input under ``battle_edge`` and report a
+                # turn that moved nowhere. What it does cost is the census: a
+                # battle's presses land in ``idle_ab``. Declared by
+                # ``GameMemory.census_ok`` rather than hidden.
+                d["in_battle"] = False
+            if contract.battles_total is not None:
+                v = contract.battles_total.read(samples)
+                if v is not None and contract.battles_total_encrypted:
+                    v = None if key is None else v ^ (key & 0xFFFFFFFF)
+                # A sample taken mid-warp (SaveBlock1 being relocated) can read
+                # the counter torn: live 2026-09-14 saw 1379579746 on a stair
+                # step. No run plays that many battles; drop the value, keep the
+                # tile.
+                d["battles_total"] = v if (v is not None and v <= MAX_PLAUSIBLE_BATTLES) else None
         out.append(d)
     return out
 

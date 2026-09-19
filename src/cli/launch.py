@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from src.cli.slots import get_slot
 from src.config import load_config
 from src.emulator import DEFAULT_BACKEND, make_emulator
-from src.referee.trace import TRACE_SPEC
+from src.referee.contracts import attach as attach_contract, contract_for_rom_path
 
 
 def find_mgba() -> str:
@@ -77,7 +77,7 @@ def _launch_self_hosted(config: dict, saves_dir: Path, snapshot: str | None) -> 
     # key set afterwards is a key the backend never sees.
     config["emulator"].setdefault("rom_stage_dir", str(saves_dir))
     emu = make_emulator(config)
-    emu.trace_spec = list(TRACE_SPEC)
+    attach_contract(emu, contract_for_rom_path(config.get('emulator', {}).get('rom_path')))
     emu.start_server()
     try:
         emu.wait_for_connection(timeout=300.0)
@@ -138,7 +138,7 @@ def main():
 
     emu = make_emulator(config)
     # Per-input trace of tile + in-battle bit after every button (src/referee/trace.py).
-    emu.trace_spec = list(TRACE_SPEC)
+    attach_contract(emu, contract_for_rom_path(config.get('emulator', {}).get('rom_path')))
     emu.start_server()
 
     mgba_cmd = [

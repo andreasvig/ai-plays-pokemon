@@ -1,0 +1,282 @@
+"""The per-game memory contract — where each cartridge keeps the player.
+
+``cross-game-plan.md`` §4 P-D. Until this module existed, everything the harness
+knew about a game's memory was FireRed's, spelled as module constants:
+``TRACE_SPEC`` (``trace.py``) and the referee's address table. Both are wired in
+unconditionally — ``src/cli/runner.py:653,741`` and ``src/cli/launch.py:80,141``
+set ``emu.trace_spec = list(TRACE_SPEC)`` with no config path and no injection
+point — so a run on any other cartridge dereferenced FireRed's SaveBlock1
+pointer inside a game that has no such pointer, and the per-input trace came
+back blind. Position is the gate under the walk graph, the route map and the
+input census, so "blind" meant those three measured nothing at all on six of the
+seven games in ``configs/roms.yaml``.
+
+What a contract is
+------------------
+A :class:`GameMemory` is the trace spec (raw ranges for the Lua bridge / SkyEmu
+to sample after every button) plus the :class:`Field` list saying how to read the
+values back out of those samples. The spec grammar is unchanged and lives in
+``trace.py``: ``<addr>:<len>``, or ``*<ptr>+<off>:<len>`` to dereference first.
+
+**The pointer form is not ceremony.** Gen 3 DMA-shuffles its save blocks while
+the game runs — FireRed's SaveBlock1 was measured at ``0x0202554c`` in the
+bedroom, ``0x02025564`` downstairs, ``0x02025570`` back upstairs and
+``0x02025574`` outdoors (``p-a-results.md`` §3). A contract that named a raw
+address inside that block would read the right number in the room it was
+measured in and silently wrong numbers everywhere else, which is the worst
+failure shape available: confident, plausible and untraceable.
+
+Where the numbers come from
+---------------------------
+Every address below was **found by experiment, not looked up** —
+``v2-experiments/find_addresses.py``, whose results are in
+``artifacts/skyemu-backend/p-a-results.md``. That matters for the games where no
+disassembly exists: the method that produced Crystal's four bytes is the method
+that will produce Black 2's, and neither depends on someone having published a
+symbol table. FireRed's entry is the control: it reproduces the constants
+``trace.py`` shipped with, so wiring this module in is a no-op on the game the
+existing tests cover.
+
+What a contract deliberately does NOT promise
+---------------------------------------------
+``battle_flag`` is optional, and most games do not have one yet. The in-battle
+bit was found for FireRed only, and inventing one for another cartridge would be
+worse than admitting the gap. A contract without it still reports position, and
+position is all the WALK GRAPH needs — an edge is proven by the player standing
+on one tile and then the next, and a battle does not move the player, so a
+battle is simply a stretch of the trace where the tile does not change.
+
+What degrades instead is the input CENSUS: with no battle flag every press is
+treated as an overworld press, so a battle's inputs land in ``idle_ab`` and
+``blocked_by_actor`` rather than ``battle_inputs``. That is visible and
+recorded (:attr:`GameMemory.census_ok`) rather than silent. It cannot corrupt
+``overworld_steps``, which counts tile CHANGES and is therefore blind to how the
+inputs that changed nothing are labelled.
+"""
+
+from __future__ import annotations
+
+import struct
+from dataclasses import dataclass, field
+from typing import Any, Optional
+
+
+@dataclass(frozen=True)
+class Field:
+    """One value, as an offset and a struct format into one trace sample.
+
+    ``sample`` indexes :attr:`GameMemory.spec`. Keeping the two apart is what
+    lets one range serve several fields: FireRed reads x, y, map group and map
+    number out of the same six bytes, which is one round trip on the wire rather
+    than four.
+    """
+
+    sample: int
+    offset: int
+    fmt: str
+
+    @property
+    def size(self) -> int:
+        return struct.calcsize(self.fmt)
+
+    def read(self, samples: list[bytes]) -> Optional[int]:
+        """The value, or ``None`` when the sample is short or missing.
+
+        Short rather than raising: a sample taken while the game is relocating a
+        block can come back truncated, and one unreadable field on one input is
+        not a reason to lose the turn's whole trace.
+        """
+        if self.sample >= len(samples):
+            return None
+        raw = samples[self.sample]
+        if len(raw) < self.offset + self.size:
+            return None
+        return struct.unpack_from(self.fmt, raw, self.offset)[0]
+
+
+@dataclass(frozen=True)
+class GameMemory:
+    """Where one cartridge keeps the player, and how to read it.
+
+    ``game`` joins to ``configs/roms.yaml``'s ``game:`` key — the same join the
+    walk graph uses, so a contract and a graph cannot be paired across games
+    without one of them noticing.
+    """
+
+    game: str
+    console: str
+    spec: tuple[str, ...]
+    x: Field
+    y: Field
+    #: Gen 2 and Gen 3 identify a map by a (group, number) PAIR. Gen 4 and Gen 5
+    #: use a single id (``cross-game-plan.md`` §2.1), so a contract carries
+    #: whichever its generation actually has and never both.
+    map_group: Optional[Field] = None
+    map_num: Optional[Field] = None
+    map_id: Optional[Field] = None
+    #: The in-battle bit. Absent on every game but FireRed — see the module
+    #: docstring for what that costs and what it does not cost.
+    battle_flag: Optional[Field] = None
+    #: A MASK, not a bit index. Named that way because the two are one typo
+    #: apart and the typo is silent: FireRed's flag is bit index 1 of the byte
+    #: at gMain+0x439, so ``in_battle_from_byte`` reads ``(b >> 1) & 1`` and the
+    #: mask is 0x02. Writing 1 here instead reads the wrong bit and reports
+    #: "not in battle" forever, which looks exactly like a game with no battles.
+    battle_mask: int = 0x02
+    #: The game's own battle counter, XOR-encrypted with a key the referee reads
+    #: separately. FireRed-only; the decoder skips it without a key.
+    battles_total: Optional[Field] = None
+    battles_total_encrypted: bool = False
+    notes: str = ""
+
+    @property
+    def census_ok(self) -> bool:
+        """True when the input census can distinguish a battle press from an
+        overworld one. False is not a bug — it is the honest state of every
+        contract found by position search alone."""
+        return self.battle_flag is not None
+
+    def map_key(self, values: dict[str, Any]) -> Optional[tuple]:
+        """The map part of a tile key, in whichever shape this game has."""
+        if self.map_id is not None:
+            return (values.get("map_id"),) if values.get("map_id") is not None else None
+        g, n = values.get("map_group"), values.get("map_num")
+        return None if g is None or n is None else (g, n)
+
+
+# --- the registry -------------------------------------------------------------
+#
+# Keyed by `game:` from configs/roms.yaml. A game absent from here has NO
+# contract, and `spec_for` returns None rather than FireRed's — which is the
+# whole point of the module. Reading FireRed's SaveBlock1 pointer on a DS
+# cartridge does not fail loudly; it dereferences whatever happens to sit at
+# 0x03005008 and reports coordinates.
+
+_GMAIN_IN_BATTLE = 0x03003529  # gMain + 0x439, FireRed (src/referee/battles.py)
+_IN_BATTLE_BIT = 1             # bit INDEX, as battles.in_battle_from_byte uses it
+_FIRERED_SB1 = 0x03005008
+_EMERALD_SB1 = 0x03005D8C
+_SB1_GAME_STATS = 0x1200
+_GAME_STAT_TOTAL_BATTLES = 7
+_STATS_OFF = _SB1_GAME_STATS + 4 * _GAME_STAT_TOTAL_BATTLES
+
+FIRERED = GameMemory(
+    game="firered-us",
+    console="GBA",
+    # Byte-identical to the TRACE_SPEC this module replaces. The existing
+    # referee and trace tests are the oracle for that, per cross-game-plan P-D
+    # ("with no behaviour change").
+    spec=(f"*{_FIRERED_SB1:#x}+0:6",
+          f"{_GMAIN_IN_BATTLE:#x}:1",
+          f"*{_FIRERED_SB1:#x}+{_STATS_OFF:#x}:4"),
+    x=Field(0, 0, "<h"),
+    y=Field(0, 2, "<h"),
+    map_group=Field(0, 4, "<B"),
+    map_num=Field(0, 5, "<B"),
+    battle_flag=Field(1, 0, "<B"),
+    battle_mask=1 << _IN_BATTLE_BIT,
+    battles_total=Field(2, 0, "<I"),
+    battles_total_encrypted=True,
+    notes="The control. Reproduces the constants trace.py shipped with.",
+)
+
+EMERALD = GameMemory(
+    game="emerald-us",
+    console="GBA",
+    # p-a-results.md §8: the block pointer is *0x03005d8c, chosen from 8
+    # spellings by proximity to the x anchor, and the block shuffles here too
+    # (0x02025a54 downstairs, 0x02025a64 up) — so the pointer form is load
+    # bearing on this cartridge and not copied from FireRed out of symmetry.
+    spec=(f"*{_EMERALD_SB1:#x}+0:6",),
+    x=Field(0, 0, "<h"),
+    y=Field(0, 2, "<h"),
+    map_group=Field(0, 4, "<B"),
+    map_num=Field(0, 5, "<B"),
+    notes=(
+        "x/y/map_num found by search (4, 4 and rank-1 candidates). map_group at "
+        "+0x0004 is INFERRED, not measured: both maps reachable from the probe "
+        "state are the two floors of the same house, so a round trip between "
+        "them cannot move the byte and the scan is blind to it by construction. "
+        "It is where FireRed keeps it and where the layout says it should be — "
+        "a symmetry argument, and the one value here that a second map "
+        "transition would upgrade from inferred to found. No battle flag: gMain "
+        "has not been located on this cartridge."
+    ),
+)
+
+CRYSTAL = GameMemory(
+    game="crystal-us",
+    console="GB",
+    # Four adjacent bytes at 0xdcb5, in the documented Gen 2 order, found as two
+    # independent searches that happened to land next to each other
+    # (p-a-results.md §10) — the axis search returned 0xdcb7/0xdcb8 and the map
+    # search returned 0xdcb5/0xdcb6, and neither was told about the other.
+    # Gen 2 does not shuffle its blocks, so these are raw addresses and there is
+    # no pointer to dereference.
+    spec=("0xdcb5:4",),
+    map_group=Field(0, 0, "<B"),
+    map_num=Field(0, 1, "<B"),
+    y=Field(0, 2, "<B"),
+    x=Field(0, 3, "<B"),
+    notes=(
+        "Gen 2 keeps a coordinate in ONE byte and does not DMA-shuffle, so this "
+        "is the only contract here with no pointer. Coordinates are unsigned. "
+        "No battle flag located."
+    ),
+)
+
+CONTRACTS: dict[str, GameMemory] = {c.game: c for c in (FIRERED, EMERALD, CRYSTAL)}
+
+
+def contract_for(game: Optional[str]) -> Optional[GameMemory]:
+    """The contract for a ``roms.yaml`` game key, or ``None``.
+
+    ``None`` is a supported answer and the caller must handle it: a game with no
+    contract records no position, which the trace reports as ``blind``. That is
+    strictly better than the alternative this module replaced, where every game
+    got FireRed's addresses and a Gen 4 cartridge answered with coordinates read
+    out of whatever sits at 0x03005008.
+    """
+    return CONTRACTS.get(game) if game else None
+
+
+def contract_for_rom_path(rom_path: Optional[str]) -> Optional[GameMemory]:
+    """The contract for whatever cartridge a config points at.
+
+    The join goes through ``configs/roms.yaml`` rather than through the file
+    name, so a renamed dump still resolves and an unregistered one resolves to
+    ``None`` instead of to a guess.
+    """
+    if not rom_path:
+        return None
+    from src.app.roms import rom_for_path
+
+    rom = rom_for_path(rom_path)
+    return contract_for(rom.game) if rom else None
+
+
+
+
+
+def attach(emu: Any, contract: Optional[GameMemory]) -> Optional[GameMemory]:
+    """Point an emulator at one game's contract — the spec AND its decoder.
+
+    Both in one call, deliberately. The spec says which raw bytes get sampled
+    after every button and the contract says how to read them back, and a spec
+    from one cartridge paired with a decoder from another is precisely the
+    failure this module exists to prevent: it does not raise, it returns
+    coordinates. Keeping them on the same object at the same moment makes that
+    pairing unrepresentable rather than merely discouraged.
+
+    A ``None`` contract sets an EMPTY spec, so an unregistered game samples
+    nothing and its trace reports ``blind`` — the safe degradation
+    (``cross-game-plan.md`` §2.2: a missing answer is designed for, a wrong one
+    is silent corruption of the headline figure).
+    """
+    emu.trace_contract = contract
+    emu.trace_spec = list(contract.spec) if contract is not None else []
+    return contract
+
+
+__all__ = ["Field", "GameMemory", "CONTRACTS", "FIRERED", "EMERALD", "CRYSTAL",
+           "attach", "contract_for", "contract_for_rom_path"]

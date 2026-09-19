@@ -1913,7 +1913,11 @@ class TurnManager:
             if rows:
                 try:
                     from src.referee import trace as _trace
-                    samples = _trace.decode_samples(rows, None)
+                    # None when the cartridge has no contract: the trace then
+                    # reports ``blind`` instead of decoding FireRed's layout out
+                    # of whatever the spec pointed at (src/referee/contracts.py).
+                    samples = _trace.decode_samples(
+                        rows, None, getattr(self.emulator, "trace_contract", None))
                     derived = _trace.derive(samples, None, None)
                     self.logger.log_custom("turn_input_trace", {"turn": self.turn_number, **derived, "samples": samples})
                 except Exception as e:

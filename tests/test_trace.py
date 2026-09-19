@@ -9,6 +9,7 @@ import struct
 
 from src.emulator.emulator import EmulatorClient
 from src.referee import trace
+from src.referee.contracts import FIRERED
 from src.referee.progress import ProgressTracker
 from src.referee.referee import Referee
 from tests.test_battles import BattleFakeEmulator, stats_block
@@ -32,20 +33,20 @@ def test_spec_names_the_three_ranges_the_bridge_samples():
 
 def test_decode_reads_tile_bit_and_counter_and_tolerates_missing_ranges():
     rows = [row("R", 5, 7, in_battle=False, total=3), ("A", [b"", b"", b""]), ("U", [pos(6, 7)])]
-    out = trace.decode_samples(rows, KEY)
-    assert out[0] == {"i": 0, "input": "R", "map_group": 3, "map_num": 0, "x": 5, "y": 7, "in_battle": False, "battles_total": 3}
+    out = trace.decode_samples(rows, KEY, FIRERED)
+    assert out[0] == {"i": 0, "input": "R", "map_group": 3, "map_num": 0, "map_id": None, "x": 5, "y": 7, "in_battle": False, "battles_total": 3}
     assert out[1]["x"] is None and out[1]["in_battle"] is None and out[1]["battles_total"] is None
     assert out[2]["x"] == 6 and out[2]["in_battle"] is None
-    assert trace.decode_samples(rows, None)[0]["battles_total"] is None  # no key → no counter
+    assert trace.decode_samples(rows, None, FIRERED)[0]["battles_total"] is None  # no key → no counter
     torn = [("D", [pos(10, 3), b"\x00", struct.pack("<I", 1379579746 ^ KEY)])]  # mid-warp torn counter (live 2026-09-14)
-    assert trace.decode_samples(torn, KEY)[0]["battles_total"] is None and trace.decode_samples(torn, KEY)[0]["x"] == 10
+    assert trace.decode_samples(torn, KEY, FIRERED)[0]["battles_total"] is None and trace.decode_samples(torn, KEY, FIRERED)[0]["x"] == 10
 
 
 def test_a_blind_trace_reports_no_steps_rather_than_zero():
     """Live 2026-09-14: the bridge returned rows with empty samples for every
     input; recording 0 traced steps would have replaced the bound with a lie."""
     rows = [("U", [b"", b"", b""]), ("R", [b"", b"", b""])]
-    d = trace.derive(trace.decode_samples(rows, KEY), start_tile=(3, 0, 0, 0), start_in_battle=False)
+    d = trace.derive(trace.decode_samples(rows, KEY, FIRERED), start_tile=(3, 0, 0, 0), start_in_battle=False)
     assert d["blind"] is True and d["overworld_steps"] is None and d["inputs"] == 2
 
 
@@ -55,7 +56,7 @@ def test_derive_counts_steps_only_outside_battle_and_names_lost_inputs():
     input 3, 3 inputs spent in battle."""
     rows = [row("R", 1, 0), row("R", 2, 0), row("R", 2, 0), row("R", 3, 0, in_battle=True, total=1),
             row("A", 3, 0, in_battle=True, total=1), row("A", 3, 0, in_battle=True, total=1)]
-    d = trace.derive(trace.decode_samples(rows, KEY), start_tile=(3, 0, 0, 0), start_in_battle=False)
+    d = trace.derive(trace.decode_samples(rows, KEY, FIRERED), start_tile=(3, 0, 0, 0), start_in_battle=False)
     assert d == {"inputs": 6, "blind": False, "overworld_steps": 2, "inputs_lost": 1, "battle_inputs": 3,
                  "battle_started_at": 3, "end_in_battle": True, "scripted_tiles": 0, "relocations": 0,
                  "moved_inputs": 2, "battle_edge": 0, "unclassified": 0,
@@ -70,21 +71,21 @@ def test_a_multi_tile_displacement_counts_its_graph_distance_when_one_is_known()
     step per sample undercounted the walk the video and the bound both count."""
     rows = [row("B", 11, 5), row("B", 11, 13), row("B", 11, 13)]
     dist = {((3, 0, 12, 1), (3, 0, 11, 5)): 5, ((3, 0, 11, 5), (3, 0, 11, 13)): 8}
-    d = trace.derive(trace.decode_samples(rows, KEY), start_tile=(3, 0, 12, 1), start_in_battle=False,
+    d = trace.derive(trace.decode_samples(rows, KEY, FIRERED), start_tile=(3, 0, 12, 1), start_in_battle=False,
                      distance=lambda a, b: dist.get((a, b)))
     assert (d["overworld_steps"], d["scripted_tiles"], d["end_tile"]) == (13, 11, (3, 0, 11, 13))
-    plain = trace.derive(trace.decode_samples(rows, KEY), start_tile=(3, 0, 12, 1), start_in_battle=False)
+    plain = trace.derive(trace.decode_samples(rows, KEY, FIRERED), start_tile=(3, 0, 12, 1), start_in_battle=False)
     assert (plain["overworld_steps"], plain["scripted_tiles"]) == (2, 0)  # no graph: one step per displacement
-    unknown = trace.derive(trace.decode_samples(rows, KEY), start_tile=(3, 0, 12, 1), start_in_battle=False,
+    unknown = trace.derive(trace.decode_samples(rows, KEY, FIRERED), start_tile=(3, 0, 12, 1), start_in_battle=False,
                            distance=lambda a, b: None)
     assert unknown["overworld_steps"] == 2  # no path known: one step, never zero
 
 
 def test_derive_leaves_the_first_step_uncounted_when_the_start_is_unknown_and_a_warp_is_one_step():
     rows = [row("U", 4, 8), row("U", 4, 7), row("U", 2, 9, g=4, m=1)]  # the third press walks through a door
-    d = trace.derive(trace.decode_samples(rows, KEY), start_tile=None, start_in_battle=None)
+    d = trace.derive(trace.decode_samples(rows, KEY, FIRERED), start_tile=None, start_in_battle=None)
     assert d["overworld_steps"] == 2 and d["inputs_lost"] == 0  # first press: no start tile → not counted
-    d2 = trace.derive(trace.decode_samples(rows, KEY), start_tile=(3, 0, 4, 9), start_in_battle=False)
+    d2 = trace.derive(trace.decode_samples(rows, KEY, FIRERED), start_tile=(3, 0, 4, 9), start_in_battle=False)
     assert d2["overworld_steps"] == 3
 
 
@@ -93,13 +94,13 @@ def test_a_counter_step_marks_the_battle_start_even_before_the_bit_rises():
     1 with in_battle still 0; the referee's poll a second later read the bit.
     The counter move is the start signal."""
     rows = [row("L", 7, 7, total=0), row("D", 6, 8, total=0), row("B", 6, 8, total=0), row("B", 6, 8, in_battle=False, total=1)]
-    d = trace.derive(trace.decode_samples(rows, KEY), start_tile=(3, 0, 8, 7), start_in_battle=False)
+    d = trace.derive(trace.decode_samples(rows, KEY, FIRERED), start_tile=(3, 0, 8, 7), start_in_battle=False)
     assert (d["battle_started_at"], d["battle_inputs"], d["end_in_battle"], d["overworld_steps"]) == (3, 1, True, 2)
 
 
 def test_a_turn_that_starts_in_battle_charges_no_steps_until_it_is_over():
     rows = [row("A", 3, 0, in_battle=True), row("A", 3, 0, in_battle=False), row("L", 2, 0), row("L", 1, 0)]
-    d = trace.derive(trace.decode_samples(rows, KEY), start_tile=(3, 0, 3, 0), start_in_battle=True)
+    d = trace.derive(trace.decode_samples(rows, KEY, FIRERED), start_tile=(3, 0, 3, 0), start_in_battle=True)
     assert d["battle_inputs"] == 1 and d["battle_started_at"] is None and d["overworld_steps"] == 2
 
 
@@ -140,16 +141,16 @@ def test_a_blackout_warp_is_one_step_not_the_shortest_path_home():
     MAX_TILES_PER_INPUT is the GAME moving the player: one step, like any warp."""
     rows = [row("B", 43, 5, g=1, m=0), row("B", 8, 5, g=4, m=0)]
     far = {((1, 0, 43, 5), (4, 0, 8, 5)): 224}
-    d = trace.derive(trace.decode_samples(rows, KEY), start_tile=(1, 0, 43, 5), start_in_battle=False,
+    d = trace.derive(trace.decode_samples(rows, KEY, FIRERED), start_tile=(1, 0, 43, 5), start_in_battle=False,
                      distance=lambda a, b: far.get((a, b)))
     assert (d["overworld_steps"], d["relocations"], d["scripted_tiles"]) == (1, 1, 0)
     # the escort stays a walk: 8 tiles is inside one input's reach
     near = {((3, 0, 11, 5), (3, 0, 11, 13)): 8}
-    esc = trace.derive(trace.decode_samples([row("B", 11, 13)], KEY), start_tile=(3, 0, 11, 5),
+    esc = trace.derive(trace.decode_samples([row("B", 11, 13)], KEY, FIRERED), start_tile=(3, 0, 11, 5),
                        start_in_battle=False, distance=lambda a, b: near.get((a, b)))
     assert (esc["overworld_steps"], esc["relocations"], esc["scripted_tiles"]) == (8, 0, 7)
     # the boundary itself is still a walk
-    edge = trace.derive(trace.decode_samples([row("B", 11, 13)], KEY), start_tile=(3, 0, 11, 5),
+    edge = trace.derive(trace.decode_samples([row("B", 11, 13)], KEY, FIRERED), start_tile=(3, 0, 11, 5),
                         start_in_battle=False, distance=lambda a, b: trace.MAX_TILES_PER_INPUT)
     assert edge["overworld_steps"] == trace.MAX_TILES_PER_INPUT and edge["relocations"] == 0
 
@@ -205,7 +206,7 @@ def test_first_press_in_a_direction_is_a_turn_to_face_and_the_repeats_are_walls(
     # after it is a bump. Three turns of walking into a wall must therefore
     # read as the presses they were, not as three turns.
     rows = [row("R", 5, 5)] + [row("U", 5, 5) for _ in range(4)]
-    d = trace.derive(trace.decode_samples(rows, KEY), (3, 0, 4, 5), False, passable=_wall_at)
+    d = trace.derive(trace.decode_samples(rows, KEY, FIRERED), (3, 0, 4, 5), False, passable=_wall_at)
     assert d["inputs_lost"] == 4
     assert d["turns_to_face"] == 1 and d["walls_hit"] == 3
     assert d["blocked_by_actor"] == 0 and d["blocked_unknown"] == 0
@@ -215,7 +216,7 @@ def test_a_press_on_an_open_tile_that_moved_nothing_is_blocked_not_a_wall():
     # Same shape, but the graph says the tile ahead is reachable — a textbox,
     # an NPC or a script ate the press. Measured, never charged (plan W5).
     rows = [row("L", 5, 5), row("L", 5, 5), row("L", 5, 5)]
-    d = trace.derive(trace.decode_samples(rows, KEY), (3, 0, 6, 5), False, passable=_wall_at)
+    d = trace.derive(trace.decode_samples(rows, KEY, FIRERED), (3, 0, 6, 5), False, passable=_wall_at)
     # The first L moved (6,5)->(5,5), which also leaves the player facing L, so
     # both presses after it are attributable and neither is a turn-to-face.
     assert d["overworld_steps"] == 1
@@ -224,7 +225,7 @@ def test_a_press_on_an_open_tile_that_moved_nothing_is_blocked_not_a_wall():
 
 def test_ab_presses_are_counted_separately_and_never_as_lost_movement():
     rows = [row("A", 5, 5), row("B", 5, 5), row("U", 5, 5), row("U", 5, 5)]
-    d = trace.derive(trace.decode_samples(rows, KEY), (3, 0, 5, 5), False, passable=_wall_at)
+    d = trace.derive(trace.decode_samples(rows, KEY, FIRERED), (3, 0, 5, 5), False, passable=_wall_at)
     assert d["idle_ab"] == 2
     assert d["inputs_lost"] == 2          # direction presses only
     # The B reset the facing inference, so the first U is a turn-to-face again.
@@ -234,13 +235,13 @@ def test_ab_presses_are_counted_separately_and_never_as_lost_movement():
 def test_an_unknown_facing_under_charges_rather_than_guessing():
     # Without a preceding direction press the facing is unknown, so a press
     # into a wall is booked as a turn-to-face and costs the run nothing.
-    d = trace.derive(trace.decode_samples([row("U", 5, 5)], KEY), (3, 0, 5, 5), False, passable=_wall_at)
+    d = trace.derive(trace.decode_samples([row("U", 5, 5)], KEY, FIRERED), (3, 0, 5, 5), False, passable=_wall_at)
     assert d["walls_hit"] == 0 and d["turns_to_face"] == 1
 
 
 def test_without_a_passable_callable_no_press_is_charged():
     rows = [row("U", 5, 5), row("U", 5, 5), row("U", 5, 5)]
-    d = trace.derive(trace.decode_samples(rows, KEY), (3, 0, 5, 5), False)
+    d = trace.derive(trace.decode_samples(rows, KEY, FIRERED), (3, 0, 5, 5), False)
     assert d["inputs_lost"] == 3 and d["walls_hit"] == 0 and d["blocked_unknown"] == 2
 
 
@@ -248,7 +249,7 @@ def test_a_direction_press_inside_a_battle_drops_the_facing_inference():
     # A direction in battle moves a menu cursor, not the player: it must not
     # seed the facing and make the next overworld press look like a bump.
     rows = [row("U", 5, 5, in_battle=True), row("U", 5, 5), row("U", 5, 5), row("U", 5, 5)]
-    d = trace.derive(trace.decode_samples(rows, KEY), (3, 0, 5, 5), True, passable=_wall_at)
+    d = trace.derive(trace.decode_samples(rows, KEY, FIRERED), (3, 0, 5, 5), True, passable=_wall_at)
     assert d["battle_inputs"] == 1
     # Press 2 ends the battle and is classified as neither; press 3 re-seeds the
     # facing as a turn-to-face, and only press 4 is charged.
@@ -268,7 +269,7 @@ def test_the_buckets_partition_every_input():
         row("D", 5, 5),                       # the press the battle ended on
         row("L", 4, 5),                       # moved
     ]
-    d = trace.derive(trace.decode_samples(rows, KEY), (3, 0, 5, 6), False, passable=_wall_at)
+    d = trace.derive(trace.decode_samples(rows, KEY, FIRERED), (3, 0, 5, 6), False, passable=_wall_at)
     assert sum(d[k] for k in trace.INPUT_BUCKETS) == d["inputs"] == 6
     assert d["moved_inputs"] == 2 and d["battle_edge"] == 1 and d["battle_inputs"] == 1
     assert d["walls_hit"] == 1 and d["idle_ab"] == 1
@@ -277,7 +278,7 @@ def test_the_buckets_partition_every_input():
 def test_moved_inputs_counts_presses_while_overworld_steps_counts_tiles():
     """One scripted B press can move the player eight tiles (Oak's escort)."""
     rows = [row("B", 4, 5), row("B", 4, 1)]
-    d = trace.derive(trace.decode_samples(rows, KEY), (3, 0, 4, 6), False,
+    d = trace.derive(trace.decode_samples(rows, KEY, FIRERED), (3, 0, 4, 6), False,
                      distance=lambda a, b: abs(a[3] - b[3]))
     assert d["moved_inputs"] == 2 and d["overworld_steps"] == 5
     assert sum(d[k] for k in trace.INPUT_BUCKETS) == d["inputs"] == 2

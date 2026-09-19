@@ -30,6 +30,7 @@ from src.emulator import make_emulator
 from src.emulator.backends import frame as frame_mod
 from src.emulator.backends.skyemu import SkyEmuClient, SkyEmuError
 from src.referee.trace import TRACE_SPEC
+from src.referee.contracts import FIRERED
 
 VALID_INPUTS = ["U", "D", "L", "R", "A", "B", "START", "SELECT", "WAIT"]
 GSAVEBLOCK1_PTR = 0x03005008
@@ -562,7 +563,7 @@ def test_the_rows_are_the_shape_the_referee_decodes():
     emu.write_u32(GSAVEBLOCK1_PTR, 0x02025594)
     emu.write_bytes(0x02025594, bytes([6, 0, 8, 0, 4, 1]))
     emu.press_button_list(["up"])
-    samples = trace_mod.decode_samples(emu.fetch_trace())
+    samples = trace_mod.decode_samples(emu.fetch_trace(), None, FIRERED)
     assert samples[0]["input"] == "U"
     assert (samples[0]["x"], samples[0]["y"]) == (6, 8)
     assert (samples[0]["map_group"], samples[0]["map_num"]) == (4, 1)

@@ -148,7 +148,7 @@ from src.cli.slots import get_slot
 from src.config import default_config_stem, example_model_aliases, load_config
 from src.core import RunLogger, StateManager
 from src.emulator import DEFAULT_BACKEND, make_emulator, VisionPipeline, OCRRunner
-from src.referee.trace import TRACE_SPEC
+from src.referee.contracts import attach as attach_contract, contract_for_rom_path
 from src.agent import TurnManager
 
 
@@ -650,7 +650,7 @@ def run_prepare_phase(config: dict, saves_dir: Path) -> dict:
 
     emu = make_emulator(config)
     # Per-input trace of tile + in-battle bit after every button (src/referee/trace.py).
-    emu.trace_spec = list(TRACE_SPEC)
+    attach_contract(emu, contract_for_rom_path(config.get('emulator', {}).get('rom_path')))
     emu.start_server()
 
     rom_path = config["emulator"]["rom_path"]
@@ -738,7 +738,7 @@ def _run_prepare_phase_skyemu(config: dict, saves_dir: Path) -> dict:
     emu = make_emulator(config)
     # Per-input trace of tile + in-battle bit after every button
     # (src/referee/trace.py). Set BEFORE the connection, as on mGBA.
-    emu.trace_spec = list(TRACE_SPEC)
+    attach_contract(emu, contract_for_rom_path(config.get('emulator', {}).get('rom_path')))
     emu.start_server()
 
     caffeinate_proc = None

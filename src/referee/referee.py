@@ -49,7 +49,7 @@ from src.referee.battles import (
     decode_trainer_flags, in_battle_from_byte,
 )
 from src.referee.checkpoints import Checkpoint, MultiGate, Node
-from src.referee import trace
+from src.referee import contracts, trace
 from src.referee.progress import ProgressTracker
 from src.referee.walkgraph import DEFAULT_GRAPH_PATH, WalkGraph
 
@@ -452,7 +452,15 @@ class Referee:
         ``turn_input_trace``. Returns the derived dict (None for an empty trace)."""
         if not rows:
             return None
-        samples = trace.decode_samples(rows, self.last_encryption_key)
+        # The emulator carries the contract for the cartridge actually loaded
+        # (contracts.attach). Falling back to FireRed's is safe HERE and only
+        # here: the referee is the deep FireRed ladder — it reads that game's
+        # flags, vars and encryption key, and configs/roms.yaml gives no other
+        # game a benchmark ladder to be scored against. A cross-game run has no
+        # referee and takes the shallow path in turn.py, where an unregistered
+        # game decodes to blind rather than to FireRed's layout.
+        contract = getattr(self.emulator, "trace_contract", None) or contracts.FIRERED
+        samples = trace.decode_samples(rows, self.last_encryption_key, contract)
         start_tile = tuple(self.progress.positions[-1][1:]) if self.progress.positions else None
         start_in_battle = self.battles.records[-1][1] if self.battles.records else (False if turn_number <= 1 else None)
         graph = self.progress.graph

@@ -1,0 +1,109 @@
+"""The per-game memory contract (src/referee/contracts.py).
+
+The load-bearing test here is the FIRST one: FireRed's contract has to equal the
+constant it replaced, byte for byte. cross-game-plan.md P-D asks for the move to
+happen "with no behaviour change", and a spec that drifted by one offset would
+not fail loudly — it would read six bytes from a slightly wrong place inside a
+live save block and report coordinates.
+"""
+
+import struct
+
+import pytest
+
+from src.referee import trace
+from src.referee.battles import in_battle_from_byte
+from src.referee.contracts import (CONTRACTS, CRYSTAL, EMERALD, FIRERED, Field,
+                                   attach, contract_for)
+
+# The literal this module was extracted from (src/referee/trace.py, pre-2026-09-19).
+HISTORICAL_FIRERED_SPEC = ["*0x3005008+0:6", "0x3003529:1", "*0x3005008+0x121c:4"]
+
+
+def test_firered_contract_reproduces_the_constant_it_replaced():
+    assert list(FIRERED.spec) == HISTORICAL_FIRERED_SPEC
+    assert trace.TRACE_SPEC == HISTORICAL_FIRERED_SPEC
+
+
+def row(x=5, y=7, group=3, num=0, batt=0, stat=3):
+    return ("R", [struct.pack("<hhBB", x, y, group, num), bytes([batt]),
+                  struct.pack("<I", stat)])
+
+
+def test_firered_decodes_the_same_fields_as_before():
+    d = trace.decode_samples([row()], 0, FIRERED)[0]
+    assert (d["x"], d["y"], d["map_group"], d["map_num"]) == (5, 7, 3, 0)
+    assert d["battles_total"] == 3
+
+
+@pytest.mark.parametrize("b", range(256))
+def test_the_battle_mask_agrees_with_battles_in_battle_from_byte(b):
+    """battle_mask is a MASK and in_battle_from_byte reads a bit INDEX.
+
+    One is `b & 2` and the other `(b >> 1) & 1`; they agree, and writing 1 for
+    either would not. This ran green against a wrong mask on 128 of the 256
+    values, which is why it is parametrized over all of them rather than spot
+    checked."""
+    got = trace.decode_samples([row(batt=b)], 0, FIRERED)[0]["in_battle"]
+    assert got == in_battle_from_byte(b)
+
+
+def test_no_contract_decodes_nothing_rather_than_guessing():
+    """The safe default. Decoding FireRed's layout by default is what made a DS
+    run report coordinates read out of whatever sits at 0x03005008."""
+    d = trace.decode_samples([row()], 0)[0]
+    assert d["x"] is None and d["y"] is None and d["map_group"] is None
+    assert trace.derive([d], None, None)["blind"] is True
+
+
+def test_a_contract_without_a_battle_flag_reports_overworld_not_unknown():
+    """`None` would make derive() file every input under battle_edge and report
+    a turn that moved nowhere; False costs only the census. See the decoder."""
+    d = trace.decode_samples([("R", [bytes([1, 0, 4, 9])])], None, CRYSTAL)[0]
+    assert d["in_battle"] is False
+    assert CRYSTAL.census_ok is False and FIRERED.census_ok is True
+
+
+def test_crystal_reads_one_unsigned_byte_per_axis_in_gen_2_order():
+    """group, number, y, x — NOT the Gen 3 order, which is the whole reason the
+    decoder had to stop knowing one layout."""
+    d = trace.decode_samples([("R", [bytes([26, 3, 9, 5])])], None, CRYSTAL)[0]
+    assert (d["map_group"], d["map_num"], d["y"], d["x"]) == (26, 3, 9, 5)
+
+
+def test_a_short_sample_loses_one_field_not_the_whole_turn():
+    torn = ("R", [struct.pack("<hh", 10, 11)])  # the group/number bytes never arrived
+    d = trace.decode_samples([torn], 0, FIRERED)[0]
+    assert (d["x"], d["y"]) == (10, 11)
+    assert d["map_group"] is None and d["map_num"] is None
+
+
+def test_attach_sets_the_spec_and_its_decoder_together():
+    class Emu:
+        pass
+
+    e = Emu()
+    attach(e, EMERALD)
+    assert e.trace_spec == list(EMERALD.spec) and e.trace_contract is EMERALD
+    # None must leave an EMPTY spec, not the previous game's.
+    attach(e, None)
+    assert e.trace_spec == [] and e.trace_contract is None
+
+
+def test_map_key_has_the_shape_its_generation_has():
+    assert FIRERED.map_key({"map_group": 3, "map_num": 0}) == (3, 0)
+    assert FIRERED.map_key({"map_group": None, "map_num": 0}) is None
+    gen4 = type(FIRERED)(game="x", console="NDS", spec=("0x0:1",),
+                         x=Field(0, 0, "<i"), y=Field(0, 4, "<i"),
+                         map_id=Field(0, 8, "<H"))
+    assert gen4.map_key({"map_id": 17}) == (17,)
+
+
+def test_every_registered_game_is_keyed_by_its_own_game_string():
+    """The join to configs/roms.yaml. A contract filed under another game's key
+    is the same silent-wrong-cartridge failure, one table earlier."""
+    for key, c in CONTRACTS.items():
+        assert key == c.game
+        assert contract_for(key) is c
+    assert contract_for("no-such-game") is None
+    assert contract_for(None) is None
