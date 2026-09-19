@@ -282,6 +282,180 @@ def ablate(snaps, regions, log=print) -> dict:
     return rows
 
 
+def region_of(regions, addr: int):
+    for name, base, length in regions:
+        if base <= addr < base + length:
+            return name, base, length
+    return None
+
+
+def deref(snap: dict[str, bytes], regions, ptr: int) -> int:
+    """The 4-byte value at a bus address, out of a snapshot."""
+    hit = region_of(regions, ptr)
+    if hit is None:
+        return -1
+    name, base, _ = hit
+    return int.from_bytes(snap[name][ptr - base:ptr - base + 4], "little")
+
+
+def choose_block_pointer(snaps, regions, ptrs, log=print):
+    """Which of the candidate pointer words actually tracks the moving block.
+
+    A map transition re-runs the save-block DMA, so the raw address of the
+    player's coordinates changes: measured on FireRed, gSaveBlock1 sits at
+    0x0202554c in the bedroom and 0x02025570 after a round trip through the
+    floor below; measured on Emerald, 0x02025a54 downstairs and 0x02025a64
+    upstairs. Comparing raw addresses across a transition therefore finds
+    nothing, which is exactly the failure plan section 1 predicts and the reason
+    the per-game contract needs a pointer+offset form at all.
+
+    The right pointer is picked by evidence, not by name, on two criteria:
+
+      * **it moved.** A word whose value is the same on both sides of the
+        transition is not tracking anything -- following it is identical to
+        using the raw address, which the other scan already does. This is the
+        criterion the first version of this function lacked, and it chose a
+        static word in EWRAM that scored a perfect 1.0 precisely BECAUSE
+        nothing it pointed at ever changed.
+      * **agreement.** Dereference it on both sides and count how many bytes of
+        a 0x1300-byte window agree at the same offset from its own value. The
+        block is mostly unchanged by a round trip -- flags, party, name, money
+        -- so a pointer really tracking it scores near 1.0, while a word that
+        merely happens to hold a nearby address scores like noise.
+
+    Agreement is a FLOOR, not the ranking. FireRed's SaveBlock1 and SaveBlock2
+    move together, so gSaveBlock2Ptr + 0xFA4 reaches the player's x just as
+    gSaveBlock1Ptr + 0 does -- and SaveBlock2 scores HIGHER (0.982 against
+    0.865) precisely because its contents did not change, which is the opposite
+    of what identifies the block the coordinates live in. So among the movers
+    that clear the floor, the block is the one whose base sits closest below the
+    anchor.
+
+    A game with no shuffle has no movers, and that is a finding rather than a
+    failure: the function says so and the raw scan is the whole answer.
+    """
+    elsewhere = [k for k in ("map_out", "map_alt", "map_back") if k in snaps]
+    scored = []
+    for cand in ptrs:
+        a = deref(snaps["origin"], regions, cand["ptr"])
+        b = deref(snaps["map_back"], regions, cand["ptr"])
+        # Movement is looked for across EVERY map probe, not just the round
+        # trip. Both games measured here happen to leave the block displaced
+        # after walking back -- FireRed's DMA drifts continuously, so map_back
+        # is never quite where origin was -- but that is a property of those two
+        # cartridges, not of map transitions. A game that restores the block
+        # exactly on return would make map_back alone say "nothing moved" and
+        # the pointer form would be thrown away on a game that needs it.
+        moved = max((deref(snaps[k], regions, cand["ptr"]) - a for k in elsewhere),
+                    key=abs, default=0)
+        ra, rb = region_of(regions, a), region_of(regions, b)
+        if ra is None or rb is None:
+            continue
+        na, ba, la = ra
+        nb, bb, lb = rb
+        n = min(0x1300, la - (a - ba), lb - (b - bb))
+        if n <= 0:
+            continue
+        wa = snaps["origin"][na][a - ba:a - ba + n]
+        wb = snaps["map_back"][nb][b - bb:b - bb + n]
+        agree = sum(1 for i in range(n) if wa[i] == wb[i]) / n
+        # Agreement is still measured against the round trip, which is the
+        # state most like the origin and so the fairest window.
+        scored.append({**cand, "moved": moved, "agreement": round(agree, 4)})
+
+    movers = [c for c in scored if c["moved"] != 0 and c["agreement"] >= AGREEMENT_FLOOR]
+    movers.sort(key=lambda c: (c["offset"], -c["agreement"]))
+    if not movers:
+        log("  no candidate pointer moved across the transition -- this game does not "
+            "shuffle its block, so the raw addresses are the answer")
+        return scored
+    for c in movers[:5]:
+        log(f"  *{c['ptr']:#010x} -> {c['value']:#010x} moved {c['moved']:+#x} "
+            f"agreement {c['agreement']:.3f}")
+    return movers
+
+
+def scan_map(snaps, regions, block_ptr=None) -> list[dict]:
+    """Every value that changes on a map transition and ONLY then.
+
+    Three conditions, and the second is free because the xy probes already ran:
+
+      1. it is back to its original value after walking there and back,
+      2. it did not move for any of the four ordinary walking probes,
+      3. it differs in at least one of the other maps visited.
+
+    Condition 2 is what separates a map id from the thousands of bytes a map
+    load rewrites -- tile buffers, sprite tables, the camera. Those move when
+    you walk, too. Condition 1 is what separates it from every counter a
+    transition increments, since those do not come back.
+
+    Condition 3 is "at least one", not "both", and that is deliberate. FireRed's
+    bedroom and the floor below it are map 4:1 and 4:0 -- the same map GROUP. A
+    round trip between them cannot reveal the group byte at all, because it
+    never changes. The second, farther transition (outdoors, map 3:0) is what
+    makes the group visible, and requiring both to move would have thrown the
+    group away to buy a filter the other conditions already provide.
+
+    Scanned twice over. Once at RAW addresses, which is what a game without a
+    DMA shuffle needs and what fixed-address values like the party count use.
+    Once at offsets RELATIVE to `block_ptr`, which is the only way to see a
+    value inside a block that moved -- and both games measured so far move it.
+    """
+    out = []
+    probes = [p for p in ("R3", "L3", "U3", "D3") if p in snaps]
+    elsewhere = [p for p in ("map_out", "map_alt") if p in snaps]
+    walked = [(w, w[:-len("_walked")]) for w in ("map_out_walked", "map_alt_walked")
+              if w in snaps]
+
+    for name, base, length in regions:
+        o = snaps["origin"][name]
+        for label, width, signed in FORMS:
+            for off in range(length - width + 1):
+                v0 = read_at(o, off, width, signed)
+                if not any(read_at(snaps[p][name], off, width, signed) != v0
+                           for p in elsewhere):
+                    continue
+                if read_at(snaps["map_back"][name], off, width, signed) != v0:
+                    continue
+                if any(read_at(snaps[p][name], off, width, signed) != v0 for p in probes):
+                    continue
+                if any(read_at(snaps[w][name], off, width, signed)
+                       != read_at(snaps[m][name], off, width, signed) for w, m in walked):
+                    continue
+                out.append({
+                    "spelling": "raw", "addr": base + off, "region": name,
+                    "form": label, "origin": v0,
+                    "away": [read_at(snaps[p][name], off, width, signed) for p in elsewhere],
+                })
+
+    if block_ptr is not None:
+        bases = {k: deref(snaps[k], regions, block_ptr) for k in snaps}
+        spans = {k: region_of(regions, b) for k, b in bases.items()}
+        if all(spans.values()):
+            limit = min(sp[1] + sp[2] - bases[k] for k, sp in spans.items())
+            for label, width, signed in FORMS:
+                for k in range(min(limit, 0x1400) - width + 1):
+                    def at(probe, _k=k, _w=width, _s=signed):
+                        nm, bs, _ = spans[probe]
+                        return read_at(snaps[probe][nm], bases[probe] - bs + _k, _w, _s)
+                    v0 = at("origin")
+                    if not any(at(p) != v0 for p in elsewhere):
+                        continue
+                    if at("map_back") != v0:
+                        continue
+                    if any(at(p) != v0 for p in probes):
+                        continue
+                    if any(at(w) != at(m) for w, m in walked):
+                        continue
+                    out.append({
+                        "spelling": "pointer", "ptr": block_ptr, "offset": k,
+                        "addr": bases["origin"] + k, "region": "block",
+                        "form": label, "origin": v0,
+                        "away": [at(p) for p in elsewhere],
+                    })
+    return out
+
+
 def rank_by_run(cands: list[dict]) -> list[dict]:
     """Group map-id candidates into contiguous runs and put the short ones first.
 
