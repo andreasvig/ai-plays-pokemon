@@ -213,7 +213,10 @@ class MapCanvas:
         self.cand = np.zeros((CANDIDATES, height, width, 3), dtype=np.uint8)
         self.count = np.zeros((CANDIDATES, height, width), dtype=np.uint16)
         self.overflow = np.zeros((height, width), dtype=np.uint16)
-        self.frames = 0
+        #: How many times :meth:`add` was called. The stitcher adds once per RUN
+        #: (a run's own frames are settled first), so on a finished map this is
+        #: the number of independent visits behind it, not a frame count.
+        self.contributions = 0
 
     def add(self, frame: np.ndarray, ox: int, oy: int, keep: np.ndarray) -> None:
         """Vote one frame's kept pixels into the canvas at window origin (ox, oy)."""
@@ -234,7 +237,7 @@ class MapCanvas:
             count[k] += empty
             placed |= empty
         self.overflow[y0:y0 + h, x0:x0 + w] += (~placed & keep)
-        self.frames += 1
+        self.contributions += 1
 
     def image(self) -> tuple[np.ndarray, np.ndarray]:
         """``(rgb, votes)`` — the winning colour per pixel and how many frames voted.

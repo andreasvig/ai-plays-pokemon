@@ -152,7 +152,7 @@ def write(canvases: dict[str, MapCanvas], spec: ScreenSpec, out_dir: Path) -> di
             "file": f"{key.replace(':', '-')}.png",
             "origin": list(canvas.origin),
             "width": int(canvas.shape[1]), "height": int(canvas.shape[0]),
-            "frames": int(canvas.frames),
+            "runs": int(canvas.contributions),
             "seen_px": int(seen.sum()),
             "coverage": round(float(seen.mean()), 4),
             "disputed_px": int((canvas.disputed() > 0).sum()),
@@ -211,6 +211,61 @@ def verify(canvases: dict[str, MapCanvas], spec: ScreenSpec, maps_dir: Path) -> 
         if within < 0.90:
             bad += 1
     return bad
+
+
+def sheet(canvases: dict[str, MapCanvas], spec: ScreenSpec, maps_dir: Path, out: Path) -> None:
+    """One PNG: pret's render beside the stitch, per map, at full size.
+
+    Ground no run has walked is drawn as a grey checker rather than as black, so
+    "nobody went there" cannot be mistaken for "the game draws it dark".
+    """
+    from PIL import ImageDraw
+
+    atlas = json.loads((maps_dir / "index.json").read_text())["maps"]
+    rows, labels = [], []
+    for key, canvas in sorted(canvases.items(), key=lambda kv: -kv[1].shape[0] * kv[1].shape[1]):
+        entry = atlas.get(key)
+        if entry is None:
+            continue
+        ref = Image.open(maps_dir / entry["file"]).convert("RGB")
+        rgb, votes = canvas.image()
+        ox, oy = canvas.origin
+        y0, x0 = max(0, -oy), max(0, -ox)
+        y1 = min(canvas.shape[0], ref.height - oy)
+        x1 = min(canvas.shape[1], ref.width - ox)
+        shown = Image.new("RGB", (ref.width, ref.height), (0, 0, 0))
+        checker = Image.new("RGB", (ref.width, ref.height))
+        d = ImageDraw.Draw(checker)
+        for cy in range(0, ref.height, 8):
+            for cx in range(0, ref.width, 8):
+                d.rectangle([cx, cy, cx + 7, cy + 7],
+                            fill=(60, 60, 66) if (cx // 8 + cy // 8) % 2 else (44, 44, 50))
+        shown.paste(checker, (0, 0))
+        patch = Image.fromarray(rgb[y0:y1, x0:x1])
+        mask = Image.fromarray(((votes[y0:y1, x0:x1] > 0) * 255).astype(np.uint8), mode="L")
+        shown.paste(patch, (x0 + ox, y0 + oy), mask)
+        rows.append((ref, shown))
+        seen = float((votes > 0).mean())
+        labels.append(f"{key}   {entry['name']}   ·   {canvas.contributions} runs   ·   "
+                      f"{seen:.0%} of the canvas walked")
+    if not rows:
+        print("nothing to draw")
+        return
+    pad, bar = 16, 18
+    width = max(a.width + b.width + pad * 3 for a, b in rows)
+    height = sum(max(a.height, b.height) + bar + pad for a, b in rows) + pad
+    out_img = Image.new("RGB", (width, height), (18, 18, 22))
+    draw = ImageDraw.Draw(out_img)
+    y = pad
+    for (a, b), label in zip(rows, labels):
+        draw.text((pad, y), label, fill=(235, 235, 240))
+        y += bar
+        out_img.paste(a, (pad, y))
+        out_img.paste(b, (pad * 2 + a.width, y))
+        y += max(a.height, b.height) + pad
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out_img.save(out)
+    print(f"\nsheet: {out}  ({out_img.width}x{out_img.height}) — pret's render left, the stitch right")
 
 
 def calibrate(by_map: dict[str, list], spec: ScreenSpec) -> None:
@@ -320,6 +375,8 @@ def main() -> int:
                     help="a frame agreeing with less than this share of the settled map is dropped")
     ap.add_argument("--scores", action="store_true", help="print the per-frame agreement histogram")
     ap.add_argument("--verify", action="store_true", help="compare against the pret render")
+    ap.add_argument("--sheet", type=Path, nargs="?", const=OUT_DIR / "compare.png",
+                    help="write a side-by-side PNG of every map: the render, then the stitch")
     ap.add_argument("--calibrate", action="store_true", help="re-derive the camera from motion")
     args = ap.parse_args()
 
@@ -340,6 +397,8 @@ def main() -> int:
     index = write(canvases, spec, args.out or OUT_DIR / spec.name)
     seen = sum(m["seen_px"] for m in index["maps"].values())
     print(f"\nwrote {len(index['maps'])} maps, {seen} pixels seen")
+    if args.sheet:
+        sheet(canvases, spec, args.maps, args.sheet)
     if args.verify:
         return 1 if verify(canvases, spec, args.maps) else 0
     return 0
