@@ -456,7 +456,7 @@ def scan_map(snaps, regions, block_ptr=None) -> list[dict]:
     return out
 
 
-def rank_by_run(cands: list[dict]) -> list[dict]:
+def rank_by_run(cands: list[dict], anchors=()) -> list[dict]:
     """Group map-id candidates into contiguous runs and put the short ones first.
 
     The filters leave two kinds of survivor and they are not equally likely to
@@ -476,6 +476,19 @@ def rank_by_run(cands: list[dict]) -> list[dict]:
         FireRed ten identical 4-byte runs 0x14 apart survive every filter --
         they are per-map script state, and no id is ever the 7th element of
         something. Demoted, not dropped.
+
+    Above both of those sits one structural prior, and it is the strongest thing
+    in this file: **a map id lives next to the coordinates.** Every generation
+    measured keeps the whole position record together --
+
+        Crystal   0xdcb5 group, 0xdcb6 number, 0xdcb7 y, 0xdcb8 x
+        FireRed   block +0x0000 x, +0x0002 y, +0x0004 group, +0x0005 number
+        Emerald   the same offsets as FireRed, at a different block
+
+    -- so a candidate within NEAR_ANCHOR bytes of an address the axis search
+    already returned goes first. That is what turns Crystal's answer from
+    "somewhere in 82 runs" into the top of the list, and it is not a guess about
+    one game: it was read off three.
 
     This is a ranking. Nothing is discarded: a game that buries its map id in
     the middle of a struct ranks low but is still in the list.
@@ -509,8 +522,10 @@ def rank_by_run(cands: list[dict]) -> list[dict]:
             c["run"] = len_of[c["addr"]]
             c["run_start"] = start_of[c["addr"]]
             c["in_array"] = array_of[c["addr"]]
+            c["near_xy"] = any(abs(c["addr"] - a) <= NEAR_ANCHOR for a in anchors)
         out += group
-    return sorted(out, key=lambda c: (c["in_array"], c["run"], c["addr"]))
+    return sorted(out, key=lambda c: (not c["near_xy"], c["in_array"],
+                                      c["run"], c["addr"]))
 
 
 def summarise_runs(cands: list[dict], label: str, block_ptr=None, log=print) -> None:
@@ -531,8 +546,8 @@ def summarise_runs(cands: list[dict], label: str, block_ptr=None, log=print) -> 
     # spelling that means anything -- a raw address inside the block is valid
     # for one frame of one boot -- and they are where the answer is.
     runs = sorted(seen.values(),
-                  key=lambda c: (c.get("spelling") != "pointer", c["in_array"],
-                                 c["run"], c["addr"]))
+                  key=lambda c: (not c.get("near_xy"), c.get("spelling") != "pointer",
+                                 c["in_array"], c["run"], c["addr"]))
     n_block = sum(1 for c in runs if c.get("spelling") == "pointer")
     log(f"\n{label}: {n_block} run(s) inside the block, {len(runs) - n_block} at raw "
         f"addresses outside it")
@@ -544,7 +559,8 @@ def summarise_runs(cands: list[dict], label: str, block_ptr=None, log=print) -> 
         away = list(zip(*[x["away"] if x else ["."] * 2 for x in cells]))
         where = (f"*{block_ptr:#010x}+{a - (c['addr'] - c['offset']):#06x}"
                  if c.get("spelling") == "pointer" else f"{a:#010x}")
-        tag = " (array)" if c["in_array"] else ""
+        tag = (" <- beside the coordinates" if c.get("near_xy") else
+               " (array)" if c["in_array"] else "")
         log(f"  {where:<22} x{n:<2} here={here} -> " +
             " / ".join(str(list(w)) for w in away) + tag)
     if len(runs) > LIST_CAP:
@@ -880,7 +896,8 @@ def main() -> int:
 
         if out_route:
             t0 = time.time()
-            maps = rank_by_run(scan_map(snaps, regions, block_ptr))
+            anchors = {c["addr"] for c in xs} | {c["addr"] for c in ys}
+            maps = rank_by_run(scan_map(snaps, regions, block_ptr), anchors)
             print(f"\nscanned for the map id in {time.time() - t0:.1f}s")
             summarise_runs(maps, "map id", block_ptr)
             result["map"] = maps
@@ -907,6 +924,11 @@ WIDTH_CAP = 64
 # rank_by_run. Used only to say where the verdict is taken, not to drop
 # anything.
 MAX_ID_RUN = 8
+
+# How close to a known coordinate a map-id candidate has to sit to be treated as
+# part of the same record. Eight bytes covers every layout measured so far and
+# is well short of the next unrelated field.
+NEAR_ANCHOR = 8
 
 
 def verify(snaps, regions, xs, ys, maps, block_ptr) -> dict:
