@@ -1,0 +1,56 @@
+diff --git a/src/main.c b/src/main.c
+index bfeb587..707ab8c 100644
+--- a/src/main.c
++++ b/src/main.c
+@@ -5328,6 +5328,14 @@ void se_update_frame() {
+   hcs_update(gui_state.settings.http_control_server_enable,gui_state.settings.http_control_server_port,se_hcs_callback);
+   if(gui_state.settings.http_control_server_enable){
+     for(int i=0;i<SE_NUM_KEYBINDS;++i)emu_state.joy.inputs[i]+=gui_state.hcs_joypad.inputs[i];
++    // Buttons ACCUMULATE (a GUI press and an HTTP press are both presses); a
++    // position does not — the last one set wins, and headless there is no other
++    // writer. Only applied while the pen is down, so releasing the tap leaves
++    // the GUI's own cursor alone in windowed mode.
++    if(emu_state.joy.inputs[SE_KEY_PEN_DOWN]>0.f){
++      emu_state.joy.touch_pos[0]=gui_state.hcs_joypad.touch_pos[0];
++      emu_state.joy.touch_pos[1]=gui_state.hcs_joypad.touch_pos[1];
++    }
+   }
+   hcs_suspend_callbacks();
+   #endif
+@@ -6786,6 +6794,20 @@ uint8_t* se_hcs_callback(const char* cmd, const char** params, uint64_t* result_
+     str_result="ok";
+   }else if(strcmp(cmd,"/input")==0){
+     while(*params){
++      // Where a tap LANDS. `Tap Screen (NDS)` is only the pen-down flag; the
++      // position lives in joy.touch_pos, which the GUI fills from the mouse and
++      // which nothing over HTTP could set — so every tap arrived at (0,0).
++      // "TOUCH TO START" accepts that, and no other DS menu does. Normalised
++      // 0..1 over the touch screen, matching what nds.h multiplies by
++      // NDS_LCD_W/H, and clamped so a bad request cannot index off-screen.
++      if(strcmp(params[0],"touch_x")==0||strcmp(params[0],"touch_y")==0){
++        float v = atof(params[1]);
++        if(v<0.f)v=0.f;
++        if(v>1.f)v=1.f;
++        gui_state.hcs_joypad.touch_pos[params[0][6]=='x'?0:1]=v;
++        params+=2;
++        continue;
++      }
+       for(int i=0; i<SE_NUM_KEYBINDS;++i){
+         if(strcmp(params[0],se_keybind_names[i])==0){
+           gui_state.hcs_joypad.inputs[i]=atof(params[1]);
+@@ -8558,7 +8580,14 @@ static bool se_load_theme_from_image(uint8_t* im, uint32_t im_w, uint32_t im_h,
+   
+     int num_mips = 0;
+     uint8_t* data2 = im;
+-    for(int m = 0; m<SE_THEME_IMAGE_MIPS;++m){
++    // Headless (`SkyEmu http_server <port> <rom>`) calls se_init() from
++    // sokol_main(), i.e. BEFORE sapp's init_cb runs sg_setup() — so there is no
++    // graphics context, and sg_make_image() below trips
++    // `assert(_sg.valid)` in sokol_gfx.h. The theme is UI decoration that a
++    // headless server never draws, so skip generating and uploading its mips
++    // when sokol-gfx is not up. Everything else in this function is plain CPU
++    // parsing of the theme image and still runs, so the settings load completes.
++    for(int m = 0; sg_isvalid() && m<SE_THEME_IMAGE_MIPS;++m){
+       int mip_w = (im_w)>>(m);
+       int mip_h = (im_h)>>(m);
+       uint8_t* data = data2;
