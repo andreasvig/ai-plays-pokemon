@@ -292,3 +292,13 @@ player_agent:
         type: ephemeral
   observability:
     on_reasoning_loss: stop
+
+# The run starts its OWN live-feed server (src/dashboard/server.py:517 reads this
+# key, defaulting to 3420). Main's `pokemon app` control center already owns 3420
+# on this machine, so a v2 run launched beside it cannot bind — which presents as
+# "recording disabled: simple view never exposed its game-screen rectangle",
+# because the recorder's headless browser has no page to render. Moving the v2
+# port lets a SkyEmu run and the mGBA control center be up at the same time,
+# which is the whole point of the branch not disturbing main.
+dashboard:
+  port: 3430
