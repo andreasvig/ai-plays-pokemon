@@ -7,7 +7,72 @@
 > Companion to [plan.md](plan.md) (the FireRed map, shipped 2026-09-15) and to
 > `artifacts/skyemu-backend/v2-ui-plan.md` §8 (the capability tiers).
 
-## Decision, 2026-09-19: option C, done properly, is the path
+## Current truth, revision 3 (2026-09-19, evening): published assets, not stitching
+
+Andreas, after seeing the stitched atlas: *"okay this is soo bad, not worth it
+going down this range. if we ignore the future roms. could you gather enough
+publicly available assets to make maps for all games either in decomps or with
+finding maps, and syncing coordinates?"* — then, on the research below:
+*"i think i have seen online fly-overs of regions so i think people have
+rendered even the 3d maps."* He is right, and it decides this.
+
+**Option C is built, measured, and rejected as ARTWORK.** It works exactly as
+designed — 15 maps, 96.3%-99.5% identical to pret's render (4.1) — and the
+output is still a fog-of-war smear, because a stitch can only ever hold ground
+somebody walked. Rejecting it was the right call on the picture; none of the
+measurements were wrong.
+
+**What survives from C, and it is the half that matters here:**
+
+- `scripts/stitch_maps.py --verify` compares ANY atlas against real frames, per
+  pixel, through a fitted colour map. That is the acceptance test for every
+  option below.
+- `--calibrate` derives the camera from motion with no reference map, which is
+  how an asset with no declared origin gets pinned to the tile grid: one frame
+  at a known (map, x, y), cross-correlated. **"Syncing coordinates" is the part
+  that is already solved.**
+
+### Where every game's map can come from, checked 2026-09-19
+
+| game | source | what it is | still needed |
+|---|---|---|---|
+| FireRed | `pret/pokefirered` | shipped | — |
+| Emerald | `pret/pokeemerald` | 2D tiles, same file shapes as FireRed | one constant (7 palettes -> 6) |
+| Crystal | `pret/pokecrystal` | `maps/*.blk` + tilesets, gen 2 blocks | a second extractor |
+| Platinum | `pret/pokeplatinum` `res/field/` | **667 committed `map_data_*.bin`** (model + 32x32 collision + BDHC), `texture_sets/`, and `matrices/*.json` for placement | a 3D render |
+| SoulSilver | The Models Resource, **102 "Locations"** (Route 29, Violet City, Goldenrod...) — or our own ROM | ripped map models | registration + a 3D render |
+| Black 2 | The Models Resource, **110 "Maps"** (Aspertia, Castelia, Route 01...) | ripped map models | registration + a 3D render |
+| Black | The Models Resource has **1** location — this one needs our own ROM | NARC `a/0/0/8` | extraction + a 3D render |
+
+So the DS games do not need a NARC extractor written first: Platinum's data is
+in a decomp, and SoulSilver's and Black 2's have already been ripped and
+published. Black (BW1) is the single gap, and it is the one game of the seven
+nobody has asked to watch.
+
+**Found map IMAGES are not a shortcut.** Checked, because it is the obvious
+idea: the Spriters Resource "Full World Map + Objects" for HGSS is 784x1256 —
+about 49 tiles wide for Johto *and* Kanto, so it is a stylised region
+illustration, not the overworld. Bulbagarden's per-location maps (Azalea Town
+932x508, Goldenrod 1330x885, plus day/evening/night variants) are closer to
+usable and are worth one registration test each, but nothing about them
+declares a tile origin or a scale. The MODELS are the real asset; an image rip
+is a picture of one.
+
+**The render, once, for all four DS games.** apicula converts NSBMD to glTF;
+`trimesh` + `pyrender` render each map headless with an orthographic camera at a
+chosen px/tile (no Blender dependency). Registration is exact by construction
+because we choose the camera. And since we choose it, we do not have to look
+straight down — set it to the game's own angle and the result looks like
+Pokemon rather than like a roof survey.
+
+**Order:** Emerald (one constant, proves "per game" is a descriptor) ->
+**Platinum** (its data needs no extraction, so it proves the whole 3D pipeline
+on the cheapest possible input) -> SoulSilver and Black 2 (the same pipeline,
+fed by published rips) -> Crystal -> Black.
+
+---
+
+## Decision, 2026-09-19 (SUPERSEDED by revision 3 above): option C, done properly, is the path
 
 Andreas, verbatim: *"i think what we should do is then just to become really good
 and flawless at C dont you agree?"*, after asking whether C would also be the
