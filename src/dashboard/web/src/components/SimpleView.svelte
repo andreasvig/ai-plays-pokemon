@@ -511,8 +511,30 @@
   // A loaded screenshot changes what the shot row asks for, so re-fit once the
   // image is actually decoded rather than trusting the pre-load layout.
   function onShot() {
+    setPortrait()
     refit()
     measureShot()
+  }
+
+  // A PORTRAIT frame gets a taller shot row, because in a 1:1 stage the picture's
+  // width is set by the height it is given: a DS frame (512x528 once the spectate
+  // feed has laid it out) rendered at 56% of the stage's width where a GBA frame
+  // fills it. Handing the turn box back 5 points of height takes the game to 66%
+  // — measured 2026-09-19, after *"the width in the simple view is still way off
+  // ... way too narrow"*. The box had the room: it is sized to the longest
+  // reasoning, not the typical one, and `refit` re-fits the text to whatever it
+  // gets.
+  //
+  // Read off the decoded frame, not from a console table, so it follows a
+  // cartridge swap and needs nothing to know about the NDS.
+  let portrait = $state(false)
+  function setPortrait() {
+    const el = shotEl
+    if (!el || !el.naturalWidth || !el.naturalHeight) return
+    const p = el.naturalHeight > el.naturalWidth
+    if (p === portrait) return
+    portrait = p
+    ratchetPx = null
   }
 
   // The header card is as wide as the PICTURE, not the image element. The
@@ -573,6 +595,7 @@
        these instead of eyeballing screenshots. -->
   <div
     class="stage"
+    class:portrait
     bind:this={stageEl}
     data-phase={phase}
     data-fit={fitAttr}
@@ -736,6 +759,12 @@
        column, so the screen gives up less height. One 0.86em line + 1em top
        padding still fits with room. */
     --striph: 5.5%;
+  }
+  /* See setPortrait(). Only the box budget moves — the stage stays 1:1, which is
+     what makes the recorder's square viewport fill exactly, with no crop step and
+     no letterbox bars. */
+  .stage.portrait {
+    --boxh: 19%;
   }
 
   /* exit: bottom-left, only while the mouse moves. Never in the recording.

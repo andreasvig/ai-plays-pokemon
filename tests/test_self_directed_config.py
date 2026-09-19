@@ -269,12 +269,12 @@ def test_tm_enabled_matches_config_py_semantics(cfg, expected):
     assert RunExecutor._tm_enabled(cfg) is expected
 
 
-# ── 5. the UI must be able to tell a TM run from a self-directed one ──
+# ── 5. the run config still says whether a TaskMaster runs ──
 #
-# Spectate collapses the "Current task" panel away on a self-directed run (the
-# goal already shows in the memory dictionary as `current_goal`). It keys that
-# on the CONFIG, not on "has a task arrived yet?" — `task` is also null during
-# the opening turns of a TaskMaster run, before the first handoff.
+# It used to drive Spectate's "Current task" panel, which is GONE since
+# 2026-09-19 (Andreas: *"please fully remove that 'current' task leftover ui
+# element, we dont use that anymore"*). The endpoint field stays — it describes
+# the run, and the panel was one reader of it, not its reason for existing.
 
 
 def _register_probe_session(run_id: str, config: dict):
@@ -319,17 +319,30 @@ def test_run_config_endpoint_reports_whether_a_task_master_runs(config, expected
         get_registry().unregister(run_id)
 
 
-def test_spectate_keys_the_task_panel_on_the_config_not_on_task_arrival():
-    """The panel is gated on `hasTaskMaster` (from /api/config) and the goal
-    panel is gone entirely — the memory dictionary already renders the key."""
+def test_spectate_has_no_task_panel_at_all():
+    """Removed, not hidden — which is a stronger claim than the one this test
+    used to make, and deliberately so: it previously asserted the panel EXISTED
+    and was gated on the config, so re-pointing it at the new prose would have
+    quietly lowered what it checks.
+
+    What has to be absent is the panel AND the flag that existed only to decide
+    whether to draw it. `task` itself stays: the trace feed's master cards read
+    title/description/success off it, so it is live state rather than a leftover.
+    """
     src = (
         Path(__file__).parent.parent
         / "src/dashboard/web/src/components/Spectate.svelte"
     ).read_text()
 
-    assert "hasTaskMaster = !!cfg.task_master" in src, "flag must come from the config"
-    assert "{#if hasTaskMaster}" in src, "the task panel must be gated on it"
-    assert ".panels.solo" in src, "memory must take the full row when collapsed"
-    # The duplicate self-goal panel is gone: `current_goal` shows in memory only.
+    assert "Waiting for the first TaskMaster handoff" not in src
+    assert '<div class="panel task">' not in src
+    assert "{#if hasTaskMaster}" not in src
+    assert "hasTaskMaster = " not in src, "the config read outlived its only reader"
+    assert ".panels.solo" not in src, "the collapsed-row rule has nothing to collapse"
+    # The duplicate self-goal panel went earlier, and stays gone.
     assert "selfGoal" not in src
     assert "Current goal (self-set)" not in src
+    # The memory dictionary is still there — this is a deletion, not a rewrite.
+    assert "Memory dictionary" in src
+    # ...and `task` is still fed, because the trace feed reads it.
+    assert "if (t === 'task_started')" in src

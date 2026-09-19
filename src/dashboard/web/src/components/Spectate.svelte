@@ -5,9 +5,8 @@
   //   stats row  ← `stats` WS msg (+ client-clock elapsed)
   //   emulator   ← /runs/{id}/ws/screen binary PNG frames
   //   memory     ← `state_update` WS msg
-  //   task       ← task_started/task_completed events (TaskMaster only; on a
-  //                self-directed run — config-4.0+, no TaskMaster — the panel is
-  //                not rendered at all and memory takes the row. See hasTaskMaster.)
+  //   task       ← task_started/task_completed events, read by the trace feed's
+  //                master cards (there is no longer a task PANEL).
   //   gate HUD   ← referee_checkpoint events ÷ /runs/{id}/api/config ladder
   //   trace feed ← the full event taxonomy, grouped by turn
   // The active run id comes from /api/emulator/status (App passes it in).
@@ -44,18 +43,12 @@
   let memory = $state({})
   let task = $state(null)              // {title, description, success} | null
 
-  // Self-directed runs (config-4.0+) have no TaskMaster and therefore emit no
-  // task_started/task_completed events, so `task` stays null for the whole run.
-  // The agent instead keeps the goal it set ITSELF in its memory dictionary under
-  // `current_goal` — which the memory panel already renders — so there is no
-  // separate goal panel on these runs: it would duplicate a memory key verbatim.
-  // The memory dictionary takes the full width instead.
-  //
-  // Keyed on the CONFIG (`task_master.enabled`), not on `task == null`: `task`
-  // is also null during the opening turns of a TaskMaster run, before the first
-  // handoff, so keying on it would collapse the panel and then pop it back in.
-  // Defaults to true so the panel never flickers away while the config loads.
-  let hasTaskMaster = $state(true)
+  // `task` survives the panel that used to show it: the TRACE FEED's master
+  // cards read title/description/success off it (see `task_started` below), so
+  // it is live state, not a leftover. What went on 2026-09-19 is the "Current
+  // task" panel — *"please fully remove that 'current' task leftover ui element,
+  // we dont use that anymore"* — and with it the `hasTaskMaster` config read that
+  // existed only to decide whether to draw it.
   let ladder = $state([])              // [{id, name, deadline_turn, group?}]
   // steps from the player to the next gate's tiles, from the latest referee_position
   // event (null until one arrives, or when the position is off the walk graph)
@@ -515,7 +508,6 @@
     stats = { turns: 0, cost: 0, input_tokens: 0, output_tokens: 0 }
     memory = {}
     task = null
-    hasTaskMaster = true   // re-answered by the new run's /api/config
     spendCap = null        // ditto — a run with no ceiling must not inherit one
     compactionHint = null
     ladder = []            // gate HUD hides again until the new run's ladder lands
@@ -588,7 +580,6 @@
     cfgRunId = id
     api.fetchRunConfig(id).then((cfg) => {
       if (cfgRunId !== id) return
-      hasTaskMaster = !!cfg.task_master
       // The run's own spend ceiling and compaction interval. Both are absent on
       // a run that has neither, and `null` is then the honest answer — the Cost
       // stat shows no denominator and the memory panel keeps its own text.
@@ -679,7 +670,7 @@
     </div>
 
     <div class="layout">
-      <!-- main: BIG emulator + HUD + stats + task + memory -->
+      <!-- main: BIG emulator + HUD + stats + memory -->
       <div class="main">
         <div class="stats" style={`grid-template-columns: repeat(4, 1fr)${showGates ? ' 30%' : ''}`}>
           <div class="stat"><span class="sl">Turn</span><span class="sv tnum">{stats.turns || currentTurn}</span></div>
@@ -711,21 +702,7 @@
           {/if}
         </div>
 
-        <div class="panels" class:solo={!hasTaskMaster}>
-          {#if hasTaskMaster}
-          <div class="panel task">
-            <div class="p-h">Current task</div>
-            <div class="p-scroll">
-              {#if task}
-                <div class="t-title">{task.title}{#if task.status}<span class="t-done faint"> · {task.status}</span>{/if}</div>
-                {#if task.description}<div class="t-lab">Description</div><p class="t-body">{task.description}</p>{/if}
-                {#if task.success}<div class="t-lab">Success criteria</div><p class="t-body mono">{task.success}</p>{/if}
-              {:else}
-                <p class="t-body faint">Waiting for the first TaskMaster handoff…</p>
-              {/if}
-            </div>
-          </div>
-          {/if}
+        <div class="panels">
           <div class="panel mem">
             <div class="p-h">Memory dictionary</div>
             <div class="p-scroll">
@@ -792,8 +769,14 @@
      rather than the picture float in a full-width card: with the height fixed by
      flex, a definite aspect gives the width. It matters for a portrait DS frame,
      where stretching leaves a bordered box half again as wide as the game inside
-     it; a landscape frame clamps at max-width and behaves exactly as before. */
-  .gba { flex: 1; min-height: 0; align-self: center; width: auto; max-width: 100%; aspect-ratio: 240/160; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+     it; a landscape frame clamps at max-width and behaves exactly as before.
+
+     `background: transparent`, not `--surface`: a laid-out DS frame is itself
+     transparent beside the touch screen (frame.spectate_frame), and a surface
+     fill turned that into a white slab instead of the page showing through —
+     *"the background is white"*, 2026-09-19. Nothing else in this box has ever
+     been visible behind the picture. */
+  .gba { flex: 1; min-height: 0; align-self: center; width: auto; max-width: 100%; aspect-ratio: 240/160; background: transparent; border: 1px solid var(--border); border-radius: var(--radius); display: flex; align-items: center; justify-content: center; overflow: hidden; }
   .screen { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; }
   .ph { color: var(--faint); text-align: center; font-size: 15px; line-height: 1.7; }
 
@@ -814,16 +797,12 @@
   .scap { display: block; font-size: 10px; font-weight: 600; color: var(--muted); margin-top: 2px; }
   .su { font-size: 11px; color: var(--muted); font-weight: 600; }
 
-  /* Current task gets more room than the memory dictionary — 60/40 split.
-     `.solo` = self-directed run (no TaskMaster): the task panel isn't rendered
-     at all, so the memory dictionary takes the whole row. */
-  .panels { flex: none; display: grid; grid-template-columns: 3fr 2fr; gap: 14px; align-items: stretch; }
-  .panels.solo { grid-template-columns: 1fr; }
+  /* One panel since the Current task box was removed (2026-09-19). Kept as a
+     grid rather than flattened into the column: the next panel that arrives
+     drops into a row that already exists. */
+  .panels { flex: none; display: grid; grid-template-columns: 1fr; gap: 14px; align-items: stretch; }
   .panel { display: flex; flex-direction: column; min-height: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; box-shadow: var(--shadow); }
   .p-h { flex: none; font-size: 11px; font-weight: 750; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: 10px; }
-  .t-title { font-size: 14px; font-weight: 700; margin-bottom: 8px; }
-  .t-done { font-weight: 500; }
-  .t-lab { font-size: 10px; text-transform: uppercase; letter-spacing: .03em; color: var(--faint); font-weight: 700; margin-top: 8px; }
   .t-body { font-size: 12.5px; line-height: 1.5; color: var(--muted); margin: 3px 0 0; }
   /* internal scroll only — capped (vh-relative) so the panels never force the
      frame to overflow; on short screens they scroll within their box. */

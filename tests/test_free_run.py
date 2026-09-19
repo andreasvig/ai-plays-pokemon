@@ -415,14 +415,18 @@ def test_the_spectate_frame_doubles_the_top_screen_and_keeps_them_stacked():
     satisfy "twice as wide" and be the thing he rejected.
     """
     from src.emulator.backends.frame import (
-        NDS_SCREEN, SPECTATE_GAP_PX, SPECTATE_TOP_SCALE, spectate_frame,
+        NDS_SCREEN, SPECTATE_BOTTOM_SCALE, SPECTATE_GAP_PX, SPECTATE_TOP_SCALE,
+        spectate_frame,
     )
 
     out = spectate_frame(_nds_png())
     assert out is not None
     w, h = _size(out)
-    assert w == NDS_SCREEN[0] * SPECTATE_TOP_SCALE == 2 * NDS_SCREEN[0]
-    assert h == NDS_SCREEN[1] * SPECTATE_TOP_SCALE + SPECTATE_GAP_PX + NDS_SCREEN[1]
+    top_w, top_h = NDS_SCREEN[0] * SPECTATE_TOP_SCALE, NDS_SCREEN[1] * SPECTATE_TOP_SCALE
+    bot_w = round(NDS_SCREEN[0] * SPECTATE_BOTTOM_SCALE)
+    assert w == top_w
+    assert h == top_h + SPECTATE_GAP_PX + round(NDS_SCREEN[1] * SPECTATE_BOTTOM_SCALE)
+    assert top_w >= 2 * bot_w, "the top screen is no longer twice the touch screen's width"
     assert h > w, "the screens ended up side by side again"
 
 
@@ -435,7 +439,7 @@ def test_both_screens_survive_the_relayout():
 
     img = Image.open(_io.BytesIO(spectate_frame(_nds_png()))).convert("RGBA")
     assert img.getpixel((256, 192)) == (200, 30, 30, 255)   # middle of the big top
-    assert img.getpixel((256, 490)) == (30, 30, 200, 255)   # middle of the touch screen
+    assert img.getpixel((256, 456)) == (30, 30, 200, 255)   # middle of the touch screen
 
 
 def test_everything_that_is_not_a_screen_is_transparent():
@@ -454,13 +458,13 @@ def test_everything_that_is_not_a_screen_is_transparent():
     out = spectate_frame(_nds_png())
     img = Image.open(_io.BytesIO(out))
     assert img.mode == "RGBA", "an RGB frame cannot be transparent at all"
-    top_h = 192 * 2
-    assert img.getpixel((256, top_h + SPECTATE_GAP_PX // 2))[3] == 0   # the gap
-    assert img.getpixel((10, top_h + SPECTATE_GAP_PX + 96))[3] == 0    # left bar
-    assert img.getpixel((502, top_h + SPECTATE_GAP_PX + 96))[3] == 0   # right bar
+    assert img.getpixel((10, 456))[3] == 0     # left of the touch screen
+    assert img.getpixel((502, 456))[3] == 0    # right of it
+    if SPECTATE_GAP_PX:
+        assert img.getpixel((256, 384 + SPECTATE_GAP_PX // 2))[3] == 0
     # ...and the screens themselves are still opaque, or the game is a ghost.
     assert img.getpixel((256, 192))[3] == 255
-    assert img.getpixel((256, 490))[3] == 255
+    assert img.getpixel((256, 456))[3] == 255
 
 
 def test_the_model_still_sees_a_vertical_stack():
@@ -505,7 +509,7 @@ def test_the_writer_publishes_the_relaid_out_frame(tmp_path):
     path = tmp_path / "stream.png"
     writer = StreamFileWriter(path, transform=spectate_frame)
     writer(_nds_png())
-    assert _size(path.read_bytes()) == (512, 586)
+    assert _size(path.read_bytes()) == (512, 528)
     assert writer.frames == 1
     assert writer.untransformed == 0
 

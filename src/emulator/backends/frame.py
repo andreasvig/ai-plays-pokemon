@@ -82,9 +82,20 @@ SEAM_COLOR = (90, 90, 96)
 # than one with a flag, so there is no call site where a default selects the
 # wrong one.
 SPECTATE_TOP_SCALE = 2
-#: Transparent rows between the two screens. The paper colour showing through is
-#: the divider, so this replaces ``prepare``'s drawn seam rather than adding to it.
-SPECTATE_GAP_PX = 10
+#: The touch screen is drawn SMALLER than native, which is the second half of
+#: "give the top screen the space". It also buys back height: a spectate frame is
+#: read inside a 1:1 stage in the simple view, where a taller frame is a narrower
+#: picture — 0.75 took the game from 56% of the stage's width to 66% (measured
+#: 2026-09-19, after *"the width in the simple view is still way off ... way too
+#: narrow"*). 192x144, so the ratio to the top screen is 2.67 — *at least* twice,
+#: which is what was asked. Downscaled with BOX (area average), not NEAREST:
+#: dropping one pixel column in four out of a menu is how text stops being text.
+SPECTATE_BOTTOM_SCALE = 0.75
+#: Transparent rows between the two screens. Zero since 2026-09-19 — *"there is
+#: an annoying gap"*. Kept as a named constant because it is the thing to turn up
+#: if the two screens ever need separating again; the page's paper colour showing
+#: through is what a value here draws.
+SPECTATE_GAP_PX = 0
 #: PNG effort for a frame that lives ~33 ms. Level 1 is ~3 ms/frame on a real
 #: capture against ~9 ms at the default 6, and this runs inside the emulator
 #: lock, where the whole sampling chunk has 33 ms to spend.
@@ -165,10 +176,11 @@ def prepare(png: bytes, upscale: Optional[int] = None,
 def spectate_frame(png: bytes) -> Optional[bytes]:
     """Re-lay a raw NDS capture out for a human watcher. ``None`` for anything else.
 
-    Top screen at :data:`SPECTATE_TOP_SCALE` — twice the touch screen's width —
-    with the touch screen at native size centred underneath it. 256x384 in,
-    512x586 out, RGBA, and **everything that is not a screen is transparent**:
-    the two bars beside the touch screen and the gap between them.
+    Top screen at :data:`SPECTATE_TOP_SCALE` and touch screen at
+    :data:`SPECTATE_BOTTOM_SCALE`, centred underneath it — 2.67x the width, which
+    is *at least* the twice that was asked for. 256x384 in, 512x528 out, RGBA,
+    and **everything that is not a screen is transparent**: the two bars beside
+    the touch screen, and any :data:`SPECTATE_GAP_PX` between them.
 
     **Returns None rather than raising for a frame it does not handle** — GB and
     GBA captures, a torn read, a capture whose shape changed. This sits on the
@@ -184,6 +196,12 @@ def spectate_frame(png: bytes) -> Optional[bytes]:
             return None
         top, bottom = split_nds(img.convert("RGB"))
         top = _scale(top, SPECTATE_TOP_SCALE)
+        if SPECTATE_BOTTOM_SCALE != 1:
+            bottom = bottom.resize(
+                (round(bottom.width * SPECTATE_BOTTOM_SCALE),
+                 round(bottom.height * SPECTATE_BOTTOM_SCALE)),
+                Image.BOX,
+            )
         out = Image.new(
             "RGBA",
             (top.width, top.height + SPECTATE_GAP_PX + bottom.height),
@@ -225,6 +243,7 @@ __all__ = [
     "NDS_SCREEN",
     "SEAM_COLOR",
     "SEAM_PX",
+    "SPECTATE_BOTTOM_SCALE",
     "SPECTATE_COMPRESS",
     "SPECTATE_GAP_PX",
     "SPECTATE_TOP_SCALE",
