@@ -42,13 +42,14 @@ The experiment this builds on lives in [`v2-experiments/`](../../v2-experiments/
 | GB / GBC / GBA / NDS all boot and render | ✅ | FireRed title + intro captured here; Platinum, SoulSilver, Black 2, Crystal earlier |
 | Screenshots, inputs, frame step, save/load, read, **write** | ✅ | `harness/selftest.py`, 12 checks, mutation-shaped |
 | `read_memory(addr, len)` — the referee's entire backend contract | ✅ | `referee.py:108`; implemented and checked against single-byte reads |
-| **FireRed's referee map reads correctly through SkyEmu** | ✅ | `gSaveBlock1` ptr at `0x03005008` → `0x02025534`, the correct FireRed address |
+| **FireRed's referee map reads correctly through SkyEmu** | ✅ | `gSaveBlock1Ptr` at `0x03005008` dereferences to a live SaveBlock1; map, x/y and party read correctly from it |
 | `TRACE` is reproducible without a patch | ✅ | it samples once per INPUT (`socketserver-1.lua:266`), not per frame |
 | Per-frame tracing, if ever wanted | ✅ | step 1 + 64-byte read = 156 fps, 2.6× real time |
 | A model can play through it | ✅ | gpt-6-astra low, 10 turns × 2 NDS titles, stylus included |
 | MP4 of a run | ✅ | `harness/record.py`, same encoder as the dashboard |
 | **mGBA savestates load in SkyEmu** | ❌ | `/load` on `configs/saves/pokebench-v1/emulator.state` → `failed` |
-| x/y moving as the player walks | ⬜ **untested** | needs a start state in the overworld — the first task in P5 |
+| **x/y moving as the player walks** | ✅ | from the P3 start state: `(6,6)` → three `down` → `(6,8)`, reload → `(6,6)` (2026-09-19) |
+| **A FireRed start state exists on SkyEmu** | ✅ | `configs/saves/skyemu/firered-pokebench-v2/`, replayed from cold boot in 8,598 frames / 15.5 s |
 | GBA accuracy / determinism vs mGBA over a long run | ⬜ **untested** | the main risk, §6 |
 | Audio | ⬜ **untested** | spectate has a mute toggle; SkyEmu headless audio unknown |
 
@@ -182,7 +183,7 @@ Two consequences worth stating plainly:
   consumer of the same frames, sampled every N frames rather than every 0.4 s of
   whatever the machine was doing. Deferring it costs nothing structurally.
 
-### 3.4 P3 — start states, which do not port
+### 3.4 P3 — start states, which do not port *(built 2026-09-19)*
 
 `configs/saves/pokebench-v1/emulator.state` is an mGBA savestate (a PNG with the state
 in ancillary chunks). **SkyEmu refuses it** — verified, `/load` → `failed`. SkyEmu
@@ -191,8 +192,22 @@ writes its own PNG-embedded format and has BESS best-effort restore, but not for
 Consequences:
 
 - The canonical benchmark start has to be **re-created** on SkyEmu: boot FireRed, play
-  to the same moment, `/save`. Cheap, and deterministic to re-do from a scripted input
-  sequence.
+  to the same moment, `/save`. Done — `v2-experiments/make_start_state.py` replays cold
+  boot to the bedroom in 8,598 frames (15.5 s wall clock, ~9.5x real time) and two
+  independent runs produced identical emulated memory. Two facts made it reproducible
+  without a human: the ROM is copied to a directory with **no `.sav` beside it** (a save
+  file puts CONTINUE on the title screen and every later press lands on the wrong
+  screen), and **START on an empty name field is the "accept the default" verb** — the
+  player becomes KAY and the rival GREEN, constant across three different frame offsets
+  into the naming screen, so it is a hardcoded default rather than an RNG draw.
+- **`0x02025534` is not an address to hardcode.** FireRed DMA-shuffles its save blocks:
+  the pointer read `0x0202552C` pre-game and `0x02025594` in the bedroom on the same
+  boot. `referee.py` already dereferences `gSaveBlock1Ptr` fresh on every poll, so the
+  referee is correct — but an earlier draft of this document quoted the resolved value
+  as if it were the address, and it is not.
+- **A savestate file is not a determinism instrument.** SkyEmu writes PNG containers;
+  two saves of an identical machine state differ across ~178 KB of 180 KB. Compare
+  emulated memory or the framebuffer, never the `.state` bytes.
 - `configs/starts.yaml`, every `configs/saves/*` dir, and every run savepoint is in
   mGBA's format. **A SkyEmu run cannot `--continue` an mGBA run, or vice versa.** A
   savepoint needs a backend marker so the executor refuses the mismatch loudly instead
