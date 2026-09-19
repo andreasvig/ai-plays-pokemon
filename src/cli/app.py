@@ -305,22 +305,28 @@ def _placeholder_alias() -> str:
     return aliases[0] if aliases else "openai/placeholder"
 
 
-def _build_supervisor_config() -> dict:
-    """Load the app's emulator config (latest config + a default model alias).
+def _build_supervisor_config(config_path: str | None = None) -> dict:
+    """Load the app's emulator config (a config + a default model alias).
 
-    The supervisor only needs the emulator/paths block to launch mGBA + Lua; the
-    per-run model binding happens when the executor (P3) dispatches each run. We
+    The supervisor only needs the emulator/paths block to launch the emulator;
+    the per-run model binding happens when the executor dispatches each run. We
     reuse ``prepare_config`` for a fully-formed config so the emulator section
-    (rom_path, port) is populated identically to ``pokemon run``.
+    (rom_path, port, type) is populated identically to ``pokemon run``.
 
-    The config is the LATEST one (``path=None``) — config-5.0, the append harness
-    — which changes nothing here: the supervisor reads only the emulator/paths
-    block, and the agent_type it would select is never instantiated.
+    ``config_path=None`` means the LATEST numbered config, which is config-5.x
+    and therefore ``emulator.type: mgba``. That is only the right default while
+    the control center is the v1 one. **The whole of what makes it a SkyEmu
+    control center is passing a config whose ``emulator.type`` is skyemu**
+    (``configs/config-v2-firered.yaml``) — there is no second switch, because the
+    supervisor takes its backend from this config and ``run_prepare_phase``
+    already forks on it.
+
+    The agent half of whichever config is passed is never instantiated here.
     """
     # A model alias is required by prepare_config's registry binding, but the
     # supervisor never runs the agent itself — it only owns the emulator. The
     # executor rebinds the real model per run.
-    return prepare_config(None, _placeholder_alias())
+    return prepare_config(config_path, _placeholder_alias())
 
 
 def main() -> None:
@@ -346,6 +352,18 @@ def main() -> None:
             "Which game to boot — a ROM id from configs/roms.yaml (e.g. "
             "'emerald'). Default: the registry's default ROM. The game can also "
             "be switched later from the UI, without restarting the app."
+        ),
+    )
+    parser.add_argument(
+        "--config", default=None,
+        help=(
+            "Config whose emulator block the supervisor launches from. Default: "
+            "the latest numbered config, which is mGBA. Pass "
+            "configs/config-v2-firered.yaml for the SkyEmu (v2) control center — "
+            "that is the only thing that makes it one, and it is what lets the "
+            "queue play the GB and NDS games at all (mGBA cannot hold those). "
+            "The agent half of the config is not used here; each run brings its "
+            "own."
         ),
     )
     parser.add_argument(
@@ -381,7 +399,7 @@ def main() -> None:
         _run_headless(args)
         return
 
-    config = _build_supervisor_config()
+    config = _build_supervisor_config(args.config)
 
     # Which game the emulator boots with. The registry is authoritative over the
     # config's own rom_path, so `--rom emerald` doesn't need an Emerald config —
@@ -402,6 +420,25 @@ def main() -> None:
     if not os.path.exists(rom_path):
         sys.exit(f"ERROR: ROM not found at {rom_path}")
 
+    # Refuse a console this backend cannot hold, BEFORE launching anything. The
+    # failure it prevents is silent: mGBA given a .nds comes up with no cartridge
+    # and the Lua connector still dials in, so the app boots green and every run
+    # plays a black screen. Checked here as well as in the supervisor's switch
+    # because the FIRST ROM never goes through a switch.
+    from src.emulator.backends import BACKEND_CONSOLES, backend_holds
+    from src.cli.runner import _backend_type
+
+    backend = _backend_type(config)
+    if not backend_holds(backend, rom.console):
+        holds = ", ".join(sorted(BACKEND_CONSOLES.get(backend, ()))) or "nothing known"
+        sys.exit(
+            f"ERROR: {rom.name} is a {rom.console} cartridge and the "
+            f"{backend!r} backend holds only {holds}.\n"
+            f"  Launch with a SkyEmu config, which holds every console:\n"
+            f"    pokemon app --config configs/config-v2-firered.yaml "
+            f"--rom {rom.id}"
+        )
+
     # Pre-flight: stop (or refuse, under --no-reclaim) any stale process from a
     # previous launch before we bind the server / launch mGBA. uvicorn ignores
     # SIGINT, so a Ctrl-C'd prior run often still holds the port.
@@ -417,13 +454,20 @@ def main() -> None:
     )
 
     print("Starting PokeBench Local Control Center...")
-    print(f"Launching emulator (mGBA + Lua connector) — {rom.name}...")
+    launching = (
+        "mGBA + Lua connector" if backend == "mgba"
+        else f"{backend}, headless"
+    )
+    print(f"Launching emulator ({launching}) — {rom.name} [{rom.console}]...")
     supervisor.start()
     print("Emulator connected. Starting web server...")
     # Default-muted: mGBA now launches with audio ENABLED (the old `-C mute=1`
     # override blocked the runtime toggle), so mute it via the menu now — the
     # same lever the UI mute buttons + auto-mute-on-idle use. Best-effort.
-    if supervisor.set_mute(True):
+    # A no-op on a headless backend, which makes no sound and exposes no toggle;
+    # set_mute then records the intent and returns it, so this line is skipped
+    # rather than claiming to have muted something.
+    if backend == "mgba" and supervisor.set_mute(True):
         print("Audio muted (default).")
 
     # Start the existing FastAPI dashboard server long-lived (no run registered

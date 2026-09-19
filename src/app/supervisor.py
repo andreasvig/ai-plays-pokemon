@@ -1,4 +1,4 @@
-"""AppSupervisor — owns the emulator (mGBA + Lua connector) for the app's lifetime.
+"""AppSupervisor — owns the emulator for the app's lifetime, whichever backend it is.
 
 Plan §P2 + the "Wiring plan" missing-piece #2 (supervisor inversion). Today the
 emulator is owned by each *run*: ``pokemon run``'s ``main()`` calls
@@ -15,6 +15,21 @@ It deliberately reuses ``run_prepare_phase`` / ``run_connect_phase`` /
 TCP — so ``pokemon run`` and the app share one code path. The class is
 import-safe (no side effects at import; the emulator launches only on
 ``start()``).
+
+**Backends** (2026-09-19). This class was written when mGBA was the only one, and
+said so in three places that were not preferences but assumptions: the liveness
+check read ``handle["mgba_proc"]``, the cartridge swap drove mGBA's own menu, and
+the loaded-ROM check read a GBA header offset. It now takes its backend from
+``emulator.type`` through the same single reader the launch path uses, and the
+mGBA-only mechanisms say out loud that they are mGBA's.
+
+The switch that matters for a mixed-game queue is smaller than it looks, because
+SkyEmu holds **every console the registry declares** (GB, GBA, NDS). So a queue
+that goes Emerald → Platinum never changes backend; it changes cartridge, and on
+SkyEmu that is a relaunch with no human step. What the queue DOES need is
+:meth:`refuse_if_unholdable`, because the opposite case fails silently: mGBA
+launched with a ``.nds`` comes up with no cartridge and every health check still
+reads green.
 """
 
 from __future__ import annotations
@@ -51,6 +66,12 @@ class SupervisorStatus:
     # be able to explain rather than just showing "disconnected".
     rom_path: str = ""
     switching_to: Optional[str] = None
+    # Which backend is holding it, and which console that ROM is — both from the
+    # config + registry rather than measured, so they are available before the
+    # emulator is up and a UI can explain a failed launch instead of just
+    # showing "disconnected". Console is None for an off-registry ROM.
+    backend: str = ""
+    console: Optional[str] = None
 
 
 # Type of the injectable prepare/connect/cleanup seam (lets tests run headless).
@@ -102,12 +123,14 @@ class AppSupervisor:
     # ───────────────────────────── lifecycle ─────────────────────────────
 
     def start(self) -> dict:
-        """Launch mGBA + the Lua connector ONCE and block until connected.
+        """Launch the emulator ONCE and block until it answers.
 
-        Reuses ``run_prepare_phase`` (TCP server, mGBA launch, window
-        positioning, caffeinate) + ``run_connect_phase`` (wait for the Lua
-        client). Stores the handle. Idempotent in spirit — if already started
-        with a live handle, returns the existing one without relaunching.
+        Reuses ``run_prepare_phase``, which forks on ``emulator.type``: mGBA gets
+        a TCP server, a GUI launch, window positioning and a Lua script a human
+        may have to load; SkyEmu gets one ``Popen`` and a ``/ping`` loop with no
+        window and nothing to click. Then ``run_connect_phase`` blocks until the
+        backend answers. Stores the handle. Idempotent in spirit — if already
+        started with a live handle, returns the existing one without relaunching.
         """
         if self._handle is not None and self._process_up():
             return self._handle
@@ -143,6 +166,11 @@ class AppSupervisor:
         Drives mGBA's native ``Audio/Video → Mute`` toggle via Accessibility
         (the Lua socket has no audio control). When no emulator is live yet, just
         records the intent so a later launch / the status endpoint reflects it.
+
+        On the SkyEmu backend there is nothing to drive and nothing to mute — it
+        is headless and makes no sound — so the handle has no ``mgba_proc``, the
+        branch below records the intent, and the toggle is honest about being a
+        no-op instead of reporting a failure.
         Best-effort: an AppleScript failure leaves the previous flag and is
         swallowed by the caller — never let it derail a run or the drain.
         """
@@ -168,6 +196,64 @@ class AppSupervisor:
         still supervises fine.
         """
         return str((self._config.get("emulator") or {}).get("rom_path", ""))
+
+    @property
+    def backend(self) -> str:
+        """``emulator.type``, through the one reader the launch path uses.
+
+        Deliberately off the CONFIG and not off the live handle: it has to answer
+        before ``start()`` (so a boot failure can name the backend it was trying)
+        and after ``shutdown()`` (so a switch can compare what is wanted against
+        what was running).
+        """
+        from src.cli.runner import _backend_type
+
+        return _backend_type(self._config)
+
+    def _console_of(self, rom_path: str) -> Optional[str]:
+        """The registry console for a path, or None when it is off-registry.
+
+        None is a legitimate answer — a hand-rolled config may point at any file
+        — and every caller treats it as "cannot check", never as "refuse".
+        """
+        from src.app.roms import rom_for_path
+
+        try:
+            rom = rom_for_path(rom_path)
+        except (FileNotFoundError, ValueError, OSError):
+            return None
+        return rom.console if rom is not None else None
+
+    def refuse_if_unholdable(self, rom_path: str) -> None:
+        """Raise when the live backend cannot run this cartridge's console.
+
+        The failure this prevents is SILENT, which is why it is a hard refusal
+        and not a warning: mGBA launched with a ``.nds`` does not error — it
+        comes up with no cartridge, the Lua connector dials in, and the run plays
+        a black screen for its entire turn budget while every health check reads
+        green. Nothing downstream can tell you why.
+
+        An off-registry ROM is NOT refused. The check needs a declared console
+        and there isn't one, so this stays silent rather than blocking a
+        hand-rolled config — the same "an unanswerable check must never be
+        reported as a failed one" rule as :meth:`verify_loaded_rom`.
+        """
+        from src.emulator.backends import BACKEND_CONSOLES, backend_holds
+
+        console = self._console_of(rom_path)
+        if console is None:
+            return
+        backend = self.backend
+        if backend_holds(backend, console):
+            return
+        can = ", ".join(sorted(BACKEND_CONSOLES.get(backend, ()))) or "nothing known"
+        raise RuntimeError(
+            f"backend {backend!r} cannot hold a {console} cartridge "
+            f"({Path(rom_path).name}); it holds: {can}. "
+            f"Launch the control center on a config whose emulator.type can — "
+            f"configs/config-v2-firered.yaml is the SkyEmu one, and SkyEmu holds "
+            f"every console this registry declares."
+        )
 
     def switch_rom(self, rom_path: str, *, force: bool = False) -> dict:
         """Point the emulator at a different ROM. Returns the (current) handle.
@@ -197,6 +283,10 @@ class AppSupervisor:
         rom_path = str(rom_path)
         if not rom_path:
             raise ValueError("switch_rom needs a rom path")
+        # BEFORE the no-op check and before anything is torn down: a refusal has
+        # to happen while the current emulator is still up, so a rejected switch
+        # leaves the supervisor exactly as it found it.
+        self.refuse_if_unholdable(rom_path)
         if rom_path == self.rom_path and self._process_up():
             return self.handle
         if self._busy and not force:
@@ -242,6 +332,13 @@ class AppSupervisor:
         AND the script survived AND its callback is still being driven by the
         re-attached core — which is exactly the claim being made.
         """
+        if self.backend != "mgba":
+            # Not a fallback — the mechanism does not exist anywhere else. The
+            # "in place" trick is driving mGBA's own File > Recent menu, and its
+            # whole value is preserving a Lua connection SkyEmu does not have.
+            # SkyEmu's relaunch is one Popen and a ping loop with no human step,
+            # so the slow path is already the fast path there.
+            return False
         if not self._connected or self._handle is None:
             return False
         proc = self._handle.get("mgba_proc")
@@ -307,6 +404,8 @@ class AppSupervisor:
             busy=self._busy,
             rom_path=self.rom_path,
             switching_to=self._switching_to,
+            backend=self.backend,
+            console=self._console_of(self.rom_path),
         )
 
     def restart(self) -> dict:
@@ -328,11 +427,22 @@ class AppSupervisor:
 
     # ───────────────────────────── internals ─────────────────────────────
 
+    #: Where each backend's prepare phase puts its process object
+    #: (``runner.run_prepare_phase`` / ``_run_prepare_phase_skyemu``). Read as a
+    #: SET rather than by backend name, because ``_process_up`` has to answer for
+    #: whatever handle it was handed — including one prepared before the config
+    #: was re-pointed — and the wrong key reads as "no process", which this
+    #: method has to report as healthy for the benefit of test fakes.
+    _PROC_KEYS = ("mgba_proc", "skyemu_proc")
+
     def _process_up(self) -> bool:
-        """True iff the handle holds an mGBA process that is still alive."""
+        """True iff the handle holds an emulator process that is still alive."""
         if self._handle is None:
             return False
-        proc = self._handle.get("mgba_proc")
+        proc = next(
+            (self._handle[k] for k in self._PROC_KEYS if self._handle.get(k) is not None),
+            None,
+        )
         if proc is None:
             # A fake handle without a process object: treat presence of the
             # handle as "up" (tests inject these; real prepare always sets it).

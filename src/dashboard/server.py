@@ -2011,7 +2011,7 @@ async def api_profiles():
 
 @app.get("/api/emulator/status")
 async def api_emulator_status():
-    """Supervisor health (``process_up``/``connected``/``busy``).
+    """Supervisor health (``process_up``/``connected``/``busy``/``backend``).
 
     Never 500/503 when the control plane isn't configured yet — returns an idle
     ``configured: false`` payload so the Home spectate pill can render grey.
@@ -2040,6 +2040,8 @@ async def api_emulator_status():
                 "rom": None,
                 "switching_to": None,
                 "awaiting_lua": False,
+                "backend": "",
+                "console": None,
             }
         )
 
@@ -2080,7 +2082,19 @@ async def api_emulator_status():
         except (FileNotFoundError, ValueError):
             target = None
         payload["switching_to"] = target.id if target else switching_path
-    payload["awaiting_lua"] = bool(payload["process_up"]) and not payload["connected"]
+    # "Up but not answering" means something completely different per backend, so
+    # this is gated on which one is running. On mGBA it is the state a relaunch
+    # parks in — the process is up and a HUMAN has to load the Lua connector —
+    # and the UI has to say so, because it is indistinguishable from "broken"
+    # otherwise. On SkyEmu there is no script and nothing to click; the same
+    # window is the ~0.3 s between launching and the first /ping answering, and
+    # telling an operator to load a Lua script there would send them looking for
+    # a window that does not exist.
+    payload["awaiting_lua"] = (
+        payload.get("backend", "mgba") == "mgba"
+        and bool(payload["process_up"])
+        and not payload["connected"]
+    )
     return JSONResponse(payload)
 
 

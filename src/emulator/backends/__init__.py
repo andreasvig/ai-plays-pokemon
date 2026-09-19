@@ -27,6 +27,32 @@ _BACKENDS: dict[str, str] = {
 # spells it out; this keeps hand-written test configs (and scripts/) working.
 DEFAULT_BACKEND = "mgba"
 
+# Which consoles each backend can actually hold. The vocabulary is
+# ``src.emulator.backends.frame.GEOMETRY``'s, which is also what
+# ``configs/roms.yaml`` declares — one spelling end to end.
+#
+# This exists because the registry grew past the GBA (2026-09-19) and the failure
+# it prevents is silent: mGBA launched with a ``.nds`` does not refuse, it comes
+# up with no cartridge, and the Lua connector dials in and answers normally. The
+# run then plays a black screen for its whole turn budget. There is no signal
+# further down that says "wrong console" — so the refusal has to be here, before
+# anything is launched.
+BACKEND_CONSOLES: dict[str, frozenset[str]] = {
+    "mgba": frozenset({"GB", "GBA"}),
+    "skyemu": frozenset({"GB", "GBA", "NDS"}),
+}
+
+
+def backend_holds(backend_type: str, console: str) -> bool:
+    """True when ``backend_type`` can run a ``console`` cartridge.
+
+    An UNKNOWN backend answers False rather than True: a backend nobody has
+    described cannot be assumed to hold anything, and the caller's job is to
+    refuse loudly. Same reasoning as :func:`resolve_backend` never falling
+    through to mgba on a typo.
+    """
+    return console in BACKEND_CONSOLES.get(backend_type, frozenset())
+
 
 def known_backends() -> list[str]:
     """The backend type names :func:`make_emulator` accepts, sorted."""
@@ -67,7 +93,9 @@ def make_emulator(config: dict[str, Any]) -> EmulatorBackend:
 
 
 __all__ = [
+    "BACKEND_CONSOLES",
     "DEFAULT_BACKEND",
+    "backend_holds",
     "EmulatorBackend",
     "TracingEmulatorBackend",
     "known_backends",
