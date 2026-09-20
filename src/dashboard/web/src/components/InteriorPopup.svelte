@@ -12,6 +12,7 @@
   // stops at the door.
   import { TILE, loadMapImage, drawRoute, drawWindow, visitAt, battlesFor } from '../lib/mapatlas.js'
   import BattleCard from './BattleCard.svelte'
+  import { kindIsKnown, battleAria } from '../lib/battle.js'
 
   let { building, route, atlas, trainers = null, onturn = null, onclose = () => {} } = $props()
 
@@ -93,12 +94,12 @@
             class:clickable={!!onturn}
             aria-label={`${building.name} ${floorLabel(f.m.name)}`}></canvas>
           {#each fights as b (b.id)}
-            <button class="fight" class:trainer={b.kind === 'trainer'}
+            <button class="fight" class:trainer={b.kind === 'trainer'} class:unknown={!kindIsKnown(b)}
               style={`left:${(b.tile.x - win.x + 0.5) * TILE}px;top:${(b.tile.y - win.y + 0.5) * TILE}px`}
               onmouseenter={() => (openBattle = b)} onfocus={() => (openBattle = b)}
               onmouseleave={() => (openBattle = null)} onblur={() => (openBattle = null)}
               onclick={() => onturn && onturn(b.opened_turn)}>
-              <span class="sr">{b.kind} battle on turn {b.opened_turn}</span>
+              <span class="sr">{battleAria(b)}</span>
             </button>
           {/each}
           {#if hover?.key === f.key}
@@ -182,6 +183,7 @@
     cursor: pointer; box-shadow: 0 1px 3px rgba(0, 0, 0, .5);
   }
   .fight.trainer { background: #dc3214; }
+  .fight.unknown { background: rgba(154, 162, 178, .55); border-style: dashed; border-color: #e6e9ef; }
   .fight:hover, .fight:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
   .bcard {
     position: absolute; top: 100%; left: 0; margin-top: 10px; width: 272px;

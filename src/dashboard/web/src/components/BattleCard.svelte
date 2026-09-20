@@ -15,7 +15,13 @@
   // (gBattleMons, gBattleOutcome — src/referee/battles.py). A run from before
   // that carries neither, and the card says the run did not look rather than
   // calling the outcome unknown: absent is not "we could not tell".
+  // A battle found from the trace alone carries `kind: null`, and route.py
+  // refuses to guess. Until 2026-09-20 this card guessed for it — rendering
+  // "Wild battle" for every Platinum and Crystal fight, gym leaders included.
+  // The decision logic now lives in one tested module (tests/js/battle.test.mjs)
+  // so the card cannot claim more than the backend measured.
   import { trainerSpriteUrl } from '../lib/mapatlas.js'
+  import { battleTitle, battleSubtitle, battleVerdict, battleNote } from '../lib/battle.js'
 
   let { battle, trainers = null } = $props()
 
@@ -32,34 +38,29 @@
     drew: ['drew', ''], teleported: ['teleported away', ''], mon_fled: ['it fled', ''],
     forfeited: ['forfeited', 'loss'], mon_teleported: ['it teleported away', ''],
   }
-  const verdict = $derived(battle.outcome ? OUTCOME[battle.outcome] ?? [battle.outcome, ''] : null)
+  const verdict = $derived(battleVerdict(battle, OUTCOME))
   // The referee's label usually IS the class and the given name, and printing
   // "Bug Catcher Rick" twice reads like a bug. Show the ROM's own naming only
   // where it says something the label does not — the rival, whose three ids
   // share one label but differ in the starter he took.
   const romName = $derived(t ? `${t.class} ${t.name}`.trim() : '')
   const sub = $derived(t ? (romName === (t.label ?? '') ? '' : romName) : 'not identified')
+  const title = $derived(battleTitle(battle, t?.label ?? null))
+  const subtitle = $derived(battleSubtitle(battle, {
+    trainerSub: sub, foeName, foeLevel: foe?.level ?? null,
+  }))
+  const note = $derived(battleNote(battle))
 </script>
 
 <div class="card" class:trainer={battle.kind === 'trainer'}>
   <div class="head">
     {#if t?.pic}<img src={trainerSpriteUrl(t.pic)} alt="" width="48" height="48" />{/if}
     <div class="who">
-      <b>{battle.kind === 'trainer' ? (t?.label ?? battle.trainer ?? 'Trainer battle') : 'Wild battle'}</b>
-      {#if battle.kind === 'trainer'}
-        {#if sub}<span class="sub">{sub}</span>{/if}
-      {:else if foe}
-        <span class="sub">{foeName} · Lv {foe.level}</span>
-      {:else}
-        <span class="sub">this run did not record which Pokémon</span>
-      {/if}
+      <b>{title}</b>
+      {#if subtitle}<span class="sub">{subtitle}</span>{/if}
     </div>
     {#if verdict}
-      <span class="verdict" class:win={verdict[1] === 'win'} class:loss={verdict[1] === 'loss'}>{verdict[0]}</span>
-    {:else if battle.kind === 'trainer'}
-      <span class="verdict" class:win={battle.won === true} class:loss={battle.won === false}>
-        {battle.won === true ? 'won' : battle.won === false ? 'lost' : 'outcome unknown'}
-      </span>
+      <span class="verdict" class:win={verdict.tone === 'win'} class:loss={verdict.tone === 'loss'}>{verdict.text}</span>
     {/if}
   </div>
   {#if t?.party?.length}
@@ -76,8 +77,8 @@
     <span>{cost}</span>
     {#if battle.uncounted}<span class="dot">·</span><span class="warn">flag only — no battle counted</span>{/if}
   </div>
-  {#if battle.kind === 'wild' && !battle.outcome}
-    <p class="roster">won, ran or caught all look the same here: this run predates the read that tells them apart</p>
+  {#if note}
+    <p class="roster">{note}</p>
   {/if}
 </div>
 

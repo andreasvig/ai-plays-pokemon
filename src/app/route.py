@@ -144,8 +144,22 @@ def iter_route_events(run_dir: Path) -> Iterable[dict]:
                 yield e
 
 
-def _sample_tile(s: dict) -> Optional[Tile]:
-    """One trace sample as ``(a, b, x, y)``.
+def _sample_tile(s: dict, invalid: frozenset = frozenset()) -> Optional[Tile]:
+    """One trace sample as ``(a, b, x, y)``, or None when it is not a place.
+
+    ``invalid`` is ``GameMemory.invalid_maps`` — map keys the CARTRIDGE says
+    cannot exist. Crystal's ``(0, 0)`` is the only one today and it is not a
+    place but a failed read: the map id lives in switchable GBC WRAM, so a
+    sample taken while the wrong bank is paged in returns four zero bytes. The
+    fact belongs to the contract and not here, because every other game's
+    ``(0, 0)`` is a real map — Emerald's is Petalburg City.
+
+    Refusing the SAMPLE rather than filtering the finished ``maps`` dict is what
+    also kills the two phantom warps: with no walk graph every map change
+    classifies as a warp, so one flicker otherwise invents a door out of the
+    real map and a door back into it, and the route caption prints that as
+    "N doors". ``src/app/observed.py:_drop_impossible_maps`` has done this since
+    2026-09-20; the route path had not.
 
     Gen 1-3 name a map with a (group, number) PAIR; gen 4 and 5 name it with a
     single id (``src/referee/contracts.py``). Both have to land in the same two
@@ -163,8 +177,15 @@ def _sample_tile(s: dict) -> Optional[Tile]:
         return None
     try:
         if s.get("map_id") is not None:
+            # A single-id game spells its key as a 1-tuple in the contract, even
+            # though the wire encoding pads it to two slots.
+            if (int(s["map_id"]),) in invalid:
+                return None
             return (int(s["map_id"]), 0, int(s["x"]), int(s["y"]))
-        return (int(s["map_group"]), int(s["map_num"]), int(s["x"]), int(s["y"]))
+        key = (int(s["map_group"]), int(s["map_num"]))
+        if key in invalid:
+            return None
+        return (*key, int(s["x"]), int(s["y"]))
     except (KeyError, TypeError, ValueError):
         return None
 
@@ -190,10 +211,17 @@ def shortest_path(graph: WalkGraph, a: int, b: int) -> Optional[list[int]]:
     return None
 
 
-def build_route(events: Iterable[dict], graph: Optional[WalkGraph]) -> Optional[dict[str, Any]]:
+def build_route(events: Iterable[dict], graph: Optional[WalkGraph],
+                contract: Any = None) -> Optional[dict[str, Any]]:
     """Order the trace samples and polls into one route. None when the run has
     no per-input trace at all (runs before 2026-09-14): a poll-only route would
-    be a 10-tile-a-turn sketch, not a route, and the board must not draw it."""
+    be a 10-tile-a-turn sketch, not a route, and the board must not draw it.
+
+    ``contract`` is this cartridge's :class:`~src.referee.contracts.GameMemory`,
+    read only for ``invalid_maps`` — see :func:`_sample_tile`. None means no
+    map is refused, which is the right default for a caller that does not know
+    the game and for the six contracts that declare none."""
+    invalid = frozenset(getattr(contract, "invalid_maps", ()) or ())
     per_turn: dict[int, dict[str, Any]] = {}
     for e in events:
         turn = e.get("turn")
@@ -244,7 +272,7 @@ def build_route(events: Iterable[dict], graph: Optional[WalkGraph]) -> Optional[
             for s in samples:
                 if isinstance(s, dict) and s.get("in_battle") is not None:
                     in_battle = 1 if s["in_battle"] else 0
-                tile = _sample_tile(s)
+                tile = _sample_tile(s, invalid)
                 if tile is None:
                     continue
                 seen = True
@@ -254,7 +282,7 @@ def build_route(events: Iterable[dict], graph: Optional[WalkGraph]) -> Optional[
             else:
                 blind += 1
         if poll is not None:
-            tile = _sample_tile(poll)
+            tile = _sample_tile(poll, invalid)
             if tile is not None:
                 visit(turn, POLL, tile)
 
@@ -283,7 +311,8 @@ def build_route(events: Iterable[dict], graph: Optional[WalkGraph]) -> Optional[
     }
 
 
-def place_battles(per_turn: dict[int, dict[str, Any]], visits: list[list[int]]) -> list[dict[str, Any]]:
+def place_battles(per_turn: dict[int, dict[str, Any]], visits: list[list[int]],
+                  invalid: frozenset = frozenset()) -> list[dict[str, Any]]:
     """The run's battle segments, each put on the tile it opened on.
 
     The segments are :class:`~src.referee.battles.BattleTracker`'s, replayed
@@ -297,7 +326,7 @@ def place_battles(per_turn: dict[int, dict[str, Any]], visits: list[list[int]]) 
     before ``in_battle`` first reads true is the ambush.
     """
     if not any(per_turn[t].get("battle") is not None for t in per_turn):
-        return _battles_from_trace(per_turn)
+        return _battles_from_trace(per_turn, invalid)
 
     tracker = BattleTracker()
     defeated: set[int] = set()
@@ -333,7 +362,8 @@ def place_battles(per_turn: dict[int, dict[str, Any]], visits: list[list[int]]) 
     return out
 
 
-def _battles_from_trace(per_turn: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:
+def _battles_from_trace(per_turn: dict[int, dict[str, Any]],
+                        invalid: frozenset = frozenset()) -> list[dict[str, Any]]:
     """Battle segments read off the TRACE SAMPLES, for a run with no referee.
 
     ``place_battles`` above replays ``referee_battle_state``, which only the
@@ -366,7 +396,7 @@ def _battles_from_trace(per_turn: dict[int, dict[str, Any]]) -> list[dict[str, A
         for s in per_turn[turn].get("samples") or []:
             if not isinstance(s, dict):
                 continue
-            here = _sample_tile(s)
+            here = _sample_tile(s, invalid)
             if s.get("in_battle"):
                 if seg is None:
                     seg = {"kind": None, "opened_turn": turn, "closed_turn": turn,
@@ -433,7 +463,23 @@ def load_route(run_dir: Path, graph: Optional[WalkGraph] = None) -> Optional[dic
     if not wrote_by_its_own_contract(run_dir):
         return None
     return build_route(iter_route_events(run_dir),
-                       graph_for_run(run_dir) if graph is None else graph)
+                       graph_for_run(run_dir) if graph is None else graph,
+                       _contract_for_run(run_dir))
+
+
+def _contract_for_run(run_dir: Path) -> Any:
+    """This run's cartridge contract, or None when the game cannot be named.
+
+    Only ``invalid_maps`` is read from it. None is the safe answer: it refuses
+    no map, which is what every contract but Crystal's declares anyway.
+    """
+    from src.app.observed import run_game
+    from src.referee.contracts import contract_for
+
+    try:
+        return contract_for(run_game(Path(run_dir)))
+    except Exception:
+        return None
 
 
 def wrote_by_its_own_contract(run_dir: Path) -> bool:

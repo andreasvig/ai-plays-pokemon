@@ -13,6 +13,7 @@
   // building — all its floors — over the map (M10-M12).
   import { fetchRunRoute } from '../lib/api.js'
   import { TILE, loadAtlas, loadTrainers, loadMapImage, worldLayout, markersFor, battlesFor, drawRoute, drawSize, rampCss, visitAt } from '../lib/mapatlas.js'
+  import { kindIsKnown, battleAria } from '../lib/battle.js'
   import InteriorPopup from './InteriorPopup.svelte'
   import BattleCard from './BattleCard.svelte'
 
@@ -132,12 +133,12 @@
           </button>
         {/each}
         {#each battles as b (b.id)}
-          <button class="fight" class:trainer={b.kind === 'trainer'}
+          <button class="fight" class:trainer={b.kind === 'trainer'} class:unknown={!kindIsKnown(b)}
             style={`left:${(b.tile.x + 0.5) * TILE}px;top:${(b.tile.y + 0.5) * TILE}px`}
             onmouseenter={() => (openBattle = b)} onfocus={() => (openBattle = b)}
             onmouseleave={() => (openBattle = null)} onblur={() => (openBattle = null)}
             onclick={(e) => { e.stopPropagation(); if (onturn) onturn(b.opened_turn) }}>
-            <span class="sr">{b.kind} battle on turn {b.opened_turn}</span>
+            <span class="sr">{battleAria(b)}</span>
           </button>
           {#if openBattle?.id === b.id}
             <!-- The panel scrolls and clips, so a fight near the top of the map
@@ -182,7 +183,7 @@
       three times.
       {#if markers.length}A house marks a building you can open; the pale ones this run never entered.{/if}
       {#if battles.length}A dot marks a battle where it started — filled for a trainer, hollow for a
-      wild one.{/if}
+      wild one, dashed grey where the game records that a battle happened but not which kind.{/if}
   </p>
   {#if openBuilding}
     <InteriorPopup building={openBuilding} {route} {atlas} {trainers} {onturn} onclose={() => (openBuilding = null)} />
@@ -229,6 +230,10 @@
     cursor: pointer; box-shadow: 0 1px 3px rgba(0, 0, 0, .5);
   }
   .fight.trainer { background: var(--red, #dc3214); border-color: #12151a; }
+  /* A third state, because two states forced every unmeasured battle to claim
+     one of them. Filled = trainer, hollow = wild, dashed grey = we found a
+     battle here but this game does not yet say which kind. */
+  .fight.unknown { background: rgba(154, 162, 178, .55); border-style: dashed; border-color: #e6e9ef; }
   .fight:hover, .fight:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
   .bcard {
     position: absolute; transform: translate(-50%, -100%);
