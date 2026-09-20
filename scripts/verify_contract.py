@@ -79,6 +79,7 @@ SNAPSHOT_OVERRIDE = {
 # is NOT in a battle even though the turn-120 screenshot is, because savepoints
 # lag the screenshots by a press.
 _RUNS = "local/runs/2026-09-19_22-48-56_config-v2-%s__gemini-3-8-flash-minimal"
+_RUNS_SS = "local/runs/2026-09-20_00-25-45_config-v2-soulsilver__gemini-3-8-flash-minimal"
 # Crystal carries BOTH a wild and a TRAINER battle on purpose. Its flag is a
 # mode byte (0 overworld, 1 wild, 2 trainer), so a check that only ever sees a
 # wild battle passes just as happily with mask 0x01 — and mask 0x01 reports
@@ -97,6 +98,10 @@ BATTLE_STATE = {
     # the opponent's species — so checking it both ways is the whole guarantee.
     "black": ["local/addr-hunt/bf/b_bianca1.state",
               "local/addr-hunt/bf/b_cheren1.state"],
+    # Wild Rattata and wild Hoothoot, both confirmed by eye. Two species, so a
+    # constant that merely happens to be non-zero cannot pass.
+    "soulsilver": [f"{_RUNS_SS}/savepoints/turn_60/emulator.state",
+                   f"{_RUNS_SS}/savepoints/turn_170/emulator.state"],
 }
 
 

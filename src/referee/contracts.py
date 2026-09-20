@@ -450,20 +450,62 @@ PLATINUM = GameMemory(
 # state in a far-off town is what would settle it.
 _SOULSILVER_LOCATION = 0x0227D448
 
+# Same shape as Black, found independently: no boolean flag exists that the
+# search can isolate (gen 4 tears the field system down and allocates a battle
+# heap, so "set in every battle, clear in every overworld" fits ~145,000 bytes
+# and the per-bit law returns 1.96M candidates), but the opponent's SPECIES is
+# unambiguous, and 0 is not a dex number. So in-battle is DERIVED again.
+#
+# What collapsed the search was the species' MULTI-VALUED signature rather than
+# any flag criterion: a u16 that equals the on-screen species across several
+# battles against DIFFERENT species went from 4 MB to three candidates in one
+# pass, and only this one reads 0 in the overworld. Four species over five
+# encounters (Rattata 19, Hoothoot 163, Pidgey 16, Sentret 161), each matched
+# to the name printed on the top screen. The u32 here packs two u16: the high
+# half is the player's own active Pokemon (158, Totodile, in every battle).
+#
+# THE LIMIT, measured press by press at the end of a Sentret battle: the word
+# drops to 0 about three or four inputs BEFORE the battle screen does — 22 A
+# presses still read 161, 23 reads 0 with the enemy sprite gone, and the
+# overworld does not return until 30. So the final wrap-up presses of every
+# battle are mis-filed as overworld presses in the census. Everything from "A
+# wild X appeared!" through the last command menu is right, which is the part
+# the map cares about.
+#
+# The strongest evidence was an accident: three walk probes labelled overworld
+# read 16, and their screenshots showed all three had walked INTO a Pidgey
+# encounter while the fourth direction from the same state stayed out and read
+# 0. Same state, one button apart, the word follows the screen.
+#
+# Open: every encounter is WILD and on Route 29 (map 33), because the first
+# HGSS trainer is past Cherrygrove and the run never got there. So the
+# wild/trainer split is unmeasured, and whether the address survives a battle
+# begun on another map is untested — it held across five encounters from five
+# different game states, but all on one map.
+_SOULSILVER_FOE_SPECIES = 0x021D05C8
+
 SOULSILVER = GameMemory(
     game="soulsilver-us",
     console="NDS",
-    spec=(f"{_SOULSILVER_LOCATION:#x}:16",),
+    spec=(f"{_SOULSILVER_LOCATION:#x}:16", f"{_SOULSILVER_FOE_SPECIES:#x}:2"),
     map_id=Field(0, 0, "<i"),
     x=Field(0, 8, "<i"),
     y=Field(0, 12, "<i"),
+    # The same field twice: the flag IS "an enemy Pokemon is on the field".
+    battle_flag=Field(1, 0, "<H"),
+    battle_mask=0xFFFF,
+    foe_species=Field(1, 0, "<H"),
     notes=(
         "Same struct shape as Platinum at a different base: map id +0, x +8, "
         "y +12, elevation +16, and a previous-map/x/y triple after it. Raw "
         "addresses, no pointer — identical across 11 states and 4 maps. Map id "
-        "observed only over 60-66 (New Bark Town and its interiors), so its "
-        "width above 255 is inferred from the engine, not measured. No battle "
-        "flag located."
+        "observed over 33 and 60-66 (Route 29, New Bark Town and its "
+        "interiors), so its width above 255 is inferred from the engine, not "
+        "measured. No battle flag located: in-battle is DERIVED from the "
+        "opponent's species being non-zero, and it goes clear three or four "
+        "inputs before the battle screen ends. The Location block keeps "
+        "reading the real tile DURING a battle, which is what makes 'which "
+        "Pokemon was fought on which tile' available today."
     ),
 )
 
