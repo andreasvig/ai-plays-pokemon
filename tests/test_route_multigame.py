@@ -55,22 +55,27 @@ def firered() -> WalkGraph:
 # --- fixtures in the producer's shape -----------------------------------------
 
 
-def sample(i, inp, x, y, group=3, num=0, battle=False, total=None):
+def sample(i, inp, x, y, group=3, num=0, battle=False, total=None, **battle_fields):
     """One gen 1-3 sample, keyed exactly as ``trace.decode_samples`` leaves it.
 
     ``battles_total`` defaults to None because only FireRed's contract declares
-    the counter; Emerald's and Crystal's decoders leave it unset.
+    the counter; Emerald's and Crystal's decoders leave it unset. So do the
+    battle-block fields, which a row carrying only the first two ranges cannot
+    reach — that is the degradation every run recorded before 2026-09-20 takes.
     """
     return {"i": i, "input": inp, "map_group": group, "map_num": num,
             "map_id": None, "x": x, "y": y,
-            "in_battle": battle, "battles_total": total, "foe_species": None}
+            "in_battle": battle, "battles_total": total,
+            **{"foe_species": None, "foe_level": None, "battle_kind": None,
+               "battle_outcome": None, "trainer_id": None, **battle_fields}}
 
 
 def ds_sample(i, inp, x, y, map_id, battle=False):
     """A gen 4/5 sample: ONE map id, and no (group, number) pair at all."""
     return {"i": i, "input": inp, "map_group": None, "map_num": None,
             "map_id": map_id, "x": x, "y": y,
-            "in_battle": battle, "battles_total": None, "foe_species": None}
+            "in_battle": battle, "battles_total": None, "foe_species": None, "foe_level": None,
+            "battle_kind": None, "battle_outcome": None, "trainer_id": None}
 
 
 def pre_contract_sample(i, inp, x, y, group=3, num=0, battle=False, total=0):

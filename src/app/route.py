@@ -314,12 +314,13 @@ def build_route(events: Iterable[dict], graph: Optional[WalkGraph],
         "turns": {"total": total, "traced": traced, "blind": blind},
         "coverage": (traced / total) if total else 0.0,
         "maps": maps,
-        "battles": place_battles(per_turn, visits),
+        "battles": place_battles(per_turn, visits, invalid, game),
     }
 
 
 def place_battles(per_turn: dict[int, dict[str, Any]], visits: list[list[int]],
-                  invalid: frozenset = frozenset()) -> list[dict[str, Any]]:
+                  invalid: frozenset = frozenset(), game: Optional[str] = None
+                  ) -> list[dict[str, Any]]:
     """The run's battle segments, each put on the tile it opened on.
 
     The segments are :class:`~src.referee.battles.BattleTracker`'s, replayed
@@ -333,7 +334,7 @@ def place_battles(per_turn: dict[int, dict[str, Any]], visits: list[list[int]],
     before ``in_battle`` first reads true is the ambush.
     """
     if not any(per_turn[t].get("battle") is not None for t in per_turn):
-        return _battles_from_trace(per_turn, invalid)
+        return _battles_from_trace(per_turn, invalid, game)
 
     tracker = BattleTracker()
     defeated: set[int] = set()
@@ -370,7 +371,8 @@ def place_battles(per_turn: dict[int, dict[str, Any]], visits: list[list[int]],
 
 
 def _battles_from_trace(per_turn: dict[int, dict[str, Any]],
-                        invalid: frozenset = frozenset()) -> list[dict[str, Any]]:
+                        invalid: frozenset = frozenset(), game: Optional[str] = None
+                        ) -> list[dict[str, Any]]:
     """Battle segments read off the TRACE SAMPLES, for a run with no referee.
 
     ``place_battles`` above replays ``referee_battle_state``, which only the
@@ -387,14 +389,21 @@ def _battles_from_trace(per_turn: dict[int, dict[str, Any]],
     Emerald run holding 214 in-battle samples, because every one of them had
     been collapsed into the tile the fight started on.
 
-    What this CANNOT know, and must not pretend: the outcome, the foe, the
-    trainer, and whether the fight was wild or a trainer's. ``kind`` is None
-    rather than a guess, so a card says "unknown" instead of inventing a
-    category and a caller filtering on ``kind == "trainer"`` finds none.
-    Crystal's flag is a MODE byte that does know wild from trainer, but the
-    decoder reduces it to a bool before it reaches here, and events.jsonl
-    stores the decoded sample — so recovering it needs a decoder change AND a
-    new run.
+    What it knows beyond the segment depends ENTIRELY on the cartridge's
+    contract, and every field is optional:
+
+    * ``kind``/``trainer_id`` from ``battle_kind`` — gen 3's battle-type word.
+      Absent, ``kind`` stays None and the card says "unknown" rather than
+      inventing a category; a caller filtering on ``kind == "trainer"`` finds
+      none, which is the honest answer and not a silent zero.
+    * ``foe`` from ``foe_species``/``foe_level``.
+    * ``outcome`` from ``battle_outcome``, taken at the sample where the flag
+      goes CLEAR — that is where the game writes it. Taken during the fight it
+      is 0, or the PREVIOUS fight's result during the intro.
+
+    A run recorded before its game had those fields stores samples without them
+    and degrades to exactly the old behaviour, because this reads what is in the
+    sample and never re-derives it.
     """
     out: list[dict[str, Any]] = []
     tile: Optional[Tile] = None
@@ -411,11 +420,14 @@ def _battles_from_trace(per_turn: dict[int, dict[str, Any]],
                            "uncounted": False, "tile": list(tile) if tile else None}
                 else:
                     seg["closed_turn"] = turn
+                _fold_battle_sample(seg, s, game)
             else:
                 if here is not None:
                     tile = here
                 if seg is not None:
-                    seg["turns"] = seg["closed_turn"] - seg["opened_turn"] + 1
+                    # The outcome is written as the fight CLOSES, so this
+                    # sample — the first with the flag clear — is where it is.
+                    _close_battle(seg, s)
                     out.append(seg)
                     seg = None
     if seg is not None:                       # the run ended mid-battle
@@ -423,6 +435,55 @@ def _battles_from_trace(per_turn: dict[int, dict[str, Any]],
         seg["closed_turn"] = None
         out.append(seg)
     return out
+
+
+#: ``battle_outcome`` byte -> the name route.json speaks, the same words
+#: src/referee/battles.py maps B_OUTCOME to. 0 is "no battle has ended".
+_TRACE_OUTCOMES = {1: "won", 2: "lost", 3: "drew", 4: "ran", 5: "teleported",
+                   6: "mon_fled", 7: "caught", 8: "no_safari_balls", 9: "forfeited",
+                   10: "mon_teleported"}
+#: What an outcome says about winning, for the card's own `won`. "ran" and
+#: "caught" are neither, and must not collapse to False.
+_OUTCOME_WON = {"won": True, "caught": True, "lost": False, "forfeited": False}
+
+
+def _fold_battle_sample(seg: dict[str, Any], s: dict[str, Any],
+                        game: Optional[str] = None) -> None:
+    """Take the kind, the foe and the trainer off one in-battle sample.
+
+    FIRST writer wins for the kind and the trainer: the intro of a fight is the
+    one moment those are unambiguous, and a long battle's later samples are read
+    while menus and animations run. The foe is overwritten as it goes, so a card
+    shows the mon that was out at the end — which is the one the player was
+    actually fighting when it finished.
+    """
+    if seg.get("kind") is None and s.get("battle_kind"):
+        seg["kind"] = s["battle_kind"]
+    if seg.get("trainer_id") is None and s.get("trainer_id"):
+        seg["trainer_id"] = s["trainer_id"]
+        # TRAINER_NAMES is FireRed's roster and nobody else's — trainer 114 is a
+        # different person on every cartridge, which is the same collision the
+        # per-game atlas exists to stop. The id is recorded whatever the game;
+        # the NAME only where the table is about that game. Every other
+        # cartridge gets its label in the browser, from
+        # public/trainers/<game>/index.json, which is already per game.
+        if game == GRAPH_GAME:
+            seg["trainer"] = TRAINER_NAMES.get(int(s["trainer_id"]))
+    if s.get("foe_species"):
+        foe = {"species": int(s["foe_species"])}
+        if s.get("foe_level"):
+            foe["level"] = int(s["foe_level"])
+        seg["foe"] = foe
+
+
+def _close_battle(seg: dict[str, Any], after: dict[str, Any]) -> None:
+    """Finish a segment on the first sample where the flag has gone clear."""
+    seg["turns"] = seg["closed_turn"] - seg["opened_turn"] + 1
+    name = _TRACE_OUTCOMES.get(int(after.get("battle_outcome") or 0))
+    if name:
+        seg["outcome"] = name
+        if name in _OUTCOME_WON:
+            seg["won"] = _OUTCOME_WON[name]
 
 
 def _classify(graph: Optional[WalkGraph], a: Tile, b: Tile, *, one_input: bool = True

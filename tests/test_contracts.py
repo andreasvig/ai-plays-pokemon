@@ -22,8 +22,22 @@ HISTORICAL_FIRERED_SPEC = ["*0x3005008+0:6", "0x3003529:1", "*0x3005008+0x121c:4
 
 
 def test_firered_contract_reproduces_the_constant_it_replaced():
-    assert list(FIRERED.spec) == HISTORICAL_FIRERED_SPEC
-    assert trace.TRACE_SPEC == HISTORICAL_FIRERED_SPEC
+    """The historical three ranges are a PREFIX, not the whole spec.
+
+    Prefix rather than equality, and the distinction is the reason this test
+    survives: the battle block appended on 2026-09-20 must not move the first
+    three, because every sample index below — and every sample already recorded
+    in a run's events.jsonl — is a position in that list. Asserting equality
+    would have failed for the right reason and been "fixed" by pasting the new
+    entries in, which asserts nothing about their order.
+    """
+    assert list(FIRERED.spec)[:3] == HISTORICAL_FIRERED_SPEC
+    assert trace.TRACE_SPEC[:3] == HISTORICAL_FIRERED_SPEC
+    assert list(FIRERED.spec) == trace.TRACE_SPEC, "the alias has to stay an alias"
+    # And the fields that were there before still read out of the old ranges.
+    for f in (FIRERED.x, FIRERED.y, FIRERED.map_group, FIRERED.map_num):
+        assert f.sample == 0
+    assert FIRERED.battle_flag.sample == 1 and FIRERED.battles_total.sample == 2
 
 
 def row(x=5, y=7, group=3, num=0, batt=0, stat=3):

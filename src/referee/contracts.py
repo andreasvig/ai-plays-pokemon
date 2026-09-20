@@ -148,6 +148,26 @@ class GameMemory:
     #: Platinum, where three overworld states each read the species of the
     #: battle that had just ended — so it is gated rather than reported stale.
     foe_species: Optional[Field] = None
+    #: The opponent's level, beside the species and gated the same way.
+    foe_level: Optional[Field] = None
+    #: Whether this fight is a TRAINER's. Gated on the flag for the same reason
+    #: the species is: gen 3 keeps the last battle's type word after the fight
+    #: ends, so an ungated read labels the next wild encounter a trainer battle.
+    #: A MASK against ``battle_kind_trainer``, never a bit index — the same
+    #: silent typo `battle_mask` documents above.
+    battle_kind: Optional[Field] = None
+    battle_kind_trainer: int = 0x08
+    #: How the fight ended, as the game's own outcome byte. NOT gated on the
+    #: flag, and that is the whole point: gen 3 writes it as the battle closes
+    #: and holds it afterwards, so the value that belongs to a segment is the
+    #: one read on the first sample where the flag has gone CLEAR. Read during
+    #: the fight it is either zero or, during the intro, the PREVIOUS fight's
+    #: result — 35 of 146 FireRed mid-battle states (src/referee/battles.py).
+    battle_outcome: Optional[Field] = None
+    #: Who the trainer was, when the kind says one. Set at the start of a
+    #: trainer battle and kept until the next, so it is read with the kind and
+    #: means nothing without it.
+    trainer_id: Optional[Field] = None
     #: The game's own battle counter, XOR-encrypted with a key the referee reads
     #: separately. FireRed-only; the decoder skips it without a key.
     battles_total: Optional[Field] = None
@@ -250,6 +270,59 @@ _SB1_GAME_STATS = 0x1200
 _GAME_STAT_TOTAL_BATTLES = 7
 _STATS_OFF = _SB1_GAME_STATS + 4 * _GAME_STAT_TOTAL_BATTLES
 
+# --- the gen-3 battle block ---------------------------------------------------
+#
+# Four values turn a battle SEGMENT ("a fight happened here, for this long")
+# into a battle CARD ("wild Poochyena, level 3, won"). They live in EWRAM at
+# per-cartridge addresses and are read straight, no pointer.
+#
+# The three that matter are packed into ONE spec entry per game, because
+# gBattleOutcome sits a fixed distance past gBattleMons on both cartridges and
+# one range is one round trip per button instead of two.
+#
+# FireRed's are src/referee/battles.py's, which the referee has used since
+# 2026-09-14. Emerald's were located 2026-09-20 by
+# v2-experiments/emerald_battle_probe.py against five savepoints whose answer
+# the SCREENSHOT gives independently — and the screenshot is the whole reason
+# they can be trusted, because gen 3 writes "Wild SHROOMISH" for a wild mon and
+# "Foe SHROOMISH" for a trainer's. The first pass read that line as wild, called
+# a correct trainer bit wrong, and only the wording settled it.
+#
+#   gBattleMons        3/3 foes match the species and level the screen names
+#                      (Poochyena L3, Shroomish L4, Wurmple L2, all against
+#                      Mudkip — species 283, the starter, in every state)
+#   gBattleTypeFlags   4/4 kinds match, two wild and two trainer
+#   gTrainerBattleOpponent_A  a different id per trainer battle and stale
+#                      between them, which is the behaviour that separates it
+#                      from a constant
+#   gBattleOutcome     every read inside B_OUTCOME, and it reads "lost" on
+#                      exactly the three states where the player's battler has
+#                      0 HP
+_BATTLE_MON_SIZE = 0x58
+_BATTLE_MON_SPECIES = 0x00      # u16
+_BATTLE_MON_LEVEL = 0x2A        # u8
+_BATTLER_OPPONENT = 1
+_FOE_SPECIES_OFF = _BATTLER_OPPONENT * _BATTLE_MON_SIZE + _BATTLE_MON_SPECIES
+_FOE_LEVEL_OFF = _BATTLER_OPPONENT * _BATTLE_MON_SIZE + _BATTLE_MON_LEVEL
+#: BATTLE_TYPE_TRAINER, include/constants/battle.h. Shared by both gen-3 games.
+_BATTLE_TYPE_TRAINER = 1 << 3
+
+_FIRERED_BATTLE_MONS = 0x02023BE4
+_FIRERED_BATTLE_OUTCOME = 0x02023E8A
+_FIRERED_BATTLE_TYPE = 0x02022B4C
+_FIRERED_TRAINER_OPPONENT = 0x020386AE
+
+_EMERALD_BATTLE_MONS = 0x02024084
+_EMERALD_BATTLE_OUTCOME = 0x0202433A
+_EMERALD_BATTLE_TYPE = 0x02022FEC
+_EMERALD_TRAINER_OPPONENT = 0x02038BCA
+
+#: gBattleMons through gBattleOutcome inclusive, as one range.
+_FIRERED_BATTLE_LEN = _FIRERED_BATTLE_OUTCOME - _FIRERED_BATTLE_MONS + 1
+_EMERALD_BATTLE_LEN = _EMERALD_BATTLE_OUTCOME - _EMERALD_BATTLE_MONS + 1
+_FIRERED_OUTCOME_OFF = _FIRERED_BATTLE_OUTCOME - _FIRERED_BATTLE_MONS
+_EMERALD_OUTCOME_OFF = _EMERALD_BATTLE_OUTCOME - _EMERALD_BATTLE_MONS
+
 FIRERED = GameMemory(
     game="firered-us",
     console="GBA",
@@ -258,7 +331,10 @@ FIRERED = GameMemory(
     # ("with no behaviour change").
     spec=(f"*{_FIRERED_SB1:#x}+0:6",
           f"{_GMAIN_IN_BATTLE:#x}:1",
-          f"*{_FIRERED_SB1:#x}+{_STATS_OFF:#x}:4"),
+          f"*{_FIRERED_SB1:#x}+{_STATS_OFF:#x}:4",
+          f"{_FIRERED_BATTLE_MONS:#x}:{_FIRERED_BATTLE_LEN:#x}",
+          f"{_FIRERED_BATTLE_TYPE:#x}:4",
+          f"{_FIRERED_TRAINER_OPPONENT:#x}:2"),
     x=Field(0, 0, "<h"),
     y=Field(0, 2, "<h"),
     map_group=Field(0, 4, "<B"),
@@ -268,6 +344,16 @@ FIRERED = GameMemory(
     was_the_global_default=True,   # see GameMemory.was_the_global_default
     battles_total=Field(2, 0, "<I"),
     battles_total_encrypted=True,
+    # Samples 3-5 are the battle block, added 2026-09-20. They do not change
+    # what the first three read, which is what keeps this the control: the
+    # trace/referee tests are still byte-for-byte oracles for x, y, map and
+    # the counter, and a spec entry the decoder ignores costs one read.
+    foe_species=Field(3, _FOE_SPECIES_OFF, "<H"),
+    foe_level=Field(3, _FOE_LEVEL_OFF, "<B"),
+    battle_outcome=Field(3, _FIRERED_OUTCOME_OFF, "<B"),
+    battle_kind=Field(4, 0, "<I"),
+    battle_kind_trainer=_BATTLE_TYPE_TRAINER,
+    trainer_id=Field(5, 0, "<H"),
     notes="The control. Reproduces the constants trace.py shipped with.",
 )
 
@@ -278,13 +364,22 @@ EMERALD = GameMemory(
     # spellings by proximity to the x anchor, and the block shuffles here too
     # (0x02025a54 downstairs, 0x02025a64 up) — so the pointer form is load
     # bearing on this cartridge and not copied from FireRed out of symmetry.
-    spec=(f"*{_EMERALD_SB1:#x}+0:6", f"{_EMERALD_IN_BATTLE:#x}:1"),
+    spec=(f"*{_EMERALD_SB1:#x}+0:6", f"{_EMERALD_IN_BATTLE:#x}:1",
+          f"{_EMERALD_BATTLE_MONS:#x}:{_EMERALD_BATTLE_LEN:#x}",
+          f"{_EMERALD_BATTLE_TYPE:#x}:4",
+          f"{_EMERALD_TRAINER_OPPONENT:#x}:2"),
     x=Field(0, 0, "<h"),
     y=Field(0, 2, "<h"),
     map_group=Field(0, 4, "<B"),
     map_num=Field(0, 5, "<B"),
     battle_flag=Field(1, 0, "<B"),
     battle_mask=1 << _IN_BATTLE_BIT,
+    foe_species=Field(2, _FOE_SPECIES_OFF, "<H"),
+    foe_level=Field(2, _FOE_LEVEL_OFF, "<B"),
+    battle_outcome=Field(2, _EMERALD_OUTCOME_OFF, "<B"),
+    battle_kind=Field(3, 0, "<I"),
+    battle_kind_trainer=_BATTLE_TYPE_TRAINER,
+    trainer_id=Field(4, 0, "<H"),
     notes=(
         "x/y/map_num found by search (4, 4 and rank-1 candidates). map_group at "
         "+0x0004 is INFERRED, not measured: both maps reachable from the probe "

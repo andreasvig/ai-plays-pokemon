@@ -27,14 +27,25 @@ def row(name, x, y, in_battle=False, total=0, g=3, m=0):
     return (name, [pos(x, y, g, m), bytes([0x02 if in_battle else 0x00]), struct.pack("<I", total ^ KEY)])
 
 
-def test_spec_names_the_three_ranges_the_bridge_samples():
-    assert trace.TRACE_SPEC == ["*0x3005008+0:6", "0x3003529:1", "*0x3005008+0x121c:4"]
+def test_spec_names_the_ranges_the_bridge_samples():
+    """The first three are the historical ones and must not move — every
+    assertion below decodes bytes laid out against them. The battle block
+    (2026-09-20) is appended, so a sample recorded before it still decodes: the
+    old entries keep their indices and a short sample simply reads None."""
+    assert trace.TRACE_SPEC[:3] == ["*0x3005008+0:6", "0x3003529:1", "*0x3005008+0x121c:4"]
+    assert trace.TRACE_SPEC[3:] == ["0x2023be4:0x2a7", "0x2022b4c:4", "0x20386ae:2"]
 
 
 def test_decode_reads_tile_bit_and_counter_and_tolerates_missing_ranges():
     rows = [row("R", 5, 7, in_battle=False, total=3), ("A", [b"", b"", b""]), ("U", [pos(6, 7)])]
     out = trace.decode_samples(rows, KEY, FIRERED)
-    assert out[0] == {"i": 0, "input": "R", "map_group": 3, "map_num": 0, "map_id": None, "x": 5, "y": 7, "in_battle": False, "battles_total": 3, "foe_species": None}
+    assert out[0] == {"i": 0, "input": "R", "map_group": 3, "map_num": 0, "map_id": None,
+                      "x": 5, "y": 7, "in_battle": False, "battles_total": 3,
+                      # The battle block is absent from these three-range rows,
+                      # which is the point: a run recorded before it decodes to
+                      # None per field rather than failing or guessing.
+                      "foe_species": None, "foe_level": None, "battle_kind": None,
+                      "battle_outcome": None, "trainer_id": None}
     assert out[1]["x"] is None and out[1]["in_battle"] is None and out[1]["battles_total"] is None
     assert out[2]["x"] == 6 and out[2]["in_battle"] is None
     assert trace.decode_samples(rows, None, FIRERED)[0]["battles_total"] is None  # no key → no counter

@@ -1,0 +1,282 @@
+{
+ "candidates": {
+  "gBattleTypeFlags": "0x2022fec",
+  "gBattleMons": "0x2024084",
+  "gBattleOutcome": "0x202433a",
+  "gTrainerBattleOpponent_A": "0x2038bca"
+ },
+ "rows": {
+  "battle:20": {
+   "player": {
+    "species": 283,
+    "level": 8,
+    "hp": 26,
+    "max_hp": 26
+   },
+   "foe": {
+    "species": 288,
+    "level": 7,
+    "hp": 17,
+    "max_hp": 22
+   },
+   "type_flags": 12,
+   "outcome": 0,
+   "trainer": 114
+  },
+  "battle:90": {
+   "player": {
+    "species": 283,
+    "level": 8,
+    "hp": 26,
+    "max_hp": 26
+   },
+   "foe": {
+    "species": 286,
+    "level": 3,
+    "hp": 15,
+    "max_hp": 15
+   },
+   "type_flags": 4,
+   "outcome": 0,
+   "trainer": 114
+  },
+  "battle:110": {
+   "player": {
+    "species": 283,
+    "level": 9,
+    "hp": 21,
+    "max_hp": 28
+   },
+   "foe": {
+    "species": 306,
+    "level": 4,
+    "hp": 12,
+    "max_hp": 18
+   },
+   "type_flags": 12,
+   "outcome": 0,
+   "trainer": 603
+  },
+  "battle:130": {
+   "player": {
+    "species": 283,
+    "level": 9,
+    "hp": 28,
+    "max_hp": 28
+   },
+   "foe": {
+    "species": 290,
+    "level": 2,
+    "hp": 14,
+    "max_hp": 14
+   },
+   "type_flags": 4,
+   "outcome": 4,
+   "trainer": 603
+  },
+  "over:10": {
+   "player": {
+    "species": 283,
+    "level": 8,
+    "hp": 26,
+    "max_hp": 26
+   },
+   "foe": {
+    "species": 290,
+    "level": 3,
+    "hp": 15,
+    "max_hp": 15
+   },
+   "type_flags": 4,
+   "outcome": 4,
+   "trainer": 114
+  },
+  "over:30": {
+   "player": {
+    "species": 283,
+    "level": 8,
+    "hp": 0,
+    "max_hp": 26
+   },
+   "foe": {
+    "species": 288,
+    "level": 7,
+    "hp": 13,
+    "max_hp": 22
+   },
+   "type_flags": 12,
+   "outcome": 2,
+   "trainer": 114
+  },
+  "over:40": {
+   "player": {
+    "species": 283,
+    "level": 8,
+    "hp": 0,
+    "max_hp": 26
+   },
+   "foe": {
+    "species": 288,
+    "level": 7,
+    "hp": 13,
+    "max_hp": 22
+   },
+   "type_flags": 12,
+   "outcome": 2,
+   "trainer": 114
+  },
+  "over:50": {
+   "player": {
+    "species": 283,
+    "level": 8,
+    "hp": 26,
+    "max_hp": 26
+   },
+   "foe": {
+    "species": 286,
+    "level": 3,
+    "hp": 15,
+    "max_hp": 15
+   },
+   "type_flags": 4,
+   "outcome": 4,
+   "trainer": 114
+  },
+  "over:60": {
+   "player": {
+    "species": 283,
+    "level": 8,
+    "hp": 26,
+    "max_hp": 26
+   },
+   "foe": {
+    "species": 286,
+    "level": 3,
+    "hp": 15,
+    "max_hp": 15
+   },
+   "type_flags": 4,
+   "outcome": 4,
+   "trainer": 114
+  },
+  "over:70": {
+   "player": {
+    "species": 283,
+    "level": 8,
+    "hp": 26,
+    "max_hp": 26
+   },
+   "foe": {
+    "species": 290,
+    "level": 2,
+    "hp": 14,
+    "max_hp": 14
+   },
+   "type_flags": 4,
+   "outcome": 4,
+   "trainer": 114
+  },
+  "over:80": {
+   "player": {
+    "species": 283,
+    "level": 8,
+    "hp": 26,
+    "max_hp": 26
+   },
+   "foe": {
+    "species": 286,
+    "level": 3,
+    "hp": 15,
+    "max_hp": 15
+   },
+   "type_flags": 4,
+   "outcome": 4,
+   "trainer": 114
+  },
+  "over:100": {
+   "player": {
+    "species": 283,
+    "level": 8,
+    "hp": 26,
+    "max_hp": 26
+   },
+   "foe": {
+    "species": 286,
+    "level": 3,
+    "hp": 15,
+    "max_hp": 15
+   },
+   "type_flags": 4,
+   "outcome": 4,
+   "trainer": 114
+  },
+  "over:120": {
+   "player": {
+    "species": 283,
+    "level": 9,
+    "hp": 0,
+    "max_hp": 28
+   },
+   "foe": {
+    "species": 306,
+    "level": 4,
+    "hp": 13,
+    "max_hp": 18
+   },
+   "type_flags": 12,
+   "outcome": 2,
+   "trainer": 603
+  },
+  "over:140": {
+   "player": {
+    "species": 283,
+    "level": 9,
+    "hp": 28,
+    "max_hp": 28
+   },
+   "foe": {
+    "species": 288,
+    "level": 3,
+    "hp": 16,
+    "max_hp": 16
+   },
+   "type_flags": 4,
+   "outcome": 4,
+   "trainer": 603
+  },
+  "over:150": {
+   "player": {
+    "species": 283,
+    "level": 9,
+    "hp": 28,
+    "max_hp": 28
+   },
+   "foe": {
+    "species": 288,
+    "level": 3,
+    "hp": 16,
+    "max_hp": 16
+   },
+   "type_flags": 4,
+   "outcome": 4,
+   "trainer": 603
+  },
+  "over:180": {
+   "player": {
+    "species": 283,
+    "level": 9,
+    "hp": 23,
+    "max_hp": 28
+   },
+   "foe": {
+    "species": 286,
+    "level": 2,
+    "hp": 14,
+    "max_hp": 14
+   },
+   "type_flags": 4,
+   "outcome": 0,
+   "trainer": 603
+  }
+ }
+}

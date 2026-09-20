@@ -105,7 +105,9 @@ def decode_samples(rows: list[tuple[str, list[bytes]]], key: Optional[int] = Non
         d: dict[str, Any] = {"i": i, "input": name, "map_group": None, "map_num": None,
                              "map_id": None, "x": None, "y": None,
                              "in_battle": None, "battles_total": None,
-                             "foe_species": None}
+                             "foe_species": None, "foe_level": None,
+                             "battle_kind": None, "battle_outcome": None,
+                             "trainer_id": None}
         if contract is not None:
             for key_, f in (("x", contract.x), ("y", contract.y),
                             ("map_group", contract.map_group), ("map_num", contract.map_num),
@@ -119,12 +121,34 @@ def decode_samples(rows: list[tuple[str, list[bytes]]], key: Optional[int] = Non
                     d["in_battle"] = (masked == contract.battle_value
                                       if contract.battle_value is not None
                                       else bool(masked))
-                if contract.foe_species is not None and d["in_battle"]:
+                if d["in_battle"]:
                     # Gated on the flag, never reported bare: outside a battle
-                    # this field holds the PREVIOUS opponent, so an ungated read
+                    # these fields hold the PREVIOUS opponent, so an ungated read
                     # would put the last fight's species on the tile of the next
-                    # one. Measured on Platinum, three overworld states deep.
-                    d["foe_species"] = contract.foe_species.read(samples)
+                    # one. Measured on Platinum, three overworld states deep, and
+                    # again on Emerald, where the trainer id of a fight two
+                    # battles ago still sits there during a wild encounter.
+                    if contract.foe_species is not None:
+                        d["foe_species"] = contract.foe_species.read(samples)
+                    if contract.foe_level is not None:
+                        d["foe_level"] = contract.foe_level.read(samples)
+                    if contract.battle_kind is not None:
+                        raw = contract.battle_kind.read(samples)
+                        if raw is not None:
+                            d["battle_kind"] = ("trainer" if raw & contract.battle_kind_trainer
+                                                else "wild")
+                        if d["battle_kind"] == "trainer" and contract.trainer_id is not None:
+                            # Only with the kind. The field keeps the last
+                            # trainer until the next one, so on a wild fight it
+                            # names somebody the player is not fighting.
+                            d["trainer_id"] = contract.trainer_id.read(samples)
+                # The outcome is the one battle field read OUTSIDE the flag, and
+                # deliberately: gen 3 writes it as the fight closes and holds it,
+                # so the sample that carries a segment's result is the first one
+                # after the flag goes clear. Read during the fight it is 0, or —
+                # in the intro — the previous fight's result.
+                if contract.battle_outcome is not None:
+                    d["battle_outcome"] = contract.battle_outcome.read(samples)
             else:
                 # No flag located on this cartridge. Treating every press as an
                 # overworld press is the assumption that CANNOT corrupt
