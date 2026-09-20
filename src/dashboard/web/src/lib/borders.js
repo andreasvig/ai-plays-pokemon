@@ -61,7 +61,13 @@ export const BORDER_EDGES = {
   'emerald-us': {
     '0:9': ['left', 'right', 'down'],   // Littleroot Town, the first town
     '0:16': ['left', 'right'],          // Route 101, the first route
-    '0:17': ['down'],                   // Route 102, the second route
+    // "left of Oldale town": Oldale's OWN left edge is 20 of 20 Route 102, so
+    // what is actually west of Oldale is Route 102 itself. Both of its long
+    // edges, then — its short ones are the town at one end and Petalburg at
+    // the other.
+    '0:17': ['up', 'down'],             // Route 102, the second route
+    '0:0': ['down'],                    // south of Petalburg City
+    '0:19': ['left'],                   // Route 104's west side
   },
 }
 
