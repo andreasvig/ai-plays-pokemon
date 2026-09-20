@@ -144,6 +144,11 @@ export function loadTrainers(game) {
 
 export const trainerSpriteUrl = (game, pic) => `${BASE}trainers/${game}/${pic}`
 
+/** A species' own front pic, named by the id the ROM uses (scripts/extract_trainers.py).
+ *  NOT per game, unlike the trainer sprites above it: a species id is the
+ *  National Dex number on every cartridge we run, so one set serves all seven. */
+export const pokemonSpriteUrl = (id) => `${BASE}pokemon/${id}.png`
+
 const atlasPromises = new Map()
 /** `{schema, game, tile_px, source, maps: {"a:b": {...}}}` for one game.
  *  A null `game` resolves to null rather than guessing a cartridge — that is
@@ -381,6 +386,21 @@ export function markersFor(layout, route, atlas) {
     }
   }
   return out
+}
+
+/** 'Route2_ViridianForest_NorthEntrance' → 'North Entrance'; '' when the map IS the building. */
+export function floorLabel(mapName, building) {
+  const name = String(mapName || '')
+  const floor = /_(B?\d+F)$/.exec(name)
+  if (floor) return floor[1]
+  // A complex: the member's name minus the complex it belongs to, which is
+  // already the popup's title. The forest itself then labels as nothing, and
+  // gets the building's own name below.
+  const tail = name.replace(new RegExp(`^${String(building)}_?`), '')
+    .replace(/^Route\d+_/, '')
+    .replace(new RegExp(`^${String(building)}_?`), '')
+  if (!tail || tail === name) return ''
+  return tail.replace(/([a-z])([A-Z0-9])/g, '$1 $2')
 }
 
 /** 'PewterCity_PokemonCenter' → 'Pokémon Center'. The town is on the map already. */

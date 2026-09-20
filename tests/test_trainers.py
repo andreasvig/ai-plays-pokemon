@@ -63,3 +63,40 @@ def test_the_sprites_are_transparent_where_the_game_draws_nothing(atlas):
     png = (INDEX.parent / atlas["trainers"]["414"]["pic"]).read_bytes()
     assert png[:8] == b"\x89PNG\r\n\x1a\n"
     assert png[25] == 6, "colour type 6 — RGBA; the background index must be cut out"
+
+
+# -- the Pokémon sprites (2026-09-16) -----------------------------------------
+# Andreas: "for the battle I would like Pokemon sprites on the hover, for both
+# trainer Pokemon and wild Pokemon." The card names the file by SPECIES ID, so
+# a roster entry needs its id and the file has to be there — a card that shows
+# a broken image is worse than one that shows none, and nothing else notices.
+
+MON_DIR = REPO_ROOT / "src" / "dashboard" / "web" / "public" / "pokemon"
+
+
+def test_every_roster_member_carries_the_id_its_sprite_is_named_by(atlas):
+    assert atlas["version"] >= 3, "index version 2 has no species ids on the roster"
+    for tid, t in atlas["trainers"].items():
+        for m in t["party"]:
+            assert isinstance(m.get("id"), int) and m["id"] > 0, (tid, m)
+            assert (MON_DIR / f"{m['id']}.png").is_file(), (tid, m)
+
+
+def test_the_species_sprites_are_not_namespaced_per_game(atlas):
+    # A species id is the National Dex number on every cartridge we run, so one
+    # set serves all seven; a per-game copy would be the same pixels seven
+    # times. The trainers beside them ARE per game, and that difference is the
+    # point — this asserts the split is where it belongs.
+    assert INDEX.parent.name == "firered-us"
+    assert MON_DIR.parent.name == "public"
+    assert (MON_DIR / "1.png").is_file(), "Bulbasaur, by National Dex number"
+
+
+def test_a_wild_foes_sprite_exists_for_every_species_the_index_names(atlas):
+    # The card draws the foe from `battle.foe.species`, which is whatever the
+    # ROM read returns — so the set has to cover every species the index can
+    # name, not only the ones a first-badge trainer happens to carry.
+    missing = [i for i in atlas["species"] if not (MON_DIR / f"{i}.png").is_file()]
+    # Castform keeps its front pic per form and has none at the expected path;
+    # named here rather than silently tolerated by a loose threshold.
+    assert [atlas["species"][i] for i in missing] == ["Castform"], missing

@@ -44,9 +44,21 @@
   // off the frame. The floor has to be below whatever `fit` computes, or the
   // control does not do the one thing it is named for.
   const MIN_Z = 0.08, MAX_Z = 8, OPEN_Z = 2
-  /** Tiles of repeated border drawn around each map. A multiple of the 2x2
-   *  border block, so the tiling stays in phase with the map's own grid. */
-  const BLEED = 28
+  /** Tiles of repeated border drawn around each map, and how many of them are
+   *  spent fading it out. A multiple of the 2x2 border block, so the tiling
+   *  stays in phase with the map's own grid.
+   *
+   *  8, not 28 (Andreas, 2026-09-20: "i dont like this. either we render more
+   *  map or we dont auto add these trees to all borders, because this looks
+   *  wrong"). 28 tiles of border in every direction is not a fringe, it is a
+   *  second map made of one repeated block — and where two of those fields met
+   *  they butted into each other along a straight line, so Route 2's trees and
+   *  a neighbour's sand read as hard-edged rectangles painted over open ground.
+   *  8 is roughly what the GBA itself shows past an edge (the screen is 15x10
+   *  tiles, so about 7 beyond the one you stand on), which is the only amount
+   *  we have any evidence for. */
+  const BLEED = 8
+  const FADE = 6
 
   let route = $state(null)
   let atlas = $state(null)
@@ -221,8 +233,13 @@
     // beyond it (Andreas, 2026-09-20: "there still is too much missing map
     // which would help indicate borders"). Drawn first, so a neighbouring map's
     // real ground always wins over another map's border where the two overlap.
-    // BLEED is a multiple of the 2x2 block, so the tiling stays in phase with
-    // the map's own grid.
+    //
+    // FADED at the outer edge, which is the fix for the second half of that
+    // note. A flat fill ends somewhere, and wherever it ended it drew a
+    // straight line no game ever drew — two maps' border fields meeting made a
+    // visible rectangle of trees against a rectangle of sand. Fading to nothing
+    // says what the border actually is: the last thing you could see, not the
+    // edge of another map.
     for (const p of Object.values(L.at)) {
       const b = p.m.border
       if (isLattice(p.m) || !b) continue
@@ -231,12 +248,9 @@
       const wT = p.win.w + 2 * BLEED, hT = p.win.h + 2 * BLEED
       const [bx, by] = screenAt(p.x - BLEED, p.y - BLEED)
       if (bx > vw || by > vh || bx + wT * s < 0 || by + hT * s < 0) continue
-      c.save()
-      c.translate(bx, by)
-      c.scale(s / TPX, s / TPX)
-      const pat = c.createPattern(bimg, 'repeat')
-      if (pat) { c.fillStyle = pat; c.fillRect(0, 0, wT * TPX, hT * TPX) }
-      c.restore()
+      const baked = borderPatch(bimg, `${r.game}/${b.file}`, wT, hT)
+      if (!baked) continue
+      c.drawImage(baked, bx, by, wT * s, hT * s)
     }
 
     // Pass 2 — the maps themselves.
@@ -275,6 +289,43 @@
   // lands, which re-bakes. Reading the promise cache from inside the bake is
   // how the canvas came out blank the first time.
   const decoded = new Map()
+  // One faded border field per map SIZE, baked once and reused every frame.
+  // Baking matters: the fade is four gradients and a composite pass, and doing
+  // that per map per frame at 60 fps while dragging is the one thing in this
+  // component that would be felt.
+  const borderPatches = new Map()
+  function borderPatch(bimg, key, wT, hT) {
+    const id = `${key}:${wT}x${hT}:${TPX}`
+    if (borderPatches.has(id)) return borderPatches.get(id)
+    const cv = document.createElement('canvas')
+    cv.width = wT * TPX
+    cv.height = hT * TPX
+    const g = cv.getContext('2d')
+    if (!g) return null
+    g.imageSmoothingEnabled = false
+    const pat = g.createPattern(bimg, 'repeat')
+    if (!pat) return null
+    g.fillStyle = pat
+    g.fillRect(0, 0, cv.width, cv.height)
+    // Cut the outer FADE tiles back out, opaque at the very edge and nothing at
+    // the inner one, so the block is at full strength where it touches the map.
+    const F = FADE * TPX
+    g.globalCompositeOperation = 'destination-out'
+    const ramp = (x0, y0, x1, y1) => {
+      const gr = g.createLinearGradient(x0, y0, x1, y1)
+      gr.addColorStop(0, 'rgba(0,0,0,1)')
+      gr.addColorStop(1, 'rgba(0,0,0,0)')
+      return gr
+    }
+    g.fillStyle = ramp(0, 0, F, 0); g.fillRect(0, 0, F, cv.height)
+    g.fillStyle = ramp(cv.width, 0, cv.width - F, 0); g.fillRect(cv.width - F, 0, F, cv.height)
+    g.fillStyle = ramp(0, 0, 0, F); g.fillRect(0, 0, cv.width, F)
+    g.fillStyle = ramp(0, cv.height, 0, cv.height - F); g.fillRect(0, cv.height - F, cv.width, F)
+    g.globalCompositeOperation = 'source-over'
+    borderPatches.set(id, cv)
+    return cv
+  }
+
   $effect(() => {
     const L = layout
     if (!L) return

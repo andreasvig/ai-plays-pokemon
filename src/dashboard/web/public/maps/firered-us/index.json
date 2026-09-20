@@ -34,9 +34,20 @@
     "bottom": 1,
     "right": 1
    },
-   "building": "Route2_ViridianForest_SouthEntrance",
+   "building": "ViridianForest",
    "floors": [
+    "15:3",
+    "1:0",
     "15:0"
+   ],
+   "popup": true,
+   "complex": true,
+   "exits": [
+    {
+     "x": 7,
+     "y": 10,
+     "to": "3:20"
+    }
    ]
   },
   "15:1": {
@@ -59,6 +70,14 @@
    "building": "Route2_House",
    "floors": [
     "15:1"
+   ],
+   "popup": true,
+   "exits": [
+    {
+     "x": 4,
+     "y": 7,
+     "to": "3:20"
+    }
    ]
   },
   "15:2": {
@@ -83,6 +102,19 @@
    "building": "Route2_EastBuilding",
    "floors": [
     "15:2"
+   ],
+   "popup": true,
+   "exits": [
+    {
+     "x": 7,
+     "y": 10,
+     "to": "3:20"
+    },
+    {
+     "x": 7,
+     "y": 1,
+     "to": "3:20"
+    }
    ]
   },
   "15:3": {
@@ -104,9 +136,20 @@
     "bottom": 1,
     "right": 1
    },
-   "building": "Route2_ViridianForest_NorthEntrance",
+   "building": "ViridianForest",
    "floors": [
-    "15:3"
+    "15:3",
+    "1:0",
+    "15:0"
+   ],
+   "popup": true,
+   "complex": true,
+   "exits": [
+    {
+     "x": 7,
+     "y": 1,
+     "to": "3:20"
+    }
    ]
   },
   "1:0": {
@@ -122,7 +165,15 @@
     "w": 3,
     "h": 2,
     "bytes": 1265
-   }
+   },
+   "building": "ViridianForest",
+   "floors": [
+    "15:3",
+    "1:0",
+    "15:0"
+   ],
+   "popup": true,
+   "complex": true
   },
   "28:0": {
    "name": "Route22_NorthEntrance",
@@ -144,6 +195,14 @@
    "building": "Route22_NorthEntrance",
    "floors": [
     "28:0"
+   ],
+   "popup": true,
+   "exits": [
+    {
+     "x": 7,
+     "y": 10,
+     "to": "3:41"
+    }
    ]
   },
   "3:0": {
@@ -337,6 +396,18 @@
    "frame": "kanto",
    "doors": [
     {
+     "x": 5,
+     "y": 13,
+     "to": "15:3",
+     "building": "ViridianForest"
+    },
+    {
+     "x": 5,
+     "y": 51,
+     "to": "15:0",
+     "building": "ViridianForest"
+    },
+    {
      "x": 17,
      "y": 22,
      "to": "15:1",
@@ -425,6 +496,14 @@
    "floors": [
     "4:0",
     "4:1"
+   ],
+   "popup": true,
+   "exits": [
+    {
+     "x": 4,
+     "y": 8,
+     "to": "3:0"
+    }
    ]
   },
   "4:1": {
@@ -448,7 +527,8 @@
    "floors": [
     "4:0",
     "4:1"
-   ]
+   ],
+   "popup": true
   },
   "4:2": {
    "name": "PalletTown_RivalsHouse",
@@ -470,6 +550,14 @@
    "building": "PalletTown_RivalsHouse",
    "floors": [
     "4:2"
+   ],
+   "popup": true,
+   "exits": [
+    {
+     "x": 4,
+     "y": 8,
+     "to": "3:0"
+    }
    ]
   },
   "4:3": {
@@ -492,6 +580,14 @@
    "building": "PalletTown_ProfessorOaksLab",
    "floors": [
     "4:3"
+   ],
+   "popup": true,
+   "exits": [
+    {
+     "x": 6,
+     "y": 12,
+     "to": "3:0"
+    }
    ]
   },
   "5:0": {
@@ -514,6 +610,14 @@
    "building": "ViridianCity_House",
    "floors": [
     "5:0"
+   ],
+   "popup": true,
+   "exits": [
+    {
+     "x": 4,
+     "y": 7,
+     "to": "3:1"
+    }
    ]
   },
   "5:1": {
@@ -536,6 +640,14 @@
    "building": "ViridianCity_Gym",
    "floors": [
     "5:1"
+   ],
+   "popup": true,
+   "exits": [
+    {
+     "x": 17,
+     "y": 22,
+     "to": "3:1"
+    }
    ]
   },
   "5:2": {
@@ -558,6 +670,14 @@
    "building": "ViridianCity_School",
    "floors": [
     "5:2"
+   ],
+   "popup": true,
+   "exits": [
+    {
+     "x": 4,
+     "y": 7,
+     "to": "3:1"
+    }
    ]
   },
   "5:3": {
@@ -580,6 +700,14 @@
    "building": "ViridianCity_Mart",
    "floors": [
     "5:3"
+   ],
+   "popup": true,
+   "exits": [
+    {
+     "x": 4,
+     "y": 7,
+     "to": "3:1"
+    }
    ]
   },
   "5:4": {
@@ -603,6 +731,14 @@
    "floors": [
     "5:4",
     "5:5"
+   ],
+   "popup": true,
+   "exits": [
+    {
+     "x": 7,
+     "y": 8,
+     "to": "3:1"
+    }
    ]
   },
   "5:5": {
@@ -626,7 +762,8 @@
    "floors": [
     "5:4",
     "5:5"
-   ]
+   ],
+   "popup": true
   },
   "6:0": {
    "name": "PewterCity_Museum_1F",
@@ -649,6 +786,19 @@
    "floors": [
     "6:0",
     "6:1"
+   ],
+   "popup": true,
+   "exits": [
+    {
+     "x": 14,
+     "y": 9,
+     "to": "3:2"
+    },
+    {
+     "x": 22,
+     "y": 9,
+     "to": "3:2"
+    }
    ]
   },
   "6:1": {
@@ -669,7 +819,8 @@
    "floors": [
     "6:0",
     "6:1"
-   ]
+   ],
+   "popup": true
   },
   "6:2": {
    "name": "PewterCity_Gym",
@@ -691,6 +842,14 @@
    "building": "PewterCity_Gym",
    "floors": [
     "6:2"
+   ],
+   "popup": true,
+   "exits": [
+    {
+     "x": 6,
+     "y": 14,
+     "to": "3:2"
+    }
    ]
   },
   "6:3": {
@@ -713,6 +872,14 @@
    "building": "PewterCity_Mart",
    "floors": [
     "6:3"
+   ],
+   "popup": true,
+   "exits": [
+    {
+     "x": 4,
+     "y": 7,
+     "to": "3:2"
+    }
    ]
   },
   "6:4": {
@@ -735,6 +902,14 @@
    "building": "PewterCity_House1",
    "floors": [
     "6:4"
+   ],
+   "popup": true,
+   "exits": [
+    {
+     "x": 4,
+     "y": 7,
+     "to": "3:2"
+    }
    ]
   },
   "6:5": {
@@ -758,6 +933,14 @@
    "floors": [
     "6:5",
     "6:6"
+   ],
+   "popup": true,
+   "exits": [
+    {
+     "x": 7,
+     "y": 8,
+     "to": "3:2"
+    }
    ]
   },
   "6:6": {
@@ -781,7 +964,8 @@
    "floors": [
     "6:5",
     "6:6"
-   ]
+   ],
+   "popup": true
   },
   "6:7": {
    "name": "PewterCity_House2",
@@ -803,6 +987,14 @@
    "building": "PewterCity_House2",
    "floors": [
     "6:7"
+   ],
+   "popup": true,
+   "exits": [
+    {
+     "x": 4,
+     "y": 7,
+     "to": "3:2"
+    }
    ]
   }
  }
