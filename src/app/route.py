@@ -60,6 +60,13 @@ Tile = tuple[int, int, int, int]
 ROUTE_EVENT_TYPES = ("turn_input_trace", "referee_position", "referee_battle_state")
 
 
+#: The one game the committed walk graph describes. `data/firered-walkgraph.json`
+#: is pret's FireRed, and its map keys are FireRed's: (3, 0) is a real map in
+#: Emerald too, and a different place. Handing it to another cartridge is the
+#: mistake the referee's own graph loader already refuses at load time.
+GRAPH_GAME = "firered-us"
+
+
 @lru_cache(maxsize=1)
 def default_graph() -> Optional[WalkGraph]:
     """The committed FireRed walk graph, loaded once per process (None if absent)."""
@@ -67,6 +74,26 @@ def default_graph() -> Optional[WalkGraph]:
         return WalkGraph.load(_repo_root() / DEFAULT_GRAPH_PATH)
     except (OSError, ValueError, KeyError):
         return None
+
+
+def graph_for_run(run_dir: Path) -> Optional[WalkGraph]:
+    """The walk graph that describes THIS run's cartridge, or None.
+
+    Only FireRed has one. Six games had it handed to them anyway until
+    2026-09-20, which read as harmless because their coordinates mostly failed
+    to resolve in it and every transition degraded to ``break`` — Emerald's last
+    run scored 709 steps and 23 breaks, not one warp or seam. That is luck, not
+    safety: a coordinate that DID resolve would have drawn a door between two
+    maps of a different game. Refusing by identity is the same rule
+    `src/app/observed.py` applies to a contractless run.
+    """
+    from src.app.observed import run_game
+
+    try:
+        game = run_game(Path(run_dir))
+    except Exception:
+        return None
+    return default_graph() if game == GRAPH_GAME else None
 
 
 def _repo_root() -> Path:
@@ -91,9 +118,25 @@ def iter_route_events(run_dir: Path) -> Iterable[dict]:
 
 
 def _sample_tile(s: dict) -> Optional[Tile]:
+    """One trace sample as ``(a, b, x, y)``.
+
+    Gen 1-3 name a map with a (group, number) PAIR; gen 4 and 5 name it with a
+    single id (``src/referee/contracts.py``). Both have to land in the same two
+    numeric slots, because the map key travels to the browser as the string
+    ``"a:b"`` and the atlas is keyed on it. A single-id game therefore spells
+    itself ``"411:0"`` — the id in the first slot and a constant 0 in the
+    second. That is a WIRE ENCODING, not a claim that Platinum has a map group;
+    nothing reads the second slot for those games, and no two games share a
+    route file, so the 0 cannot collide with anything.
+
+    Before 2026-09-20 this required ``map_group``, so every DS run built a
+    route with ZERO visits — the trace was fine and the reader could not see it.
+    """
     if not isinstance(s, dict) or s.get("x") is None:
         return None
     try:
+        if s.get("map_id") is not None:
+            return (int(s["map_id"]), 0, int(s["x"]), int(s["y"]))
         return (int(s["map_group"]), int(s["map_num"]), int(s["x"]), int(s["y"]))
     except (KeyError, TypeError, ValueError):
         return None
@@ -226,6 +269,9 @@ def place_battles(per_turn: dict[int, dict[str, Any]], visits: list[list[int]]) 
     the fight was won: the trace samples after every button, so the visit
     before ``in_battle`` first reads true is the ambush.
     """
+    if not any(per_turn[t].get("battle") is not None for t in per_turn):
+        return _battles_from_trace(per_turn)
+
     tracker = BattleTracker()
     defeated: set[int] = set()
     for turn in sorted(per_turn):
@@ -260,6 +306,61 @@ def place_battles(per_turn: dict[int, dict[str, Any]], visits: list[list[int]]) 
     return out
 
 
+def _battles_from_trace(per_turn: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:
+    """Battle segments read off the TRACE SAMPLES, for a run with no referee.
+
+    ``place_battles`` above replays ``referee_battle_state``, which only the
+    FireRed benchmark emits — so every SkyEmu run, on all seven cartridges,
+    drew zero battles no matter what its trace saw. The trace already carries
+    ``in_battle`` per button (``src/referee/contracts.py`` gives six of seven
+    games a flag), so a segment is a maximal run of SAMPLES with the flag set,
+    and the tile is the last sample before it with the flag clear — the same
+    ambush rule, from the same column.
+
+    It reads the samples and NOT ``visits`` on purpose. ``visits`` collapses
+    consecutive identical tiles, and a battle is fought standing still: the
+    first version of this function walked ``visits`` and found 0 battles in an
+    Emerald run holding 214 in-battle samples, because every one of them had
+    been collapsed into the tile the fight started on.
+
+    What this CANNOT know, and must not pretend: the outcome, the foe, the
+    trainer, and whether the fight was wild or a trainer's. ``kind`` is None
+    rather than a guess, so a card says "unknown" instead of inventing a
+    category and a caller filtering on ``kind == "trainer"`` finds none.
+    Crystal's flag is a MODE byte that does know wild from trainer, but the
+    decoder reduces it to a bool before it reaches here, and events.jsonl
+    stores the decoded sample — so recovering it needs a decoder change AND a
+    new run.
+    """
+    out: list[dict[str, Any]] = []
+    tile: Optional[Tile] = None
+    seg: Optional[dict[str, Any]] = None
+    for turn in sorted(per_turn):
+        for s in per_turn[turn].get("samples") or []:
+            if not isinstance(s, dict):
+                continue
+            here = _sample_tile(s)
+            if s.get("in_battle"):
+                if seg is None:
+                    seg = {"kind": None, "opened_turn": turn, "closed_turn": turn,
+                           "trainer_id": None, "trainer": None, "won": None,
+                           "uncounted": False, "tile": list(tile) if tile else None}
+                else:
+                    seg["closed_turn"] = turn
+            else:
+                if here is not None:
+                    tile = here
+                if seg is not None:
+                    seg["turns"] = seg["closed_turn"] - seg["opened_turn"] + 1
+                    out.append(seg)
+                    seg = None
+    if seg is not None:                       # the run ended mid-battle
+        seg["turns"] = seg["closed_turn"] - seg["opened_turn"] + 1
+        seg["closed_turn"] = None
+        out.append(seg)
+    return out
+
+
 def _classify(graph: Optional[WalkGraph], a: Tile, b: Tile, *, one_input: bool = True
               ) -> tuple[str, int, Optional[list[Tile]]]:
     """(kind, graph steps, fill tiles between a and b for a jump)."""
@@ -267,7 +368,14 @@ def _classify(graph: Optional[WalkGraph], a: Tile, b: Tile, *, one_input: bool =
     if same_map and abs(a[2] - b[2]) + abs(a[3] - b[3]) == 1:
         return "step", 1, None
     if graph is None:
-        return "break", 0, None
+        # No published graph for this cartridge, so the only evidence is the two
+        # samples themselves — which is exactly what `src/app/observed.py`
+        # works from. Two CONSECUTIVE reads on different maps are a door: the
+        # player was here, then there, one input apart. It cannot be told from
+        # a seam, and it carries no fill, because both of those need a graph.
+        # Same map and not adjacent stays a break: without a graph there is no
+        # way to know whether a path exists.
+        return ("warp", 1, None) if not same_map else ("break", 0, None)
     na, nb = graph.node_id(*a), graph.node_id(*b)
     if na is None or nb is None:
         return "break", 0, None
@@ -289,9 +397,48 @@ def _classify(graph: Optional[WalkGraph], a: Tile, b: Tile, *, one_input: bool =
 
 
 def load_route(run_dir: Path, graph: Optional[WalkGraph] = None) -> Optional[dict[str, Any]]:
-    """The route of one run dir, or None when it has no per-input trace."""
-    return build_route(iter_route_events(Path(run_dir)), default_graph() if graph is None else graph)
+    """The route of one run dir, or None when it has no per-input trace.
+
+    ``graph`` defaults to the one that describes THIS run's cartridge, which for
+    six of the seven games is none at all — see :func:`graph_for_run`.
+    """
+    run_dir = Path(run_dir)
+    if not wrote_by_its_own_contract(run_dir):
+        return None
+    return build_route(iter_route_events(run_dir),
+                       graph_for_run(run_dir) if graph is None else graph)
+
+
+def wrote_by_its_own_contract(run_dir: Path) -> bool:
+    """False when this run's samples were written by a decoder for another game.
+
+    A run's trace is decoded AT RECORD TIME and stored decoded, so the spec is
+    baked into events.jsonl and no later fix can re-read it. Before each DS game
+    got a contract on 2026-09-20 its runs were decoded with FireRed's layout,
+    which on a DS returns numbers shaped exactly like coordinates — one
+    SoulSilver run holds map_group=1, map_num=112, x=12320, y=7259. Drawn, that
+    is a route through a map the run never entered, and its in_battle column
+    produced 44 battles with 41 of them placed on invented tiles.
+
+    A run with no contract at all is left alone: it has nothing to disagree
+    with, `build_route` already returns None when no trace decodes, and a
+    FireRed-era run predating the whole trace system must keep working.
+    """
+    from src.app.observed import run_game
+    from src.referee.contracts import contract_for
+
+    try:
+        contract = contract_for(run_game(Path(run_dir)))
+    except Exception:
+        return True
+    if contract is None:
+        return True
+    for e in iter_route_events(Path(run_dir)):
+        for s in (e.get("samples") or []):
+            if isinstance(s, dict):
+                return contract.wrote(s)
+    return True
 
 
 __all__ = ["ROUTE_VERSION", "POLL", "MAX_TILES_PER_INPUT", "build_route", "load_route", "iter_route_events",
-           "shortest_path", "default_graph", "place_battles"]
+           "shortest_path", "default_graph", "graph_for_run", "GRAPH_GAME", "wrote_by_its_own_contract", "place_battles"]

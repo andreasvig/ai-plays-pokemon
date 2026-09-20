@@ -146,6 +146,15 @@ class GameMemory:
     #: returns another bank's memory. Left in, it draws a phantom one-tile map
     #: and two phantom warps per occurrence.
     invalid_maps: tuple[tuple[int, ...], ...] = ()
+    #: True for the ONE contract that the pre-2026-09-20 global decoder was.
+    #: `TRACE_SPEC` was FireRed's SaveBlock1 spec applied to every cartridge, so
+    #: a run recorded before contracts existed was decoded with FIRERED's layout
+    #: whatever it was playing. For FireRed that decoder was RIGHT — byte for
+    #: byte, which `tests/test_trace.py` still pins — so its old runs are
+    #: readable and must not be thrown away. For the other six it was wrong.
+    #: This is the difference between an IDENTITY test and an age test: the
+    #: question is never how old the sample is, it is which layout wrote it.
+    was_the_global_default: bool = False
     notes: str = ""
 
     @property
@@ -154,6 +163,40 @@ class GameMemory:
         overworld one. False is not a bug — it is the honest state of every
         contract found by position search alone."""
         return self.battle_flag is not None
+
+    def wrote(self, sample: dict) -> bool:
+        """True when a decoder carrying THIS contract produced ``sample``.
+
+        Two signatures together, neither sufficient alone. ``map_id`` is a KEY
+        that only the contract-aware decoder emits at all, so its absence names
+        the pre-2026-09-20 decoder outright. And that decoder fills every field
+        it can, whereas ours leaves unset exactly the fields this contract does
+        not declare — so a gen 4/5 contract expects ``map_group`` to be None and
+        a gen 1-3 contract expects ``map_id`` to be None. Both tests read KEYS
+        and None-ness rather than plausibility, so a torn read (value None, key
+        present) is still recognised as ours.
+
+        Why it is needed: a run's samples are decoded AT RECORD TIME and stored
+        decoded, so the spec is baked into events.jsonl. Before each DS game
+        got a contract on 2026-09-20 its runs were decoded with FireRed's
+        layout, which on a DS yields numbers that look like coordinates —
+        a SoulSilver run recorded that afternoon holds
+        ``map_group=1, map_num=112, x=12320, y=7259``. Those runs cannot be
+        re-read by the new contract; they can only be refused. Age cannot tell
+        them apart (a stale process can record an old-shaped sample today) and
+        plausibility cannot either. The decoder's own fingerprint can.
+        """
+        if not isinstance(sample, dict):
+            return False
+        if "map_id" not in sample:
+            # Older than the contract system, so FireRed's layout wrote it —
+            # correct for FireRed alone. Rejecting these outright cost 69 real
+            # tiles and 13 real runs off the FireRed sheet before this line
+            # existed, which is an AGE test wearing an identity test's clothes.
+            return self.was_the_global_default
+        if self.map_id is not None:
+            return sample.get("map_group") is None
+        return sample.get("map_id") is None
 
     def map_key(self, values: dict[str, Any]) -> Optional[tuple]:
         """The map part of a tile key, in whichever shape this game has."""
@@ -208,6 +251,7 @@ FIRERED = GameMemory(
     map_num=Field(0, 5, "<B"),
     battle_flag=Field(1, 0, "<B"),
     battle_mask=1 << _IN_BATTLE_BIT,
+    was_the_global_default=True,   # see GameMemory.was_the_global_default
     battles_total=Field(2, 0, "<I"),
     battles_total_encrypted=True,
     notes="The control. Reproduces the constants trace.py shipped with.",

@@ -85,6 +85,9 @@ class ObservedGraph:
     invalid_maps: tuple = ()
     #: How many samples that dropped.
     impossible: int = 0
+    #: Runs skipped because ANOTHER game's decoder wrote them — see
+    #: GameMemory.wrote. Counted, not merged: their numbers are not positions.
+    foreign_runs: int = 0
 
     def add_run(self, run_id: str, samples: Iterable[dict]) -> None:
         """Fold one run's per-input samples in. Order matters; runs do not."""
@@ -332,6 +335,20 @@ def build(run_dirs: Iterable[Path]) -> dict[str, ObservedGraph]:
         g = out.setdefault(game, ObservedGraph(game=game))
         if contract is not None:
             g.invalid_maps = tuple(contract.invalid_maps)
+            if not contract.wrote(samples[0]):
+                # A contract exists, but ANOTHER decoder wrote this run. The
+                # spec is baked in at record time, so the numbers on disk are
+                # whatever was live then — for the DS games that is FireRed's
+                # layout applied to a DS, which yields map_group=1, map_num=112,
+                # x=12320. Those are not positions and no re-read makes them into
+                # positions. Same test as a contractless game — WHICH DECODER wrote
+                # the sample — but the refusal is of the RUN, not the game. Setting
+                # `contractless` here poisoned every game instead: it is never
+                # cleared, so one pre-contract run blanked a sheet built from
+                # fifteen good ones.
+                g.foreign_runs += 1
+                g.inputs += len(samples)
+                continue
         if contract is None:
             # The samples are read back from the run's own events, decoded by
             # whatever code was live when it ran — and before 2026-09-19 that
