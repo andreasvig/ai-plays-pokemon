@@ -63,10 +63,18 @@
   const px = $derived(layout ? layout.w * TPX : 0)
   const py = $derived(layout ? layout.h * TPX : 0)
 
-  /** Tile → canvas pixel centre; null for a map this canvas does not draw. */
+  /** Tile → canvas pixel centre; null for a map this canvas does not draw.
+   *
+   *  `origin` is the tile the map's drawn rectangle starts at. For artwork it
+   *  is absent, because a gen 1-3 route's coordinates are already local to its
+   *  map. For a gen 4/5 lattice map they are GLOBAL — Platinum's y reaches 888 —
+   *  so without subtracting the origin every tile lands hundreds of tiles off
+   *  the rectangle drawn for it. */
   function place(g, m, x, y) {
     const p = layout?.at[`${g}:${m}`]
-    return p ? [(p.x + x + 0.5) * TPX, (p.y + y + 0.5) * TPX] : null
+    if (!p) return null
+    const [ox, oy] = p.m.origin ?? [0, 0]
+    return [(p.x + x - ox + 0.5) * TPX, (p.y + y - oy + 0.5) * TPX]
   }
 
   // Load every image this route needs, then let the draw effect run. Without

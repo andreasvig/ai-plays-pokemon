@@ -44,12 +44,33 @@ test('the atlas carries the game so it cannot be drawn on another cartridge', ()
 test('DS maps whose coordinates are continuous share one frame', () => {
   // Platinum's real numbers: leaving map 342 at (159,850) and arriving on 418
   // at (160,850) is one step east, so the two are measured in the same space.
-  const r = routeOf([v(342, 0, 159, 850), v(418, 0, 160, 850)])
+  const r = routeOf([v(342, 0, 113, 843), v(342, 0, 159, 850),
+                     v(418, 0, 160, 850), v(418, 0, 187, 863)])
   const frames = sharedFrames(r)
   assert.equal(frames.get('342:0'), frames.get('418:0'))
+
   const a = latticeAtlas(r)
-  assert.deepEqual(a.maps['342:0'].world, [0, 0])
-  assert.deepEqual(a.maps['418:0'].world, [0, 0])
+  const m342 = a.maps['342:0'], m418 = a.maps['418:0']
+  // Both are placed, and their placement is RELATIVE — the offset between the
+  // two rectangles must equal the offset between the coordinates themselves,
+  // or a route crossing the seam would jump. Asserting `world: [0, 0]` on both
+  // (the first version of this test) held while the rectangles were anchored at
+  // tile zero, which made Platinum a 203x852 canvas holding a 47x21 walk.
+  assert.deepEqual(m342.world, m342.origin)
+  assert.deepEqual(m418.world, m418.origin)
+  assert.equal(m418.world[0] - m342.world[0], 160 - 113)
+  assert.equal(m418.world[1] - m342.world[1], 850 - 843)
+})
+
+test('a global coordinate space does not stretch the canvas back to tile zero', () => {
+  // The regression this guards: Platinum's y reaches 888, so a rectangle
+  // anchored at the origin is nine hundred tiles tall for a twenty-tile walk.
+  const a = latticeAtlas(routeOf([v(342, 0, 113, 843), v(418, 0, 114, 843),
+                                  v(418, 0, 140, 863)]))
+  for (const m of Object.values(a.maps)) {
+    assert.ok(m.height < 40, `a map ${m.height} tiles tall for a walk this size is the bug`)
+    assert.ok(m.width < 40)
+  }
 })
 
 test('a gen 1-3 seam is a coordinate DIScontinuity and shares no frame', () => {

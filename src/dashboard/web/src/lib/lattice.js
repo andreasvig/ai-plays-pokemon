@@ -51,18 +51,24 @@ export function latticeAtlas(route) {
   const maps = {}
   for (const [key, b] of box) {
     const shared = frames.get(key)
+    // Extent of ground walked, not the map's real size — that is the one thing
+    // only an artwork source can tell us. `origin` is the tile the drawn
+    // rectangle starts at, and the placer subtracts it, which is what keeps a
+    // gen 4/5 map honest: its coordinates are GLOBAL (Platinum's y reaches 888),
+    // so a rectangle anchored at tile 0 would be a 203x852 canvas holding a
+    // 47x21 walk. Anchoring at the map's own corner crops it to 81x34.
+    const origin = [b[0] - PAD, b[1] - PAD]
     maps[key] = {
       name: null,
-      // Extent of ground walked, not the map's real size. `origin` is the
-      // tile the drawn rectangle starts at, so tile coordinates still land.
-      origin: shared ? [0, 0] : [b[0] - PAD, b[1] - PAD],
-      width: shared ? b[2] + PAD + 1 : b[2] - b[0] + 1 + 2 * PAD,
-      height: shared ? b[3] + PAD + 1 : b[3] - b[1] + 1 + 2 * PAD,
+      origin,
+      width: b[2] - b[0] + 1 + 2 * PAD,
+      height: b[3] - b[1] + 1 + 2 * PAD,
       indoor: false,
       synthetic: true,
-      // A map sharing a coordinate plane IS placed — at the origin of that
-      // plane, because its tile coordinates are already world coordinates.
-      ...(shared ? { frame: shared, world: [0, 0] } : {}),
+      // A map sharing a coordinate plane IS placed, at its own corner within
+      // that plane — so its neighbours land beside it rather than in the inset
+      // column. A map with no proven neighbour stays unplaced.
+      ...(shared ? { frame: shared, world: origin } : {}),
     }
   }
   return { schema: 2, game: route.game ?? null, synthetic: true, tile_px: route.tile_px ?? 16, maps }

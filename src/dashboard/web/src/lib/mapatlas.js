@@ -238,7 +238,7 @@ export function markersFor(layout, route, atlas) {
         building: d.building,
         name: buildingLabel(d.building),
         floors,
-        tile: { x: p.x + d.x, y: p.y + d.y },
+        tile: { x: p.x + d.x - (p.m?.origin?.[0] ?? 0), y: p.y + d.y - (p.m?.origin?.[1] ?? 0) },
         entered: floors.some((f) => route.maps[f]),
       })
     }
@@ -474,7 +474,8 @@ export function battlesFor(layout, route, { onlyMap = null } = {}) {
     }
     const p = layout?.at[key]
     if (!p) continue
-    out.push({ ...b, id: `b${i}`, tile: { x: p.x + b.tile[2], y: p.y + b.tile[3] } })
+    const [ox, oy] = p.m?.origin ?? [0, 0]
+    out.push({ ...b, id: `b${i}`, tile: { x: p.x + b.tile[2] - ox, y: p.y + b.tile[3] - oy } })
   }
   return out
 }
