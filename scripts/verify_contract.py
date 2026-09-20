@@ -93,6 +93,10 @@ BATTLE_STATE = {
     # reads 396. Its neighbours at turns 140 and 300 are the overworld control.
     "platinum": ["local/runs/2026-09-20_00-17-45_config-v2-platinum__"
                  "gemini-3-8-flash-minimal/savepoints/turn_100/emulator.state"],
+    # Both rival fights. Black has no located flag — in-battle is derived from
+    # the opponent's species — so checking it both ways is the whole guarantee.
+    "black": ["local/addr-hunt/bf/b_bianca1.state",
+              "local/addr-hunt/bf/b_cheren1.state"],
 }
 
 

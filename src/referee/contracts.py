@@ -535,13 +535,41 @@ BLACK2 = GameMemory(
 # the same chain and never returns.
 _BLACK_ACTOR = 0x0224F90C
 
+# Black's battle flag was NOT located, and this is not it. Black allocates the
+# battle system on the HEAP: out of battle the whole of 0x0226xxxx reads zero,
+# so "non-zero in every battle, zero in every overworld state" is true of
+# 14,670 bytes, and a bit inside a live byte of 189,133. Picking one would be
+# picking a buffer that happens to exist.
+#
+# What IS located is the opponent's species, and the flag is DERIVED from it:
+# 0 is not a valid dex number, so "there is an opponent" is the battle test.
+# That is weaker than a flag and the difference is worth keeping in mind — if
+# the real flag is ever found, it should replace this rather than sit beside it.
+#
+# It earns the trust it has: the field holds 495 (Snivy) in every Bianca sample
+# and 501 (Oshawott) in every Cheren sample, so it is an IDENTIFIED field and
+# not an anonymous heap byte, and it reads 0 across 47 overworld samples whose
+# negative class includes an open text box and the starter-selection screen.
+# Verified 18/18 on held-out states, and reproduced here across four battle and
+# four overworld states.
+#
+# Untested: every battle in the corpus is a TRAINER battle, so wild is unproven
+# and wild-vs-trainer is unmeasurable from it. Neither is reachable yet — B/W's
+# starter selection is touch-only (the d-pad does not move that cursor) and
+# Cheren blocks Nuvema Town's north exit at (791, 741) until the lab is visited.
+_BLACK_FOE_SPECIES = 0x0226D8D4
+
 BLACK = GameMemory(
     game="black-us",
     console="NDS",
-    spec=(f"{_BLACK_ACTOR:#x}:16",),
+    spec=(f"{_BLACK_ACTOR:#x}:16", f"{_BLACK_FOE_SPECIES:#x}:2"),
     map_id=Field(0, 0, "<I"),
     x=Field(0, 4, "<i", shift=16),
     y=Field(0, 12, "<i", shift=16),
+    # The same field twice on purpose: the flag IS "an opponent exists".
+    battle_flag=Field(1, 0, "<H"),
+    battle_mask=0xFFFF,
+    foe_species=Field(1, 0, "<H"),
     notes=(
         "Gen 5, same block shape as Black 2 at a different base: map id +0, x "
         "+4, height +8, y +12, coordinates 16.16 fixed point. The actor is also "
@@ -551,7 +579,10 @@ BLACK = GameMemory(
         "survive a map load for the ACTOR; map-scoped memory does NOT, because "
         "Gen 5 streams it. Outdoor coordinates are global (782, 749 in Nuvema "
         "Town), interiors local. Map ids seen: 391 bedroom, 390 living room, "
-        "389 Nuvema Town. No battle flag located."
+        "389 Nuvema Town. No battle flag located: in-battle is DERIVED from "
+        "the opponent's species being non-zero, which is weaker than a flag "
+        "and is documented above. Wild battles and the wild/trainer split are "
+        "both unreachable on this cartridge so far."
     ),
 )
 
