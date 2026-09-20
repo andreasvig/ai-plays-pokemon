@@ -44,6 +44,9 @@
   // off the frame. The floor has to be below whatever `fit` computes, or the
   // control does not do the one thing it is named for.
   const MIN_Z = 0.08, MAX_Z = 8, OPEN_Z = 2
+  /** Tiles of repeated border drawn around each map. A multiple of the 2x2
+   *  border block, so the tiling stays in phase with the map's own grid. */
+  const BLEED = 28
 
   let route = $state(null)
   let atlas = $state(null)
@@ -212,6 +215,31 @@
     c.setTransform(dpr, 0, 0, dpr, 0, 0)
     c.imageSmoothingEnabled = false
     const s = TPX * view.z
+
+    // Pass 1 — BORDERS. Every gen-3 map ships the block the game repeats
+    // outside its own bounds; without it a town ends at a hard edge with black
+    // beyond it (Andreas, 2026-09-20: "there still is too much missing map
+    // which would help indicate borders"). Drawn first, so a neighbouring map's
+    // real ground always wins over another map's border where the two overlap.
+    // BLEED is a multiple of the 2x2 block, so the tiling stays in phase with
+    // the map's own grid.
+    for (const p of Object.values(L.at)) {
+      const b = p.m.border
+      if (isLattice(p.m) || !b) continue
+      const bimg = decoded.get(`${r.game}/${b.file}`)
+      if (!bimg) continue
+      const wT = p.win.w + 2 * BLEED, hT = p.win.h + 2 * BLEED
+      const [bx, by] = screenAt(p.x - BLEED, p.y - BLEED)
+      if (bx > vw || by > vh || bx + wT * s < 0 || by + hT * s < 0) continue
+      c.save()
+      c.translate(bx, by)
+      c.scale(s / TPX, s / TPX)
+      const pat = c.createPattern(bimg, 'repeat')
+      if (pat) { c.fillStyle = pat; c.fillRect(0, 0, wT * TPX, hT * TPX) }
+      c.restore()
+    }
+
+    // Pass 2 — the maps themselves.
     for (const p of Object.values(L.at)) {
       const win = p.win
       const [dw, dh] = [win.w, win.h]
@@ -251,12 +279,17 @@
     const L = layout
     if (!L) return
     const g = route?.game
+    const want = (file) => {
+      if (!file) return
+      const k = `${g}/${file}`
+      if (decoded.has(k)) return
+      decoded.set(k, null)
+      loadMapImage(g, file).then((img) => { decoded.set(k, img); ready += 1 })
+    }
     for (const p of Object.values(L.at)) {
       if (isLattice(p.m)) continue
-      const k = `${g}/${p.m.file}`
-      if (decoded.has(k)) continue
-      decoded.set(k, null)
-      loadMapImage(g, p.m.file).then((img) => { decoded.set(k, img); ready += 1 })
+      want(p.m.file)
+      want(p.m.border?.file)
     }
   })
 

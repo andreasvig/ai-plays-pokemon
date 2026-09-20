@@ -85,6 +85,42 @@ def test_every_map_declares_whether_it_is_indoors(atlas):
             assert isinstance(m.get("indoor"), bool), f"{path.parent.name}:{key} has no indoor flag"
 
 
+def test_every_rendered_map_ships_the_border_block_it_is_drawn_inside(atlas):
+    """The block the game repeats outside a map's own bounds.
+
+    Without it a town ends at a hard edge with black beyond, which is what the
+    map looked like until 2026-09-20. It is emitted once per map and tiled by
+    the viewer, so it is tiny — the whole FireRed set is about 9 KB — but a map
+    that is MISSING one draws that black edge again and nothing else fails.
+    """
+    for path in _atlases():
+        d = json.loads(path.read_text())
+        for key, m in d["maps"].items():
+            if not m.get("file"):
+                continue                      # no artwork yet: the lattice draws it
+            b = m.get("border")
+            assert b, f"{path.parent.name}:{key} has artwork but no border block"
+            assert (path.parent / b["file"]).is_file(), f"{b['file']} is declared and absent"
+            assert b["w"] > 0 and b["h"] > 0
+
+
+def test_a_border_block_is_the_size_it_declares(atlas):
+    """Read from the PNG header, not from the entry that claims it — the viewer
+    tiles this by pattern, so a wrong size shears the whole bleed."""
+    for path in _atlases():
+        d = json.loads(path.read_text())
+        tile = d["tile_px"]
+        for key, m in d["maps"].items():
+            b = m.get("border")
+            if not b:
+                continue
+            raw = (path.parent / b["file"]).read_bytes()
+            w = int.from_bytes(raw[16:20], "big")
+            h = int.from_bytes(raw[20:24], "big")
+            assert (w, h) == (b["w"] * tile, b["h"] * tile), \
+                f"{b['file']} is {w}x{h} but declares {b['w']}x{b['h']} tiles"
+
+
 def test_the_atlas_and_the_graph_were_built_from_the_same_pret_tree(atlas, graph):
     # A map image one tile out from the geometry drawn on it is invisible until
     # a route lands in a wall, so the two must name the same source.

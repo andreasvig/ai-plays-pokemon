@@ -672,12 +672,41 @@ def main() -> int:
         img = render_map(grid, w, h, tilesets[tkey])
         fname = f"{key.replace(':', '-')}.png"
         img.save(out_dir / fname, optimize=True)
+
+        # The BORDER: the block the game repeats outside a map's own bounds.
+        # Without it a town ends at a hard edge with nothing beyond, which is
+        # what Andreas was looking at on 2026-09-20 — "there still is too much
+        # missing map which would help indicate borders". It is 2x2 metatiles
+        # (`border_width`/`border_height`), and it is emitted ONCE per map and
+        # tiled by the viewer rather than baked into a fat margin on every PNG:
+        # a 6-tile bleed on Littleroot would be 2.6x the pixels, for a picture
+        # the browser can repeat from 32x32 bytes.
+        bw, bh = int(layout.get("border_width", 2)), int(layout.get("border_height", 2))
+        bpath = layout.get("border_filepath")
+        if bpath and bw > 0 and bh > 0:
+            try:
+                bgrid = fetch(bpath, offline=args.offline, game=game)
+                bimg = render_map(bgrid, bw, bh, tilesets[tkey])
+                bname = f"{key.replace(':', '-')}-border.png"
+                bimg.save(out_dir / bname, optimize=True)
+                border = {"file": bname, "w": bw, "h": bh,
+                          "bytes": (out_dir / bname).stat().st_size}
+            except SystemExit:
+                raise
+            except Exception:
+                # A map with no usable border simply has none; the viewer
+                # already draws nothing there rather than guessing a fill.
+                border = None
+        else:
+            border = None
         entry = {"name": name, "width": w, "height": h, "file": fname,
                  "bytes": (out_dir / fname).stat().st_size, "type": mj.get("map_type"),
                  # NORMALISED, because MAP_TYPE_INDOOR is a pret gen-3 constant
                  # and the viewer must not branch on a string only this
                  # generation emits. `type` stays as raw provenance.
                  "indoor": mj.get("map_type") == MAP_TYPE_INDOOR}
+        if border:
+            entry["border"] = border
         if graph is not None:
             # `trim` needs the set of tiles something can STAND on. Only a
             # decomp walk graph has it; the observed graph holds the tiles
