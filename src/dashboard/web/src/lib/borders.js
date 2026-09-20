@@ -35,24 +35,33 @@
 //
 // Delete an entry and that map ends at its own artwork again.
 export const BORDER_EDGES = {
+  // Named by Andreas, 2026-09-20, looking at a row of trees running down Route
+  // 104's sea edge: "i dont want them popping up randomly at water edges or
+  // cave edges. the only places they are needed is at the bottom of the second
+  // route, and to the left, right, bottom of the first town and first route,
+  // and to the left of the second town (first non-start town)."
+  //
+  // Read in story order and applied to both cartridges. Four of the named sides
+  // are ENTIRELY a connection, so there is nothing there to draw — a row of
+  // trees across one would be a wall over the road out. They are named in the
+  // comments rather than listed, because an entry that draws nothing looks like
+  // a setting and is really a misread of the geography:
+  //
+  //   Route 1 and Route 101       bottom — all of it is the town below
+  //   Route 2 (FireRed)           bottom — all of it is Viridian City
+  //   Oldale Town                 left   — all of it is Route 102
+  //
+  // Emerald's second route DOES have a closed bottom, and Viridian City's left
+  // is only half road (Route 22 covers 24 of its 40), so both are listed.
   'firered-us': {
-    '3:0': ['left', 'right'],               // PalletTown
-    '3:1': ['up', 'down', 'left', 'right'], // ViridianCity
-    '3:2': ['up', 'down', 'left', 'right'], // PewterCity
-    '3:19': ['left', 'right'],              // Route1
-    '3:20': ['left', 'right'],              // Route2
-    '3:21': ['up', 'down', 'right'],        // Route3
-    '3:39': ['left', 'right'],              // Route21_North
-    '3:41': ['up', 'down', 'left'],         // Route22
+    '3:0': ['left', 'right'],      // Pallet Town, the first town
+    '3:19': ['left', 'right'],     // Route 1, the first route
+    '3:1': ['left'],               // Viridian City, the first non-start town
   },
   'emerald-us': {
-    '0:0': ['up', 'down', 'right'],         // PetalburgCity
-    '0:9': ['down', 'left', 'right'],       // LittlerootTown
-    '0:10': ['right'],                      // OldaleTown
-    '0:16': ['left', 'right'],              // Route101
-    '0:17': ['up', 'down'],                 // Route102
-    '0:18': ['up', 'down', 'left'],         // Route103
-    '0:19': ['left', 'right'],              // Route104
+    '0:9': ['left', 'right', 'down'],   // Littleroot Town, the first town
+    '0:16': ['left', 'right'],          // Route 101, the first route
+    '0:17': ['down'],                   // Route 102, the second route
   },
 }
 

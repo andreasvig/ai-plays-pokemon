@@ -16,6 +16,7 @@
 // road-walling straight back.
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { BORDER_EDGES, borderSides, borderRows, hasBorder }
   from '../../src/dashboard/web/src/lib/borders.js'
 
@@ -76,20 +77,35 @@ test('a nonsense side is ignored and a malformed entry is not a throw', () => {
 })
 
 test('a partly open side is still listed — the span is punched out downstream', () => {
-  // Viridian City is 48 wide and Route 2 covers 24 of its top edge, so 'up' IS
-  // listed and only tiles 12..36 of it come out. If this module started
-  // dropping the side, 24 tiles of real fringe would vanish; if the viewer
-  // stopped punching, the road would be walled again. The two halves have to
-  // stay split, and this is what says so.
+  // Viridian City's left edge is 40 tiles and Route 22 covers 24 of them, so
+  // 'left' IS listed and only those 24 come out. If this module started
+  // dropping partly-open sides, 16 tiles of real fringe would vanish; if the
+  // viewer stopped punching, the road would be walled again. The two halves
+  // have to stay split, and this is what says so.
   assert.ok(borderSides('firered-us', '3:1',
-    { border: { file: '3-1-border.png', w: 2, h: 2 }, open: [{ side: 'up', from: 12, to: 36 }] }).has('up'))
+    { border: { file: '3-1-border.png', w: 2, h: 2 }, open: [{ side: 'left', from: 10, to: 34 }] }).has('left'))
 })
 
-test('the shipped list names only sides that are not fully a road', () => {
-  // A cheap guard on the hand-written list itself: Route 2 runs the full width
-  // of its own top and bottom edges into two cities, so listing either would be
-  // 24 tiles of border with 24 tiles punched straight back out of it.
-  const r2 = BORDER_EDGES['firered-us']['3:20']
-  assert.deepEqual([...r2].sort(), ['left', 'right'])
-  assert.deepEqual([...BORDER_EDGES['emerald-us']['0:10']], ['right'], 'Oldale leaves three ways')
+test('every side the shipped list names has real ground to draw on', () => {
+  // Read against the ACTUAL atlases, not a fixture — the list is hand-written
+  // about real geography and the thing that goes wrong is naming a side that is
+  // entirely a road. Four such sides were named and correctly left out (Route 1
+  // and Route 101's bottoms, Route 2's bottom, Oldale's left); this is what
+  // stops the next one going in unnoticed.
+  for (const [game, maps] of Object.entries(BORDER_EDGES)) {
+    const atlas = JSON.parse(
+      readFileSync(new URL(`../../src/dashboard/web/public/maps/${game}/index.json`, import.meta.url), 'utf8'))
+    for (const [key, sides] of Object.entries(maps)) {
+      const m = atlas.maps[key]
+      assert.ok(m, `${game}:${key} is listed and not in the atlas`)
+      assert.ok(m.border, `${game}:${key} is listed and has no border block`)
+      for (const side of Array.isArray(sides) ? sides : sides.sides) {
+        const along = side === 'up' || side === 'down' ? m.width : m.height
+        const road = (m.open ?? []).filter((o) => o.side === side)
+          .reduce((a, o) => a + (o.to - o.from), 0)
+        assert.ok(along - road > 0,
+          `${game}:${key} ${side} is ${road}/${along} road — nothing would be drawn`)
+      }
+    }
+  }
 })
