@@ -104,6 +104,48 @@ def test_every_rendered_map_ships_the_border_block_it_is_drawn_inside(atlas):
             assert b["w"] > 0 and b["h"] > 0
 
 
+def test_every_road_out_of_a_map_is_recorded_as_an_open_edge(atlas):
+    """`open` is where the game draws the NEIGHBOUR, not the border block.
+
+    Tiling the block across one put a wall of trees over Oldale Town's two
+    exits — Andreas, 2026-09-20: "the woods you create cover possible roads, so
+    it looks like there is no road there ... where you can both go up and to
+    the right." Every outdoor map with a connection must carry the span, and a
+    span has to lie on the edge it names, or the viewer punches the hole in the
+    wrong place and the wall goes back up somewhere else.
+    """
+    for path in _atlases():
+        d = json.loads(path.read_text())
+        for key, m in d["maps"].items():
+            for o in m.get("open", []):
+                assert o["side"] in ("up", "down", "left", "right"), (key, o)
+                along = m["width"] if o["side"] in ("up", "down") else m["height"]
+                assert 0 <= o["from"] < o["to"] <= along, (key, o)
+        outdoor = [m for m in d["maps"].values() if not m.get("indoor") and not m.get("popup")]
+        assert any(m.get("open") for m in outdoor), f"{path.parent.name}: no map leads anywhere"
+
+
+def test_the_spans_match_the_maps_they_connect_to(atlas):
+    """Two maps that connect must agree about the seam.
+
+    The offset is stored on ONE side, so the arithmetic that turns it into a
+    span runs independently for each; if it were wrong, one map would open a
+    24-tile doorway and the other a 48-tile one onto the same road. Only the
+    pairs where both maps are rendered can be checked, which is the point —
+    they are a free control on the ones where only one is.
+    """
+    by_name = {m["name"]: (k, m) for k, m in atlas["maps"].items()}
+    # Route 2 runs north from Viridian City to Pewter City, 24 wide against
+    # their 48, so each city opens exactly Route 2's width and Route 2 opens
+    # its whole edge.
+    r2 = by_name["Route2"][1]
+    assert {o["side"]: (o["from"], o["to"]) for o in r2["open"]} == {"up": (0, 24), "down": (0, 24)}
+    for city in ("ViridianCity", "PewterCity"):
+        spans = {o["side"]: (o["from"], o["to"]) for o in by_name[city][1]["open"]}
+        side = "up" if city == "ViridianCity" else "down"
+        assert spans[side] == (12, 36), f"{city} must open exactly Route 2's 24 tiles"
+
+
 def test_a_border_block_is_the_size_it_declares(atlas):
     """Read from the PNG header, not from the entry that claims it — the viewer
     tiles this by pattern, so a wrong size shears the whole bleed."""

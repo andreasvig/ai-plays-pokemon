@@ -219,6 +219,18 @@
     "h": 2,
     "bytes": 1064
    },
+   "open": [
+    {
+     "side": "up",
+     "from": 0,
+     "to": 24
+    },
+    {
+     "side": "down",
+     "from": 0,
+     "to": 24
+    }
+   ],
    "world": [
     0,
     0
@@ -259,6 +271,23 @@
     "h": 2,
     "bytes": 1064
    },
+   "open": [
+    {
+     "side": "up",
+     "from": 12,
+     "to": 36
+    },
+    {
+     "side": "down",
+     "from": 12,
+     "to": 36
+    },
+    {
+     "side": "left",
+     "from": 10,
+     "to": 34
+    }
+   ],
    "world": [
     -12,
     -80
@@ -311,6 +340,18 @@
     "h": 2,
     "bytes": 1064
    },
+   "open": [
+    {
+     "side": "up",
+     "from": 0,
+     "to": 24
+    },
+    {
+     "side": "down",
+     "from": 0,
+     "to": 24
+    }
+   ],
    "world": [
     0,
     -40
@@ -331,6 +372,18 @@
     "h": 2,
     "bytes": 1064
    },
+   "open": [
+    {
+     "side": "down",
+     "from": 12,
+     "to": 36
+    },
+    {
+     "side": "right",
+     "from": 10,
+     "to": 30
+    }
+   ],
    "world": [
     -12,
     -200
@@ -389,6 +442,18 @@
     "h": 2,
     "bytes": 1064
    },
+   "open": [
+    {
+     "side": "up",
+     "from": 0,
+     "to": 24
+    },
+    {
+     "side": "down",
+     "from": 0,
+     "to": 24
+    }
+   ],
    "world": [
     0,
     -160
@@ -429,6 +494,18 @@
     "h": 2,
     "bytes": 326
    },
+   "open": [
+    {
+     "side": "up",
+     "from": 60,
+     "to": 84
+    },
+    {
+     "side": "left",
+     "from": 0,
+     "to": 20
+    }
+   ],
    "world": [
     36,
     -190
@@ -449,6 +526,18 @@
     "h": 2,
     "bytes": 220
    },
+   "open": [
+    {
+     "side": "up",
+     "from": 0,
+     "to": 24
+    },
+    {
+     "side": "down",
+     "from": 0,
+     "to": 24
+    }
+   ],
    "world": [
     0,
     20
@@ -469,6 +558,18 @@
     "h": 2,
     "bytes": 326
    },
+   "open": [
+    {
+     "side": "up",
+     "from": 0,
+     "to": 24
+    },
+    {
+     "side": "right",
+     "from": 0,
+     "to": 24
+    }
+   ],
    "world": [
     -60,
     -70

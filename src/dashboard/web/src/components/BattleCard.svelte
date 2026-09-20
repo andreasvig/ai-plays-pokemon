@@ -95,7 +95,6 @@
         </li>
       {/each}
     </ul>
-    <p class="roster">the roster the ROM gives this trainer — not necessarily what was sent out</p>
   {/if}
   <div class="foot">
     <span>{cost}</span>

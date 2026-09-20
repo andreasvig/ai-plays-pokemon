@@ -23,6 +23,7 @@
   import { tilePxOf, loadAtlas, loadTrainers, loadMapImage, worldLayout, clusterLayout, markersFor, exitsFor, floorsFor, battlesFor, drawRoute, drawArrows, drawSize, buildingLabel, visitAt } from '../lib/mapatlas.js'
   import { motionClock } from '../lib/motion.js'
   import { latticeAtlas, mergeAtlas, isLattice, drawLattice } from '../lib/lattice.js'
+  import { borderSides, hasBorder } from '../lib/borders.js'
   import { kindIsKnown, battleAria } from '../lib/battle.js'
   import BattleCard from './BattleCard.svelte'
 
@@ -44,19 +45,18 @@
   // off the frame. The floor has to be below whatever `fit` computes, or the
   // control does not do the one thing it is named for.
   const MIN_Z = 0.08, MAX_Z = 8, OPEN_Z = 2
-  /** Tiles of repeated border drawn around each map, and how many of them are
-   *  spent fading it out. A multiple of the 2x2 border block, so the tiling
-   *  stays in phase with the map's own grid.
+  /** Tiles of border drawn outside a map's edge, and how many are spent fading
+   *  it out. A multiple of the 2x2 border block, so the tiling stays in phase.
    *
-   *  8, not 28 (Andreas, 2026-09-20: "i dont like this. either we render more
-   *  map or we dont auto add these trees to all borders, because this looks
-   *  wrong"). 28 tiles of border in every direction is not a fringe, it is a
-   *  second map made of one repeated block — and where two of those fields met
-   *  they butted into each other along a straight line, so Route 2's trees and
-   *  a neighbour's sand read as hard-edged rectangles painted over open ground.
-   *  8 is roughly what the GBA itself shows past an edge (the screen is 15x10
-   *  tiles, so about 7 beyond the one you stand on), which is the only amount
-   *  we have any evidence for. */
+   *  8, not 28 (Andreas, 2026-09-20). 28 tiles in every direction is not a
+   *  fringe, it is a second map made of one block, and where two of those
+   *  fields met they butted along a straight line. 8 is roughly what the GBA
+   *  itself shows past an edge — the screen is 15x10 tiles, so about 7 beyond
+   *  the one you stand on — which is the only amount we have evidence for.
+   *
+   *  WHICH edges get one at all is curated in lib/borders.js and empty by
+   *  default: automatic borders looked wrong beside the map's own trees and
+   *  ran into the sea. */
   const BLEED = 8
   const FADE = 6
 
@@ -228,27 +228,18 @@
     c.imageSmoothingEnabled = false
     const s = TPX * view.z
 
-    // Pass 1 — BORDERS. Every gen-3 map ships the block the game repeats
-    // outside its own bounds; without it a town ends at a hard edge with black
-    // beyond it (Andreas, 2026-09-20: "there still is too much missing map
-    // which would help indicate borders"). Drawn first, so a neighbouring map's
-    // real ground always wins over another map's border where the two overlap.
-    //
-    // FADED at the outer edge, which is the fix for the second half of that
-    // note. A flat fill ends somewhere, and wherever it ended it drew a
-    // straight line no game ever drew — two maps' border fields meeting made a
-    // visible rectangle of trees against a rectangle of sand. Fading to nothing
-    // says what the border actually is: the last thing you could see, not the
-    // edge of another map.
-    for (const p of Object.values(L.at)) {
-      const b = p.m.border
-      if (isLattice(p.m) || !b) continue
-      const bimg = decoded.get(`${r.game}/${b.file}`)
+    // Pass 1 — BORDERS, where lib/borders.js asks for one. Drawn first, so a
+    // neighbouring map's real ground always wins over another map's border
+    // where the two overlap. Nothing is drawn by default: see that module for
+    // why automatic borders were removed and how to name one back.
+    for (const [key, p] of Object.entries(L.at)) {
+      if (isLattice(p.m) || !hasBorder(r.game, key, p.m)) continue
+      const bimg = decoded.get(`${r.game}/${p.m.border.file}`)
       if (!bimg) continue
       const wT = p.win.w + 2 * BLEED, hT = p.win.h + 2 * BLEED
       const [bx, by] = screenAt(p.x - BLEED, p.y - BLEED)
       if (bx > vw || by > vh || bx + wT * s < 0 || by + hT * s < 0) continue
-      const baked = borderPatch(bimg, `${r.game}/${b.file}`, wT, hT)
+      const baked = borderPatch(bimg, r.game, key, p.m, p.win)
       if (!baked) continue
       c.drawImage(baked, bx, by, wT * s, hT * s)
     }
@@ -289,13 +280,16 @@
   // lands, which re-bakes. Reading the promise cache from inside the bake is
   // how the canvas came out blank the first time.
   const decoded = new Map()
-  // One faded border field per map SIZE, baked once and reused every frame.
-  // Baking matters: the fade is four gradients and a composite pass, and doing
-  // that per map per frame at 60 fps while dragging is the one thing in this
+  // One faded border field per map, baked once and reused every frame. Baking
+  // matters: the fade is four gradients and a composite pass, and doing that
+  // per map per frame at 60 fps while dragging is the one thing in this
   // component that would be felt.
   const borderPatches = new Map()
-  function borderPatch(bimg, key, wT, hT) {
-    const id = `${key}:${wT}x${hT}:${TPX}`
+  function borderPatch(bimg, game, key, m, win) {
+    const sides = borderSides(game, key)
+    if (!sides.size) return null
+    const wT = win.w + 2 * BLEED, hT = win.h + 2 * BLEED
+    const id = `${game}/${key}:${wT}x${hT}:${TPX}`
     if (borderPatches.has(id)) return borderPatches.get(id)
     const cv = document.createElement('canvas')
     cv.width = wT * TPX
@@ -305,12 +299,29 @@
     g.imageSmoothingEnabled = false
     const pat = g.createPattern(bimg, 'repeat')
     if (!pat) return null
+    const B = BLEED * TPX, F = FADE * TPX
+    // Only the bands for the sides that were asked for.
     g.fillStyle = pat
-    g.fillRect(0, 0, cv.width, cv.height)
-    // Cut the outer FADE tiles back out, opaque at the very edge and nothing at
-    // the inner one, so the block is at full strength where it touches the map.
-    const F = FADE * TPX
+    if (sides.has('up')) g.fillRect(0, 0, cv.width, B)
+    if (sides.has('down')) g.fillRect(0, cv.height - B, cv.width, B)
+    if (sides.has('left')) g.fillRect(0, 0, B, cv.height)
+    if (sides.has('right')) g.fillRect(cv.width - B, 0, B, cv.height)
+
     g.globalCompositeOperation = 'destination-out'
+    // A road out is never painted over, whatever the curated list says. The
+    // spans come from pret's own `connections` (scripts/render_gamemaps.py
+    // open_edges) and are in the map's tiles, so they shift by the drawn
+    // window exactly as everything else does.
+    for (const o of m.open ?? []) {
+      const a = B + (o.from - (o.side === 'up' || o.side === 'down' ? win.x : win.y)) * TPX
+      const len = (o.to - o.from) * TPX
+      if (o.side === 'up') g.fillRect(a, 0, len, B)
+      else if (o.side === 'down') g.fillRect(a, cv.height - B, len, B)
+      else if (o.side === 'left') g.fillRect(0, a, B, len)
+      else if (o.side === 'right') g.fillRect(cv.width - B, a, B, len)
+    }
+    // Then fade what is left to nothing at the outer edge, so the block reads
+    // as the last thing you could see rather than as the edge of another map.
     const ramp = (x0, y0, x1, y1) => {
       const gr = g.createLinearGradient(x0, y0, x1, y1)
       gr.addColorStop(0, 'rgba(0,0,0,1)')
@@ -337,10 +348,12 @@
       decoded.set(k, null)
       loadMapImage(g, file).then((img) => { decoded.set(k, img); ready += 1 })
     }
-    for (const p of Object.values(L.at)) {
+    for (const [key, p] of Object.entries(L.at)) {
       if (isLattice(p.m)) continue
       want(p.m.file)
-      want(p.m.border?.file)
+      // Only a border that lib/borders.js actually asks for — an uncurated map
+      // must not pay a request for a picture nothing draws.
+      if (hasBorder(g, key, p.m)) want(p.m.border.file)
     }
   })
 

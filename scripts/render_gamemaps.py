@@ -489,6 +489,41 @@ def exit_index(map_json: dict, names: dict[str, str], key_of: dict[str, str]) ->
     return out
 
 
+
+def open_edges(mj: dict, w: int, h: int, dims_of) -> list[dict]:
+    """The edges a neighbouring map continues across, as spans in tiles.
+
+    A map's border block is what the game repeats OUTSIDE its bounds — but only
+    where there is nothing else. On an edge with a connection the game draws the
+    neighbour, and drawing the border there instead paints a wall across a road.
+    Andreas, 2026-09-20, looking at Oldale Town: "the problem is that the woods
+    you create cover possible roads, so it looks like there is no road there ...
+    where you can both go up and to the right."
+
+    The span is exact where the neighbour's size is known: a connection carries
+    an ``offset`` along the shared edge and the neighbour covers its own width
+    (or height) from there. Where it is NOT known the WHOLE edge is called open,
+    which is the conservative direction — an edge left bare says "we have not
+    drawn what is here", and trees say "there is no way through".
+    """
+    out: list[dict] = []
+    for c in mj.get("connections") or []:
+        d = c.get("direction")
+        if d not in ("up", "down", "left", "right"):
+            continue                      # dive/emerge are not edges
+        along = w if d in ("up", "down") else h
+        nd = dims_of(c.get("map"))
+        if nd is None:
+            lo, hi = 0, along
+        else:
+            off = int(c.get("offset", 0))
+            n = nd[0] if d in ("up", "down") else nd[1]
+            lo, hi = max(0, off), min(along, off + n)
+        if hi > lo:
+            out.append({"side": d, "from": lo, "to": hi})
+    return out
+
+
 # ---------------------------------------------------------------- tilesets
 
 def read_pal(raw: bytes) -> np.ndarray:
@@ -752,6 +787,23 @@ def main() -> int:
     # conservative read (an unknown exit makes a room a corridor).
     all_names = {camel_to_const(m): m for g in groups["group_order"] for m in groups[g]}
 
+    def dims_of(const: str) -> Optional[tuple[int, int]]:
+        """A neighbour's size in tiles, for the span its connection covers.
+
+        Any map in the game, not only the rendered ones: a town's road out
+        usually leads somewhere we have not drawn, and that is exactly the edge
+        whose border must not be painted.
+        """
+        name = all_names.get(const)
+        if name is None:
+            return None
+        try:
+            nj = json.loads(fetch(f"data/maps/{name}/map.json", offline=args.offline, game=game))
+            nl = layouts[nj["layout"]]
+        except (SystemExit, KeyError):
+            return None
+        return int(nl["width"]), int(nl["height"])
+
     def is_indoor(const: str) -> bool:
         name = all_names.get(const)
         if name is None:
@@ -832,6 +884,10 @@ def main() -> int:
                  "indoor": mj.get("map_type") == MAP_TYPE_INDOOR}
         if border:
             entry["border"] = border
+            # ...and the edges it must NOT be drawn across.
+            opens = open_edges(mj, w, h, dims_of)
+            if opens:
+                entry["open"] = opens
         if graph is not None:
             # `trim` needs the set of tiles something can STAND on. Only a
             # decomp walk graph has it; the observed graph holds the tiles

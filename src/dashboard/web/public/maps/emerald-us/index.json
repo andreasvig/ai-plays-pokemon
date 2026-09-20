@@ -34,6 +34,18 @@
     "h": 2,
     "bytes": 1142
    },
+   "open": [
+    {
+     "side": "left",
+     "from": 0,
+     "to": 30
+    },
+    {
+     "side": "right",
+     "from": 10,
+     "to": 30
+    }
+   ],
    "world": [
     -80,
     -50
@@ -62,6 +74,23 @@
     "h": 2,
     "bytes": 1142
    },
+   "open": [
+    {
+     "side": "up",
+     "from": 0,
+     "to": 20
+    },
+    {
+     "side": "down",
+     "from": 0,
+     "to": 20
+    },
+    {
+     "side": "left",
+     "from": 0,
+     "to": 20
+    }
+   ],
    "world": [
     0,
     -40
@@ -96,6 +125,18 @@
     "h": 2,
     "bytes": 1142
    },
+   "open": [
+    {
+     "side": "up",
+     "from": 0,
+     "to": 20
+    },
+    {
+     "side": "down",
+     "from": 0,
+     "to": 20
+    }
+   ],
    "world": [
     0,
     -20
@@ -116,6 +157,18 @@
     "h": 2,
     "bytes": 1142
    },
+   "open": [
+    {
+     "side": "left",
+     "from": 0,
+     "to": 20
+    },
+    {
+     "side": "right",
+     "from": 0,
+     "to": 20
+    }
+   ],
    "world": [
     -50,
     -40
@@ -136,6 +189,18 @@
     "h": 2,
     "bytes": 1142
    },
+   "open": [
+    {
+     "side": "down",
+     "from": 0,
+     "to": 20
+    },
+    {
+     "side": "right",
+     "from": 0,
+     "to": 22
+    }
+   ],
    "world": [
     0,
     -62
@@ -156,6 +221,23 @@
     "h": 2,
     "bytes": 1142
    },
+   "open": [
+    {
+     "side": "up",
+     "from": 0,
+     "to": 40
+    },
+    {
+     "side": "down",
+     "from": 0,
+     "to": 40
+    },
+    {
+     "side": "right",
+     "from": 50,
+     "to": 80
+    }
+   ],
    "world": [
     -120,
     -100
@@ -176,6 +258,13 @@
     "h": 2,
     "bytes": 1142
    },
+   "open": [
+    {
+     "side": "up",
+     "from": 0,
+     "to": 20
+    }
+   ],
    "world": [
     0,
     0
