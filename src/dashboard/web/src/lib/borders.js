@@ -67,7 +67,9 @@ export const BORDER_EDGES = {
     // the other.
     '0:17': ['up', 'down'],             // Route 102, the second route
     '0:0': ['down'],                    // south of Petalburg City
-    '0:19': ['left'],                   // Route 104's west side
+    // Its EAST side, not the west one the sea is on — 50 of its 80 tiles, the
+    // rest being the connection down to Petalburg.
+    '0:19': ['right'],                  // Route 104
   },
 }
 
