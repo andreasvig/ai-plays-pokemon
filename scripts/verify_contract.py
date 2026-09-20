@@ -52,6 +52,10 @@ BINARY = "~/Applications/SkyEmu.app/Contents/MacOS/SkyEmu"
 # the v2 state, so the default ROM needs the one override in this table.
 SNAPSHOT_OVERRIDE = {
     "firered": "configs/saves/skyemu/firered-pokebench-v2",
+    # Emerald opens inside the moving van, boxed in on four sides, so the walk
+    # legs cannot move and the check correctly reports INCONCLUSIVE rather than
+    # passing. --all needs the fixture or it reads as a failure.
+    "emerald": "v2-experiments/states/emerald/probe.state",
     # Platinum's canonical opening is the 2F bedroom, where the player is one
     # tile from the east wall and cannot move on either axis — the check
     # correctly calls that INCONCLUSIVE rather than passing it. The outdoor
@@ -80,6 +84,7 @@ SNAPSHOT_OVERRIDE = {
 # lag the screenshots by a press.
 _RUNS = "local/runs/2026-09-19_22-48-56_config-v2-%s__gemini-3-8-flash-minimal"
 _RUNS_SS = "local/runs/2026-09-20_00-25-45_config-v2-soulsilver__gemini-3-8-flash-minimal"
+_RUNS_B2 = "local/runs/2026-09-20_00-51-00_config-v2-black2__gemini-3-8-flash-minimal"
 # Crystal carries BOTH a wild and a TRAINER battle on purpose. Its flag is a
 # mode byte (0 overworld, 1 wild, 2 trainer), so a check that only ever sees a
 # wild battle passes just as happily with mask 0x01 — and mask 0x01 reports
@@ -102,6 +107,8 @@ BATTLE_STATE = {
     # constant that merely happens to be non-zero cannot pass.
     "soulsilver": [f"{_RUNS_SS}/savepoints/turn_60/emulator.state",
                    f"{_RUNS_SS}/savepoints/turn_170/emulator.state"],
+    # The end of the Hugh battle: "Tepig grew to Lv. 6!", our 498 against 501.
+    "black2": [f"{_RUNS_B2}/savepoints/turn_170/emulator.state"],
 }
 
 

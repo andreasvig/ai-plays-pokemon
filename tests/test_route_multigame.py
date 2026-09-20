@@ -148,9 +148,14 @@ def test_the_fixtures_are_the_shape_each_decoder_emits():
     assert stale["in_battle"] is False and stale["foe_species"] is None, (
         "a species read outside a battle is the last fight's, not this tile's")
 
+    # Three ranges here too, since Black 2 gained a flag and a species.
     centre = struct.pack("<IiiI", 427, (47 << 16) | 0x8000, 1, (764 << 16) | 0x8000)
-    gen5 = trace.decode_samples([("R", [centre])], None, BLACK2)[0]
+    gen5 = trace.decode_samples(
+        [("R", [centre, bytes([0]), struct.pack("<H", 0)])], None, BLACK2)[0]
     assert gen5 == ds_sample(0, "R", 47, 764, 427)
+    fighting5 = trace.decode_samples(
+        [("R", [centre, bytes([1]), struct.pack("<H", 501)])], None, BLACK2)[0]
+    assert fighting5["in_battle"] is True and fighting5["foe_species"] == 501
 
     # And the tile each one becomes, straight off the decoder.
     assert route._sample_tile(gen3) == (0, 9, 6, 9)

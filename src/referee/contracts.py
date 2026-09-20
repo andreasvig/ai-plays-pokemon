@@ -531,23 +531,67 @@ SOULSILVER = GameMemory(
 #
 # The trap in this block is 0x0223b4f4, a step counter: +1 per tile, zeroed by
 # a map load, and at rest the most map-id-shaped value in the whole struct.
+# The only DS game with a REAL flag rather than a derived one: a u32 reading 1
+# in battle and 0 out of it, at +0x30 into a 0x34-byte resource-bank descriptor
+# whose pointers and sizes are identical in two independent battles. 36
+# in-battle dumps read 1, 150 non-battle dumps read 0, and a live verify on
+# held-out states agreed 46/46. It flips off on exactly the press where the
+# battle screen gives way to the overworld; it flips on one press AFTER the VS
+# splash, so that single press is filed as overworld. That is the only slop.
+#
+# THE NEAR MISS, which is the useful part. 0x0209da74 verified 40/40 in BOTH
+# directions and is wrong: it is the overlay-stack depth, and it also reads 1
+# during the starter-choice scene's teardown, a frame where the overworld is
+# already on screen. Adding that one transient to the negative class killed it
+# and the whole cluster around it. A check that passes both ways can still be
+# wrong when the negative class is incomplete — and "both directions" was the
+# rule that caught the previous three cartridges, so it is not sufficient on
+# its own. The related trap: the battle OVERLAY id at 0x0209da80 is 0x4d5 in
+# battle but both LEADS it (set while Hugh is still talking) and LAGS it (still
+# 0x4d5 six presses into the overworld). That is Platinum's mechanism, and it
+# does NOT transfer to gen 5.
+#
+# Bit or mode byte is UNTESTED: every reachable battle is a trainer battle. It
+# reads as a boolean "in use" field rather than an enum, but that is inference.
+# If a wild battle ever becomes reachable, re-read this byte first.
+_BLACK2_IN_BATTLE = 0x0213B2E0
+
+# Opponent's species. Cross-checked the right way — by fighting a DIFFERENT
+# species: replaying from the starter-choice screen and picking Snivy makes Hugh
+# use Tepig, and the pair swaps from (ours 498, foe 501) to (ours 495, foe 498).
+# Block layout verified live: species +0, max HP +2, current HP +4, level +0xc;
+# the player's battler is at 0x0225b1f0 and the opponent's 0x224 after it. Each
+# block is preceded 0x20 bytes earlier by the allocator's "pokeparam.c" tag,
+# which is how to find the equivalent on another gen 5 cartridge without a
+# search. Reused outside a battle — the nickname keyboard leaves 3481 here — so
+# the decoder's gating on the flag is load-bearing, not tidiness.
+_BLACK2_FOE_SPECIES = 0x0225B414
+
 _BLACK2_LOCATION = 0x0223B444
 
 BLACK2 = GameMemory(
     game="black2-us",
     console="NDS",
-    spec=(f"{_BLACK2_LOCATION:#x}:16",),
+    spec=(f"{_BLACK2_LOCATION:#x}:16", f"{_BLACK2_IN_BATTLE:#x}:1",
+          f"{_BLACK2_FOE_SPECIES:#x}:2"),
     map_id=Field(0, 0, "<I"),
     x=Field(0, 4, "<i", shift=16),
     y=Field(0, 12, "<i", shift=16),
+    battle_flag=Field(1, 0, "<B"),
+    battle_mask=0x01,
+    foe_species=Field(2, 0, "<H"),
     notes=(
         "Gen 5. map id +0, x +4, height +8, y +12; x and y are 16.16 fixed "
         "point, so the Field carries shift=16 and the tile is value >> 16. Raw "
         "addresses survive a map load, verified by a live round trip through "
         "the front door. Unova's OUTDOOR coordinates are global (y=764 in a "
         "city thirty tiles across) while interiors are local. Map ids seen: "
-        "428 player's house, 427 Aspertia City, 431 neighbour's house. No "
-        "battle flag located."
+        "428 player's house, 427 Aspertia City, 431 neighbour's house, 435 the "
+        "Pokemon Center. A real battle flag, the only one of the four DS games: "
+        "see the comment above for the candidate that passed 40/40 and was "
+        "still wrong. Wild battles are unreachable — the game HANGS entering "
+        "the Aspertia Pokemon Center under SkyEmu, which froze the original run "
+        "too — so bit vs mode byte is untested."
     ),
 )
 
