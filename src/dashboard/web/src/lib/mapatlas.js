@@ -25,6 +25,68 @@ import { BASE } from './static.js'
  *  not obliged to be 16, and both the atlas and route.json have always carried
  *  the number while nothing read it. */
 export const TILE = 16
+/**
+ * Pixels between neighbouring cables, at the game's own 16 px scale; it is
+ * scaled with the drawing, so the cables stay 3.5 px apart at 1× and spread as
+ * you zoom in. Picked off the corner sheet on 2026-09-15.
+ */
+export const CABLE_GAP = 3.5
+
+/**
+ * Most cables one step will ever carry. Andreas, 2026-09-15: *"per tile i think
+ * we should aim for max 4."* It costs almost nothing — of the 1,381 distinct
+ * steps in the longest run to date, 764 were walked once, 405 twice, 152 three
+ * times, 48 four times and only 12 more than that. The passes past the cap
+ * stack onto the outermost cable, which is why an over-cap step is marked.
+ */
+export const MAX_LANES = 4
+
+/** A join further than this many gaps from the corner is jogged, not mitred. */
+const MITRE_SPIKE = 3
+
+/**
+ * How far back from the node a lane change is braided, as a fraction of a tile
+ * (Andreas 2026-09-17: *"braids would be preferable"*, picked off the cable
+ * bench after seeing both drawn on the real artwork).
+ *
+ * A cable that changes lane used to do it in zero length: the jog was a
+ * perpendicular step at the tile centre, which reads as a BREAK in the cable
+ * rather than as a cable moving over, and it lands exactly on the vertex of
+ * every cable it passes — so the crossing was both invisible and stacked on
+ * top of every other swap at that node. Pulling both ends back turns it into a
+ * short diagonal: the same crossing, drawn where you can see it, and spread out
+ * rather than piled in one tile. Andreas, same day: *"more small knots are
+ * better than big ones."*
+ *
+ * A true reversal is NOT braided — the jog across the end tile is the U-turn
+ * cap and is exactly the right shape for it (2026-09-15).
+ */
+const BRAID_BACK = 0.42
+/** Below this dot product the two segments are a U-turn, not a lane change. */
+const BRAID_MIN_DOT = -0.9
+
+/**
+ * The marching arrows (Andreas, 2026-09-15: "for arrows maybe make them
+ * animated where they follow along the path instead of being static … also
+ * whether there should be noise in the start and times of the arrows, to not
+ * create faulty illusions and overlaps which keep repeating").
+ *
+ * One chevron every 12 tiles of cable, sliding forward at 2.5 tiles a second.
+ * `ARROW_START_NOISE` scatters each cable's first chevron over a whole gap:
+ * without it four passes down a corridor put their chevrons at the same place
+ * across all four lanes and the group reads as ONE wide arrow sliding along,
+ * which also beats against the 16 px tile grid. There is deliberately no speed
+ * noise — every cable runs at the same rate, so the scatter is a fixed offset
+ * rather than a pattern that drifts and re-forms.
+ *
+ * Sparse spacing means a cable shorter than a gap often carries no chevron at
+ * a given instant. That is fine and it is why they move: the phase advances,
+ * so a chevron passes through every cable in turn.
+ */
+export const ARROW_EVERY_TILES = 12
+export const ARROW_SPEED_TILES = 2.5     // tiles a second
+export const ARROW_SIZE = 0.26           // of a tile
+export const ARROW_START_NOISE = 1       // of a gap
 export const tilePxOf = (atlas, route) => atlas?.tile_px ?? route?.tile_px ?? TILE
 
 export const mapImageUrl = (game, file) => `${BASE}maps/${game}/${file}`
@@ -125,27 +187,22 @@ export function loadMapImage(game, file) {
  * mix of its neighbours — five stops, linearly interpolated, no steps
  * (Andreas, 2026-09-15: "can we render the colours as fully gradual changes").
  */
-const RAMP = [
-  [0.0, [40, 90, 220]],    // blue
-  [0.25, [0, 170, 205]],   // cyan
-  [0.5, [40, 200, 90]],    // green
-  [0.75, [235, 190, 40]],  // amber
-  [1.0, [220, 50, 20]],    // red
-]
+export const COLOUR_LOOP_TILES = 300
+const HUE_START = 220              // blue, where the run's start box also is
 
-export function turnColour(t) {
-  const k = Math.max(0, Math.min(1, Number.isFinite(t) ? t : 0))
-  let i = 0
-  while (i < RAMP.length - 2 && k > RAMP[i + 1][0]) i++
-  const [k0, a] = RAMP[i]
-  const [k1, b] = RAMP[i + 1]
-  const f = k1 === k0 ? 0 : (k - k0) / (k1 - k0)
-  return `rgb(${Math.round(a[0] + (b[0] - a[0]) * f)},${Math.round(a[1] + (b[1] - a[1]) * f)},${Math.round(a[2] + (b[2] - a[2]) * f)})`
+/** A point on the wheel, 0 → 1 being one full turn. */
+export const wheelColour = (f) =>
+  `hsl(${(((HUE_START + f * 360) % 360) + 360) % 360}, 74%, 56%)`
+
+/**
+ * `t` is 0→1 across the run (see `visitTimes`); `tiles` is how many tiles it
+ * walked, which is what turns that fraction back into a distance.
+ */
+export function cableColour(t, tiles) {
+  const n = Math.max(1, tiles || 1)
+  const k = Number.isFinite(t) ? t : 0
+  return wheelColour((((k * n) / COLOUR_LOOP_TILES) % 1 + 1) % 1)
 }
-
-/** The ramp as a CSS gradient, so the legend cannot drift from the drawing. */
-export const rampCss = () =>
-  `linear-gradient(90deg, ${RAMP.map(([k, c]) => `rgb(${c.join(',')}) ${Math.round(k * 100)}%`).join(', ')})`
 
 /**
  * Where along the run each visit falls, 0 → 1.
@@ -285,6 +342,41 @@ export function buildingLabel(building) {
  * own pair repeats one short gradient over and over, which is the same flat
  * look as no gradient at all.
  */
+
+// ---------------------------------------------------------------------------
+// The route-drawing engine below is the one running on the published site
+// (github pages), ported here 2026-09-20 on Andreas's instruction: "use the
+// same dr[a]wing a[l]gorithm which is on the github pages, which is a bit more
+// advanced and beautiful".
+//
+// It is a straight lift of the working tree in the sibling `ai-plays-pokemon`
+// checkout, which is what that site was built from. Every tuned number in it
+// was picked BY EYE off a comparison sheet and must not be re-derived:
+// CABLE_GAP 3.5 and mitred joins (2026-09-15, "please use mitred: B, mitred
+// with a cable gap of 3.5"), ARROW_EVERY_TILES 12 ("i think 12 is the number
+// for spacing"), MAX_LANES 4 ("per tile i think we should aim for max 4"),
+// braided lane changes and many-small-knots crossing minimisation (2026-09-17,
+// "braids would be preferable" / "more small knots are better than big ones" —
+// the second REVERSES the published block-crossing result, on the evidence of
+// the real map at 1.6 px cables on a 16 px tile).
+//
+// What was NOT taken: that tree's worldLayout/clusterLayout interior model and
+// its per-map `win` window. This branch keeps its own, because it carries the
+// per-game atlas and the lattice fallback, which that tree has no notion of.
+// ---------------------------------------------------------------------------
+/**
+ * Walk the route as a flat list of drawn segments.
+ *
+ * One entry per tile-to-tile step, in order: `{u, v, t0, t1, fill}` where
+ * `u`/`v` are `[g, m, x, y]` and `t0`/`t1` are where that step starts and ends
+ * on the run's 0→1 timeline, for its colour.
+ *
+ * A scripted walk that covered several tiles on one press is expanded through
+ * `fills`, so the line follows the ground rather than cutting a chord — and the
+ * timeline is split across those sub-steps too. Giving all of them the visit's
+ * own pair repeats one short gradient over and over, which is the same flat
+ * look as no gradient at all.
+ */
 function routeSteps(route, times) {
   const visits = route?.visits ?? []
   const out = []
@@ -325,9 +417,10 @@ const edgeKey = (u, v) => {
  * whichever way the run was going — otherwise a there-and-back pair would swap
  * sides halfway and cross.
  *
- * Returns each step with `lane` (0-based) and `lanes` (how many that step has).
+ * Returns each step with `lane` (0-based), `lanes` (how many that step has) and
+ * `over` (the run walked it more times than the cap allows for).
  */
-export function laneSteps(route, { maxLanes = 5, times = null } = {}) {
+export function laneSteps(route, { maxLanes = MAX_LANES, times = null } = {}) {
   const steps = routeSteps(route, times ?? visitTimes(route?.visits ?? []))
   const total = new Map()
   for (const s of steps) {
@@ -339,108 +432,694 @@ export function laneSteps(route, { maxLanes = 5, times = null } = {}) {
     const k = edgeKey(s.u, s.v)
     const n = seen.get(k) ?? 0
     seen.set(k, n + 1)
-    s.lanes = Math.min(total.get(k), maxLanes)
+    const all = total.get(k)
+    s.lanes = Math.min(all, maxLanes)
     s.lane = Math.min(n, s.lanes - 1)
+    s.over = all > maxLanes
     // canonical: lane 0 is always on the same side of the line
     s.flip = s.u.join(',') > s.v.join(',')
   }
   return steps
 }
 
+/* ── the lane solver ────────────────────────────────────────────────────────
+ *
+ * `laneSteps` numbers the passes over a step by WHEN they happened, which says
+ * nothing about where each one is going: a cable that was lane 0 coming into a
+ * junction is lane 2 leaving it, and has to cross the others to get there. The
+ * fix is the one every metro-map paper reaches for — choose the order of the
+ * lines on each edge so the drawing has fewer crossings (Fink & Pupyrev, GD
+ * 2013; Nöllenburg, GD 2009). The problem is NP-hard, so this is a local
+ * search: start from continuity, then swap neighbouring cables on an edge and
+ * keep the swap when the drawing improves.
+ *
+ * Measured over 4,113 tiles on 35 maps of 5 published runs (2026-09-17):
+ * 676 crossings today → 508 braided → 384 with this, and the worst pile-up
+ * anywhere on the board goes from 31 crossings in one tile to 15.
+ *
+ * Two things make it cheap enough to run in the page:
+ *
+ *  - The drawing is SCALE-INVARIANT. Every length — the tile, the cable gap,
+ *    the braid, the mitre limit — scales together, so the crossings at 2× are
+ *    the crossings at 1×. The solver works at one scale, in tile-local
+ *    coordinates, and the answer holds for every canvas that draws the route.
+ *  - A swap moves FIVE drawn segments (the two cable bodies and the joins on
+ *    either side of each), so the cost is re-counted for those against a tile
+ *    bucket rather than re-counting the whole map. Re-drawing everything per
+ *    candidate took 102s over the corpus; this is milliseconds.
+ *
+ * Andreas 2026-09-17: *"more small knots are better than big ones"* — so the
+ * cost is not the block-crossing objective the literature optimises (fewer,
+ * bigger crossing blocks). It is the opposite: a crossing that lands on top of
+ * another one is charged extra, which spreads a tangle out into pieces a
+ * reader can follow one at a time.
+ */
+
+/** A crossing stacked on another inside a tile costs this much on top of it. */
+const STACK_COST = 0.6
+/** Give up after this many sweeps, or this many candidate swaps, whichever first. */
+const SOLVE_SWEEPS = 6
+const SOLVE_BUDGET = 60000
+
+const solveCache = new WeakMap()
+
 /**
- * Draw a run's route.
+ * The lane for every step of `route`, crossing-minimised — one number per step
+ * of `laneSteps`, in the same order. Memoised per (route, maxLanes): the answer
+ * does not depend on scale, on the canvas, or on `times`, so it is computed
+ * once however many times the map is redrawn.
+ */
+export function solveLanes(route, { maxLanes = MAX_LANES } = {}) {
+  let byLanes = solveCache.get(route)
+  if (!byLanes) { byLanes = new Map(); solveCache.set(route, byLanes) }
+  const hit = byLanes.get(maxLanes)
+  if (hit) return hit
+  const out = runSolver(route, maxLanes)
+  byLanes.set(maxLanes, out)
+  return out
+}
+
+const SOLVE_GAP = CABLE_GAP
+const SOLVE_LIMIT = CABLE_GAP * MITRE_SPIKE + TILE * 0.9
+const SOLVE_BRAID = TILE * BRAID_BACK
+
+/* Tile coordinates are MAP-LOCAL, so Pallet Town's (0,0) and Route 1's (0,0)
+   are the same point — laid out naively the solver would score phantom
+   crossings between cables on different maps and optimise against them (found
+   2026-09-17: Viridian Forest came out of the search with exactly the crossings
+   it went in with). Every map is slid into its own lane of the plane instead.
+   A cable never spans two maps — `chainsOf` breaks there — so the gap only has
+   to be wider than any crossing test can reach. */
+const MAP_STRIDE = 4096
+const mapSlot = (slots, n) => {
+  const k = n[0] + ':' + n[1]
+  let i = slots.get(k)
+  if (i === undefined) { i = slots.size; slots.set(k, i) }
+  return i
+}
+const tilePx = (slots, n) => [(mapSlot(slots, n) * MAP_STRIDE + n[2]) * TILE + TILE / 2, n[3] * TILE + TILE / 2]
+const sameNode = (a, b) => a[0] === b[0] && a[1] === b[1] && a[2] === b[2] && a[3] === b[3]
+
+/** One step's offset body, at the solver's fixed scale. */
+function bodyOf(slots, s) {
+  const pu = tilePx(slots, s.u), pv = tilePx(slots, s.v)
+  const dx = pv[0] - pu[0], dy = pv[1] - pu[1]
+  const len = Math.hypot(dx, dy)
+  const d = [dx / len, dy / len]
+  const o = (s.lane - (s.lanes - 1) / 2) * SOLVE_GAP * (s.flip ? -1 : 1)
+  const n = [-d[1] * o, d[0] * o]
+  return { a: [pu[0] + n[0], pu[1] + n[1]], b: [pv[0] + n[0], pv[1] + n[1]], d, len }
+}
+
+/* The join between two cable bodies, as a PAIR of points — the one place the
+   three cases live, called by BOTH the renderer and the solver. They used to be
+   two copies of the same arithmetic, and a mutation test proved the copies
+   could drift apart without anything failing: the solver would then be
+   optimising a drawing nobody renders.
+
+   A mitre and a straight continuation return the same point twice. The renderer
+   collapses that to one point; the solver keeps both so a segment keeps its
+   index in the point array when a lane moves. `limit` is the mitre spike cut-off
+   and `braid` the pull-back; a true reversal is never braided, because that jog
+   is the U-turn cap. */
+function joinOf(A, B, limit, braid) {
+  const cross = A.d[0] * B.d[1] - A.d[1] * B.d[0]
+  if (Math.abs(cross) > 1e-6) {
+    const wx = B.a[0] - A.a[0], wy = B.a[1] - A.a[1]
+    const k = (wx * B.d[1] - wy * B.d[0]) / cross
+    const J = [A.a[0] + A.d[0] * k, A.a[1] + A.d[1] * k]
+    if (Math.hypot(J[0] - A.b[0], J[1] - A.b[1]) <= limit) return [J, J]
+  }
+  if (Math.hypot(A.b[0] - B.a[0], A.b[1] - B.a[1]) < 0.01) return [A.b, A.b]
+  const dot = A.d[0] * B.d[0] + A.d[1] * B.d[1]
+  const r = dot > BRAID_MIN_DOT ? Math.min(braid, segLen(A) * 0.45, segLen(B) * 0.45) : 0
+  return [[A.b[0] - A.d[0] * r, A.b[1] - A.d[1] * r], [B.a[0] + B.d[0] * r, B.a[1] + B.d[1] * r]]
+}
+
+/** The contiguous cables, the way `routePolylines` breaks them. */
+function chainsOf(steps) {
+  const chains = []
+  let cur = null, last = null
+  for (const s of steps) {
+    const sameMap = s.u[0] === s.v[0] && s.u[1] === s.v[1]
+    const adjacent = sameMap && Math.abs(s.u[2] - s.v[2]) + Math.abs(s.u[3] - s.v[3]) <= 2
+    if (!adjacent) { cur = null; last = null; continue }
+    // A turn that advanced without moving draws nothing and must not break the cable.
+    if (s.u[2] === s.v[2] && s.u[3] === s.v[3]) { last = s.v; continue }
+    if (!cur || !last || !sameNode(last, s.u)) { cur = { steps: [], P: [], bodies: [] }; chains.push(cur) }
+    cur.steps.push(s)
+    last = s.v
+  }
+  return chains.filter((c) => c.steps.length)
+}
+
+/** Recompute the points a lane change at step `i` moves — and only those. */
+function refresh(slots, chain, i) {
+  const { steps, bodies, P } = chain
+  const n = steps.length
+  for (let j = Math.max(0, i - 1); j <= Math.min(n - 1, i + 1); j++) bodies[j] = bodyOf(slots, steps[j])
+  for (let j = Math.max(0, i - 1); j <= Math.min(n - 2, i); j++) {
+    const [p, q] = joinOf(bodies[j], bodies[j + 1], SOLVE_LIMIT, SOLVE_BRAID)
+    P[2 * j + 1] = p
+    P[2 * j + 2] = q
+  }
+  P[0] = bodies[0].a
+  P[2 * n - 1] = bodies[n - 1].b
+}
+
+function buildChain(slots, chain) {
+  const n = chain.steps.length
+  chain.bodies = chain.steps.map((s) => bodyOf(slots, s))
+  chain.P = new Array(2 * n)
+  chain.P[0] = chain.bodies[0].a
+  for (let j = 0; j < n - 1; j++) {
+    const [p, q] = joinOf(chain.bodies[j], chain.bodies[j + 1], SOLVE_LIMIT, SOLVE_BRAID)
+    chain.P[2 * j + 1] = p
+    chain.P[2 * j + 2] = q
+  }
+  chain.P[2 * n - 1] = chain.bodies[n - 1].b
+}
+
+function runSolver(route, maxLanes) {
+  const steps = laneSteps(route, { maxLanes })
+  const corridors = widenCorridors(steps, maxLanes)
+  carryLanes(steps)
+  const slots = new Map()
+  const chains = chainsOf(steps)
+  if (!chains.length) return steps.map((s) => [s.lane, s.lanes])
+
+  // segment id → (chain, k) where the segment runs P[k] .. P[k+1]
+  const base = []
+  let total = 0
+  for (const c of chains) { base.push(total); buildChain(slots, c); total += 2 * c.steps.length - 1 }
+  const at = (id) => {
+    let lo = 0, hi = base.length - 1
+    while (lo < hi) { const m = (lo + hi + 1) >> 1; if (base[m] <= id) lo = m; else hi = m - 1 }
+    return { c: chains[lo], k: id - base[lo] }
+  }
+  const ends = (id) => { const { c, k } = at(id); return [c.P[k], c.P[k + 1]] }
+
+  // tile buckets, so a segment is only tested against its neighbourhood
+  const cells = new Map()
+  const held = new Map()
+  const keysFor = (id) => {
+    const [a, b] = ends(id)
+    const out = []
+    const x0 = Math.floor(Math.min(a[0], b[0]) / TILE), x1 = Math.floor(Math.max(a[0], b[0]) / TILE)
+    const y0 = Math.floor(Math.min(a[1], b[1]) / TILE), y1 = Math.floor(Math.max(a[1], b[1]) / TILE)
+    for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) out.push(x + ':' + y)
+    return out
+  }
+  const put = (id) => {
+    const ks = keysFor(id)
+    held.set(id, ks)
+    for (const k of ks) { let set = cells.get(k); if (!set) { set = new Set(); cells.set(k, set) } set.add(id) }
+  }
+  const drop = (id) => {
+    for (const k of held.get(id) || []) cells.get(k)?.delete(id)
+    held.delete(id)
+  }
+  for (let id = 0; id < total; id++) put(id)
+
+  /* The cost of the TILES a swap touches — not of the moved segments.
+     Scoring only the segments that moved counted their crossings correctly but
+     could never see a knot: a pile-up is mostly crossings between cables that
+     did not move, so the stacking term measured nothing and the whole weight
+     range 0.6 → 6 produced an identical drawing (2026-09-17). Counting every
+     crossing inside the touched tiles fixes that — the pairs that did not move
+     contribute equally before and after, so the crossing delta is still exact,
+     while the stacking term now sees the tangle the swap is landing in. */
+  const costOf = (keys) => {
+    const ids = new Set()
+    for (const k of keys) for (const j of cells.get(k) || []) ids.add(j)
+    const list = [...ids]
+    const pts = []
+    for (let x = 0; x < list.length; x++) {
+      const i = list[x]
+      const ai = at(i)
+      const [a1, a2] = ends(i)
+      for (let y = x + 1; y < list.length; y++) {
+        const j = list[y]
+        const aj = at(j)
+        if (ai.c === aj.c && Math.abs(ai.k - aj.k) <= 1) continue
+        const [b1, b2] = ends(j)
+        const p = crossPoint(a1, a2, b1, b2, ai.c === aj.c)
+        if (p) pts.push(p)
+      }
+    }
+    let stacked = 0
+    for (let i = 0; i < pts.length; i++)
+      for (let j = i + 1; j < pts.length; j++)
+        if (Math.hypot(pts[i][0] - pts[j][0], pts[i][1] - pts[j][1]) <= TILE) stacked++
+    return pts.length + STACK_COST * stacked
+  }
+
+  // where each step sits, so a swap knows which segments move
+  const where = new Map()
+  chains.forEach((c, ci) => c.steps.forEach((s, i) => where.set(s, { c, ci, i })))
+  const windowOf = (s) => {
+    const w = where.get(s)
+    if (!w) return []
+    const span = 2 * w.c.steps.length - 1
+    const out = []
+    for (let k = Math.max(0, 2 * w.i - 2); k <= Math.min(span - 1, 2 * w.i + 2); k++) out.push(base[w.ci] + k)
+    return out
+  }
+
+  const byEdge = new Map()
+  for (const s of steps) {
+    if (!where.has(s)) continue
+    const k = edgeKey(s.u, s.v)
+    if (!byEdge.has(k)) byEdge.set(k, [])
+    byEdge.get(k).push(s)
+  }
+  const edges = [...byEdge.values()].filter((o) => o.length > 1)
+
+  /* The move is a whole PERMUTATION of one step's lanes, not an adjacent swap.
+     A swap could not find the arrangement Pallet Town needed: putting the two
+     passes that carry on through a junction into the middle lanes costs a
+     crossing on the step itself and saves two at the join, so every single
+     swap on the way there is uphill. A step carries at most `MAX_LANES` cables,
+     so "try them all" is 24 arrangements at the very worst and usually two. */
+  const perms = (n) => {
+    if (n <= 1) return [[0]]
+    const out = []
+    for (const rest of perms(n - 1)) {
+      for (let i = 0; i <= rest.length; i++) out.push([...rest.slice(0, i), n - 1, ...rest.slice(i)])
+    }
+    return out
+  }
+  const PERMS = [0, 1, 2, 3, 4, 5, 6].map((n) => (n <= 1 ? [[0]] : perms(n)))
+
+  let budget = SOLVE_BUDGET
+  for (let sweep = 0; sweep < SOLVE_SWEEPS && budget > 0; sweep++) {
+    let moved = false
+    for (const occ of edges) {
+      const L = Math.min(occ.length, occ[0].lanes)
+      const slot = []
+      let clean = true
+      for (let l = 0; l < L; l++) {
+        const here = occ.filter((s) => s.lane === l)
+        if (here.length !== 1) { clean = false; break }
+        slot.push(here[0])
+      }
+      // past the lane cap two passes share the outermost lane; there is no
+      // order to choose between them, so leave that step alone.
+      if (!clean || L < 2 || budget <= 0) continue
+      const ids = [...new Set(slot.flatMap(windowOf))]
+      const keys = new Set()
+      const apply = () => {
+        for (const s of slot) { const w = where.get(s); refresh(slots, w.c, w.i) }
+        for (const id of ids) { drop(id); put(id) }
+      }
+      const addKeys = () => { for (const id of ids) for (const k of held.get(id) || []) keys.add(k) }
+      const set = (p) => { p.forEach((from, l) => { slot[from].lane = l }); apply(); addKeys() }
+      const table = PERMS[L]
+      // one pass to learn every tile any arrangement touches, so they are all
+      // scored over the same ground
+      for (const p of table) set(p)
+      set(table[0])
+      let best = 0, bestCost = Infinity
+      for (let i = 0; i < table.length && budget > 0; i++) {
+        budget--
+        set(table[i])
+        const c = costOf(keys)
+        if (c < bestCost - 1e-9) { bestCost = c; best = i }
+      }
+      set(table[best])
+      if (best !== 0) moved = true
+    }
+    if (!moved) break
+  }
+
+  /* A street, moved as one piece.
+   *
+   * Permuting a single step cannot reorder a corridor: the good arrangement
+   * costs a sideways step at every edge on the way to it, so each move on its
+   * own is uphill and the search stops at the tangle it started with. Here the
+   * cables that run the length of a corridor — its STRANDS, in metro-map terms
+   * its lines — are permuted together, so the whole street reorders at once and
+   * the only cost is at its two ends. */
+  for (let sweep = 0; sweep < 3 && budget > 0; sweep++) {
+    let moved = false
+    for (const [, keySet] of corridors) {
+      const mine = steps.filter((s) => keySet.has(s.k) && where.has(s))
+      if (mine.length < 2) continue
+      // strands: contiguous runs of this walk that stay inside the corridor
+      const strands = []
+      let cur = null, prev = null
+      for (const s of mine) {
+        if (!cur || !prev || !sameNode(prev.v, s.u) || prev.lane !== s.lane) { cur = []; strands.push(cur) }
+        cur.push(s)
+        prev = s
+      }
+      const L = mine[0].lanes
+      if (strands.length < 2 || strands.length > L) continue
+      // one lane per strand, and no two strands may want the same step
+      const lanesOf = strands.map((st) => st[0].lane)
+      if (new Set(lanesOf).size !== strands.length) continue
+      const seen = new Set()
+      let ok = true
+      for (const st of strands) for (const s of st) { if (seen.has(s)) { ok = false } seen.add(s) }
+      if (!ok) continue
+      const ids = [...new Set(mine.flatMap(windowOf))]
+      const keys = new Set()
+      const set = (p) => {
+        p.forEach((from, i) => { for (const s of strands[from]) s.lane = lanesOf[i] })
+        for (const s of mine) { const w = where.get(s); refresh(slots, w.c, w.i) }
+        for (const id of ids) { drop(id); put(id) }
+        for (const id of ids) for (const k of held.get(id) || []) keys.add(k)
+      }
+      const table = PERMS[strands.length]
+      for (const p of table) set(p)
+      let best = 0, bestCost = Infinity
+      for (let i = 0; i < table.length && budget > 0; i++) {
+        budget--
+        set(table[i])
+        const c = costOf(keys)
+        if (c < bestCost - 1e-9) { bestCost = c; best = i }
+      }
+      set(table[best])
+      if (best !== 0) moved = true
+    }
+    if (!moved) break
+  }
+  return steps.map((s) => [s.lane, s.lanes])
+}
+
+/* One lane count for a whole corridor, not one per step.
+ *
+ * `laneSteps` sizes each step on its own, so a corridor carrying four passes
+ * that narrows to two re-centres: lane 0 of 4 sits 1.5 gaps off the tile line,
+ * lane 0 of 2 only 0.5, and a cable that never changed lane still steps
+ * sideways at the seam. On Pallet Town 14 of 33 sideways steps came from the
+ * count alone (2026-09-17). Between two junctions the count is now the widest
+ * the corridor ever gets, so a cable that holds its lane holds its line, and a
+ * pass that ends simply stops — the way a metro map drops a line from the side
+ * of a bundle rather than re-spacing the whole thing.
+ */
+function widenCorridors(steps, maxLanes) {
+  const drawn = steps.filter((s) => s.u[0] === s.v[0] && s.u[1] === s.v[1]
+    && Math.abs(s.u[2] - s.v[2]) + Math.abs(s.u[3] - s.v[3]) === 1)
+  const byKey = new Map()
+  for (const s of drawn) {
+    if (!byKey.has(s.k ?? (s.k = edgeKey(s.u, s.v)))) byKey.set(s.k, [])
+    byKey.get(s.k).push(s)
+  }
+  const keys = [...byKey.keys()]
+  const idx = new Map(keys.map((k, i) => [k, i]))
+  const parent = keys.map((_, i) => i)
+  const find = (i) => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i] } return i }
+  const join = (a, b) => { const x = find(a), y = find(b); if (x !== y) parent[x] = y }
+  // a node with exactly two distinct steps through it is inside a corridor
+  const atNode = new Map()
+  for (const k of keys) {
+    const s = byKey.get(k)[0]
+    for (const n of [s.u, s.v]) {
+      const nk = n.join(',')
+      if (!atNode.has(nk)) atNode.set(nk, new Set())
+      atNode.get(nk).add(k)
+    }
+  }
+  for (const [, ks] of atNode) {
+    if (ks.size !== 2) continue
+    const [a, b] = [...ks]
+    join(idx.get(a), idx.get(b))
+  }
+  const widest = new Map()
+  for (const k of keys) {
+    const r = find(idx.get(k))
+    const n = Math.min(byKey.get(k).length, maxLanes)
+    widest.set(r, Math.max(widest.get(r) ?? 0, n))
+  }
+  const groups = new Map()
+  for (const k of keys) {
+    const r = find(idx.get(k))
+    for (const s of byKey.get(k)) s.lanes = widest.get(r)
+    if (!groups.has(r)) groups.set(r, new Set())
+    groups.get(r).add(k)
+  }
+  return groups
+}
+
+/* Which side of the corridor, then which cable on that side.
+ *
+ * Two passes that never swap order can never cross, and this is the assignment
+ * that makes most pairs unable to swap. Passes walking the step the same way go
+ * on one side, ordered by when they walked it; passes walking it the other way
+ * go on the other side. Then:
+ *
+ *  - two passes going the same way keep their time order for as long as they
+ *    share the corridor, so they cannot cross;
+ *  - two passes going opposite ways sit on opposite sides, so they cannot
+ *    cross either — which is how a road works, and how the cable already
+ *    handled a simple there-and-back.
+ *
+ * What is left over is the junctions, where the split between the two sides
+ * moves because the next step carries a different mix. That is what the search
+ * after this is for.
+ */
+function carryLanes(steps) {
+  const byEdge = new Map()
+  for (const s of steps) {
+    const k = s.k ?? (s.k = edgeKey(s.u, s.v))
+    if (!byEdge.has(k)) byEdge.set(k, [])
+    byEdge.get(k).push(s)
+  }
+  for (const [, occ] of byEdge) {
+    const L = Math.min(occ.length, occ[0].lanes)
+    // `flip` is already "walked against the canonical direction", so it is the
+    // side marker; occurrences arrive in time order.
+    const fwd = occ.filter((s) => !s.flip), back = occ.filter((s) => s.flip)
+    const order = [...fwd, ...back.reverse()]
+    order.forEach((s, i) => { s.lane = Math.min(i, L - 1) })
+  }
+}
+
+/** Where two segments cross, or null. Endpoints count: a cable changing lane
+ *  meets the one it passes exactly at that cable's vertex. */
+function crossPoint(p1, p2, p3, p4, sameCable) {
+  const d1 = [p2[0] - p1[0], p2[1] - p1[1]], d2 = [p4[0] - p3[0], p4[1] - p3[1]]
+  const den = d1[0] * d2[1] - d1[1] * d2[0]
+  if (Math.abs(den) < 1e-9) return null
+  const wx = p3[0] - p1[0], wy = p3[1] - p1[1]
+  const s = (wx * d2[1] - wy * d2[0]) / den
+  const u = (wx * d1[1] - wy * d1[0]) / den
+  const e = sameCable ? 1e-6 : -1e-6
+  if (s <= e || s >= 1 - e || u <= e || u >= 1 - e) return null
+  return [p1[0] + d1[0] * s, p1[1] + d1[1] * s]
+}
+
+/**
+ * The route as mitred polylines — the geometry behind `drawRoute`.
+ *
+ * Andreas, 2026-09-15: *"i still think we could make this more smooth,
+ * rendering real corners, u-turns and so on, such that it doesn't look so
+ * rugged"* — picked option B off artifacts/game-map-render/corners.md after
+ * seeing all five drawn on the real artwork.
+ *
+ * Until now every step was stroked on its own, offset perpendicular to ITSELF.
+ * Two steps meeting at a corner were therefore two rectangles that happened to
+ * touch, with a notch on the outside and an overlap on the inside, and a U-turn
+ * was two cables that never met at all. Here consecutive steps are collected
+ * into one polyline and each join is placed where the two OFFSET LINES actually
+ * cross, so a cable turns a corner the way a cable does.
+ *
+ * Two joins are not a crossing and fall back to a short jog (`a.b` then `b.a`):
+ *  - a reversal, where the offset lines are parallel — this is the U-turn cap,
+ *    and the jog across the end tile is exactly the right shape for it;
+ *  - a lane change mid-corridor, same reason.
+ * A near-reversal would put the true crossing point a long way out (the mitre
+ * spike), so anything past `MITRE_SPIKE` gaps is jogged too.
  *
  * `place(g, m, x, y)` → `[px, py]` of that tile's centre on this canvas, or
  * null when the caller does not draw that map — which is how the world canvas
- * skips interiors and a popup skips everything but its own floors. Segments
- * with an end the caller cannot place are simply not drawn.
+ * skips interiors and a popup skips everything but its own floors. A step with
+ * an end the caller cannot place breaks the polyline rather than bridging it.
  *
- * Lines are thin and laid in lanes (see `laneSteps`); an arrowhead is dropped
- * every `arrowEvery` pixels of walking, measured along the path rather than per
- * segment, so a run that doubles back leaves two arrows pointing opposite ways.
+ * Returns `{ lines, marks }`: `lines` are `{pts, ts, fill, over}` with one `ts`
+ * per point, and `marks` are the ends of a warp or a blackout, which are drawn
+ * as rings because a chord across the map would be a lie.
  */
-export function drawRoute(c, route, place, { scale = TILE, width = null, arrowEvery = TILE * 2.5 } = {}) {
-  const visits = route?.visits ?? []
-  if (visits.length < 2) return
-  const lw = width ?? Math.max(1.2, scale * 0.11)
-  const gap = Math.max(2, scale * 0.2)          // between neighbouring cables
-  const times = visitTimes(visits)
-  let since = arrowEvery * 0.5                  // the first arrow lands half a gap in
+export function routePolylines(route, place, { scale = TILE, gap = null, maxLanes = MAX_LANES, times = null, braid = true, solve = true } = {}) {
+  const ts = times ?? visitTimes(route?.visits ?? [])
+  const tiles = route?.visits?.length ?? 1
+  const off = gap ?? (scale / TILE) * CABLE_GAP
+  const limit = off * MITRE_SPIKE + scale * 0.9
+  const lines = []
+  const marks = []
+  let segs = []
+  let last = null
+  // `braid: false` is the control the tests measure against — the pre-2026-09-17
+  // hard jog. Nothing in the app passes it.
+  const flush = () => { if (segs.length) lines.push(mitreJoin(segs, limit, braid ? scale * BRAID_BACK : 0)); segs = []; last = null }
 
-  const arrow = (from, to, colour) => {
-    const dx = to[0] - from[0], dy = to[1] - from[1]
-    const len = Math.hypot(dx, dy)
-    if (!len) return
-    since += len
-    if (since < arrowEvery) return
-    since = 0
-    const ux = dx / len, uy = dy / len
-    const h = Math.max(4, scale * 0.34)
-    const w = Math.max(4, scale * 0.34)
-    const back = [to[0] - ux * h, to[1] - uy * h]
-    c.beginPath()
-    c.moveTo(to[0], to[1])
-    c.lineTo(back[0] - uy * w * 0.5, back[1] + ux * w * 0.5)
-    c.lineTo(back[0] + uy * w * 0.5, back[1] - ux * w * 0.5)
-    c.closePath()
-    // Outlined, or a head only a little wider than its own cable is invisible.
-    c.fillStyle = colour
-    c.strokeStyle = 'rgba(12,15,20,.75)'
-    c.lineWidth = Math.max(0.6, scale * 0.04)
-    c.fill()
-    c.stroke()
+  /* The lanes come from `solveLanes`, which is memoised per route: the answer
+     is scale-invariant, so panning and zooming redraw with the order already
+     chosen. `solve: false` is the control — the chronological numbering
+     `laneSteps` hands back on its own, which is what the board drew before
+     2026-09-17. Nothing in the app passes it. */
+  const steps = laneSteps(route, { times: ts, maxLanes })
+  if (solve) {
+    const solved = solveLanes(route, { maxLanes })
+    for (let i = 0; i < steps.length; i++) { steps[i].lane = solved[i][0]; steps[i].lanes = solved[i][1] }
   }
-
-  c.lineCap = 'butt'      // butt, so neighbouring cables do not smear together
-  c.lineJoin = 'round'
-
-  for (const s of laneSteps(route, { times })) {
+  for (const s of steps) {
     const pu = place(...s.u), pv = place(...s.v)
-    if (!pu || !pv) continue
+    if (!pu || !pv) { flush(); continue }
     const sameMap = s.u[0] === s.v[0] && s.u[1] === s.v[1]
     const adjacent = sameMap && Math.abs(s.u[2] - s.v[2]) + Math.abs(s.u[3] - s.v[3]) <= 2
     const seam = !sameMap && Math.abs(pu[0] - pv[0]) + Math.abs(pu[1] - pv[1]) <= 2 * scale
-    const colour = turnColour(s.t0)
-    const colourTo = turnColour(s.t1)
-
     if (!(adjacent || seam)) {
-      // A warp or a blackout: mark both ends, never a chord across the map.
-      c.lineWidth = Math.max(1.2, lw)
-      for (const p of [pu, pv]) {
-        c.strokeStyle = 'rgba(15,18,22,.5)'
-        c.beginPath(); c.arc(p[0], p[1], scale * 0.34, 0, 6.284); c.stroke()
-        c.strokeStyle = colour
-        c.beginPath(); c.arc(p[0], p[1], scale * 0.28, 0, 6.284); c.stroke()
-      }
+      flush()
+      marks.push({ p: pu, colour: cableColour(s.t0, tiles) }, { p: pv, colour: cableColour(s.t1, tiles) })
       continue
     }
-
-    // offset this lane perpendicular to the CANONICAL direction of the edge
     const dx = pv[0] - pu[0], dy = pv[1] - pu[1]
-    const len = Math.hypot(dx, dy) || 1
-    const sign = s.flip ? -1 : 1
-    const nx = (-dy / len) * sign, ny = (dx / len) * sign
-    const off = (s.lane - (s.lanes - 1) / 2) * gap
-    const au = [pu[0] + nx * off, pu[1] + ny * off]
-    const av = [pv[0] + nx * off, pv[1] + ny * off]
-
-    // A dark hairline under each cable: the artwork below is busy, and a bare
-    // thin line on Viridian Forest's canopy disappears.
-    c.strokeStyle = 'rgba(12,15,20,.55)'
-    c.lineWidth = lw + Math.max(1.4, scale * 0.09)
-    c.beginPath(); c.moveTo(au[0], au[1]); c.lineTo(av[0], av[1]); c.stroke()
-
-    let stroke = s.fill ? 'rgba(190,190,255,.9)' : colour
-    if (!s.fill && colour !== colourTo && c.createLinearGradient) {
-      const g = c.createLinearGradient(au[0], au[1], av[0], av[1])
-      g.addColorStop(0, colour)
-      g.addColorStop(1, colourTo)
-      stroke = g
+    const len = Math.hypot(dx, dy)
+    // A turn that advanced without moving is a real visit and a zero-length
+    // step. It draws nothing — but it must not BREAK the cable either, or a
+    // corridor the run paused in comes apart at the pause.
+    if (len < 0.01) { last = s.v; continue }
+    const d = [dx / len, dy / len]
+    // The offset is taken from the edge's CANONICAL direction, not the
+    // direction of travel, so a there-and-back pair keeps each cable on the
+    // same physical side of the corridor instead of swapping halfway.
+    const o = (s.lane - (s.lanes - 1) / 2) * off * (s.flip ? -1 : 1)
+    const n = [-d[1] * o, d[0] * o]
+    const seg = {
+      a: [pu[0] + n[0], pu[1] + n[1]],
+      b: [pv[0] + n[0], pv[1] + n[1]],
+      d, t0: s.t0, t1: s.t1, fill: s.fill, over: s.over,
     }
-    c.strokeStyle = stroke
-    c.lineWidth = lw
-    c.beginPath(); c.moveTo(au[0], au[1]); c.lineTo(av[0], av[1]); c.stroke()
-    arrow(au, av, s.fill ? 'rgb(190,190,255)' : colourTo)
+    if (!(last && last[0] === s.u[0] && last[1] === s.u[1] && last[2] === s.u[2] && last[3] === s.u[3])) flush()
+    segs.push(seg)
+    last = s.v
+  }
+  flush()
+  return { lines, marks }
+}
+
+/** One run of offset segments → one polyline, joined where their lines cross. */
+function mitreJoin(segs, limit, braid) {
+  const pts = [segs[0].a]
+  const ts = [segs[0].t0]
+  for (let i = 0; i < segs.length - 1; i++) {
+    const A = segs[i], B = segs[i + 1]
+    const [p, q] = joinOf(A, B, limit, braid)
+    pts.push(p)
+    ts.push(A.t1)
+    // a mitre and a straight continuation come back as the same point twice
+    if (p !== q) { pts.push(q); ts.push(B.t0) }
+  }
+  pts.push(segs[segs.length - 1].b)
+  ts.push(segs[segs.length - 1].t1)
+  // Arc length along the finished cable. `drawArrows` walks this rather than
+  // the segment list, which is what lets a chevron sit mid-segment and slide.
+  const cum = [0]
+  for (let i = 1; i < pts.length; i++)
+    cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]))
+  return { pts, ts, cum, L: cum[cum.length - 1], fill: segs[0].fill, over: segs.some((s) => s.over) }
+}
+
+const segLen = (s) => Math.hypot(s.b[0] - s.a[0], s.b[1] - s.a[1])
+
+/** Where a cable is, which way it points and how far along it is, at `d` px. */
+function pointAt(line, d) {
+  let lo = 0, hi = line.cum.length - 1
+  while (lo < hi - 1) { const m = (lo + hi) >> 1; if (line.cum[m] <= d) lo = m; else hi = m }
+  const span = line.cum[hi] - line.cum[lo]
+  if (!(span > 0)) return null
+  const f = (d - line.cum[lo]) / span
+  const a = line.pts[lo], b = line.pts[hi]
+  return {
+    p: [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f],
+    d: [(b[0] - a[0]) / span, (b[1] - a[1]) / span],
+    t: line.ts[lo] + (line.ts[hi] - line.ts[lo]) * f,
+  }
+}
+
+/**
+ * A stable pseudo-random per cable. Stable is the whole point: a cable that
+ * re-rolled its offset every frame would jitter instead of march.
+ */
+const noiseFor = (i) => {
+  const x = Math.sin(i * 12.9898 + 4.1414) * 43758.5453
+  return x - Math.floor(x)
+}
+
+/**
+ * Draw a run's route — the STILL layer: cables, warp rings, start and end.
+ *
+ * Returns the cables it drew, so a caller that animates can bake this once to
+ * an offscreen canvas and then only redraw the chevrons (`drawArrows`) each
+ * frame. Re-stroking 1,400 cables sixty times a second is not free; blitting
+ * one bitmap is.
+ *
+ * Lines are thin and laid in lanes (`laneSteps`), joined into cables
+ * (`routePolylines`). Three passes, in this order, because they paint over
+ * each other:
+ *  1. a dark halo under every cable — the artwork below is busy, and a bare
+ *     thin line on Viridian Forest's canopy disappears;
+ *  2. the faint outer glow on a step walked more times than the lane cap;
+ *  3. the colour, segment by segment so the wheel turns along the cable.
+ */
+export function drawRoute(c, route, place, opts = {}) {
+  const { scale = TILE, width = null } = opts
+  const visits = route?.visits ?? []
+  if (visits.length < 2) return []
+  const tiles = visits.length
+  const lw = width ?? Math.max(1.2, scale * 0.11)
+  const { lines, marks } = routePolylines(route, place, opts)
+
+  c.lineCap = 'butt'
+  c.lineJoin = 'miter'
+  if ('miterLimit' in c) c.miterLimit = MITRE_SPIKE
+
+  const trace = (p) => {
+    c.moveTo(p.pts[0][0], p.pts[0][1])
+    for (let i = 1; i < p.pts.length; i++) c.lineTo(p.pts[i][0], p.pts[i][1])
+  }
+
+  for (const p of lines) {
+    c.strokeStyle = 'rgba(12,15,20,.58)'
+    c.lineWidth = lw + Math.max(1.4, scale * 0.09)
+    c.beginPath(); trace(p); c.stroke()
+  }
+  // a step walked more than the cap wears a faint outer halo, so a corridor
+  // crossed nine times still reads as busier than one crossed four
+  for (const p of lines) {
+    if (!p.over) continue
+    c.strokeStyle = 'rgba(255,255,255,.16)'
+    c.lineWidth = lw + Math.max(3.2, scale * 0.2)
+    c.beginPath(); trace(p); c.stroke()
+  }
+
+  c.lineWidth = lw
+  for (const p of lines) {
+    for (let i = 1; i < p.pts.length; i++) {
+      const u = p.pts[i - 1], v = p.pts[i]
+      const ca = p.fill ? 'rgb(190,190,255)' : cableColour(p.ts[i - 1], tiles)
+      const cb = p.fill ? 'rgb(190,190,255)' : cableColour(p.ts[i], tiles)
+      let stroke = ca
+      if (ca !== cb && c.createLinearGradient) {
+        const g = c.createLinearGradient(u[0], u[1], v[0], v[1])
+        g.addColorStop(0, ca)
+        g.addColorStop(1, cb)
+        stroke = g
+      }
+      c.strokeStyle = stroke
+      c.beginPath(); c.moveTo(u[0], u[1]); c.lineTo(v[0], v[1]); c.stroke()
+    }
+  }
+
+  // a warp or a blackout: both ends ringed, never a chord across the map
+  c.lineWidth = Math.max(1.2, lw)
+  for (const { p, colour } of marks) {
+    c.strokeStyle = 'rgba(15,18,22,.5)'
+    c.beginPath(); c.arc(p[0], p[1], scale * 0.34, 0, 6.284); c.stroke()
+    c.strokeStyle = colour
+    c.beginPath(); c.arc(p[0], p[1], scale * 0.28, 0, 6.284); c.stroke()
   }
 
   for (const [v, colour] of [[visits[0], '#2850dc'], [visits[visits.length - 1], '#dc3214']]) {
@@ -452,16 +1131,58 @@ export function drawRoute(c, route, place, { scale = TILE, width = null, arrowEv
     c.strokeStyle = colour
     c.strokeRect(p[0] - scale * 0.5, p[1] - scale * 0.5, scale, scale)
   }
+  return lines
 }
 
 /**
- * The run's battles, placed on this layout.
+ * Draw the chevrons — the MOVING layer, one call a frame.
  *
- * `route.battles` (src/app/route.py) already carries the tile each fight opened
- * on, its turn span, its kind and — for a trainer — who it was and whether it
- * was won. A battle on a map this layout does not draw (an interior, which
- * lives in its building's popup) is dropped here and drawn there instead.
+ * `now` is seconds; at `now = 0` this is a still picture, which is what a
+ * viewer who has asked for reduced motion gets. Spacing is measured along each
+ * cable's own arc length, so a chevron rounds a corner with the cable instead
+ * of being pinned to a segment end, and a route that doubles back carries two
+ * chevrons pointing opposite ways over the same ground.
+ *
+ * Each chevron takes its colour from the point of the cable it is sitting on,
+ * so it cannot drift away from the wheel underneath it.
  */
+export function drawArrows(c, lines, {
+  scale = TILE, tiles = 1, now = 0,
+  every = ARROW_EVERY_TILES, speed = ARROW_SPEED_TILES,
+  size = ARROW_SIZE, startNoise = ARROW_START_NOISE,
+} = {}) {
+  const gap = every * scale
+  if (!(gap > 0)) return
+  const h = Math.max(3, scale * size), w = Math.max(3, scale * size)
+  c.lineCap = 'round'
+  c.lineJoin = 'round'
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    if (!(line.L > 0)) continue
+    // Half a gap in, so a cable does not carry a chevron sitting exactly on its
+    // own first point — which at `startNoise: 0` would be every cable at once.
+    const from = ((gap * 0.5 + now * speed * scale + noiseFor(i) * gap * startNoise) % gap + gap) % gap
+    for (let d = from; d < line.L; d += gap) {
+      const q = pointAt(line, d)
+      if (!q) continue
+      const back = [q.p[0] - q.d[0] * h, q.p[1] - q.d[1] * h]
+      const ax = back[0] - q.d[1] * w * 0.55, ay = back[1] + q.d[0] * w * 0.55
+      const bx = back[0] + q.d[1] * w * 0.55, by = back[1] - q.d[0] * w * 0.55
+      c.beginPath()
+      c.moveTo(ax, ay)
+      c.lineTo(q.p[0], q.p[1])
+      c.lineTo(bx, by)
+      // Outlined, or a chevron only a little wider than its own cable is
+      // invisible against the artwork.
+      c.lineWidth = Math.max(1, scale * 0.075)
+      c.strokeStyle = 'rgba(12,15,20,.85)'
+      c.stroke()
+      c.lineWidth = Math.max(0.7, scale * 0.045)
+      c.strokeStyle = line.fill ? 'rgb(190,190,255)' : cableColour(q.t, tiles)
+      c.stroke()
+    }
+  }
+}
 export function battlesFor(layout, route, { onlyMap = null } = {}) {
   const out = []
   for (const [i, b] of (route?.battles ?? []).entries()) {

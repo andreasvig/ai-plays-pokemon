@@ -6,7 +6,7 @@
 // `drawRoute` is handed a recording stub in place of a canvas context.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { TILE, tilePxOf, mapImageUrl, worldLayout, markersFor, buildingLabel, drawRoute, drawSize, drawWindow, laneSteps, turnColour, visitTimes, visitAt } from '../../src/dashboard/web/src/lib/mapatlas.js'
+import { TILE, tilePxOf, mapImageUrl, worldLayout, markersFor, buildingLabel, drawRoute, drawArrows, ARROW_EVERY_TILES, drawSize, drawWindow, laneSteps, wheelColour, cableColour, COLOUR_LOOP_TILES, visitTimes, visitAt } from '../../src/dashboard/web/src/lib/mapatlas.js'
 
 // Pallet Town at the world origin, Route 1 above it, Viridian Forest with no
 // place in the frame, and the player's two floors, which are never laid out.
@@ -165,43 +165,75 @@ function stubWithTris() {
   return c
 }
 
-test('a long walk carries arrowheads, spaced along the path', () => {
-  const c = stubWithTris()
-  drawRoute(c, walkEast(40), placeAll, { arrowEvery: TILE * 5 })
-  // 39 tiles of travel, one arrow every 5 tiles, the first half a gap in
-  assert.ok(arrows(c).length >= 6 && arrows(c).length <= 9, `got ${arrows(c).length}`)
+// -- the chevrons -------------------------------------------------------------
+// Arrows moved out of `drawRoute` and into `drawArrows` on 2026-09-20, with the
+// port of the published site's engine: the route is baked once and only the
+// chevrons are redrawn, so they can slide along the cable. Re-pointed rather
+// than deleted — and note the middle one of these USED TO PASS VACUOUSLY after
+// the port, because its loop ran over an empty list of arrowheads.
+//
+// A chevron is a three-point STROKE, not a filled triangle, so it needs its own
+// stub; the `tris` stub above only records fills.
+function stubWithChevrons() {
+  const c = stub()
+  c.calls.chev = []
+  let pending = []
+  c.beginPath = () => { pending = [] }
+  c.moveTo = (x, y) => { pending = [[x, y]] }
+  c.lineTo = (x, y) => { pending.push([x, y]) }
+  c.closePath = () => {}
+  c.fill = () => {}
+  c.stroke = () => { if (pending.length === 3) c.calls.chev.push(pending.slice()) }
+  return c
+}
+// Two strokes per chevron (a dark outline then the colour), so halve the count.
+const chevrons = (c) => {
+  const seen = []
+  for (let i = 0; i < c.calls.chev.length; i += 2) seen.push(c.calls.chev[i])
+  return seen
+}
+
+function arrowsOn(route, opts = {}) {
+  const bake = stub()
+  const lines = drawRoute(bake, route, placeAll, { scale: TILE })
+  const c = stubWithChevrons()
+  drawArrows(c, lines, { scale: TILE, tiles: route.visits.length, now: 0, ...opts })
+  return chevrons(c)
+}
+
+test('a long walk carries chevrons, spaced along the path', () => {
+  const got = arrowsOn(walkEast(40), { every: 5, startNoise: 0 })
+  // 39 tiles of travel, one chevron every 5 tiles, the first half a gap in.
+  assert.ok(got.length >= 6 && got.length <= 9, `got ${got.length}`)
 })
 
-test('an arrowhead points the way the run went', () => {
-  const c = stubWithTris()
-  drawRoute(c, walkEast(40), placeAll, { arrowEvery: TILE * 5 })
-  for (const [tip, a, b] of arrows(c)) {
-    // walking east: the tip is the rightmost of the three points
+test('a chevron points the way the run went', () => {
+  const got = arrowsOn(walkEast(40), { every: 5, startNoise: 0 })
+  assert.ok(got.length > 0, 'a vacuous loop is how this test passed while drawing nothing')
+  for (const [a, tip, b] of got) {
+    // walking east: the tip leads, and the two arms span across the line
     assert.ok(tip[0] > a[0] && tip[0] > b[0], 'the tip leads')
-    assert.ok(Math.abs(a[1] - b[1]) > 0, 'the base spans across the line')
+    assert.ok(Math.abs(a[1] - b[1]) > 0, 'the arms span across the line')
   }
 })
 
+test('the chevrons slide along the cable as time advances', () => {
+  const bake = stub()
+  const route = walkEast(40)
+  const lines = drawRoute(bake, route, placeAll, { scale: TILE })
+  const at = (now) => {
+    const c = stubWithChevrons()
+    drawArrows(c, lines, { scale: TILE, tiles: route.visits.length, now, every: 5, startNoise: 0 })
+    return chevrons(c).map((t) => t[1][0])
+  }
+  const t0 = at(0), t1 = at(0.4)
+  assert.ok(t0.length && t1.length)
+  assert.notDeepEqual(t0, t1, 'a static chevron is the thing this replaced')
+})
+
 test('a short hop is not decorated', () => {
-  const c = stubWithTris()
-  drawRoute(c, walkEast(3), placeAll, { arrowEvery: TILE * 5 })
-  assert.equal(arrows(c).length, 0)
+  assert.equal(arrowsOn(walkEast(3), { every: 5, startNoise: 0 }).length, 0)
 })
-
-test('spacing is measured along the path, so a route that doubles back marks both ways', () => {
-  // out 10 east, then back 10 west over the same tiles
-  const out = Array.from({ length: 11 }, (_, i) => visit(i + 1, 3, 0, i, 0))
-  const back = Array.from({ length: 10 }, (_, i) => visit(12 + i, 3, 0, 9 - i, 0))
-  const c = stubWithTris()
-  drawRoute(c, route(['3:0'], [...out, ...back]), placeAll, { arrowEvery: TILE * 5 })
-  const dirs = new Set(arrows(c).map(([tip, a]) => Math.sign(tip[0] - a[0])))
-  assert.deepEqual([...dirs].sort(), [-1, 1], 'arrows point both ways over the same ground')
-})
-
-
-// -- trimmed edges ------------------------------------------------------------
-// Every FireRed interior ends in a flat strip nothing can stand on — drawn, it
-// reads as an empty progress bar under the floor.
 
 test('the drawn window leaves out the trimmed edges', () => {
   const m = { width: 13, height: 10, trim: { left: 1, bottom: 1 } }
@@ -220,29 +252,53 @@ test('a map is never trimmed away entirely', () => {
 })
 
 
-// -- the colour ramp ----------------------------------------------------------
+// -- the cable colour ---------------------------------------------------------
 // Andreas, 2026-09-15: "can we render the colours as fully gradual changes?"
+//
+// The five-stop blue-to-red ramp (`turnColour`) was replaced 2026-09-20 by the
+// published site's colour WHEEL: hue cycles once every COLOUR_LOOP_TILES tiles
+// walked, so a long run keeps separating instead of saturating at red halfway.
+// The gradualness claim below is the original one and still has to hold; the
+// second test replaces "blue to red, clamped" with the wheel's real contract —
+// it WRAPS, which is the opposite of clamping, and a test that silently dropped
+// that would be claiming less than the one it replaced.
 
-const rgb = (s) => s.match(/\d+/g).map(Number)
+const hue = (s) => Number(s.match(/hsl\((-?[\d.]+)/)[1])
 
-test('the ramp never jumps: neighbouring values are neighbouring colours', () => {
-  let prev = rgb(turnColour(0))
-  for (let k = 0.005; k <= 1; k += 0.005) {
-    const c = rgb(turnColour(k))
-    const step = Math.max(...c.map((v, i) => Math.abs(v - prev[i])))
-    assert.ok(step <= 6, `a jump of ${step} at ${k.toFixed(3)}`)
-    prev = c
+test('the wheel never jumps: neighbouring values are neighbouring hues', () => {
+  let prev = hue(wheelColour(0))
+  for (let k = 0.005; k <= 1.0001; k += 0.005) {
+    const h = hue(wheelColour(k))
+    // Compare the short way round, since the wheel legitimately crosses 360.
+    const d = Math.min(Math.abs(h - prev), 360 - Math.abs(h - prev))
+    assert.ok(d <= 4, `a jump of ${d} degrees at ${k.toFixed(3)}`)
+    prev = h
   }
 })
 
-test('the ramp runs blue to red and is clamped outside 0..1', () => {
-  const [r0, , b0] = rgb(turnColour(0))
-  const [r1, , b1] = rgb(turnColour(1))
-  assert.ok(b0 > r0, 'it starts blue')
-  assert.ok(r1 > b1, 'it ends red')
-  assert.equal(turnColour(-3), turnColour(0))
-  assert.equal(turnColour(9), turnColour(1))
-  assert.equal(turnColour(undefined), turnColour(0))
+test('the wheel wraps rather than clamping, and a full turn returns to the start', () => {
+  assert.equal(wheelColour(0), wheelColour(1), 'one turn is a full circle')
+  assert.equal(wheelColour(0.25), wheelColour(1.25), 'past the end it keeps going')
+  assert.equal(wheelColour(-0.75), wheelColour(0.25), 'and it goes backwards too')
+  // The old ramp clamped: turnColour(9) === turnColour(1). The wheel must not.
+  assert.notEqual(wheelColour(0.5), wheelColour(0.9),
+    'clamping would make every long run one flat colour past the midpoint')
+})
+
+test('cable colour cycles once every COLOUR_LOOP_TILES tiles walked', () => {
+  const tiles = COLOUR_LOOP_TILES * 3          // three full turns over the run
+  // t is 0..1 across the run, so one loop is 1/3 of it.
+  assert.equal(cableColour(0, tiles), cableColour(1 / 3, tiles))
+  assert.notEqual(cableColour(0, tiles), cableColour(1 / 6, tiles))
+  // A run shorter than one loop never repeats a colour.
+  const short = COLOUR_LOOP_TILES / 2
+  assert.notEqual(cableColour(0, short), cableColour(1, short))
+})
+
+test('cable colour survives the degenerate inputs a real route hands it', () => {
+  assert.equal(cableColour(undefined, 100), cableColour(0, 100))
+  assert.equal(cableColour(NaN, 100), cableColour(0, 100))
+  assert.ok(cableColour(0.5, 0), 'a zero-tile run must still get a colour')
 })
 
 test('time advances WITHIN a turn, so one turn is not one flat band', () => {

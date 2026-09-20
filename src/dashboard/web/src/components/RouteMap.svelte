@@ -12,7 +12,7 @@
   // than a corridor gets a marker on its door tile, and the marker opens the
   // building — all its floors — over the map (M10-M12).
   import { fetchRunRoute } from '../lib/api.js'
-  import { tilePxOf, loadAtlas, loadTrainers, loadMapImage, worldLayout, markersFor, battlesFor, drawRoute, drawSize, rampCss, visitAt } from '../lib/mapatlas.js'
+  import { tilePxOf, loadAtlas, loadTrainers, loadMapImage, worldLayout, markersFor, battlesFor, drawRoute, drawArrows, drawSize, wheelColour, COLOUR_LOOP_TILES, visitAt } from '../lib/mapatlas.js'
   import { kindIsKnown, battleAria } from '../lib/battle.js'
   import { latticeAtlas, mergeAtlas, isLattice, drawLattice } from '../lib/lattice.js'
   import InteriorPopup from './InteriorPopup.svelte'
@@ -77,47 +77,78 @@
     return [(p.x + x - ox + 0.5) * TPX, (p.y + y - oy + 0.5) * TPX]
   }
 
-  // Load every image this route needs, then let the draw effect run. Without
-  // the gate the canvas paints once against an empty cache and stays blank.
+  // `loadMapImage` hands back a PROMISE, always — the cache holds one per
+  // game/file. A bake has to be synchronous, so images are resolved into a
+  // plain map here and `ready` is bumped when one lands, which re-bakes.
+  // Reading the promise cache from inside the bake is how the canvas came out
+  // blank the first time this was written.
+  const decoded = new Map()
   $effect(() => {
-    const L = layout
+    const L = layout, g = route?.game
     if (!L) return
-    let live = true
-    Promise.all(Object.values(L.at)
-      .filter((p) => !isLattice(p.m))
-      .map((p) => loadMapImage(route?.game, p.m.file)))
-      .then(() => { if (live) ready += 1 })
-    return () => { live = false }
+    for (const p of Object.values(L.at)) {
+      if (isLattice(p.m)) continue
+      const k = `${g}/${p.m.file}`
+      if (decoded.has(k)) continue
+      decoded.set(k, null)
+      loadMapImage(g, p.m.file).then((img) => { decoded.set(k, img); ready += 1 })
+    }
   })
 
-  $effect(() => {
+  // The static half — artwork, lattice and cables — is baked once into an
+  // offscreen canvas; only the arrows are redrawn per frame. Drawing the whole
+  // route every frame is what the animated chevrons would otherwise cost, and
+  // `solveLanes` alone is memoised-but-not-free.
+  let still = $state(null)
+
+  function bake() {
     const L = layout, r = route, el = canvas
-    ready                                  // redraw once the images are decoded
-    if (!el || !L || !r?.visits?.length) return
+    if (!el || !L || !r?.visits?.length) { still = null; return }
     const dpr = Math.min(2, (typeof devicePixelRatio === 'number' ? devicePixelRatio : 1) || 1)
     el.width = Math.ceil(px * dpr)
     el.height = Math.ceil(py * dpr)
     el.style.width = `${px}px`
     el.style.height = `${py}px`
-    const c = el.getContext('2d')
+    const off = document.createElement('canvas')
+    off.width = el.width
+    off.height = el.height
+    const c = off.getContext('2d')
     c.setTransform(dpr, 0, 0, dpr, 0, 0)
     c.imageSmoothingEnabled = false
-    c.clearRect(0, 0, px, py)
     for (const p of Object.values(L.at)) {
-      if (isLattice(p.m)) {
-        drawLattice(c, p.m, p.x * TPX, p.y * TPX, TPX)
-        continue
-      }
-      loadMapImage(r?.game, p.m.file).then((img) => {
-        if (!img || canvas !== el) return
-        const [dw, dh] = drawSize(p.m)
-        c.drawImage(img, 0, 0, dw * TPX, dh * TPX, p.x * TPX, p.y * TPX, dw * TPX, dh * TPX)
-        // The route is drawn after every image lands, so a slow map cannot
-        // paint over the line that crosses it.
-        drawRoute(c, r, place)
-      })
+      if (isLattice(p.m)) { drawLattice(c, p.m, p.x * TPX, p.y * TPX, TPX); continue }
+      const img = decoded.get(`${r.game}/${p.m.file}`)
+      if (!img) continue
+      const [dw, dh] = drawSize(p.m)
+      c.drawImage(img, 0, 0, dw * TPX, dh * TPX, p.x * TPX, p.y * TPX, dw * TPX, dh * TPX)
     }
-    drawRoute(c, r, place)
+    still = { off, dpr, s: TPX, lines: drawRoute(c, r, place, { scale: TPX }), tiles: r.visits.length }
+  }
+
+  function drawFrame(now) {
+    const el = canvas
+    if (!el || !still) return
+    const c = el.getContext('2d')
+    c.setTransform(1, 0, 0, 1, 0, 0)
+    c.clearRect(0, 0, el.width, el.height)
+    c.drawImage(still.off, 0, 0)
+    c.setTransform(still.dpr, 0, 0, still.dpr, 0, 0)
+    c.imageSmoothingEnabled = false
+    drawArrows(c, still.lines, { scale: still.s, tiles: still.tiles, now })
+  }
+
+  $effect(() => {
+    ready; layout; route; canvas; px; py
+    bake()
+  })
+
+  $effect(() => {
+    if (typeof requestAnimationFrame !== 'function') return
+    let raf = 0
+    let live = true
+    const tick = (now) => { if (!live) return; drawFrame(now); raf = requestAnimationFrame(tick) }
+    raf = requestAnimationFrame(tick)
+    return () => { live = false; cancelAnimationFrame(raf) }
   })
 
   function onmove(e) {
@@ -139,6 +170,8 @@
   const mapName = (key) => effective?.maps?.[key]?.name ?? key
   const drawnOnLattice = $derived(
     !!layout && Object.values(layout.at).every((p) => isLattice(p.m)))
+  const loopCss = () =>
+    `linear-gradient(90deg, ${Array.from({ length: 13 }, (_, i) => wheelColour(i / 12)).join(', ')})`
   const tr = $derived(route?.transitions ?? {})
   const blackouts = $derived(tr.teleport ?? 0)
 </script>
@@ -192,8 +225,8 @@
       </div>
     </div>
     <figcaption>
-      <span class="ramp" aria-hidden="true" style={`background:${rampCss()}`}></span>
-      <span class="faint">first turn → last</span>
+      <span class="ramp" aria-hidden="true" style={`background:${loopCss()}`}></span>
+      <span class="faint">colour turns once every {COLOUR_LOOP_TILES} tiles walked</span>
       <span class="dot">·</span>
       <b>{route.visits.length.toLocaleString()}</b> tiles stood on across <b>{layout.outdoor + layout.insets + layout.interiors.length}</b> maps
       {#if tr.step}<span class="dot">·</span><b>{tr.step.toLocaleString()}</b> steps{/if}
