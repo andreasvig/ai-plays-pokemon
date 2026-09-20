@@ -405,15 +405,15 @@ def test_routes_503_when_unconfigured():
 # These pin the edge behaviour that replaced it.
 
 
-def test_casual_enqueue_without_config_gets_config_5_1(client):
-    """The defaulted config is config-5.1 (since 2026-09-08), and all three default sites agree.
+def test_casual_enqueue_without_config_gets_config_6_0(client):
+    """The defaulted config is config-6.0 (since 2026-09-20), and all three default sites agree.
 
     Renamed + strengthened 2026-09-07. The old assertion was
     ``== list_configs()[-1]``, which is self-referential: it proved the route
     and the catalog agree, but would have passed unchanged whichever config was
     last — so it could not witness the flip at all. Now it names the value AND
     ties the route to ``src.config.default_config_stem()``, the one prose
-    source, so a future 5.1 has to move both together.
+    source, so a future default has to move both together.
     """
     from src.app.catalog import list_configs
     from src.config import default_config_stem
@@ -421,8 +421,8 @@ def test_casual_enqueue_without_config_gets_config_5_1(client):
     tc = client["tc"]
     r = tc.post("/api/queue", json={"kind": "casual", "model": _some_alias()})
     assert r.status_code == 201
-    assert r.json()["config"] == "config-5.1"
-    assert list_configs()[-1] == "config-5.1" == default_config_stem()
+    assert r.json()["config"] == "config-6.0"
+    assert list_configs()[-1] == "config-6.0" == default_config_stem()
 
 
 def test_casual_enqueue_with_unknown_config_is_rejected(client):

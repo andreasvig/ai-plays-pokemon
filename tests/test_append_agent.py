@@ -226,19 +226,21 @@ def test_stream_assembly_retains_encrypted_data_and_calls():
         assembly.add({"choices": [{"delta": {"reasoning_details": [{"data": "no identity"}]}}]})
 
 
-def test_config_5_1_is_the_default_config(config):
-    """The append harness IS the default (2026-09-07 flip), and since 2026-09-08
-    the highest of its configs is config-5.1 (plain output, self_grade false).
+def test_config_6_0_is_the_default_config(config):
+    """The default is the highest config-X.Y, and since 2026-09-20 that is
+    config-6.0 — the SkyEmu backend, renamed from config-v2-firered at Andreas's
+    instruction so the dashboard queue can list it.
 
-    The ordinary "highest config-X.Y" rule picks it with no special case, so
-    all three default sites have to agree on it — and config-5.0 must still be
-    listed, because it is the frozen official config and legacy runs continue on it.
+    The ordinary "highest config-X.Y" rule picks it with no special case, so all
+    three default sites have to agree — and both config-5.x files must still be
+    listed, because 5.1 is the frozen official config and legacy runs continue
+    on 5.0.
     """
     assert "config-5.0" in list_configs() and "config-5.1" in list_configs()
-    assert list_configs()[-1] == "config-5.1"
-    assert find_latest_config().name == "config-5.1.yaml"
+    assert list_configs()[-1] == "config-6.0"
+    assert find_latest_config().name == "config-6.0.yaml"
     # The one prose site allowed to NAME the default, so nothing else has to.
-    assert default_config_stem() == "config-5.1"
+    assert default_config_stem() == "config-6.0"
     # config-append must not be resurrected by a stray copy of the old file.
     assert "config-append" not in list_configs()
     assert "memory_updates" not in config["system_prompt"]
@@ -984,24 +986,37 @@ def test_short_turn_cap_warns_that_the_run_will_never_compact(config, capsys):
     assert legacy_logger.events == []
 
 
-def test_official_config_is_config_5_1_and_the_casual_default_matches():
-    """One constant for official, one rule for casual — and since 2026-09-08 they
-    deliberately name DIFFERENT files: official stays on the frozen config-5.0
-    while casual runs default to config-5.1, which Andreas is prompt-engineering.
+def test_official_config_is_pinned_to_the_leaderboard_prefix_and_casual_has_left_it():
+    """One CONSTANT for official, one RULE for casual — and since 2026-09-20 they
+    name files from different major versions. Official stays frozen on
+    config-5.1; casual defaults to config-6.0, the SkyEmu backend.
 
-    Both must be config-5.x, or the leaderboard's config-5.x partition would
-    split from the runs actually being queued. The official path additionally
-    has to be the append harness, or the partition would rank nothing.
+    The invariant that actually protects the board is not that the two match —
+    it never was, they deliberately differed before too (5.0 official vs 5.1
+    casual). It is that OFFICIAL_CONFIG still starts with
+    LEADERBOARD_CONFIG_PREFIX, because `Run.is_ranked` requires an OFFICIAL run
+    AND that prefix. A casual default outside the prefix ranks nothing and
+    breaks nothing; promoting 6.0 to official would need the prefix moved
+    deliberately and the board reset, which `models.py` says in as many words.
+
+    This test therefore asserts the divergence EXPLICITLY rather than being
+    quietly re-pointed at whatever the two happen to be: the day they are both
+    6.x again, that has to be a deliberate edit here.
     """
     import re as _re
     from pathlib import Path as _Path
 
     from src.app.executor import OFFICIAL_CONFIG
+    from src.app.models import LEADERBOARD_CONFIG_PREFIX
 
     stem = _Path(OFFICIAL_CONFIG).stem
     assert stem == "config-5.1"  # promoted from 5.0 on 2026-09-09 (Andreas: "promote 5.1 to be official")
-    assert default_config_stem() == list_configs()[-1] == "config-5.1"
-    assert _re.fullmatch(r"config-5\.\d+", stem) and _re.fullmatch(r"config-5\.\d+", default_config_stem())
+    assert stem.startswith(LEADERBOARD_CONFIG_PREFIX), "official must be rankable"
+    assert default_config_stem() == list_configs()[-1] == "config-6.0"
+    assert not default_config_stem().startswith(LEADERBOARD_CONFIG_PREFIX), (
+        "the casual default has deliberately left the ranked partition; if this "
+        "fails, decide whether the board is moving with it")
+    assert _re.fullmatch(r"config-5\.\d+", stem)
     official = load_config(str(ROOT / OFFICIAL_CONFIG), llm_alias="gpt-6-astra(medium)")
     assert official["agent_type"] == "append_compact"
     # No referee block is AUTHORED in the official config — the executor injects

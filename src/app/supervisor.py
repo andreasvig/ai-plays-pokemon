@@ -251,7 +251,7 @@ class AppSupervisor:
             f"backend {backend!r} cannot hold a {console} cartridge "
             f"({Path(rom_path).name}); it holds: {can}. "
             f"Launch the control center on a config whose emulator.type can — "
-            f"configs/config-v2-firered.yaml is the SkyEmu one, and SkyEmu holds "
+            f"configs/config-6.0.yaml is the SkyEmu one, and SkyEmu holds "
             f"every console this registry declares."
         )
 

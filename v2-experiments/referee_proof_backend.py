@@ -59,7 +59,7 @@ class Logger:
 
 
 def _config(rom: Path, port: int, stage: Path) -> dict:
-    """config-v2-firered's emulator block, inlined so this script does not
+    """config-6.0's emulator block, inlined so this script does not
     depend on a YAML that a later phase may re-tune."""
     return {
         "emulator": {

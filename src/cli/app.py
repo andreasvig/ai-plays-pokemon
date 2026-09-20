@@ -347,7 +347,7 @@ def _build_supervisor_config(config_path: str | None = None) -> dict:
     and therefore ``emulator.type: mgba``. That is only the right default while
     the control center is the v1 one. **The whole of what makes it a SkyEmu
     control center is passing a config whose ``emulator.type`` is skyemu**
-    (``configs/config-v2-firered.yaml``) — there is no second switch, because the
+    (``configs/config-6.0.yaml``) — there is no second switch, because the
     supervisor takes its backend from this config and ``run_prepare_phase``
     already forks on it.
 
@@ -389,7 +389,7 @@ def main() -> None:
         help=(
             "Config whose emulator block the supervisor launches from. Default: "
             "the latest numbered config, which is mGBA. Pass "
-            "configs/config-v2-firered.yaml for the SkyEmu (v2) control center — "
+            "configs/config-6.0.yaml for the SkyEmu (v2) control center — "
             "that is the only thing that makes it one, and it is what lets the "
             "queue play the GB and NDS games at all (mGBA cannot hold those). "
             "The agent half of the config is not used here; each run brings its "
@@ -465,7 +465,7 @@ def main() -> None:
             f"ERROR: {rom.name} is a {rom.console} cartridge and the "
             f"{backend!r} backend holds only {holds}.\n"
             f"  Launch with a SkyEmu config, which holds every console:\n"
-            f"    pokemon app --config configs/config-v2-firered.yaml "
+            f"    pokemon app --config configs/config-6.0.yaml "
             f"--rom {rom.id}"
         )
 
