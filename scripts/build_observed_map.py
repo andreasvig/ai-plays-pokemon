@@ -71,7 +71,15 @@ def draw_map(g: ObservedGraph, map_key: tuple) -> Image.Image:
     x0, y0, x1, y1 = g.bounds(map_key)
     w, h = (x1 - x0 + 1), (y1 - y0 + 1)
     label = f"{':'.join(str(v) for v in map_key)}  {len([1 for t in g.visits if t[0] == map_key])} tiles"
-    text_w = int(ImageDraw.Draw(Image.new("RGB", (1, 1))).textlength(label, font=F_LABEL))
+    caption = f"x {x0}-{x1}  y {y0}-{y1}"
+    # BOTH strings, not just the title. Measuring only the title clipped the
+    # axis caption on any narrow panel — Black's map 317 is one tile wide and
+    # read "y 716-", losing the number that says how far the corridor runs.
+    # The caption is the wider of the two whenever coordinates are global, so
+    # on the DS games it is the one that sets the panel width.
+    probe = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    text_w = int(max(probe.textlength(label, font=F_LABEL),
+                     probe.textlength(caption, font=F_SUB)))
     img = Image.new("RGB", (max(w * CELL, text_w) + 2 * PAD, h * CELL + 2 * PAD + 14), BG)
     d = ImageDraw.Draw(img)
 
@@ -123,7 +131,7 @@ def draw_map(g: ObservedGraph, map_key: tuple) -> Image.Image:
 
     label = f"{':'.join(str(v) for v in map_key)}  {len([1 for t in g.visits if t[0] == map_key])} tiles"
     d.text((PAD, 7), label, fill=INK, font=F_LABEL)
-    d.text((PAD, PAD + h * CELL + 6), f"x {x0}-{x1}  y {y0}-{y1}", fill=FAINT, font=F_SUB)
+    d.text((PAD, PAD + h * CELL + 6), caption, fill=FAINT, font=F_SUB)
     return img
 
 
