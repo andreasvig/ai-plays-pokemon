@@ -104,7 +104,8 @@ def decode_samples(rows: list[tuple[str, list[bytes]]], key: Optional[int] = Non
     for i, (name, samples) in enumerate(rows):
         d: dict[str, Any] = {"i": i, "input": name, "map_group": None, "map_num": None,
                              "map_id": None, "x": None, "y": None,
-                             "in_battle": None, "battles_total": None}
+                             "in_battle": None, "battles_total": None,
+                             "foe_species": None}
         if contract is not None:
             for key_, f in (("x", contract.x), ("y", contract.y),
                             ("map_group", contract.map_group), ("map_num", contract.map_num),
@@ -114,7 +115,16 @@ def decode_samples(rows: list[tuple[str, list[bytes]]], key: Optional[int] = Non
             if contract.battle_flag is not None:
                 raw = contract.battle_flag.read(samples)
                 if raw is not None:
-                    d["in_battle"] = bool(raw & contract.battle_mask)
+                    masked = raw & contract.battle_mask
+                    d["in_battle"] = (masked == contract.battle_value
+                                      if contract.battle_value is not None
+                                      else bool(masked))
+                if contract.foe_species is not None and d["in_battle"]:
+                    # Gated on the flag, never reported bare: outside a battle
+                    # this field holds the PREVIOUS opponent, so an ungated read
+                    # would put the last fight's species on the tile of the next
+                    # one. Measured on Platinum, three overworld states deep.
+                    d["foe_species"] = contract.foe_species.read(samples)
             else:
                 # No flag located on this cartridge. Treating every press as an
                 # overworld press is the assumption that CANNOT corrupt

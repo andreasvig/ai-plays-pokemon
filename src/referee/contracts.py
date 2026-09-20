@@ -134,6 +134,20 @@ class GameMemory:
     #: mask is 0x02. Writing 1 here instead reads the wrong bit and reports
     #: "not in battle" forever, which looks exactly like a game with no battles.
     battle_mask: int = 0x02
+    #: When set, the flag means IN BATTLE iff ``(raw & battle_mask) ==
+    #: battle_value``. When None, the older rule applies: non-zero after
+    #: masking. Platinum needs the equality: its signal is the id of the
+    #: running application (16 = the battle overlay) and the overworld reads
+    #: FS_OVERLAY_ID_NONE = 0xffffffff, which ANDs NON-ZERO against every mask
+    #: — so a mask test reports "in battle" forever, which is the silent
+    #: battle_mask failure wearing a third costume. An id is an identity, and
+    #: identities are compared, not masked.
+    battle_value: Optional[int] = None
+    #: The opponent's species id, read only WHILE the flag says a battle is
+    #: running. Outside one the field holds the PREVIOUS opponent — measured on
+    #: Platinum, where three overworld states each read the species of the
+    #: battle that had just ended — so it is gated rather than reported stale.
+    foe_species: Optional[Field] = None
     #: The game's own battle counter, XOR-encrypted with a key the referee reads
     #: separately. FireRed-only; the decoder skips it without a key.
     battles_total: Optional[Field] = None
@@ -355,19 +369,61 @@ CRYSTAL = GameMemory(
 # current one, so it is left out.
 _PLATINUM_LOCATION = 0x0227F408
 
+# The battle signal, and it is not a bit or a mode byte — it is the id of the
+# running APPLICATION. pret's FieldSystem is located without a pointer chase:
+# exactly one word in all 4 MB holds _PLATINUM_LOCATION, at 0x0229f96c, and the
+# decomp puts `Location *location` at FieldSystem+0x1c, so FieldSystem is at
+# 0x0229f950 and its whole field order then matches the dump. The running
+# sub-application's ApplicationManager hangs off processManager->child, and its
+# template.overlayID is 16 for the battle overlay and FS_OVERLAY_ID_NONE
+# (0xffffffff) in the field.
+#
+# Verified both directions: 10 labelled battle states from 3 runs plus a live
+# 37-press battle, against ~280 overworld samples, 100% separating. The boundary
+# was read off SCREENSHOTS, not turn numbers — from a wild Starly fight, 46 A
+# presses, and all three signals flip at exactly step 36 ("CHIMCHAR gained 24
+# Exp. Points!") to 37 (the route). A map transition out of Rowan's lab
+# (422 -> 418) does NOT move it, so a warp is not a false positive.
+#
+# Untested negative class, stated plainly: no full-screen field menu (bag,
+# Pokedex, party) was tested, because the harness cannot open one — SKYEMU_BUTTON
+# has no X, and DPPt opens the field menu with X. The overlay id is the variant
+# that is robust to that BY CONSTRUCTION: a bag would read its own overlay
+# number, not 16. That is why the id is wired rather than the cheaper
+# "a sub-application is running" word next to it.
+_PLATINUM_OVERLAY = 0x022A647C
+_PLATINUM_BATTLE_OVERLAY = 16
+
+# battleMons[1].species — the OPPONENT's slot; battleMons[0] reads 390
+# (Chimchar, the player's starter) in every battle, which independently
+# confirms sizeof(BattleMon) = 0xc0 from the decomp. Exactly one u16 in 2M
+# slots matched the on-screen species across 20 samples and 4 species (Starly
+# 396, Kricketot 401, Bidoof 399, Piplup 393), and the decomp's level and
+# curHP/maxHP at the same base match all 10 screenshots. STALE outside a
+# battle, so the decoder gates it on the flag.
+_PLATINUM_FOE_SPECIES = 0x022C57EC
+
 PLATINUM = GameMemory(
     game="platinum-us",
     console="NDS",
-    spec=(f"{_PLATINUM_LOCATION:#x}:16",),
+    spec=(f"{_PLATINUM_LOCATION:#x}:16",
+          f"{_PLATINUM_OVERLAY:#x}:4", f"{_PLATINUM_FOE_SPECIES:#x}:2"),
     map_id=Field(0, 0, "<i"),
     x=Field(0, 8, "<i"),
     y=Field(0, 12, "<i"),
+    battle_flag=Field(1, 0, "<i"),
+    battle_mask=0xFFFFFFFF,
+    battle_value=_PLATINUM_BATTLE_OVERLAY,
+    foe_species=Field(2, 0, "<H"),
     notes=(
         "pret/pokeplatinum struct Location at 0x0227f408: mapHeaderID +0, "
         "warpId +4, x +8, z +12, faceDirection +16, all s32. The map key is a "
-        "single id, not a (group, number) pair. No battle flag located, so the "
-        "input census is off; the field Location survives a battle unchanged, "
-        "which is what lets the walk graph work without one."
+        "single id, not a (group, number) pair. The battle signal is an "
+        "APPLICATION ID compared for equality (16 = the battle overlay), not a "
+        "bit or a mode byte, so battle_value carries it. The field Location "
+        "survives a battle unchanged, which is what let the walk graph work "
+        "before the flag existed. foe_species is the opponent's dex number, "
+        "gated on the flag because it holds the previous opponent otherwise."
     ),
 )
 

@@ -89,6 +89,10 @@ BATTLE_STATE = {
     "emerald": [f"{_RUNS % 'emerald'}/savepoints/turn_160/emulator.state"],
     "crystal": [f"{_RUNS % 'crystal'}/savepoints/turn_140/emulator.state",   # wild
                 f"{_RUNS % 'crystal'}/savepoints/turn_200/emulator.state"],  # trainer
+    # Wild Starly, confirmed by eye: the overlay reads 16 and the species field
+    # reads 396. Its neighbours at turns 140 and 300 are the overworld control.
+    "platinum": ["local/runs/2026-09-20_00-17-45_config-v2-platinum__"
+                 "gemini-3-8-flash-minimal/savepoints/turn_100/emulator.state"],
 }
 
 

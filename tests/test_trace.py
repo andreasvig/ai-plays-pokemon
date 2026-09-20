@@ -34,7 +34,7 @@ def test_spec_names_the_three_ranges_the_bridge_samples():
 def test_decode_reads_tile_bit_and_counter_and_tolerates_missing_ranges():
     rows = [row("R", 5, 7, in_battle=False, total=3), ("A", [b"", b"", b""]), ("U", [pos(6, 7)])]
     out = trace.decode_samples(rows, KEY, FIRERED)
-    assert out[0] == {"i": 0, "input": "R", "map_group": 3, "map_num": 0, "map_id": None, "x": 5, "y": 7, "in_battle": False, "battles_total": 3}
+    assert out[0] == {"i": 0, "input": "R", "map_group": 3, "map_num": 0, "map_id": None, "x": 5, "y": 7, "in_battle": False, "battles_total": 3, "foe_species": None}
     assert out[1]["x"] is None and out[1]["in_battle"] is None and out[1]["battles_total"] is None
     assert out[2]["x"] == 6 and out[2]["in_battle"] is None
     assert trace.decode_samples(rows, None, FIRERED)[0]["battles_total"] is None  # no key → no counter

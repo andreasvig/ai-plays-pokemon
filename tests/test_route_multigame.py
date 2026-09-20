@@ -63,14 +63,14 @@ def sample(i, inp, x, y, group=3, num=0, battle=False, total=None):
     """
     return {"i": i, "input": inp, "map_group": group, "map_num": num,
             "map_id": None, "x": x, "y": y,
-            "in_battle": battle, "battles_total": total}
+            "in_battle": battle, "battles_total": total, "foe_species": None}
 
 
 def ds_sample(i, inp, x, y, map_id, battle=False):
     """A gen 4/5 sample: ONE map id, and no (group, number) pair at all."""
     return {"i": i, "input": inp, "map_group": None, "map_num": None,
             "map_id": map_id, "x": x, "y": y,
-            "in_battle": battle, "battles_total": None}
+            "in_battle": battle, "battles_total": None, "foe_species": None}
 
 
 def pre_contract_sample(i, inp, x, y, group=3, num=0, battle=False, total=0):
@@ -125,11 +125,28 @@ def test_the_fixtures_are_the_shape_each_decoder_emits():
     assert gen3 == sample(0, "D", 6, 9, group=0, num=9)
 
     # pret/pokeplatinum struct Location: mapHeaderID, warpId, x, z — the bedroom
-    # state, which reads sPlayerStartLocation field for field.
-    gen4 = trace.decode_samples(
-        [("D", [struct.pack("<iiii", 415, -1, 4, 6)])], None, PLATINUM)[0]
+    # state, which reads sPlayerStartLocation field for field. THREE ranges,
+    # because Platinum's spec grew an overlay id and a species on 2026-09-20:
+    # a row carrying only the first made the flag read None, which is the
+    # fixture failing to speak the producer's contract rather than a defect.
+    def platinum_row(overlay: int, species: int, loc=(415, -1, 4, 6)):
+        return ("D", [struct.pack("<iiii", *loc),
+                      struct.pack("<i", overlay), struct.pack("<H", species)])
+
+    gen4 = trace.decode_samples([platinum_row(-1, 0)], None, PLATINUM)[0]
     assert gen4.keys() == ds_sample(0, "D", 4, 6, 415).keys()
     assert gen4 == ds_sample(0, "D", 4, 6, 415)
+
+    # The overlay id is compared, not masked: FS_OVERLAY_ID_NONE is 0xffffffff,
+    # which is non-zero under every mask, so a mask test would report a battle
+    # in the overworld forever. And the species is GATED on the flag, because
+    # outside a battle the field holds the PREVIOUS opponent.
+    assert gen4["in_battle"] is False and gen4["foe_species"] is None
+    fighting = trace.decode_samples([platinum_row(16, 396)], None, PLATINUM)[0]
+    assert fighting["in_battle"] is True and fighting["foe_species"] == 396
+    stale = trace.decode_samples([platinum_row(-1, 396)], None, PLATINUM)[0]
+    assert stale["in_battle"] is False and stale["foe_species"] is None, (
+        "a species read outside a battle is the last fight's, not this tile's")
 
     centre = struct.pack("<IiiI", 427, (47 << 16) | 0x8000, 1, (764 << 16) | 0x8000)
     gen5 = trace.decode_samples([("R", [centre])], None, BLACK2)[0]
@@ -518,7 +535,14 @@ def test_a_run_with_neither_referee_events_nor_a_battle_flag_lists_no_battles():
     """Four of the seven contracts locate no battle flag at all, so their
     decoder writes ``in_battle`` False on every sample. That must produce an
     empty list — no battles OBSERVED — and not a crash or a phantom segment."""
-    assert PLATINUM.battle_flag is None and PLATINUM.census_ok is False
+    # Chosen, not hardcoded. This named PLATINUM until 2026-09-20, when
+    # Platinum got a flag and a test about "a contract with no flag" went red
+    # for a reason that had nothing to do with it — the same trap as
+    # a_contractless_rom() in tests/test_observed.py.
+    flagless = next((c for c in CONTRACTS.values() if c.battle_flag is None), None)
+    if flagless is None:
+        pytest.skip("every contract has a battle flag now — nothing left to be blind")
+    assert flagless.census_ok is False
     r = route.build_route([trace_event(1, [ds_sample(0, "D", 4, 6, 411),
                                            ds_sample(1, "D", 4, 7, 411)])], None)
     assert r["battles"] == []
@@ -572,7 +596,7 @@ def test_a_torn_read_is_still_recognised_as_its_own_contracts():
     fields all came back None still carries the ``map_id`` KEY, so it is ours
     and is refused nothing. A value test would have thrown the turn away."""
     torn = {"i": 0, "input": "D", "map_group": None, "map_num": None, "map_id": None,
-            "x": None, "y": None, "in_battle": None, "battles_total": None}
+            "x": None, "y": None, "in_battle": None, "battles_total": None, "foe_species": None}
     assert FIRERED.wrote(torn) is True and PLATINUM.wrote(torn) is True
     assert route._sample_tile(torn) is None    # and it still contributes no tile
 

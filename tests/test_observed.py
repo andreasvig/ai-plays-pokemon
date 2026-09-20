@@ -42,14 +42,14 @@ def sample(i, inp, x, y, group=3, num=0, battle=False, total=0):
     """One Gen 2/3 sample, keyed exactly as ``trace.decode_samples`` leaves it."""
     return {"i": i, "input": inp, "map_group": group, "map_num": num,
             "map_id": None, "x": x, "y": y,
-            "in_battle": battle, "battles_total": total}
+            "in_battle": battle, "battles_total": total, "foe_species": None}
 
 
 def ds_sample(i, inp, x, y, map_id):
     """A Gen 4/5 sample: one map id, no (group, number) pair."""
     return {"i": i, "input": inp, "map_group": None, "map_num": None,
             "map_id": map_id, "x": x, "y": y,
-            "in_battle": False, "battles_total": None}
+            "in_battle": False, "battles_total": None, "foe_species": None}
 
 
 def torn(i, inp, x, y):
@@ -57,7 +57,7 @@ def torn(i, inp, x, y):
     test_a_short_sample_loses_one_field_not_the_whole_turn`: the coordinates
     arrived and the map bytes did not."""
     return {"i": i, "input": inp, "map_group": None, "map_num": None,
-            "map_id": None, "x": x, "y": y, "in_battle": False, "battles_total": None}
+            "map_id": None, "x": x, "y": y, "in_battle": False, "battles_total": None, "foe_species": None}
 
 
 def graph_of(*runs):
