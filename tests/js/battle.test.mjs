@@ -106,3 +106,22 @@ test('won/lost are honoured even when the kind is unknown', () => {
   assert.deepEqual(battleVerdict(traced({ won: true }), OUTCOME), { text: 'won', tone: 'win' })
   assert.deepEqual(battleVerdict(traced({ won: false }), OUTCOME), { text: 'lost', tone: 'loss' })
 })
+
+test('an unfinished fight is not an unmeasured one', () => {
+  // The two reasons a card has no outcome are different sentences. Before
+  // 2026-09-20 there was one: the run predates the read. The first Emerald run
+  // to carry a real card hit the other — it reached its 60-turn cap mid-fight,
+  // so `closed_turn` is null and there was no close for the game to write a
+  // result at. Saying "this run predates the read" there is simply false.
+  const cut = { kind: 'wild', opened_turn: 57, closed_turn: null, turns: 2,
+                foe: { species: 288, level: 2 } }
+  assert.match(battleNote(cut), /ended before this fight did/)
+  assert.doesNotMatch(battleNote(cut), /predates/)
+
+  // and the old case still reads the old way
+  const old = { kind: 'wild', opened_turn: 30, closed_turn: 33, turns: 3 }
+  assert.match(battleNote(old), /predates the read/)
+
+  // a fight that DID close and was measured says nothing at all
+  assert.equal(battleNote({ kind: 'wild', opened_turn: 30, closed_turn: 33, outcome: 'ran' }), '')
+})

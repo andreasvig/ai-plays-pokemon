@@ -73,6 +73,15 @@ export function battleVerdict(battle, outcomeWords) {
  * larger gap — that one gets its own line.
  */
 export function battleNote(battle) {
+  // A fight with no outcome has TWO possible reasons and they are not the same
+  // sentence. Since 2026-09-20 the outcome is read off the trace on both gen-3
+  // cartridges, so "this run predates the read" became a claim that is false
+  // for a live run — and the first Emerald run to carry a real card hit exactly
+  // the other case: it reached its turn cap mid-fight, so `closed_turn` is null
+  // and there was no close for the game to write a result at.
+  if (battle?.closed_turn == null && battle?.opened_turn != null) {
+    return 'the run ended before this fight did, so the game never wrote a result'
+  }
   if (battle?.kind === 'wild' && !battle?.outcome) {
     return 'won, ran or caught all look the same here: this run predates the read that tells them apart'
   }
