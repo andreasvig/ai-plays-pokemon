@@ -1,8 +1,9 @@
-// The map atlas: the FireRed artwork the route is drawn on.
+// The map atlas: the artwork a route is drawn on, one namespace per game.
 //
 // `scripts/render_gamemaps.py` renders one PNG per map from pret's own
-// tilesets at the game's 16 px per tile and writes `public/maps/index.json`
-// beside them (artifacts/game-map-render/plan.md M1-M3). Vite copies `public/`
+// tilesets at the game's 16 px per tile and writes
+// `public/maps/<game>/index.json` beside them (artifacts/game-map-render/plan.md
+// M1-M3). Vite copies `public/`
 // to the bundle root, so the files sit at BASE + 'maps/...' on the published
 // site exactly as they do locally — the same path the vendor logos use.
 //
@@ -12,10 +13,21 @@
 // drawn by the same code as one across Route 1.
 import { BASE } from './static.js'
 
-/** The game's pixels per tile. The atlas asserts it against the walk graph. */
-export const TILE = 16
+// Everything below is keyed on a `game` — the `configs/roms.yaml` key, which
+// `route.json` has carried since ROUTE_VERSION 3. It has to be: FireRed's map
+// `3:0` is Pallet Town and Emerald's `3:0` is somewhere else, and route.py and
+// observed.py both refuse that collision server-side. The browser used to have
+// no equivalent refusal — one global atlas, one global trainer index, and an
+// image cache keyed on the BARE FILENAME, so two games' `3-0.png` were one
+// entry and whichever loaded first won.
 
-export const mapImageUrl = (file) => `${BASE}maps/${file}`
+/** Fallback pixels per tile. Prefer the atlas's own `tile_px`: a DS render is
+ *  not obliged to be 16, and both the atlas and route.json have always carried
+ *  the number while nothing read it. */
+export const TILE = 16
+export const tilePxOf = (atlas, route) => atlas?.tile_px ?? route?.tile_px ?? TILE
+
+export const mapImageUrl = (game, file) => `${BASE}maps/${game}/${file}`
 
 /**
  * The part of a map worth drawing, in tiles: `{x, y, w, h}`.
@@ -45,48 +57,67 @@ export const drawSize = (m) => [
   Math.max(1, (m?.height ?? 1) - (m?.trim?.bottom ?? 0)),
 ]
 
-let trainersPromise = null
+const trainersPromises = new Map()
 /** `{version, pret_sha, trainers: {"<id>": {label, name, class, pic, party}}}`.
  *  Extracted from pret by scripts/extract_trainers.py: a trainer's roster is a
  *  constant of the ROM, so every run already published gets a full hover card
- *  from the trainer id the referee has stored since 2026-09-14 (M16). */
-export function loadTrainers() {
-  if (!trainersPromise) {
-    trainersPromise = fetch(`${BASE}trainers/index.json`, { cache: 'no-cache' })
+ *  from the trainer id the referee has stored since 2026-09-14 (M16).
+ *  Per game, for the same reason the atlas is: trainer 4 is a different person
+ *  on every cartridge. */
+export function loadTrainers(game) {
+  if (!game) return Promise.resolve(null)
+  if (!trainersPromises.has(game)) {
+    trainersPromises.set(game, fetch(`${BASE}trainers/${game}/index.json`, { cache: 'no-cache' })
       .then((r) => (r.ok ? r.json() : null))
-      .catch(() => null)
+      .catch(() => null))
   }
-  return trainersPromise
+  return trainersPromises.get(game)
 }
 
-export const trainerSpriteUrl = (pic) => `${BASE}trainers/${pic}`
+export const trainerSpriteUrl = (game, pic) => `${BASE}trainers/${game}/${pic}`
 
-let atlasPromise = null
-/** `{version, tile_px, pret_sha, maps: {"g:m": {...}}}`, fetched once per page. */
-export function loadAtlas() {
-  if (!atlasPromise) {
-    atlasPromise = fetch(`${BASE}maps/index.json`, { cache: 'no-cache' })
+const atlasPromises = new Map()
+/** `{schema, game, tile_px, source, maps: {"a:b": {...}}}` for one game.
+ *  A null `game` resolves to null rather than guessing a cartridge — that is
+ *  what makes a route with no game render on the lattice instead of on somebody
+ *  else's artwork. */
+export function loadAtlas(game) {
+  if (!game) return Promise.resolve(null)
+  if (!atlasPromises.has(game)) {
+    atlasPromises.set(game, fetch(`${BASE}maps/${game}/index.json`, { cache: 'no-cache' })
       .then((r) => (r.ok ? r.json() : null))
-      .catch(() => null)
+      // The atlas must SAY it is this game's. Two reasons, and the second is
+      // the one that matters: the dev server answers an unknown path with the
+      // SPA's index.html at status 200, so a game with no atlas yet returns
+      // HTML rather than a 404 — today that only fails safe because the catch
+      // below swallows the JSON parse error. And an atlas that announces a
+      // different game is the cross-cartridge collision route.py and
+      // observed.py both refuse server-side; the browser had no equivalent.
+      .then((d) => (d && d.maps && (!d.game || d.game === game) ? d : null))
+      .catch(() => null))
   }
-  return atlasPromise
+  return atlasPromises.get(game)
 }
 
-/** Tests and the dev harness swap the fetch and drop the memo. */
-export function _resetAtlas() { atlasPromise = null; trainersPromise = null }
+/** Tests and the dev harness swap the fetch and drop the memos. */
+export function _resetAtlas() { atlasPromises.clear(); trainersPromises.clear(); imgCache.clear() }
 
 const imgCache = new Map()
-/** One decoded map image, cached across components and popups. */
-export function loadMapImage(file) {
-  if (!imgCache.has(file)) {
-    imgCache.set(file, new Promise((resolve) => {
+/** One decoded map image, cached across components and popups.
+ *  Keyed `game/file`, not `file`: the bare filename made FireRed's `3-0.png`
+ *  and Emerald's the same cache entry, so fixing only the URL would still have
+ *  handed Emerald a picture of Pallet Town. */
+export function loadMapImage(game, file) {
+  const key = `${game}/${file}`
+  if (!imgCache.has(key)) {
+    imgCache.set(key, new Promise((resolve) => {
       const img = new Image()
       img.onload = () => resolve(img)
       img.onerror = () => resolve(null)
-      img.src = mapImageUrl(file)
+      img.src = mapImageUrl(game, file)
     }))
   }
-  return imgCache.get(file)
+  return imgCache.get(key)
 }
 
 /**
@@ -145,12 +176,18 @@ const INSET_GAP = 3       // tiles between the world and a map with no place in 
  * first-badge region that is Viridian Forest alone — is drawn beside the world
  * (M12: it is a route, too big and too central to hide behind a marker).
  * INTERIORS are not laid out at all: they live in their building's popup (M10).
+ *
+ * Indoor-ness comes from the normalised `indoor` boolean the atlas writer sets,
+ * NOT from the raw `type` string. `type` is `MAP_TYPE_INDOOR`, a pret gen-3
+ * constant that no other source emits — pokecrystal, pokeplatinum and the DS
+ * rips have no such field — so branching on it silently classified every map of
+ * every other game as outdoor.
  */
 export function worldLayout(route, atlas) {
   if (!route?.maps || !atlas?.maps) return null
   const entries = Object.keys(route.maps)
     .map((k) => [k, atlas.maps[k]])
-    .filter(([, m]) => m && m.type !== 'MAP_TYPE_INDOOR')
+    .filter(([, m]) => m && m.indoor !== true)
   const outdoor = entries.filter(([, m]) => Array.isArray(m.world))
   const insets = entries.filter(([, m]) => !Array.isArray(m.world))
   if (!outdoor.length && !insets.length) return null
@@ -185,7 +222,7 @@ export function worldLayout(route, atlas) {
     h: Math.max(worldH, bottom, 1),
     outdoor: outdoor.length,
     insets: insets.length,
-    interiors: Object.keys(route.maps).filter((k) => atlas.maps[k]?.type === 'MAP_TYPE_INDOOR'),
+    interiors: Object.keys(route.maps).filter((k) => atlas.maps[k]?.indoor === true),
   }
 }
 

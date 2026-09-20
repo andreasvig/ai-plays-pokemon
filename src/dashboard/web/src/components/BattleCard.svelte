@@ -23,7 +23,7 @@
   import { trainerSpriteUrl } from '../lib/mapatlas.js'
   import { battleTitle, battleSubtitle, battleVerdict, battleNote } from '../lib/battle.js'
 
-  let { battle, trainers = null } = $props()
+  let { battle, trainers = null, game = null } = $props()
 
   const t = $derived(battle?.trainer_id != null ? trainers?.trainers?.[String(battle.trainer_id)] ?? null : null)
   const span = $derived(battle.closed_turn != null && battle.opened_turn != null
@@ -54,7 +54,7 @@
 
 <div class="card" class:trainer={battle.kind === 'trainer'}>
   <div class="head">
-    {#if t?.pic}<img src={trainerSpriteUrl(t.pic)} alt="" width="48" height="48" />{/if}
+    {#if t?.pic && game}<img src={trainerSpriteUrl(game, t.pic)} alt="" width="48" height="48" />{/if}
     <div class="who">
       <b>{title}</b>
       {#if subtitle}<span class="sub">{subtitle}</span>{/if}

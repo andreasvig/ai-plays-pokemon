@@ -13,6 +13,7 @@
   import { TILE, loadMapImage, drawRoute, drawWindow, visitAt, battlesFor } from '../lib/mapatlas.js'
   import BattleCard from './BattleCard.svelte'
   import { kindIsKnown, battleAria } from '../lib/battle.js'
+  import { isLattice, drawLattice } from '../lib/lattice.js'
 
   let { building, route, atlas, trainers = null, onturn = null, onclose = () => {} } = $props()
 
@@ -44,10 +45,15 @@
     c.setTransform(dpr, 0, 0, dpr, 0, 0)
     c.imageSmoothingEnabled = false
     const place = tilePlacer(key, win)
-    loadMapImage(m.file).then((img) => {
-      if (img) c.drawImage(img, win.x * TILE, win.y * TILE, w, h, 0, 0, w, h)
+    if (isLattice(m)) {
+      drawLattice(c, { width: win.w, height: win.h }, 0, 0, TILE)
       drawRoute(c, route, place)
-    })
+    } else {
+      loadMapImage(route?.game, m.file).then((img) => {
+        if (img) c.drawImage(img, win.x * TILE, win.y * TILE, w, h, 0, 0, w, h)
+        drawRoute(c, route, place)
+      })
+    }
     return {}
   }
 
@@ -125,7 +131,7 @@
        something still loading (Andreas, 2026-09-15). Out of the flow, it
        neither moves the dialog nor shows when there is nothing to say. -->
   {#if openBattle}
-    <div class="bcard"><BattleCard battle={openBattle} {trainers} /></div>
+    <div class="bcard"><BattleCard battle={openBattle} {trainers} game={route?.game ?? null} /></div>
   {/if}
   </div>
 </div>

@@ -1,4 +1,4 @@
-"""The committed trainer atlas (src/dashboard/web/public/trainers/index.json).
+"""The committed trainer atlas (src/dashboard/web/public/trainers/<game>/index.json).
 
 Generated offline by scripts/extract_trainers.py from pret at the pinned SHA and
 committed, so the battle hover cards are fixed until someone regenerates it.
@@ -17,7 +17,9 @@ import pytest
 from src.referee.battles import TRAINER_NAMES
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-INDEX = REPO_ROOT / "src" / "dashboard" / "web" / "public" / "trainers" / "index.json"
+# Per game since 2026-09-20: trainer 4 is a different person on every
+# cartridge, so the sprite namespace is split exactly as the map one is.
+INDEX = REPO_ROOT / "src" / "dashboard" / "web" / "public" / "trainers" / "firered-us" / "index.json"
 
 
 @pytest.fixture(scope="module")

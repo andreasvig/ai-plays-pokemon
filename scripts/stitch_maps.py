@@ -36,7 +36,7 @@ from src.app.stitch import (  # noqa: E402
     to_native, window_origin,
 )
 
-MAPS_DIR = REPO_ROOT / "src" / "dashboard" / "web" / "public" / "maps"
+MAPS_DIR = REPO_ROOT / "src" / "dashboard" / "web" / "public" / "maps" / "firered-us"
 OUT_DIR = REPO_ROOT / "local" / "stitched"
 TOLERANCE = 1          # 8-bit values either side of a 5-bit GBA colour
 

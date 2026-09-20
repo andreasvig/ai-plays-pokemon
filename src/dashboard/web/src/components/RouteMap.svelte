@@ -12,8 +12,9 @@
   // than a corridor gets a marker on its door tile, and the marker opens the
   // building — all its floors — over the map (M10-M12).
   import { fetchRunRoute } from '../lib/api.js'
-  import { TILE, loadAtlas, loadTrainers, loadMapImage, worldLayout, markersFor, battlesFor, drawRoute, drawSize, rampCss, visitAt } from '../lib/mapatlas.js'
+  import { tilePxOf, loadAtlas, loadTrainers, loadMapImage, worldLayout, markersFor, battlesFor, drawRoute, drawSize, rampCss, visitAt } from '../lib/mapatlas.js'
   import { kindIsKnown, battleAria } from '../lib/battle.js'
+  import { latticeAtlas, mergeAtlas, isLattice, drawLattice } from '../lib/lattice.js'
   import InteriorPopup from './InteriorPopup.svelte'
   import BattleCard from './BattleCard.svelte'
 
@@ -36,24 +37,36 @@
     route = null
     if (!id) return
     loading = true
-    Promise.all([fetchRunRoute(id), loadAtlas(), loadTrainers()])
-      .then(([r, a, t]) => { route = r; atlas = a; trainers = t })
+    fetchRunRoute(id)
+      .then((r) => {
+        route = r
+        // The atlas is per game and the route is the only thing that says which
+        // game this is (ROUTE_VERSION 3). A route with no game gets no atlas and
+        // draws on the lattice, rather than on some other cartridge's artwork.
+        const g = r?.game ?? null
+        return Promise.all([loadAtlas(g), loadTrainers(g)])
+      })
+      .then((pair) => { if (pair) { atlas = pair[0]; trainers = pair[1] } })
       .finally(() => { loading = false })
   })
 
-  const layout = $derived(worldLayout(route, atlas))
-  const markers = $derived(layout && route && atlas ? markersFor(layout, route, atlas) : [])
+  // Artwork over lattice, per MAP: a partly-rendered game draws its finished
+  // maps as pictures and the rest as grids, in one frame.
+  const effective = $derived(mergeAtlas(atlas, latticeAtlas(route)))
+  const TPX = $derived(tilePxOf(effective, route))
+  const layout = $derived(worldLayout(route, effective))
+  const markers = $derived(layout && route && effective ? markersFor(layout, route, effective) : [])
   // Fights on the maps this canvas draws. One inside a building is drawn in
   // that building's popup instead, where its tile actually is.
   const battles = $derived(layout && route ? battlesFor(layout, route) : [])
   let openBattle = $state(null)
-  const px = $derived(layout ? layout.w * TILE : 0)
-  const py = $derived(layout ? layout.h * TILE : 0)
+  const px = $derived(layout ? layout.w * TPX : 0)
+  const py = $derived(layout ? layout.h * TPX : 0)
 
   /** Tile → canvas pixel centre; null for a map this canvas does not draw. */
   function place(g, m, x, y) {
     const p = layout?.at[`${g}:${m}`]
-    return p ? [(p.x + x + 0.5) * TILE, (p.y + y + 0.5) * TILE] : null
+    return p ? [(p.x + x + 0.5) * TPX, (p.y + y + 0.5) * TPX] : null
   }
 
   // Load every image this route needs, then let the draw effect run. Without
@@ -62,7 +75,9 @@
     const L = layout
     if (!L) return
     let live = true
-    Promise.all(Object.values(L.at).map((p) => loadMapImage(p.m.file)))
+    Promise.all(Object.values(L.at)
+      .filter((p) => !isLattice(p.m))
+      .map((p) => loadMapImage(route?.game, p.m.file)))
       .then(() => { if (live) ready += 1 })
     return () => { live = false }
   })
@@ -81,10 +96,14 @@
     c.imageSmoothingEnabled = false
     c.clearRect(0, 0, px, py)
     for (const p of Object.values(L.at)) {
-      loadMapImage(p.m.file).then((img) => {
+      if (isLattice(p.m)) {
+        drawLattice(c, p.m, p.x * TPX, p.y * TPX, TPX)
+        continue
+      }
+      loadMapImage(r?.game, p.m.file).then((img) => {
         if (!img || canvas !== el) return
         const [dw, dh] = drawSize(p.m)
-        c.drawImage(img, 0, 0, dw * TILE, dh * TILE, p.x * TILE, p.y * TILE, dw * TILE, dh * TILE)
+        c.drawImage(img, 0, 0, dw * TPX, dh * TPX, p.x * TPX, p.y * TPX, dw * TPX, dh * TPX)
         // The route is drawn after every image lands, so a slow map cannot
         // paint over the line that crosses it.
         drawRoute(c, r, place)
@@ -96,7 +115,7 @@
   function onmove(e) {
     const rect = e.currentTarget.getBoundingClientRect()
     const x = e.clientX - rect.left, y = e.clientY - rect.top
-    const v = visitAt(route, place, x, y, TILE)
+    const v = visitAt(route, place, x, y, TPX)
     // Flip the readout near an edge: the frame scrolls, so a tooltip hanging
     // past the canvas grows the scroll area and puts a scrollbar across the
     // panel (2026-09-15).
@@ -109,7 +128,9 @@
     if (onturn && hover) onturn(hover.turn)
   }
 
-  const mapName = (key) => atlas?.maps?.[key]?.name ?? key
+  const mapName = (key) => effective?.maps?.[key]?.name ?? key
+  const drawnOnLattice = $derived(
+    !!layout && Object.values(layout.at).every((p) => isLattice(p.m)))
   const tr = $derived(route?.transitions ?? {})
   const blackouts = $derived(tr.teleport ?? 0)
 </script>
@@ -122,10 +143,12 @@
       <div class="stage" style={`width:${px}px;height:${py}px`}>
         <canvas bind:this={canvas} class:clickable={!!onturn}
           onmousemove={onmove} onmouseleave={() => (hover = null)} onclick={onclick}
-          aria-label="Every tile this run stood on, on the FireRed map"></canvas>
+          aria-label={drawnOnLattice
+            ? 'Every tile this run stood on, on a coordinate grid'
+            : 'Every tile this run stood on, on the game\'s own map'}></canvas>
         {#each markers as m (m.key)}
           <button class="marker" class:entered={m.entered}
-            style={`left:${(m.tile.x + 0.5) * TILE}px;top:${(m.tile.y + 0.5) * TILE}px`}
+            style={`left:${(m.tile.x + 0.5) * TPX}px;top:${(m.tile.y + 0.5) * TPX}px`}
             title={`${m.name}${m.entered ? '' : ' — never went in'}`}
             onclick={(e) => { e.stopPropagation(); openBuilding = m }}>
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2 15 8h-2v6H3V8H1z" /></svg>
@@ -134,7 +157,7 @@
         {/each}
         {#each battles as b (b.id)}
           <button class="fight" class:trainer={b.kind === 'trainer'} class:unknown={!kindIsKnown(b)}
-            style={`left:${(b.tile.x + 0.5) * TILE}px;top:${(b.tile.y + 0.5) * TILE}px`}
+            style={`left:${(b.tile.x + 0.5) * TPX}px;top:${(b.tile.y + 0.5) * TPX}px`}
             onmouseenter={() => (openBattle = b)} onfocus={() => (openBattle = b)}
             onmouseleave={() => (openBattle = null)} onblur={() => (openBattle = null)}
             onclick={(e) => { e.stopPropagation(); if (onturn) onturn(b.opened_turn) }}>
@@ -143,9 +166,9 @@
           {#if openBattle?.id === b.id}
             <!-- The panel scrolls and clips, so a fight near the top of the map
                  gets its card BELOW the dot rather than off the frame. -->
-            <div class="bcard" class:below={b.tile.y * TILE < 170}
-              style={`left:${(b.tile.x + 0.5) * TILE}px;top:${(b.tile.y + (b.tile.y * TILE < 170 ? 1 : -0.5)) * TILE}px`}>
-              <BattleCard battle={b} {trainers} />
+            <div class="bcard" class:below={b.tile.y * TPX < 170}
+              style={`left:${(b.tile.x + 0.5) * TPX}px;top:${(b.tile.y + (b.tile.y * TPX < 170 ? 1 : -0.5)) * TPX}px`}>
+              <BattleCard battle={b} {trainers} game={route?.game ?? null} />
             </div>
           {/if}
         {/each}
@@ -173,6 +196,14 @@
       {#if route.battles?.length}<span class="dot">·</span><b>{route.battles.length}</b> battle{route.battles.length === 1 ? '' : 's'}{/if}
     </figcaption>
   </figure>
+  {#if drawnOnLattice}
+    <p class="note faint">
+      No artwork for this game yet, so the route is drawn on its coordinate lattice: the grid is the
+      tile space the run was measured in, not the ground. Every tile, door and battle below is real —
+      only the picture underneath is missing. The rectangle is the extent the run covered, which is a
+      lower bound on the map's real size.
+    </p>
+  {:else}
   <p class="note faint">
       The artwork is the game's own, drawn from pret's tilesets at 16 px a tile. It is terrain only:
       NPCs, items and cuttable trees are object events that move, so a route that dead-ends at a tree
@@ -185,9 +216,25 @@
       {#if battles.length}A dot marks a battle where it started — filled for a trainer, hollow for a
       wild one, dashed grey where the game records that a battle happened but not which kind.{/if}
   </p>
-  {#if openBuilding}
-    <InteriorPopup building={openBuilding} {route} {atlas} {trainers} {onturn} onclose={() => (openBuilding = null)} />
   {/if}
+  {#if openBuilding}
+    <InteriorPopup building={openBuilding} {route} atlas={effective} {trainers} {onturn} onclose={() => (openBuilding = null)} />
+  {/if}
+{:else if route}
+  <!-- The run has a route file but nothing placeable in it. Before 2026-09-20
+       this branch did not exist and the section rendered as an empty frame, on
+       six of the seven games, with no error. Saying which of the two reasons it
+       is matters: one is fixable by a new run, the other never. -->
+  <p class="faint small">
+    {#if route.visits?.length}
+      This run walked {route.visits.length.toLocaleString()} tiles, but none of its maps can be placed.
+    {:else}
+      This run recorded no positions. Its cartridge had no memory contract when it was played, and a
+      trace is decoded at record time — so this run can never show a map, though a new one will.
+    {/if}
+  </p>
+{:else}
+  <p class="faint small">This run has no per-input trace, so there is no route to draw.</p>
 {/if}
 
 <style>

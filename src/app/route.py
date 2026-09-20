@@ -6,7 +6,12 @@ Plan: ``artifacts/route-fidelity/plan.md`` (2026-09-15). The source of truth is
 the referee's per-turn ``referee_position`` polls. Nothing is written at run
 time beyond those two events; this module reads them back and orders them.
 
-Route dict (``ROUTE_VERSION`` 2):
+Route dict (``ROUTE_VERSION`` 3):
+- ``game`` — the ``configs/roms.yaml`` key of the cartridge this route came
+  from, or None when the run does not name one. Added in version 3, because a
+  route carries nothing else that says which game it is and the browser has to
+  pick the right map artwork: FireRed's ``3:0`` is Pallet Town and Emerald's is
+  somewhere else entirely. None means "do not draw this on anyone's artwork".
 - ``visits`` — ``[turn, i, map_group, map_num, x, y, in_battle]`` per tile the
   player stood on, in order; ``i`` is the input index the sample followed or
   ``POLL`` (−1) for the referee's poll after the turn's last input. Consecutive
@@ -54,7 +59,7 @@ from src.referee.battles import BattleTracker, TRAINER_NAMES
 from src.referee.trace import MAX_TILES_PER_INPUT
 from src.referee.walkgraph import DEFAULT_GRAPH_PATH, WalkGraph
 
-ROUTE_VERSION = 2
+ROUTE_VERSION = 3
 POLL = -1
 Tile = tuple[int, int, int, int]
 ROUTE_EVENT_TYPES = ("turn_input_trace", "referee_position", "referee_battle_state")
@@ -212,7 +217,7 @@ def shortest_path(graph: WalkGraph, a: int, b: int) -> Optional[list[int]]:
 
 
 def build_route(events: Iterable[dict], graph: Optional[WalkGraph],
-                contract: Any = None) -> Optional[dict[str, Any]]:
+                contract: Any = None, game: Optional[str] = None) -> Optional[dict[str, Any]]:
     """Order the trace samples and polls into one route. None when the run has
     no per-input trace at all (runs before 2026-09-14): a poll-only route would
     be a 10-tile-a-turn sketch, not a route, and the board must not draw it.
@@ -222,6 +227,7 @@ def build_route(events: Iterable[dict], graph: Optional[WalkGraph],
     map is refused, which is the right default for a caller that does not know
     the game and for the six contracts that declare none."""
     invalid = frozenset(getattr(contract, "invalid_maps", ()) or ())
+    game = game or getattr(contract, "game", None)
     per_turn: dict[int, dict[str, Any]] = {}
     for e in events:
         turn = e.get("turn")
@@ -298,6 +304,7 @@ def build_route(events: Iterable[dict], graph: Optional[WalkGraph],
     total = sum(1 for t in per_turn if t > 0)
     return {
         "version": ROUTE_VERSION,
+        "game": game,
         "graph_source": graph.meta.get("source") if graph is not None else None,
         "tile_px": (graph.meta.get("tile_px") if graph is not None else None) or 16,
         "visits": visits,
@@ -462,24 +469,31 @@ def load_route(run_dir: Path, graph: Optional[WalkGraph] = None) -> Optional[dic
     run_dir = Path(run_dir)
     if not wrote_by_its_own_contract(run_dir):
         return None
+    game, contract = _game_and_contract(run_dir)
     return build_route(iter_route_events(run_dir),
                        graph_for_run(run_dir) if graph is None else graph,
-                       _contract_for_run(run_dir))
+                       contract, game)
 
 
-def _contract_for_run(run_dir: Path) -> Any:
-    """This run's cartridge contract, or None when the game cannot be named.
+def _game_and_contract(run_dir: Path) -> tuple[Optional[str], Any]:
+    """This run's ``roms.yaml`` game key and its contract, either possibly None.
 
-    Only ``invalid_maps`` is read from it. None is the safe answer: it refuses
-    no map, which is what every contract but Crystal's declares anyway.
+    One lookup for both, because the contract is keyed on exactly that string.
+    None for the game is honest and load-bearing: a route that cannot name its
+    cartridge must not be drawn on some other cartridge's artwork, and the
+    browser now picks its atlas by this field.
     """
     from src.app.observed import run_game
     from src.referee.contracts import contract_for
 
     try:
-        return contract_for(run_game(Path(run_dir)))
+        game = run_game(Path(run_dir))
     except Exception:
-        return None
+        return None, None
+    try:
+        return game, contract_for(game)
+    except Exception:
+        return game, None
 
 
 def wrote_by_its_own_contract(run_dir: Path) -> bool:

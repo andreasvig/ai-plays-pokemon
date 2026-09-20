@@ -58,7 +58,7 @@ sys.path.insert(0, str(REPO_ROOT))
 # frames there; one frame, one map here.
 from src.app.stitch import fit_colour_map  # noqa: E402
 
-MAPS_DIR = REPO_ROOT / "src" / "dashboard" / "web" / "public" / "maps"
+MAPS_DIR = REPO_ROOT / "src" / "dashboard" / "web" / "public" / "maps" / "firered-us"
 GBA_W, GBA_H = 240, 160
 TILE = 16
 # The camera puts the player at column 7 and half-way down row 4 — the offset

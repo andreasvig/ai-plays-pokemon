@@ -43,7 +43,10 @@ sys.path.insert(0, str(REPO_ROOT))
 from scripts.render_gamemaps import CACHE, fetch, pinned_sha  # noqa: E402
 from src.referee.battles import TRAINER_NAMES  # noqa: E402
 
-OUT_DIR = REPO_ROOT / "src" / "dashboard" / "web" / "public" / "trainers"
+#: One directory per game, matching the map atlas: a trainer id means
+#: nothing without the cartridge it was read from.
+GAME = "firered-us"
+OUT_DIR = REPO_ROOT / "src" / "dashboard" / "web" / "public" / "trainers" / GAME
 
 SPECIES_IDS = "include/constants/species.h"
 OPPONENTS = "include/constants/opponents.h"

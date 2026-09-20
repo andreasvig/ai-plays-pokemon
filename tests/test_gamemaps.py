@@ -19,8 +19,16 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-ATLAS = REPO_ROOT / "src" / "dashboard" / "web" / "public" / "maps" / "index.json"
+# The atlas is per game (schema 2, 2026-09-20): `public/maps/<game>/index.json`.
+# It was one flat namespace holding one game, which is why FireRed's `3-0.png`
+# and Emerald's would have been the same file.
+MAPS_ROOT = REPO_ROOT / "src" / "dashboard" / "web" / "public" / "maps"
+ATLAS = MAPS_ROOT / "firered-us" / "index.json"
 GRAPH = REPO_ROOT / "data" / "firered-walkgraph.json"
+
+
+def _atlases() -> list[Path]:
+    return sorted(MAPS_ROOT.glob("*/index.json"))
 
 
 @pytest.fixture(scope="module")
@@ -34,15 +42,64 @@ def graph() -> dict:
 
 
 def test_the_atlas_covers_every_map_the_graph_knows(atlas, graph):
+    """Exact equality, still — but against THIS game's graph.
+
+    It used to compare the one global atlas against the one committed walk
+    graph, which breaks the moment a second game exists. Weakening it to a
+    subset check would have been the easy migration and the wrong one: an atlas
+    missing a map the graph knows is a map that renders as a hole.
+    """
     assert set(atlas["maps"]) == set(graph["maps"])
+
+
+def test_every_atlas_names_its_own_game_and_that_game_owns_its_directory(atlas):
+    """The namespacing invariant. Two games' `3-0.png` are different pictures,
+    and nothing but the directory keeps them apart."""
+    for path in _atlases():
+        d = json.loads(path.read_text())
+        assert d.get("schema") == 2, f"{path} predates the per-game atlas"
+        assert d["game"] == path.parent.name, f"{path} claims to be {d['game']}"
+
+
+def test_no_map_image_is_shared_between_two_games(atlas):
+    """A file in two atlases would be one entry in the browser's image cache,
+    which is exactly the bug the per-game key was added to stop."""
+    seen: dict[str, str] = {}
+    for path in _atlases():
+        game = path.parent.name
+        for key, m in json.loads(path.read_text())["maps"].items():
+            f = m.get("file")
+            if not f:
+                continue
+            full = f"{game}/{f}"
+            assert full not in seen, f"{full} is claimed by {seen[full]} too"
+            seen[full] = f"{game}:{key}"
+
+
+def test_every_map_declares_whether_it_is_indoors(atlas):
+    """`indoor` is a normalised boolean because `MAP_TYPE_INDOOR` is a pret
+    gen-3 string no other source emits — branching on it classified every map of
+    every other game as outdoor."""
+    for path in _atlases():
+        for key, m in json.loads(path.read_text())["maps"].items():
+            assert isinstance(m.get("indoor"), bool), f"{path.parent.name}:{key} has no indoor flag"
 
 
 def test_the_atlas_and_the_graph_were_built_from_the_same_pret_tree(atlas, graph):
     # A map image one tile out from the geometry drawn on it is invisible until
     # a route lands in a wall, so the two must name the same source.
-    assert atlas["pret_sha"] in str(graph.get("source"))
-    assert atlas["graph_version"] == graph["version"]
+    assert atlas["source"]["sha"] in str(graph.get("source"))
+    assert atlas["walkgraph"]["version"] == graph["version"]
     assert atlas["tile_px"] == graph["tile_px"]
+
+
+def test_every_atlas_pins_a_real_commit_not_a_floating_branch():
+    """`pinned_sha()` falls back to "master" when the cache marker is missing,
+    which makes the recorded provenance unverifiable. A 40-hex sha or nothing."""
+    import re
+    for path in _atlases():
+        sha = (json.loads(path.read_text()).get("source") or {}).get("sha")
+        assert sha and re.fullmatch(r"[0-9a-f]{40}", sha), f"{path} pins {sha!r}"
 
 
 def test_every_map_image_exists_and_matches_its_declared_size(atlas):
@@ -100,7 +157,7 @@ def test_a_door_points_at_an_indoor_map_on_its_own_outdoor_map(atlas):
         for d in m.get("doors", []):
             assert m.get("type") != "MAP_TYPE_INDOOR", key
             assert 0 <= d["x"] < m["width"] and 0 <= d["y"] < m["height"], (key, d)
-            assert atlas["maps"][d["to"]]["type"] == "MAP_TYPE_INDOOR", d
+            assert atlas["maps"][d["to"]]["indoor"] is True, d
 
 
 def test_a_multi_floor_building_lists_all_its_floors_in_order(atlas):

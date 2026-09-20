@@ -4,7 +4,7 @@
     venv/bin/python scripts/render_gamemaps.py --only PalletTown
     venv/bin/python scripts/render_gamemaps.py --offline        # cache only, no network
 
-Output: ``src/dashboard/web/public/maps/<group>-<num>.png`` at the game's own
+Output: ``src/dashboard/web/public/maps/<game>/<group>-<num>.png`` at the game's own
 16 px per tile, plus ``index.json`` carrying the pret SHA and the walk-graph
 version so a map image and the geometry drawn on it cannot silently disagree
 (artifacts/game-map-render/plan.md M1-M3).
@@ -80,7 +80,10 @@ sys.path.insert(0, str(REPO_ROOT))
 PRET = "pret/pokefirered"
 CACHE = REPO_ROOT / "local" / "pret-cache"
 GRAPH = REPO_ROOT / "data" / "firered-walkgraph.json"
-OUT_DIR = REPO_ROOT / "src" / "dashboard" / "web" / "public" / "maps"
+#: One directory per game (schema 2, 2026-09-20). It was a single flat dir,
+#: so a second game's 3-0.png would have overwritten FireRed's Pallet Town.
+GAME = "firered-us"
+OUT_DIR = REPO_ROOT / "src" / "dashboard" / "web" / "public" / "maps" / GAME
 
 TILE_PX = 8
 METATILE_TILES = 2          # 2x2 tiles per layer
@@ -427,11 +430,16 @@ def main() -> int:
         walkable = {(n[2], n[3]) for n in graph["nodes"] if f"{n[0]}:{n[1]}" == key}
         trim = empty_edges(img, walkable)
         entry = {"name": name, "width": w, "height": h, "file": fname,
-                 "bytes": (args.out / fname).stat().st_size, "type": mj.get("map_type")}
+                 "bytes": (args.out / fname).stat().st_size, "type": mj.get("map_type"),
+                 # NORMALISED, because MAP_TYPE_INDOOR is a pret gen-3 constant
+                 # and the viewer must not branch on a string only this
+                 # generation emits. `type` stays as raw provenance.
+                 "indoor": mj.get("map_type") == MAP_TYPE_INDOOR}
         if any(trim.values()):
             entry["trim"] = {k: v for k, v in trim.items() if v}
         if isinstance(m.get("world"), list):
             entry["world"] = m["world"]
+            entry["frame"] = "kanto"
         if mj.get("map_type") == MAP_TYPE_INDOOR:
             b = building_of(name)
             entry["building"] = b
@@ -444,12 +452,21 @@ def main() -> int:
         print(f"{name:42s} {w:3d}x{h:<3d} {entry['bytes'] // 1024:4d} KB")
 
     if not args.only:
+        # Schema 2 (2026-09-20): the atlas names its own game, because there is
+        # now one per game and a route picks its atlas by that key.
+        if not ref or len(ref) != 40:
+            raise SystemExit(
+                f"refusing to write an atlas pinned to {ref!r}: provenance must be a full commit "
+                "sha, and pinned_sha() falls back to 'master' when local/pret-cache/SHA is absent")
         (args.out / "index.json").write_text(json.dumps({
-            "version": 1,
+            "schema": 2,
+            "game": GAME,
+            "key_shape": "pair",
             "tile_px": 16,
-            "graph_source": graph.get("source"),
-            "graph_version": graph.get("version"),
-            "pret_sha": ref,
+            "camera": "topdown",
+            "source": {"kind": "decomp", "repo": PRET, "sha": ref},
+            "walkgraph": {"version": graph.get("version"), "source": graph.get("source")},
+            "bytes": sum(e["bytes"] for e in index.values()),
             "maps": index,
         }, indent=1) + "\n")
     total = sum(e["bytes"] for e in index.values())

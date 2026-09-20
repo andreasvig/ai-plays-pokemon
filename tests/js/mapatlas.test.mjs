@@ -6,22 +6,22 @@
 // `drawRoute` is handed a recording stub in place of a canvas context.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { TILE, worldLayout, markersFor, buildingLabel, drawRoute, drawSize, drawWindow, laneSteps, turnColour, visitTimes, visitAt } from '../../src/dashboard/web/src/lib/mapatlas.js'
+import { TILE, tilePxOf, mapImageUrl, worldLayout, markersFor, buildingLabel, drawRoute, drawSize, drawWindow, laneSteps, turnColour, visitTimes, visitAt } from '../../src/dashboard/web/src/lib/mapatlas.js'
 
 // Pallet Town at the world origin, Route 1 above it, Viridian Forest with no
 // place in the frame, and the player's two floors, which are never laid out.
 const ATLAS = {
   maps: {
-    '3:0': { name: 'PalletTown', width: 24, height: 20, world: [0, 0], type: 'MAP_TYPE_TOWN', file: '3-0.png',
+    '3:0': { name: 'PalletTown', width: 24, height: 20, world: [0, 0], type: 'MAP_TYPE_TOWN', indoor: false, file: '3-0.png',
              doors: [{ x: 6, y: 7, to: '4:0', building: 'PalletTown_PlayersHouse' },
                      { x: 15, y: 7, to: '4:2', building: 'PalletTown_RivalsHouse' }] },
-    '3:19': { name: 'Route1', width: 24, height: 40, world: [0, -40], type: 'MAP_TYPE_ROUTE', file: '3-19.png' },
-    '1:0': { name: 'ViridianForest', width: 54, height: 69, type: 'MAP_TYPE_ROUTE', file: '1-0.png' },
-    '4:0': { name: 'PalletTown_PlayersHouse_1F', width: 13, height: 10, type: 'MAP_TYPE_INDOOR', file: '4-0.png',
+    '3:19': { name: 'Route1', width: 24, height: 40, world: [0, -40], type: 'MAP_TYPE_ROUTE', indoor: false, file: '3-19.png' },
+    '1:0': { name: 'ViridianForest', width: 54, height: 69, type: 'MAP_TYPE_ROUTE', indoor: false, file: '1-0.png' },
+    '4:0': { name: 'PalletTown_PlayersHouse_1F', width: 13, height: 10, type: 'MAP_TYPE_INDOOR', indoor: true, file: '4-0.png',
              building: 'PalletTown_PlayersHouse', floors: ['4:0', '4:1'] },
-    '4:1': { name: 'PalletTown_PlayersHouse_2F', width: 12, height: 9, type: 'MAP_TYPE_INDOOR', file: '4-1.png',
+    '4:1': { name: 'PalletTown_PlayersHouse_2F', width: 12, height: 9, type: 'MAP_TYPE_INDOOR', indoor: true, file: '4-1.png',
              building: 'PalletTown_PlayersHouse', floors: ['4:0', '4:1'] },
-    '4:2': { name: 'PalletTown_RivalsHouse', width: 13, height: 10, type: 'MAP_TYPE_INDOOR', file: '4-2.png',
+    '4:2': { name: 'PalletTown_RivalsHouse', width: 13, height: 10, type: 'MAP_TYPE_INDOOR', indoor: true, file: '4-2.png',
              building: 'PalletTown_RivalsHouse', floors: ['4:2'] },
   },
 }
@@ -318,4 +318,58 @@ test('two passes are actually drawn apart, not on top of each other', () => {
     .filter(([a, b]) => Math.min(a[0], b[0]) < TILE && Math.max(a[0], b[0]) > TILE)
     .map(([a]) => Math.round(a[1])))
   assert.ok(ys.size >= 2, `both passes share one y: ${[...ys]}`)
+})
+
+
+// --- schema 2: the atlas is per game, and indoor-ness is a normalised flag ---
+//
+// Added 2026-09-20. `worldLayout` used to branch on the string 'MAP_TYPE_INDOOR',
+// a pret gen-3 constant that pokecrystal, pokeplatinum and the DS rips do not
+// emit at all — so every map of every other game fell through as outdoor.
+// A rename-only refactor passes the tests above; these are the ones it fails.
+
+// A DS atlas: single-id keys padded to the wire encoding, NO `type` anywhere,
+// and a shared global frame, which is how gen 4/5 outdoor coordinates really
+// arrive (Platinum maps 342/343/418 tile into one plane).
+const DS_ATLAS = {
+  schema: 2, game: 'platinum-us', key_shape: 'id', tile_px: 16,
+  maps: {
+    '342:0': { name: 'Route201', width: 48, height: 24, indoor: false, frame: 'global', world: [112, 840], file: '342-0.png' },
+    '418:0': { name: 'SandgemTown', width: 32, height: 32, indoor: false, frame: 'global', world: [160, 832], file: '418-0.png' },
+    '422:0': { name: 'SandgemLab', width: 12, height: 16, indoor: true, file: '422-0.png' },
+  },
+}
+
+test('a DS atlas with no map_type at all still separates indoor from outdoor', () => {
+  const L = worldLayout(route(['342:0', '418:0', '422:0']), DS_ATLAS)
+  assert.equal(L.outdoor, 2, 'both outdoor zones belong in the world frame')
+  assert.equal(L.at['422:0'], undefined, 'the lab is an interior and is not laid out')
+  assert.deepEqual(L.interiors, ['422:0'])
+})
+
+test('an entry marked indoor is excluded even when it carries no type', () => {
+  const atlas = { maps: { '9:0': { width: 4, height: 4, indoor: true } } }
+  assert.equal(worldLayout(route(['9:0']), atlas), null)
+})
+
+test('an entry with a type but no indoor flag is not treated as indoor', () => {
+  // The inverse control. A source that emits `type` and no `indoor` must not
+  // have its interiors silently guessed from the old string.
+  const atlas = { maps: { '9:0': { width: 4, height: 4, type: 'MAP_TYPE_INDOOR', world: [0, 0] } } }
+  const L = worldLayout(route(['9:0']), atlas)
+  assert.notEqual(L, null, 'indoor-ness must come from the normalised flag, not the raw string')
+  assert.equal(L.outdoor, 1)
+})
+
+test('two games with the same map key get different image URLs', () => {
+  // The collision route.py and observed.py both refuse server-side, and which
+  // the browser had no defence against: one flat `maps/` namespace.
+  assert.notEqual(mapImageUrl('firered-us', '3-0.png'), mapImageUrl('emerald-us', '3-0.png'))
+  assert.match(mapImageUrl('platinum-us', '418-0.png'), /maps\/platinum-us\/418-0\.png$/)
+})
+
+test('the tile size comes from the atlas, then the route, then 16', () => {
+  assert.equal(tilePxOf({ tile_px: 24 }, { tile_px: 16 }), 24)
+  assert.equal(tilePxOf(null, { tile_px: 32 }), 32)
+  assert.equal(tilePxOf(null, null), TILE)
 })
