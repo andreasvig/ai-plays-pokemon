@@ -1,0 +1,285 @@
+{
+ "schema": 2,
+ "game": "emerald-us",
+ "key_shape": "pair",
+ "tile_px": 16,
+ "camera": "topdown",
+ "source": {
+  "kind": "decomp",
+  "repo": "pret/pokeemerald",
+  "sha": "5eff78649e7170a877b961ef0b3da13b81a16038"
+ },
+ "walkgraph": {
+  "version": null,
+  "source": null
+ },
+ "map_set": {
+  "kind": "observed",
+  "source": "artifacts/game-map-render/observed/emerald-us-observed.json",
+  "note": "maps our runs entered; trim omitted (no walkable-tile set)"
+ },
+ "bytes": 394399,
+ "maps": {
+  "0:0": {
+   "name": "PetalburgCity",
+   "width": 30,
+   "height": 30,
+   "file": "0-0.png",
+   "bytes": 47655,
+   "type": "MAP_TYPE_CITY",
+   "indoor": false,
+   "world": [
+    -80,
+    -50
+   ],
+   "frame": "hoenn",
+   "doors": [
+    {
+     "x": 15,
+     "y": 8,
+     "to": "8:1",
+     "building": "PetalburgCity_Gym"
+    }
+   ]
+  },
+  "0:10": {
+   "name": "OldaleTown",
+   "width": 20,
+   "height": 20,
+   "file": "0-10.png",
+   "bytes": 21473,
+   "type": "MAP_TYPE_TOWN",
+   "indoor": false,
+   "world": [
+    0,
+    -40
+   ],
+   "frame": "hoenn",
+   "doors": [
+    {
+     "x": 6,
+     "y": 16,
+     "to": "2:2",
+     "building": "OldaleTown_PokemonCenter"
+    },
+    {
+     "x": 14,
+     "y": 6,
+     "to": "2:4",
+     "building": "OldaleTown_Mart"
+    }
+   ]
+  },
+  "0:16": {
+   "name": "Route101",
+   "width": 20,
+   "height": 20,
+   "file": "0-16.png",
+   "bytes": 17269,
+   "type": "MAP_TYPE_ROUTE",
+   "indoor": false,
+   "world": [
+    0,
+    -20
+   ],
+   "frame": "hoenn"
+  },
+  "0:17": {
+   "name": "Route102",
+   "width": 50,
+   "height": 20,
+   "file": "0-17.png",
+   "bytes": 44842,
+   "type": "MAP_TYPE_ROUTE",
+   "indoor": false,
+   "world": [
+    -50,
+    -40
+   ],
+   "frame": "hoenn"
+  },
+  "0:18": {
+   "name": "Route103",
+   "width": 80,
+   "height": 22,
+   "file": "0-18.png",
+   "bytes": 79330,
+   "type": "MAP_TYPE_ROUTE",
+   "indoor": false,
+   "world": [
+    0,
+    -62
+   ],
+   "frame": "hoenn"
+  },
+  "0:19": {
+   "name": "Route104",
+   "width": 40,
+   "height": 80,
+   "file": "0-19.png",
+   "bytes": 127296,
+   "type": "MAP_TYPE_ROUTE",
+   "indoor": false,
+   "world": [
+    -120,
+    -100
+   ],
+   "frame": "hoenn"
+  },
+  "0:9": {
+   "name": "LittlerootTown",
+   "width": 20,
+   "height": 20,
+   "file": "0-9.png",
+   "bytes": 13564,
+   "type": "MAP_TYPE_TOWN",
+   "indoor": false,
+   "world": [
+    0,
+    0
+   ],
+   "frame": "hoenn",
+   "doors": [
+    {
+     "x": 14,
+     "y": 8,
+     "to": "1:2",
+     "building": "LittlerootTown_MaysHouse"
+    },
+    {
+     "x": 5,
+     "y": 8,
+     "to": "1:0",
+     "building": "LittlerootTown_BrendansHouse"
+    },
+    {
+     "x": 7,
+     "y": 16,
+     "to": "1:4",
+     "building": "LittlerootTown_ProfessorBirchsLab"
+    }
+   ]
+  },
+  "1:0": {
+   "name": "LittlerootTown_BrendansHouse_1F",
+   "width": 11,
+   "height": 9,
+   "file": "1-0.png",
+   "bytes": 2872,
+   "type": "MAP_TYPE_INDOOR",
+   "indoor": true,
+   "building": "LittlerootTown_BrendansHouse",
+   "floors": [
+    "1:0",
+    "1:1"
+   ]
+  },
+  "1:1": {
+   "name": "LittlerootTown_BrendansHouse_2F",
+   "width": 9,
+   "height": 8,
+   "file": "1-1.png",
+   "bytes": 2484,
+   "type": "MAP_TYPE_INDOOR",
+   "indoor": true,
+   "building": "LittlerootTown_BrendansHouse",
+   "floors": [
+    "1:0",
+    "1:1"
+   ]
+  },
+  "1:2": {
+   "name": "LittlerootTown_MaysHouse_1F",
+   "width": 11,
+   "height": 9,
+   "file": "1-2.png",
+   "bytes": 2876,
+   "type": "MAP_TYPE_INDOOR",
+   "indoor": true,
+   "building": "LittlerootTown_MaysHouse",
+   "floors": [
+    "1:2",
+    "1:3"
+   ]
+  },
+  "1:3": {
+   "name": "LittlerootTown_MaysHouse_2F",
+   "width": 9,
+   "height": 8,
+   "file": "1-3.png",
+   "bytes": 2547,
+   "type": "MAP_TYPE_INDOOR",
+   "indoor": true,
+   "building": "LittlerootTown_MaysHouse",
+   "floors": [
+    "1:2",
+    "1:3"
+   ]
+  },
+  "1:4": {
+   "name": "LittlerootTown_ProfessorBirchsLab",
+   "width": 13,
+   "height": 13,
+   "file": "1-4.png",
+   "bytes": 6893,
+   "type": "MAP_TYPE_INDOOR",
+   "indoor": true,
+   "building": "LittlerootTown_ProfessorBirchsLab",
+   "floors": [
+    "1:4"
+   ]
+  },
+  "25:40": {
+   "name": "InsideOfTruck",
+   "width": 5,
+   "height": 5,
+   "file": "25-40.png",
+   "bytes": 1054,
+   "type": "MAP_TYPE_INDOOR",
+   "indoor": true,
+   "building": "InsideOfTruck",
+   "floors": [
+    "25:40"
+   ]
+  },
+  "2:2": {
+   "name": "OldaleTown_PokemonCenter_1F",
+   "width": 14,
+   "height": 9,
+   "file": "2-2.png",
+   "bytes": 6212,
+   "type": "MAP_TYPE_INDOOR",
+   "indoor": true,
+   "building": "OldaleTown_PokemonCenter",
+   "floors": [
+    "2:2"
+   ]
+  },
+  "2:4": {
+   "name": "OldaleTown_Mart",
+   "width": 11,
+   "height": 8,
+   "file": "2-4.png",
+   "bytes": 4759,
+   "type": "MAP_TYPE_INDOOR",
+   "indoor": true,
+   "building": "OldaleTown_Mart",
+   "floors": [
+    "2:4"
+   ]
+  },
+  "8:1": {
+   "name": "PetalburgCity_Gym",
+   "width": 9,
+   "height": 112,
+   "file": "8-1.png",
+   "bytes": 13273,
+   "type": "MAP_TYPE_INDOOR",
+   "indoor": true,
+   "building": "PetalburgCity_Gym",
+   "floors": [
+    "8:1"
+   ]
+  }
+ }
+}

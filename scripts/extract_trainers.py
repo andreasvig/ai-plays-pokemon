@@ -40,12 +40,15 @@ from PIL import Image
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.render_gamemaps import CACHE, fetch, pinned_sha  # noqa: E402
+from scripts.render_gamemaps import GAMES, fetch  # noqa: E402
 from src.referee.battles import TRAINER_NAMES  # noqa: E402
 
 #: One directory per game, matching the map atlas: a trainer id means
-#: nothing without the cartridge it was read from.
+#: nothing without the cartridge it was read from. The pret repo, its
+#: pinned SHA and its cache all come from the SAME descriptor the map
+#: renderer uses, so trainers and maps cannot be read from two trees.
 GAME = "firered-us"
+PRET = GAMES[GAME]
 OUT_DIR = REPO_ROOT / "src" / "dashboard" / "web" / "public" / "trainers" / GAME
 
 SPECIES_IDS = "include/constants/species.h"
@@ -57,8 +60,8 @@ GFX = "src/data/graphics/trainers.h"
 SPECIES_NAMES = "src/data/text/species_names.h"
 
 
-def text(path: str, *, offline: bool, ref: str) -> str:
-    return fetch(path, offline=offline, ref=ref).decode("utf-8", "replace")
+def text(path: str, *, offline: bool) -> str:
+    return fetch(path, offline=offline, game=PRET).decode("utf-8", "replace")
 
 
 def trainer_ids(src: str) -> dict[str, int]:
@@ -147,8 +150,8 @@ def main() -> int:
     ap.add_argument("--offline", action="store_true")
     ap.add_argument("--out", type=Path, default=OUT_DIR)
     args = ap.parse_args()
-    ref = pinned_sha()
-    rd = lambda p: text(p, offline=args.offline, ref=ref)  # noqa: E731
+    ref = PRET.sha
+    rd = lambda p: text(p, offline=args.offline)  # noqa: E731
 
     ids = trainer_ids(rd(OPPONENTS))
     by_key = trainers(rd(TRAINERS))
@@ -183,7 +186,7 @@ def main() -> int:
         }
 
     for pic in sorted(wanted_pics):
-        raw = fetch(pics[pic], offline=args.offline, ref=ref)
+        raw = fetch(pics[pic], offline=args.offline, game=PRET)
         sprite(raw).save(args.out / f"{pic.lower()}.png", optimize=True)
         print(f"{pic.lower():28s} {(args.out / f'{pic.lower()}.png').stat().st_size // 1024:3d} KB")
 
