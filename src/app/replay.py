@@ -120,8 +120,16 @@ def replay_referee(run_dir: Path, graph: Optional[WalkGraph] = None,
     if not raw["samples"] or not raw["polls"]:
         return None
     if graph is None:
-        from src.app.route import default_graph
-        graph = default_graph()
+        # Whose graph, not just any graph. This fell back to FireRed's for ANY
+        # run, one line above `route.load_route`, which IS gated — so two
+        # readers of the same run in one projection would have disagreed about
+        # which cartridge the graph describes. Latent today only because
+        # `referee_position` is emitted solely by the referee and only FireRed
+        # has a ladder; the day a second game gets one, the referee's own loader
+        # would refuse the foreign graph while still recording positions, and
+        # this would credit foreign shortest paths as steps.
+        from src.app.route import graph_for_run
+        graph = graph_for_run(run_dir)
     if graph is None:
         return None
     nodes = load_ladder(ladder or ladder_path(run_dir)).nodes

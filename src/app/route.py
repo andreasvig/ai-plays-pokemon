@@ -86,14 +86,41 @@ def graph_for_run(run_dir: Path) -> Optional[WalkGraph]:
     safety: a coordinate that DID resolve would have drawn a door between two
     maps of a different game. Refusing by identity is the same rule
     `src/app/observed.py` applies to a contractless run.
+
+    "Unknown cartridge" is two different situations and they get opposite
+    answers:
+
+    - **No ``rom_path`` recorded at all** — no config, an unreadable one, or a
+      config predating the emulator block. Such a run predates multi-ROM
+      support, and in that era every run was FireRed, which is the same
+      argument as ``GameMemory.was_the_global_default``. It gets the graph.
+      Refusing it stripped the graph from the whole legacy corpus, silently,
+      until two publish tests caught it.
+    - **A ``rom_path`` that does not join the registry** — a ROM hack, a
+      renamed dump. That is a POSITIVE statement that the cartridge is not one
+      we know, so it gets no graph. A FireRed hack would mostly agree with
+      FireRed's graph, and "mostly" is how this defect looked harmless in the
+      first place.
     """
     from src.app.observed import run_game
 
     try:
         game = run_game(Path(run_dir))
     except Exception:
+        game = None
+    if game is not None:
+        return default_graph() if game == GRAPH_GAME else None
+    return default_graph() if _rom_path_of(run_dir) is None else None
+
+
+def _rom_path_of(run_dir: Path) -> Optional[str]:
+    """The ROM the run recorded, or None when it recorded none at all."""
+    try:
+        cfg = json.loads((Path(run_dir) / "config.json").read_text())
+    except (OSError, ValueError):
         return None
-    return default_graph() if game == GRAPH_GAME else None
+    rom = (cfg.get("emulator") or {}).get("rom_path") if isinstance(cfg, dict) else None
+    return rom or None
 
 
 def _repo_root() -> Path:

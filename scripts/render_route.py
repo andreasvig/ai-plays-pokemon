@@ -23,7 +23,6 @@ sys.path.insert(0, str(REPO_ROOT))
 from PIL import Image, ImageDraw  # noqa: E402
 
 from src.app import route as route_mod  # noqa: E402
-from src.referee.walkgraph import DEFAULT_GRAPH_PATH, WalkGraph  # noqa: E402
 
 BG = (250, 250, 247)
 TILE = (222, 222, 216)
@@ -46,10 +45,27 @@ def turn_colour(t: float) -> tuple[int, int, int]:
 
 
 def render(run_dir: Path, out: Path, scale: int = 4) -> Path:
-    graph = WalkGraph.load(REPO_ROOT / DEFAULT_GRAPH_PATH)
+    # graph_for_run, NOT the committed graph: that one is pret's FireRed and its
+    # map keys are FireRed's, so handing it to another cartridge draws a route
+    # through maps the run never entered. Passing a graph explicitly here
+    # short-circuited the gate `load_route` grew in ca0b8aa, which left the
+    # defect fixed in the app and still live in the renderer that makes the PNGs.
+    graph = route_mod.graph_for_run(run_dir)
     r = route_mod.load_route(run_dir, graph)
     if r is None:
         raise SystemExit(f"{run_dir.name}: no per-input trace — nothing to draw")
+    if graph is None:
+        # This renderer lays maps out in a shared world frame read from
+        # `graph.maps`, and the only committed graph is FireRed's. Six games
+        # therefore cannot be drawn HERE yet — which is a missing atlas, not a
+        # missing route: `load_route` returns a full one, and
+        # `scripts/build_observed_map.py` draws it on a bare lattice today.
+        # Saying so is the point. Borrowing FireRed's graph is what this script
+        # used to do, and it drew the run through maps it never entered.
+        raise SystemExit(
+            f"{run_dir.name}: no walk graph for this cartridge, so there is no "
+            f"world frame to lay its maps out in. The route itself is fine — "
+            f"see scripts/build_observed_map.py for the lattice rendering.")
     visits = r["visits"]
     turns = [v[0] for v in visits]
     t0, t1 = min(turns), max(max(turns), min(turns) + 1)
