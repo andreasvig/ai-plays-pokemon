@@ -33,6 +33,7 @@ import argparse
 import json
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from PIL import Image
@@ -47,9 +48,49 @@ from src.referee.battles import TRAINER_NAMES  # noqa: E402
 #: nothing without the cartridge it was read from. The pret repo, its
 #: pinned SHA and its cache all come from the SAME descriptor the map
 #: renderer uses, so trainers and maps cannot be read from two trees.
-GAME = "firered-us"
-PRET = GAMES[GAME]
-OUT_DIR = REPO_ROOT / "src" / "dashboard" / "web" / "public" / "trainers" / GAME
+TRAINERS_ROOT = REPO_ROOT / "src" / "dashboard" / "web" / "public" / "trainers"
+
+
+@dataclass(frozen=True)
+class Roster:
+    """Which trainers one cartridge's index carries, and what labels them.
+
+    The pret FILE PATHS are the same in pokefirered and pokeemerald, so they
+    stay module constants; what differs is the SELECTION and the label.
+
+    FireRed's ladder names thirteen trainers (``src/referee/battles.py``
+    TRAINER_NAMES) and every other surface shows those names, so its index is
+    those thirteen and the referee's wording is the label. Emerald has no
+    ladder, so there is no list to be selected BY — and a card that meets Lass
+    Tiana must still be able to say "Lass Tiana". Its index is therefore the
+    whole roster, labelled from the ROM's own class and name.
+
+    Selecting by the referee where a referee exists is not an inconsistency: a
+    label the rest of the app already uses beats one derived here, and where
+    none exists the derivation is the honest fallback rather than a blank.
+    """
+
+    game: str
+    referee_labels: bool
+    #: Whether this cartridge SOURCES the shared species sprites. Exactly one
+    #: does. ``public/pokemon/<id>.png`` is named by the gen-3 INTERNAL species
+    #: index, which pokefirered and pokeemerald share — Mudkip is 283 in both —
+    #: so one extraction serves every gen-3 game and a second would be the same
+    #: pixels under the same names. It has to be declared rather than inferred:
+    #: Emerald spells the symbol ``gMonStillFrontPic_`` (its fronts animate),
+    #: so the FireRed reader finds nothing there and reports "0 sprites"
+    #: cheerfully, which looks like a job that ran.
+    mon_sprites: bool = False
+
+    @property
+    def out(self) -> Path:
+        return TRAINERS_ROOT / self.game
+
+
+ROSTERS = {
+    "firered-us": Roster(game="firered-us", referee_labels=True, mon_sprites=True),
+    "emerald-us": Roster(game="emerald-us", referee_labels=False),
+}
 #: Species sprites are NOT per game — a species id means the same mon on
 #: every cartridge, so they sit beside the per-game trainer directories.
 MON_DIR = REPO_ROOT / "src" / "dashboard" / "web" / "public" / "pokemon"
@@ -65,8 +106,8 @@ MON_PIC_TABLE = "src/data/pokemon_graphics/front_pic_table.h"
 MON_GFX = "src/data/graphics/pokemon.h"
 
 
-def text(path: str, *, offline: bool) -> str:
-    return fetch(path, offline=offline, game=PRET).decode("utf-8", "replace")
+def text(path: str, *, offline: bool, game) -> str:
+    return fetch(path, offline=offline, game=game).decode("utf-8", "replace")
 
 
 def trainer_ids(src: str) -> dict[str, int]:
@@ -124,9 +165,25 @@ def trainers(src: str) -> dict[str, dict]:
     return out
 
 
+def _incbin(gfx: str, prefix: str) -> dict[str, str]:
+    """``<symbol> -> the PNG it was included from``, in either pret spelling.
+
+    pokefirered writes ``INCBIN_U32("graphics/.../hiker.4bpp.lz")`` and
+    pokeemerald writes ``INCGFX_U32("graphics/.../hiker.png", ".4bpp.lz")`` —
+    the same fact, the extension moved into a second argument. Matching only
+    the first found zero Emerald sprites and raised nothing: every trainer
+    simply came out with ``pic: null`` and the cards drew no portrait, which is
+    what a silently generation-specific regex looks like.
+    """
+    out: dict[str, str] = {}
+    for sym, path in re.findall(rf"({prefix}_\w+)\[\]\s*=\s*INC(?:BIN|GFX)_U32\(\"([^\"]+)\"", gfx):
+        out[sym] = re.sub(r"\.4bpp\.lz$", ".png", path)
+    return out
+
+
 def pic_paths(pic_table: str, gfx: str) -> dict[str, str]:
     """TRAINER_PIC_<NAME> -> the front-pic PNG in the pret tree."""
-    symbol_path = dict(re.findall(r"(gTrainerFrontPic_\w+)\[\]\s*=\s*INCBIN_U32\(\"([^\"]+)\"\)", gfx))
+    symbol_path = _incbin(gfx, "gTrainerFrontPic")
     out = {}
     for pic, symbol in re.findall(r"TRAINER_SPRITE\((\w+),\s*(gTrainerFrontPic_\w+)", pic_table):
         path = symbol_path.get(symbol)
@@ -141,7 +198,7 @@ def mon_pic_paths(pic_table: str, gfx: str) -> dict[str, str]:
     Same two-hop shape as the trainer pics: the table names a symbol, the
     graphics header says which file that symbol was INCBIN'd from.
     """
-    symbol_path = dict(re.findall(r"(gMonFrontPic_\w+)\[\]\s*=\s*INCBIN_U32\(\"([^\"]+)\"\)", gfx))
+    symbol_path = _incbin(gfx, "gMonFrontPic")
     out = {}
     for name, symbol in re.findall(r"SPECIES_SPRITE\((\w+),\s*(gMonFrontPic_\w+)", pic_table):
         path = symbol_path.get(symbol)
@@ -181,11 +238,15 @@ def sprite(raw: bytes) -> Image.Image:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--game", default="firered-us", choices=sorted(ROSTERS))
     ap.add_argument("--offline", action="store_true")
-    ap.add_argument("--out", type=Path, default=OUT_DIR)
+    ap.add_argument("--out", type=Path, default=None)
     args = ap.parse_args()
-    ref = PRET.sha
-    rd = lambda p: text(p, offline=args.offline)  # noqa: E731
+    roster = ROSTERS[args.game]
+    pret = GAMES[roster.game]
+    out_dir = args.out or roster.out
+    ref = pret.sha
+    rd = lambda p: text(p, offline=args.offline, game=pret)  # noqa: E731
 
     sp_ids = species_ids(rd(SPECIES_IDS))
     ids = trainer_ids(rd(OPPONENTS))
@@ -195,17 +256,22 @@ def main() -> int:
     pics = pic_paths(rd(PIC_TABLE), rd(GFX))
     key_of_id = {v: k for k, v in ids.items()}
 
-    args.out.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
     index: dict[str, dict] = {}
     wanted_pics: set[str] = set()
     missing: list[int] = []
-    for tid in sorted(TRAINER_NAMES):
+    # The referee's thirteen where there is a referee; the whole ROM otherwise.
+    # A missing id is an ERROR in the first case (the ladder names somebody the
+    # ROM does not) and impossible in the second, which is why the check below
+    # stays rather than being softened to cover both.
+    wanted = sorted(TRAINER_NAMES) if roster.referee_labels else sorted(key_of_id)
+    for tid in wanted:
         key = key_of_id.get(tid)
         t = by_key.get(key) if key else None
         if t is None:
             missing.append(tid)
             continue
-        roster = [{"species": species.get(m["species"], m["species"].removeprefix("SPECIES_").title()),
+        party = [{"species": species.get(m["species"], m["species"].removeprefix("SPECIES_").title()),
                    "level": m["level"],
                    # the id too, because the card draws the mon's own sprite and
                    # the file is named by id — the name would need a second map
@@ -214,20 +280,23 @@ def main() -> int:
         pic = (t["pic"] or "").lower()
         if t["pic"] in pics:
             wanted_pics.add(t["pic"])
+        cls = (t["class"] or "").replace("_", " ").title()
+        given = t["name"].title()
         index[str(tid)] = {
-            # The referee's own label is what every other surface shows, so it
-            # is the one here too; the ROM's class and given name sit beside it.
-            "label": TRAINER_NAMES[tid],
-            "name": t["name"].title(),
-            "class": (t["class"] or "").replace("_", " ").title(),
+            # The referee's own label where one exists — it is what every other
+            # surface shows, so a card that said something else would look like
+            # a different fight. Otherwise the ROM's own class and given name,
+            # which is how "Lass Tiana" gets onto an Emerald card at all.
+            "label": TRAINER_NAMES[tid] if roster.referee_labels else f"{cls} {given}".strip(),
+            "name": given,
+            "class": cls,
             "pic": f"{pic}.png" if t["pic"] in pics else None,
-            "party": roster,
+            "party": party,
         }
 
     for pic in sorted(wanted_pics):
-        raw = fetch(pics[pic], offline=args.offline, game=PRET)
-        sprite(raw).save(args.out / f"{pic.lower()}.png", optimize=True)
-        print(f"{pic.lower():28s} {(args.out / f'{pic.lower()}.png').stat().st_size // 1024:3d} KB")
+        raw = fetch(pics[pic], offline=args.offline, game=pret)
+        sprite(raw).save(out_dir / f"{pic.lower()}.png", optimize=True)
 
     by_id = {str(i): species[key] for key, i in sp_ids.items() if key in species and i > 0}
 
@@ -242,6 +311,21 @@ def main() -> int:
     # Dex number on every cartridge we run, so one set serves all seven and a
     # per-game copy would be the same pixels seven times.
     mon_dir = MON_DIR
+    if not roster.mon_sprites:
+        print(f"species sprites: not from {roster.game} — {MON_DIR.name}/ is the shared "
+              f"gen-3 set, sourced from firered-us (see Roster.mon_sprites)")
+        have = len(list(mon_dir.glob("*.png"))) if mon_dir.is_dir() else 0
+        if not have:
+            raise SystemExit(
+                f"{mon_dir} is empty — run this with --game firered-us first, or the "
+                "cards draw broken images for every Pokemon on every cartridge")
+        print(f"{have} already there")
+        (out_dir / "index.json").write_text(json.dumps(
+            {"version": 3, "game": roster.game, "pret_sha": ref,
+             "trainers": index, "species": by_id}, indent=1) + "\n")
+        print(f"{roster.game}: {len(index)} trainers, {len(wanted_pics)} sprites, "
+              f"{(out_dir / 'index.json').stat().st_size // 1024} KB index")
+        return 0
     mon_dir.mkdir(parents=True, exist_ok=True)
     mon_pics = mon_pic_paths(rd(MON_PIC_TABLE), rd(MON_GFX))
     drawn = 0
@@ -253,25 +337,35 @@ def main() -> int:
         out = mon_dir / f"{i}.png"
         if not out.exists():
             try:
-                raw = fetch(path, offline=args.offline, game=PRET)
+                raw = fetch(path, offline=args.offline, game=pret)
             except SystemExit:
-                # A handful of species keep their front pic somewhere else —
-                # Castform's is per-form. Named rather than silently dropped:
-                # a missing sprite should be a line here, not a broken image on
-                # the public site.
-                no_pic.append(key.removeprefix("SPECIES_").title())
-                continue
+                # Castform is the one species whose .4bpp.lz is BUILT from
+                # several PNGs, one per weather form, so the symbol's path has
+                # no file of its own — `castform/front.png` does not exist and
+                # `castform/normal/front.png` does. Worth chasing rather than
+                # tolerating: an Emerald trainer carries a Castform, and the
+                # card would have drawn a broken image for it.
+                alt = re.sub(r"/([^/]+)\.png$", r"/normal/\1.png", path)
+                try:
+                    raw = fetch(alt, offline=args.offline, game=pret)
+                except SystemExit:
+                    # Named rather than silently dropped: a missing sprite
+                    # should be a line here, not a broken image on the site.
+                    no_pic.append(key.removeprefix("SPECIES_").title())
+                    continue
             mon_sprite(raw, out)
         drawn += 1
     if no_pic:
         print(f"no front pic at the expected path for {len(no_pic)}: {', '.join(no_pic)}")
 
-    (args.out / "index.json").write_text(json.dumps(
-        {"version": 3, "pret_sha": ref, "trainers": index, "species": by_id}, indent=1) + "\n")
+    (out_dir / "index.json").write_text(json.dumps(
+        {"version": 3, "game": roster.game, "pret_sha": ref,
+         "trainers": index, "species": by_id}, indent=1) + "\n")
     print(f"{drawn} Pokemon sprites in {mon_dir}")
     if missing:
         raise SystemExit(f"no pret entry for trainer ids {missing} — the referee names them but the ROM does not")
-    print(f"{len(index)} trainers, {len(wanted_pics)} sprites")
+    print(f"{roster.game}: {len(index)} trainers, {len(wanted_pics)} sprites, "
+          f"{(out_dir / 'index.json').stat().st_size // 1024} KB index")
     return 0
 
 

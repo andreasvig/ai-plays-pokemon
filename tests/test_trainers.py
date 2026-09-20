@@ -97,6 +97,68 @@ def test_a_wild_foes_sprite_exists_for_every_species_the_index_names(atlas):
     # ROM read returns — so the set has to cover every species the index can
     # name, not only the ones a first-badge trainer happens to carry.
     missing = [i for i in atlas["species"] if not (MON_DIR / f"{i}.png").is_file()]
-    # Castform keeps its front pic per form and has none at the expected path;
-    # named here rather than silently tolerated by a loose threshold.
-    assert [atlas["species"][i] for i in missing] == ["Castform"], missing
+    assert missing == [], f"no sprite for {[atlas['species'][i] for i in missing]}"
+
+
+# -- the second cartridge (2026-09-20) ----------------------------------------
+# Emerald has no gate ladder, so there is no TRAINER_NAMES to select by and no
+# referee wording to label with. Its index is the whole ROM roster, labelled
+# from the ROM's own class and given name — which is the only way a card that
+# meets Lass Tiana can say "Lass Tiana".
+
+EMERALD_INDEX = REPO_ROOT / "src" / "dashboard" / "web" / "public" / "trainers" / "emerald-us" / "index.json"
+
+
+@pytest.fixture(scope="module")
+def emerald() -> dict:
+    return json.loads(EMERALD_INDEX.read_text())
+
+
+def test_each_index_names_the_cartridge_it_was_read_from(atlas, emerald):
+    # The same rule the map atlas has, for the same reason: trainer 114 is Lady
+    # Cindy on Emerald and somebody else entirely on FireRed, and nothing but
+    # the directory keeps the two apart.
+    assert emerald["game"] == "emerald-us" == EMERALD_INDEX.parent.name
+    assert atlas.get("game", "firered-us") == INDEX.parent.name
+    assert emerald["trainers"].keys() != atlas["trainers"].keys()
+
+
+def test_the_emerald_roster_is_labelled_from_the_rom_itself(emerald):
+    # The two trainers the address probe actually met, which is what makes this
+    # a join test and not a spelling test: gTrainerBattleOpponent_A read 114 and
+    # 603 in two real battles, and gBattleMons read a Zigzagoon L7 in the first
+    # and a Shroomish L4 in the second. The ROM's own roster agrees with both.
+    cindy = emerald["trainers"]["114"]
+    assert cindy["label"] == "Lady Cindy"
+    assert [(m["species"], m["level"]) for m in cindy["party"]] == [("Zigzagoon", 7)]
+
+    tiana = emerald["trainers"]["603"]
+    assert tiana["label"] == "Lass Tiana"
+    assert ("Shroomish", 4) in [(m["species"], m["level"]) for m in tiana["party"]]
+
+
+def test_a_wild_foe_can_be_named_from_the_species_map(emerald):
+    # A wild card shows a name, not an id. The species map is the only thing
+    # that turns gBattleMons' 286 into "Poochyena", and it is per game because
+    # the index is — though the NUMBERS are shared gen-3 internal indices, which
+    # is why one sprite set serves both.
+    assert emerald["species"]["286"] == "Poochyena"
+    assert emerald["species"]["283"] == "Mudkip"      # the Emerald starter
+    assert emerald["species"]["306"] == "Shroomish"
+
+
+def test_every_emerald_trainer_sprite_is_on_disk(emerald):
+    named = {t["pic"] for t in emerald["trainers"].values() if t["pic"]}
+    assert len(named) > 50, "93 trainer pics cover the roster; a handful means the parse broke"
+    for pic in named:
+        assert (EMERALD_INDEX.parent / pic).is_file(), pic
+
+
+def test_the_species_sprites_are_shared_not_duplicated(emerald):
+    # Both indexes name their party members by the same id, and there is ONE
+    # directory of those pictures. A per-game copy would be the same pixels
+    # under the same names.
+    ids = {m["id"] for t in emerald["trainers"].values() for m in t["party"] if m.get("id")}
+    assert len(ids) > 100
+    missing = [i for i in ids if not (MON_DIR / f"{i}.png").is_file()]
+    assert missing == [], f"{len(missing)} Emerald party members have no sprite: {missing[:10]}"
