@@ -54,9 +54,9 @@
    *  itself shows past an edge — the screen is 15x10 tiles, so about 7 beyond
    *  the one you stand on — which is the only amount we have evidence for.
    *
-   *  WHICH edges get one at all is curated in lib/borders.js and empty by
-   *  default: automatic borders looked wrong beside the map's own trees and
-   *  ran into the sea. */
+   *  Every CLOSED edge gets one; lib/borders.js is where a side is turned
+   *  off by hand when it reads wrong. A road out is never painted over — see
+   *  the `open` spans below. */
   const BLEED = 8
   const FADE = 6
 
@@ -286,7 +286,7 @@
   // component that would be felt.
   const borderPatches = new Map()
   function borderPatch(bimg, game, key, m, win) {
-    const sides = borderSides(game, key)
+    const sides = borderSides(game, key, m)
     if (!sides.size) return null
     const wT = win.w + 2 * BLEED, hT = win.h + 2 * BLEED
     const id = `${game}/${key}:${wT}x${hT}:${TPX}`

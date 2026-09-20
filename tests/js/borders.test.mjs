@@ -1,62 +1,73 @@
-// The curated border list.
+// Which edges get a border, and the one thing curating must never be able to do.
 //
-// Borders were automatic — every map, every side — and it was wrong twice.
-// First the tiled block covered the roads out of a town, so Oldale Town read as
-// ringed by forest with no way north or east. Then, with the roads clear, the
-// one repeated block still looked wrong beside the map's own trees and ran
-// straight into the sea, and Andreas landed on: "maybe the answer is just to
-// add them manually to the places which feel like they are missing them."
+// Borders went on, off, and on again in one afternoon, for two separate
+// reasons: the tiled block covered the roads out of a town (Oldale read as
+// ringed by forest with no way north, south or west), and at 28 tiles it was a
+// second map rather than a fringe. With both fixed the picture reads, so the
+// default is every closed edge and this list is the by-hand exception —
+// Andreas: "maybe the answer is just to add them manually to the places which
+// feel like they are missing them."
 //
-// So: nothing by default, and a side that IS named can still never be painted
-// across a connection. These tests pin both halves — the second one matters
-// most, because it is the guarantee that curating cannot reintroduce the first
-// bug by hand.
+// The load-bearing test is the last one. `open` is punched out in the viewer,
+// NOT subtracted here, because a connection usually covers part of an edge
+// rather than all of it — so `borderSides` returning a side is not a claim that
+// the whole side is drawable, and a future simplification that made it one
+// would put the road-walling straight back.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { BORDER_EDGES, borderSides, hasBorder } from '../../src/dashboard/web/src/lib/borders.js'
+import { BORDER_OFF, borderSides, hasBorder } from '../../src/dashboard/web/src/lib/borders.js'
 
-const MAP = { width: 20, height: 20, file: '0-10.png', border: { file: '0-10-border.png', w: 2, h: 2 },
-              open: [{ side: 'up', from: 0, to: 20 }, { side: 'left', from: 0, to: 20 }] }
+const withBorder = { width: 20, height: 20, file: '0-10.png', border: { file: '0-10-border.png', w: 2, h: 2 },
+                     open: [{ side: 'up', from: 0, to: 20 }, { side: 'left', from: 0, to: 20 }] }
+const lattice = { width: 8, height: 8 }
 
-test('no map has a border until one is named', () => {
-  // The default IS the assertion: an automatic border is what looked wrong.
-  assert.equal(borderSides('emerald-us', '0:10').size, 0)
-  assert.equal(hasBorder('emerald-us', '0:10', MAP), false)
-  assert.equal(hasBorder('firered-us', '3:0', MAP), false)
+test('by default every side of a map with artwork is drawn', () => {
+  assert.deepEqual([...borderSides('emerald-us', '0:10', withBorder)].sort(),
+    ['down', 'left', 'right', 'up'])
+  assert.equal(hasBorder('emerald-us', '0:10', withBorder), true)
 })
 
-test('naming a side turns exactly that side on', () => {
-  BORDER_EDGES['emerald-us'] = { '0:10': ['right', 'down'] }
+test('a map with no border block has nothing to draw', () => {
+  assert.equal(hasBorder('platinum-us', '418:0', lattice), false, 'a lattice map has no block to tile')
+  assert.equal(hasBorder('platinum-us', '418:0', null), false)
+  assert.equal(borderSides('firered-us', '3:0', {}).size, 0)
+})
+
+test('naming a side turns exactly that side off', () => {
+  BORDER_OFF['emerald-us'] = { '0:19': ['left'] }
   try {
-    const s = borderSides('emerald-us', '0:10')
-    assert.deepEqual([...s].sort(), ['down', 'right'])
-    assert.equal(hasBorder('emerald-us', '0:10', MAP), true)
+    assert.deepEqual([...borderSides('emerald-us', '0:19', withBorder)].sort(), ['down', 'right', 'up'])
     // and only that map, on that cartridge
-    assert.equal(borderSides('emerald-us', '0:9').size, 0)
-    assert.equal(borderSides('firered-us', '0:10').size, 0)
-  } finally { delete BORDER_EDGES['emerald-us'] }
+    assert.equal(borderSides('emerald-us', '0:10', withBorder).size, 4)
+    assert.equal(borderSides('firered-us', '0:19', withBorder).size, 4)
+  } finally { delete BORDER_OFF['emerald-us'] }
 })
 
-test('a map with no border artwork cannot be turned on', () => {
-  BORDER_EDGES['platinum-us'] = { '418:0': ['up'] }
+test('`true` suppresses the whole map', () => {
+  BORDER_OFF['firered-us'] = { '1:0': true }
   try {
-    assert.equal(hasBorder('platinum-us', '418:0', { width: 8, height: 8 }), false,
-      'a lattice map has no block to tile')
-    assert.equal(hasBorder('platinum-us', '418:0', null), false)
-  } finally { delete BORDER_EDGES['platinum-us'] }
+    assert.equal(hasBorder('firered-us', '1:0', withBorder), false)
+    assert.equal(borderSides('firered-us', '1:0', withBorder).size, 0)
+  } finally { delete BORDER_OFF['firered-us'] }
 })
 
-test('a nonsense side is ignored rather than drawn somewhere arbitrary', () => {
-  BORDER_EDGES['firered-us'] = { '3:20': ['north', 'left', ''] }
-  try {
-    assert.deepEqual([...borderSides('firered-us', '3:20')], ['left'])
-  } finally { delete BORDER_EDGES['firered-us'] }
+test('a nonsense side suppresses nothing, and a malformed entry is not a throw', () => {
+  BORDER_OFF['firered-us'] = { '3:20': ['north'] }
+  try { assert.equal(borderSides('firered-us', '3:20', withBorder).size, 4) }
+  finally { delete BORDER_OFF['firered-us'] }
+  BORDER_OFF['firered-us'] = { '3:20': 'left' }   // a string, not a list
+  try { assert.equal(borderSides('firered-us', '3:20', withBorder).size, 4) }
+  finally { delete BORDER_OFF['firered-us'] }
+  assert.equal(borderSides(null, null, withBorder).size, 4)
 })
 
-test('a malformed entry is empty, not a throw', () => {
-  BORDER_EDGES['firered-us'] = { '3:20': 'left' }
-  try { assert.equal(borderSides('firered-us', '3:20').size, 0) }
-  finally { delete BORDER_EDGES['firered-us'] }
-  assert.equal(borderSides(null, null).size, 0)
-  assert.equal(borderSides('firered-us', undefined).size, 0)
+test('an open edge is still a drawn side — the span is punched out downstream', () => {
+  // Viridian City is 48 wide and Route 2 covers 24 of its top edge, so the top
+  // side IS drawn and only tiles 12..36 of it come out. If this ever returned
+  // "up is off" the other 24 tiles of real border would vanish; if the viewer
+  // stopped punching, the road would be walled. The two halves have to stay
+  // split, and this is the test that says so.
+  const viridian = { width: 48, height: 40, file: '3-1.png', border: { file: '3-1-border.png', w: 2, h: 2 },
+                     open: [{ side: 'up', from: 12, to: 36 }] }
+  assert.ok(borderSides('firered-us', '3:1', viridian).has('up'))
 })
