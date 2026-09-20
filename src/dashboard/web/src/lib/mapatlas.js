@@ -106,9 +106,15 @@ export const mapImageUrl = (game, file) => `${BASE}maps/${game}/${file}`
  */
 export const drawWindow = (m) => {
   const t = m?.trim ?? {}
+  // A synthetic (lattice) entry carries an `origin`: the tile its rectangle
+  // starts at. Gen 4/5 coordinates are GLOBAL — Platinum's y reaches 888 — so
+  // without it every tile lands hundreds of tiles off its own rectangle. It is
+  // the same job `trim` does for artwork, so it is the same field: everything
+  // downstream subtracts `win`, and neither case needs a special path.
+  const [ox, oy] = m?.origin ?? [0, 0]
   return {
-    x: t.left ?? 0,
-    y: t.top ?? 0,
+    x: ox + (t.left ?? 0),
+    y: oy + (t.top ?? 0),
     w: Math.max(1, (m?.width ?? 1) - (t.left ?? 0) - (t.right ?? 0)),
     h: Math.max(1, (m?.height ?? 1) - (t.top ?? 0) - (t.bottom ?? 0)),
   }
@@ -244,7 +250,9 @@ export function worldLayout(route, atlas) {
   if (!route?.maps || !atlas?.maps) return null
   const entries = Object.keys(route.maps)
     .map((k) => [k, atlas.maps[k]])
-    .filter(([, m]) => m && m.indoor !== true)
+    // `popup` where the atlas says so (a gate-house cluster can hold a ROUTE),
+    // otherwise the normalised `indoor` flag. Never the raw MAP_TYPE string.
+    .filter(([, m]) => m && !(m.popup ?? m.indoor))
   const outdoor = entries.filter(([, m]) => Array.isArray(m.world))
   const insets = entries.filter(([, m]) => !Array.isArray(m.world))
   if (!outdoor.length && !insets.length) return null
@@ -257,7 +265,7 @@ export function worldLayout(route, atlas) {
   const worldH = outdoor.length ? Math.max(...ys) - Math.min(...ys) + 2 * MARGIN : 0
 
   const at = {}
-  for (const [k, m] of outdoor) at[k] = { x: m.world[0] - x0, y: m.world[1] - y0, m, inset: false }
+  for (const [k, m] of outdoor) at[k] = { x: m.world[0] - x0, y: m.world[1] - y0, m, win: drawWindow(m), inset: false }
   let colX = worldW ? worldW + INSET_GAP : MARGIN
   let colY = MARGIN
   let colW = 0
@@ -268,7 +276,7 @@ export function worldLayout(route, atlas) {
       colY = MARGIN
       colW = 0
     }
-    at[k] = { x: colX, y: colY, m, inset: true }
+    at[k] = { x: colX, y: colY, m, win: drawWindow(m), inset: true }
     colY += m.height + INSET_GAP
     colW = Math.max(colW, m.width)
     bottom = Math.max(bottom, colY)
@@ -279,8 +287,80 @@ export function worldLayout(route, atlas) {
     h: Math.max(worldH, bottom, 1),
     outdoor: outdoor.length,
     insets: insets.length,
-    interiors: Object.keys(route.maps).filter((k) => atlas.maps[k]?.indoor === true),
+    interiors: Object.keys(route.maps).filter((k) => !!(atlas.maps[k]?.popup ?? atlas.maps[k]?.indoor)),
   }
+}
+
+/** Every door marker on the maps this layout draws, with whether the run went in. */
+/**
+ * One building or cluster, laid out in a single coordinate space.
+ *
+ * Returns the same shape as `worldLayout`, which is the point: the map does not
+ * open a modal over itself any more, it WALKS IN (Andreas, 2026-09-16: "the
+ * whole map should change to that sub-map with an arrow to go back, or the
+ * ability to just press on the door to get back out"). Everything that draws
+ * the world — `place`, `drawRoute`, `drawArrows`, `battlesFor`, `visitAt` — then
+ * draws a cluster with no idea it is doing anything different, and the panel
+ * keeps its pan and zoom.
+ *
+ * A CLUSTER stacks the way you walk it: Viridian Forest between its two gate
+ * houses, north at the top. A BUILDING keeps its floors side by side, 1F first,
+ * because stacking 1F above 2F would draw the building upside down.
+ */
+export function clusterLayout(building, atlas) {
+  if (!building || !atlas?.maps) return null
+  const seed = Object.values(atlas.maps).find((m) => m.building === building)
+  const keys = (seed?.floors ?? []).filter((k) => atlas.maps[k])
+  if (!keys.length) return null
+  const stacked = keys.some((k) => atlas.maps[k].complex)
+  const wins = keys.map((k) => drawWindow(atlas.maps[k]))
+  const w = stacked ? Math.max(...wins.map((v) => v.w))
+                    : wins.reduce((a, v) => a + v.w, 0) + INSET_GAP * (keys.length - 1)
+  const h = stacked ? wins.reduce((a, v) => a + v.h, 0) + INSET_GAP * (keys.length - 1)
+                    : Math.max(...wins.map((v) => v.h))
+
+  const at = {}
+  // A little more air than the world gets: a floor's caption sits above its top
+  // edge and a door can sit ON that edge, and `fit` fits the layout exactly.
+  let run = stacked ? MARGIN + 1 : MARGIN
+  keys.forEach((k, i) => {
+    const win = wins[i]
+    // the cross axis is centred, so a narrow gate house sits under the middle
+    // of the forest rather than jammed against its left edge
+    at[k] = stacked
+      ? { x: MARGIN + Math.round((w - win.w) / 2), y: run, m: atlas.maps[k], win, floor: true }
+      : { x: run, y: MARGIN + 1 + Math.round((h - win.h) / 2), m: atlas.maps[k], win, floor: true }
+    run += (stacked ? win.h : win.w) + INSET_GAP
+  })
+  return { at, w: w + 2 * MARGIN, h: h + 2 * MARGIN + 2, outdoor: 0, insets: 0,
+           interiors: keys, building, stacked }
+}
+
+/** The tiles that leave this cluster — the doors you walk back out through. */
+export function exitsFor(layout, atlas) {
+  if (!layout?.building) return []
+  const out = []
+  for (const [key, p] of Object.entries(layout.at)) {
+    for (const e of atlas?.maps?.[key]?.exits ?? []) {
+      out.push({
+        key: `${key}:${e.x}:${e.y}`,
+        to: e.to,
+        name: atlas.maps[e.to]?.name ?? e.to,
+        tile: { x: p.x + e.x - p.win.x, y: p.y + e.y - p.win.y },
+      })
+    }
+  }
+  return out
+}
+
+/** A caption for each floor, at its top-left corner in layout tiles. */
+export function floorsFor(layout, atlas) {
+  if (!layout?.building) return []
+  return Object.entries(layout.at).map(([key, p]) => ({
+    key,
+    label: floorLabel(p.m?.name, layout.building) || buildingLabel(layout.building),
+    tile: { x: p.x, y: p.y },
+  }))
 }
 
 /** Every door marker on the maps this layout draws, with whether the run went in. */
@@ -295,7 +375,7 @@ export function markersFor(layout, route, atlas) {
         building: d.building,
         name: buildingLabel(d.building),
         floors,
-        tile: { x: p.x + d.x - (p.m?.origin?.[0] ?? 0), y: p.y + d.y - (p.m?.origin?.[1] ?? 0) },
+        tile: { x: p.x + d.x - p.win.x, y: p.y + d.y - p.win.y },
         entered: floors.some((f) => route.maps[f]),
       })
     }
@@ -1195,8 +1275,7 @@ export function battlesFor(layout, route, { onlyMap = null } = {}) {
     }
     const p = layout?.at[key]
     if (!p) continue
-    const [ox, oy] = p.m?.origin ?? [0, 0]
-    out.push({ ...b, id: `b${i}`, tile: { x: p.x + b.tile[2] - ox, y: p.y + b.tile[3] - oy } })
+    out.push({ ...b, id: `b${i}`, tile: { x: p.x + b.tile[2] - p.win.x, y: p.y + b.tile[3] - p.win.y } })
   }
   return out
 }

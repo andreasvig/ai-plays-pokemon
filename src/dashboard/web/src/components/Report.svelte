@@ -521,7 +521,7 @@ where: {crash.where.join(' ← ')}{/if}</pre>
           <span class="faint">every tile, on the game's own map — click one for its turn</span>
         </button>
         {#if mapOpen}
-          <RouteMap runId={run.runId} height={560} onturn={(t) => { focused = null; mapTurn = t }} />
+          <RouteMap runId={run.runId} onturn={(t) => { focused = null; mapTurn = t }} />
         {/if}
       </section>
     {/if}

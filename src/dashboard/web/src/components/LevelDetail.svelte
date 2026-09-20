@@ -71,7 +71,7 @@
           <span class="cleared">every tile, on the game's own map</span>
         </button>
         {#if mapOpen}
-          <RouteMap runId={row.runId} height={560}
+          <RouteMap runId={row.runId}
             onturn={onreport ? (turn) => onreport(row, turn) : null} />
         {/if}
       </section>
