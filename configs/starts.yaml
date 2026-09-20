@@ -31,10 +31,23 @@ starts:
     name: "Red (boy)"
     default: true
     # The long-standing FireRed opening: standing in the bedroom before the game
-    # has asked for a name. Deliberately the SAME directory as
-    # executor.CANONICAL_SAVE rather than a copy of it — one file, so the casual
-    # boy start and the scored benchmark start can never drift apart.
-    path: "configs/saves/pokebench-v1"
+    # has asked for a name.
+    #
+    # It pointed at configs/saves/pokebench-v1 — deliberately the SAME directory
+    # as executor.CANONICAL_SAVE, so the casual boy start and the scored
+    # benchmark start could never drift apart. That reasoning was written for
+    # mGBA and it does not survive the backend change: pokebench-v1's
+    # emulator.state is an mGBA state and SkyEmu answers /load -> failed on it
+    # (src/emulator/backends/skyemu.py:837 names this exact file). So every
+    # casual FireRed run on this backend died before its first turn, which is
+    # not two starts drifting apart — it is one of them not existing.
+    #
+    # This is the SkyEmu capture of the same scene, made by
+    # v2-experiments/make_start_states.py, and it is already what
+    # configs/config-6.0.yaml loads as its snapshot. The invariant the old
+    # comment wanted now lives where it can hold: FireRed's roms.yaml
+    # `start_save` names this same directory, exactly as the other six games do.
+    path: "configs/saves/skyemu/firered-pokebench-v2"
     description: "Bedroom, start of game. Same savepoint the benchmark scores from."
 
   - rom: firered

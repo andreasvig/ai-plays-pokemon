@@ -50,6 +50,11 @@ roms:
     game_name: "Pokemon FireRed"
     game_code: BPRE
     sha1: dd5945db9b930750cb39d00c84da8571feebf417   # rev 1 (v1.1)
+    # The one game that had no start_save: its opening came from starts.yaml
+    # alone, pointing at the mGBA benchmark dir SkyEmu cannot load. Named here
+    # like the other six so the default opening and the named one are one
+    # directory (configs/saves/skyemu/README.md).
+    start_save: "configs/saves/skyemu/firered-pokebench-v2"
     default: true
 
   - id: emerald

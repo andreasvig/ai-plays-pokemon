@@ -211,7 +211,13 @@ def test_stamp_start_reverse_resolves_the_label_when_none_was_named():
     from src.app.executor import RunExecutor
 
     cfg: dict = {}
-    RunExecutor._stamp_start(cfg, _rom(), None, "configs/saves/pokebench-v1")
+    # The SkyEmu capture of FireRed's bedroom, which is what `boy` names since
+    # 2026-09-20 — it pointed at the mGBA benchmark dir, and SkyEmu answers
+    # /load -> failed on that file, so every casual FireRed run died before its
+    # first turn. Pinning the literal here on purpose: reverse-resolution is a
+    # lookup in the registry, so a test that read the path back OUT of the
+    # registry would pass whatever it said.
+    RunExecutor._stamp_start(cfg, _rom(), None, "configs/saves/skyemu/firered-pokebench-v2")
     assert cfg["_start_label"] == "boy"
 
 
