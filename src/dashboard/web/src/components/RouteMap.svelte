@@ -23,7 +23,7 @@
   import { tilePxOf, loadAtlas, loadTrainers, loadMapImage, worldLayout, clusterLayout, markersFor, exitsFor, floorsFor, battlesFor, drawRoute, drawArrows, drawSize, buildingLabel, visitAt } from '../lib/mapatlas.js'
   import { motionClock } from '../lib/motion.js'
   import { latticeAtlas, mergeAtlas, isLattice, drawLattice } from '../lib/lattice.js'
-  import { borderSides, hasBorder } from '../lib/borders.js'
+  import { borderSides, borderRows, hasBorder } from '../lib/borders.js'
   import { kindIsKnown, battleAria } from '../lib/battle.js'
   import BattleCard from './BattleCard.svelte'
 
@@ -45,20 +45,16 @@
   // off the frame. The floor has to be below whatever `fit` computes, or the
   // control does not do the one thing it is named for.
   const MIN_Z = 0.08, MAX_Z = 8, OPEN_Z = 2
-  /** Tiles of border drawn outside a map's edge, and how many are spent fading
-   *  it out. A multiple of the 2x2 border block, so the tiling stays in phase.
+  /** A map's fringe, in tiles: `rows` of its own border block, which for a
+   *  gen-3 tree block is 2 tiles each. One row by default, because that is what
+   *  Andreas asked for after two automatic attempts — "can't we just manually
+   *  augment the places where 1 row of trees would help enormously?"
    *
-   *  8, not 28 (Andreas, 2026-09-20). 28 tiles in every direction is not a
-   *  fringe, it is a second map made of one block, and where two of those
-   *  fields met they butted along a straight line. 8 is roughly what the GBA
-   *  itself shows past an edge — the screen is 15x10 tiles, so about 7 beyond
-   *  the one you stand on — which is the only amount we have evidence for.
-   *
-   *  Every CLOSED edge gets one; lib/borders.js is where a side is turned
-   *  off by hand when it reads wrong. A road out is never painted over — see
-   *  the `open` spans below. */
-  const BLEED = 8
-  const FADE = 6
+   *  A single row is drawn at full strength and simply ends, the way the trees
+   *  around a town end. Anything thicker keeps its innermost row solid and
+   *  fades the rest out, so a deliberate wide fringe still does not read as the
+   *  edge of another map. */
+  const bleedOf = (m, rows) => rows * Math.max(1, m?.border?.w ?? 2, m?.border?.h ?? 2)
 
   let route = $state(null)
   let atlas = $state(null)
@@ -228,16 +224,16 @@
     c.imageSmoothingEnabled = false
     const s = TPX * view.z
 
-    // Pass 1 — BORDERS, where lib/borders.js asks for one. Drawn first, so a
-    // neighbouring map's real ground always wins over another map's border
-    // where the two overlap. Nothing is drawn by default: see that module for
-    // why automatic borders were removed and how to name one back.
+    // Pass 1 — the FRINGE, for the maps lib/borders.js names by hand. Drawn
+    // first, so a neighbouring map's real ground always wins where the two
+    // overlap, and a road out is never painted over at all.
     for (const [key, p] of Object.entries(L.at)) {
       if (isLattice(p.m) || !hasBorder(r.game, key, p.m)) continue
       const bimg = decoded.get(`${r.game}/${p.m.border.file}`)
       if (!bimg) continue
-      const wT = p.win.w + 2 * BLEED, hT = p.win.h + 2 * BLEED
-      const [bx, by] = screenAt(p.x - BLEED, p.y - BLEED)
+      const bleed = bleedOf(p.m, borderRows(r.game, key))
+      const wT = p.win.w + 2 * bleed, hT = p.win.h + 2 * bleed
+      const [bx, by] = screenAt(p.x - bleed, p.y - bleed)
       if (bx > vw || by > vh || bx + wT * s < 0 || by + hT * s < 0) continue
       const baked = borderPatch(bimg, r.game, key, p.m, p.win)
       if (!baked) continue
@@ -288,8 +284,10 @@
   function borderPatch(bimg, game, key, m, win) {
     const sides = borderSides(game, key, m)
     if (!sides.size) return null
-    const wT = win.w + 2 * BLEED, hT = win.h + 2 * BLEED
-    const id = `${game}/${key}:${wT}x${hT}:${TPX}`
+    const rows = borderRows(game, key)
+    const bleed = bleedOf(m, rows)
+    const wT = win.w + 2 * bleed, hT = win.h + 2 * bleed
+    const id = `${game}/${key}:${wT}x${hT}:${rows}:${TPX}`
     if (borderPatches.has(id)) return borderPatches.get(id)
     const cv = document.createElement('canvas')
     cv.width = wT * TPX
@@ -299,8 +297,8 @@
     g.imageSmoothingEnabled = false
     const pat = g.createPattern(bimg, 'repeat')
     if (!pat) return null
-    const B = BLEED * TPX, F = FADE * TPX
-    // Only the bands for the sides that were asked for.
+    const B = bleed * TPX
+    // Only the bands for the sides that were named.
     g.fillStyle = pat
     if (sides.has('up')) g.fillRect(0, 0, cv.width, B)
     if (sides.has('down')) g.fillRect(0, cv.height - B, cv.width, B)
@@ -308,7 +306,7 @@
     if (sides.has('right')) g.fillRect(cv.width - B, 0, B, cv.height)
 
     g.globalCompositeOperation = 'destination-out'
-    // A road out is never painted over, whatever the curated list says. The
+    // A road out is never painted over, whatever this map is listed for. The
     // spans come from pret's own `connections` (scripts/render_gamemaps.py
     // open_edges) and are in the map's tiles, so they shift by the drawn
     // window exactly as everything else does.
@@ -320,18 +318,21 @@
       else if (o.side === 'left') g.fillRect(0, a, B, len)
       else if (o.side === 'right') g.fillRect(cv.width - B, a, B, len)
     }
-    // Then fade what is left to nothing at the outer edge, so the block reads
-    // as the last thing you could see rather than as the edge of another map.
-    const ramp = (x0, y0, x1, y1) => {
-      const gr = g.createLinearGradient(x0, y0, x1, y1)
-      gr.addColorStop(0, 'rgba(0,0,0,1)')
-      gr.addColorStop(1, 'rgba(0,0,0,0)')
-      return gr
+    // Everything past the innermost row fades out. At one row that is nothing,
+    // and the trees end where trees end.
+    const F = Math.max(0, bleed - Math.max(1, m?.border?.w ?? 2, m?.border?.h ?? 2)) * TPX
+    if (F > 0) {
+      const ramp = (x0, y0, x1, y1) => {
+        const gr = g.createLinearGradient(x0, y0, x1, y1)
+        gr.addColorStop(0, 'rgba(0,0,0,1)')
+        gr.addColorStop(1, 'rgba(0,0,0,0)')
+        return gr
+      }
+      g.fillStyle = ramp(0, 0, F, 0); g.fillRect(0, 0, F, cv.height)
+      g.fillStyle = ramp(cv.width, 0, cv.width - F, 0); g.fillRect(cv.width - F, 0, F, cv.height)
+      g.fillStyle = ramp(0, 0, 0, F); g.fillRect(0, 0, cv.width, F)
+      g.fillStyle = ramp(0, cv.height, 0, cv.height - F); g.fillRect(0, cv.height - F, cv.width, F)
     }
-    g.fillStyle = ramp(0, 0, F, 0); g.fillRect(0, 0, F, cv.height)
-    g.fillStyle = ramp(cv.width, 0, cv.width - F, 0); g.fillRect(cv.width - F, 0, F, cv.height)
-    g.fillStyle = ramp(0, 0, 0, F); g.fillRect(0, 0, cv.width, F)
-    g.fillStyle = ramp(0, cv.height, 0, cv.height - F); g.fillRect(0, cv.height - F, cv.width, F)
     g.globalCompositeOperation = 'source-over'
     borderPatches.set(id, cv)
     return cv
