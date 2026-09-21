@@ -104,10 +104,32 @@ GBC_CRYSTAL = ScreenSpec(name="crystal-us", width=160, height=144, tile=16,
                          cam_x_tiles=4, cam_y_px=4 * 16, textbox_top=96,
                          grid_overlay=False, sprite_rise=8, sprite_drop=16)
 
+#: Emerald on the GBA. The same console and the same 240x160 screen as FireRed,
+#: and the camera turns out to be the same too — but it is MEASURED, not
+#: inherited. ``stitch_maps.py --calibrate`` on the three v2 Emerald runs
+#: (2026-09-21, 17 unambiguous one-tile moves, 6 discarded): tile 16 px with
+#: 17/17 pairs agreeing, the screen-fixed box at x 114..125 / y 68..86, giving
+#: player column 7 and tile top row 71 +/- 2 — i.e. cam_y_px 72. No render was
+#: involved in any of that, so it is an independent confirmation rather than a
+#: number fitted to the artwork it is used to check.
+#: ``grid_overlay`` is False because every surviving Emerald run recorded with
+#: ``screenshot.grid_overlay: false``; ``run_spec`` reads the flag per run
+#: anyway, which is the thing that was wrong for FireRed for weeks.
+GBA_EMERALD = ScreenSpec(name="emerald-us", width=240, height=160, tile=16,
+                         cam_x_tiles=7, cam_y_px=4 * 16 + 8, textbox_top=112,
+                         grid_overlay=False)
+
 #: Every game the stitcher can place a frame for, by the same key the atlas and
 #: the ROM registry use. The stitcher's body was always generic; only its
 #: imports named one game.
-SPECS: dict[str, ScreenSpec] = {s.name: s for s in (GBA_FIRERED, GBC_CRYSTAL)}
+#:
+#: The four DS games are deliberately ABSENT rather than approximated. A
+#: ``ScreenSpec`` asserts that the screen is an axis-aligned window of the tile
+#: grid; the DS field camera is tilted and perspective, so no (tile, pixel)
+#: pair describes it and a plausible-looking entry here would be a lie that
+#: every consumer downstream would believe. ``verify_map_alignment.py`` refuses
+#: those games by name and says why.
+SPECS: dict[str, ScreenSpec] = {s.name: s for s in (GBA_FIRERED, GBA_EMERALD, GBC_CRYSTAL)}
 
 
 def run_spec(spec: ScreenSpec, run_dir: Path) -> ScreenSpec:
@@ -491,7 +513,8 @@ def canvas_for(spec: ScreenSpec, placed: list[tuple[int, int]]) -> MapCanvas:
     return MapCanvas(x0, y0, max(xs) - x0 + spec.width, max(ys) - y0 + spec.height)
 
 
-__all__ = ["CANDIDATES", "ScreenSpec", "GBA_FIRERED", "GBC_CRYSTAL", "SPECS", "MapCanvas",
+__all__ = ["CANDIDATES", "ScreenSpec", "GBA_FIRERED", "GBA_EMERALD", "GBC_CRYSTAL", "SPECS",
+           "MapCanvas",
            "Sample", "fit_colour_map",
            "window_origin", "keep_mask", "to_native", "run_spec", "positions", "battle_turns",
            "screenshots", "samples", "canvas_for", "ungrid", "grid_pixels", "has_trace"]

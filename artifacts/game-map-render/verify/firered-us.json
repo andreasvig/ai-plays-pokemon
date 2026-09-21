@@ -1,0 +1,438 @@
+{
+ "band": {
+  "self_floor": 0.9999,
+  "aligned_match": 0.9,
+  "suspect_match": 0.7,
+  "spread_wrong_crop": 0.2,
+  "spread_wrong_map": 0.2,
+  "margin": 0.05,
+  "saturated_match": 0.995,
+  "saturated_wrong_crop": 0.9
+ },
+ "tolerance": 1,
+ "games": {
+  "firered-us": {
+   "turns": 13,
+   "match": 0.9954922027290448,
+   "direct": 0.9928736517719569,
+   "raw8": 0.0,
+   "wrong_crop": 0.10193726937269372,
+   "wrong_map": 0.027559963099630998,
+   "margin": 0.4391912669126691,
+   "self": 1.0,
+   "reasons": [],
+   "not_map_frames": [
+    83
+   ],
+   "sampled": 14,
+   "verdict": "ALIGNED",
+   "game": "firered-us",
+   "runs": [
+    "2026-09-19_09-35-04_config-v2-firered__gpt-6-astra-low",
+    "2026-09-19_09-36-10_config-v2-firered__gpt-6-astra-low",
+    "2026-09-19_09-40-14_config-v2-firered__gpt-6-astra-low",
+    "2026-09-19_09-44-02_config-v2-firered__gpt-6-astra-low",
+    "2026-09-19_12-39-59_config-v2-firered__gpt-6-astra-low",
+    "2026-09-19_12-42-33_config-v2-firered__gpt-6-astra-low",
+    "2026-09-19_22-48-56_config-v2-firered__gemini-3-8-flash-minimal",
+    "2026-09-19_23-34-32_config-v2-firered__gemini-3-8-flash-minimal"
+   ],
+   "warnings": [],
+   "sheet": "artifacts/game-map-render/verify/firered-us__8-runs.png",
+   "rows": [
+    {
+     "turn": 2,
+     "run": "2026-09-19_09-35-04_config-v2-firered__gpt-6-astra-low",
+     "key": "4:1",
+     "name": "PalletTown_PlayersHouse_2F",
+     "tile": [
+      10,
+      2
+     ],
+     "window": [
+      48,
+      -40
+     ],
+     "match": 0.9922138047138047,
+     "direct": 0.9922138047138047,
+     "raw8": 0.0,
+     "via": "direct",
+     "collapse": 1.0,
+     "px": 9504,
+     "coverage": 0.36531365313653136,
+     "wrong_crop": 0.14274553571428572,
+     "wrong_map": 0.00023062730627306272,
+     "wrong_map_key": "1:0",
+     "neighbour_best": 0.6261770244821092,
+     "margin": 0.3660367802316955,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 3,
+     "run": "2026-09-19_09-40-14_config-v2-firered__gpt-6-astra-low",
+     "key": "4:0",
+     "name": "PalletTown_PlayersHouse_1F",
+     "tile": [
+      10,
+      2
+     ],
+     "window": [
+      48,
+      -40
+     ],
+     "match": 0.981418918918919,
+     "direct": 0.981418918918919,
+     "raw8": 0.0,
+     "via": "direct",
+     "collapse": 1.0,
+     "px": 10656,
+     "coverage": 0.4095940959409594,
+     "wrong_crop": 0.07189360119047619,
+     "wrong_map": 0.00023062730627306272,
+     "wrong_map_key": "1:0",
+     "neighbour_best": 0.5759680134680135,
+     "margin": 0.40545090545090545,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 10,
+     "run": "2026-09-19_09-44-02_config-v2-firered__gpt-6-astra-low",
+     "key": "4:3",
+     "name": "PalletTown_ProfessorOaksLab",
+     "tile": [
+      6,
+      4
+     ],
+     "window": [
+      -16,
+      -8
+     ],
+     "match": 0.9628274268104776,
+     "direct": 0.9628274268104776,
+     "raw8": 0.0,
+     "via": "direct",
+     "collapse": 1.0,
+     "px": 20768,
+     "coverage": 0.7982779827798278,
+     "wrong_crop": 0.21458724202626642,
+     "wrong_map": 0.0,
+     "wrong_map_key": "1:0",
+     "neighbour_best": 0.6167180277349769,
+     "margin": 0.34610939907550076,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 6,
+     "run": "2026-09-19_12-42-33_config-v2-firered__gpt-6-astra-low",
+     "key": "3:0",
+     "name": "PalletTown",
+     "tile": [
+      11,
+      2
+     ],
+     "window": [
+      64,
+      -40
+     ],
+     "match": 0.9954922027290448,
+     "direct": 0.9954922027290448,
+     "raw8": 0.00402046783625731,
+     "via": "direct",
+     "collapse": 1.0,
+     "px": 16416,
+     "coverage": 0.6309963099630996,
+     "wrong_crop": 0.10193726937269372,
+     "wrong_map": 0.05058425584255843,
+     "wrong_map_key": "1:0",
+     "neighbour_best": 0.5459917153996101,
+     "margin": 0.4495004873294347,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 39,
+     "run": "2026-09-19_22-48-56_config-v2-firered__gemini-3-8-flash-minimal",
+     "key": "3:0",
+     "name": "PalletTown",
+     "tile": [
+      12,
+      8
+     ],
+     "window": [
+      80,
+      56
+     ],
+     "match": 0.9971555965559655,
+     "direct": 0.9971555965559655,
+     "raw8": 0.0,
+     "via": "direct",
+     "collapse": 1.0,
+     "px": 26016,
+     "coverage": 1.0,
+     "wrong_crop": 0.08106549815498156,
+     "wrong_map": 0.029174354243542436,
+     "wrong_map_key": "1:0",
+     "neighbour_best": 0.5398985239852399,
+     "margin": 0.4572570725707257,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 83,
+     "run": "2026-09-19_22-48-56_config-v2-firered__gemini-3-8-flash-minimal",
+     "key": "3:1",
+     "name": "ViridianCity",
+     "tile": [
+      36,
+      19
+     ],
+     "window": [
+      464,
+      232
+     ],
+     "match": 0.0031903444034440346,
+     "direct": 0.0031903444034440346,
+     "raw8": 0.0,
+     "via": "colour map REFUSED (31->6 colours)",
+     "collapse": 5.166666666666667,
+     "px": 26016,
+     "coverage": 1.0,
+     "wrong_crop": 0.0013837638376383763,
+     "wrong_map": 0.0,
+     "wrong_map_key": "1:0",
+     "neighbour_best": 0.005996309963099631,
+     "margin": -0.0028059655596555967,
+     "map_frame": false,
+     "self": 1.0
+    },
+    {
+     "turn": 119,
+     "run": "2026-09-19_22-48-56_config-v2-firered__gemini-3-8-flash-minimal",
+     "key": "4:3",
+     "name": "PalletTown_ProfessorOaksLab",
+     "tile": [
+      6,
+      4
+     ],
+     "window": [
+      -16,
+      -8
+     ],
+     "match": 0.9928736517719569,
+     "direct": 0.9928736517719569,
+     "raw8": 0.0,
+     "via": "direct",
+     "collapse": 1.0,
+     "px": 20768,
+     "coverage": 0.7982779827798278,
+     "wrong_crop": 0.21464587242026267,
+     "wrong_map": 0.0,
+     "wrong_map_key": "1:0",
+     "neighbour_best": 0.639926810477658,
+     "margin": 0.3529468412942989,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 32,
+     "run": "2026-09-19_23-34-32_config-v2-firered__gemini-3-8-flash-minimal",
+     "key": "3:1",
+     "name": "ViridianCity",
+     "tile": [
+      22,
+      19
+     ],
+     "window": [
+      240,
+      232
+     ],
+     "match": 0.9971555965559655,
+     "direct": 0.9971555965559655,
+     "raw8": 0.0006918819188191881,
+     "via": "direct",
+     "collapse": 1.0,
+     "px": 26016,
+     "coverage": 1.0,
+     "wrong_crop": 0.2294741697416974,
+     "wrong_map": 0.0504689421894219,
+     "wrong_map_key": "1:0",
+     "neighbour_best": 0.6373385608856088,
+     "margin": 0.3598170356703567,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 107,
+     "run": "2026-09-19_23-34-32_config-v2-firered__gemini-3-8-flash-minimal",
+     "key": "1:0",
+     "name": "ViridianForest",
+     "tile": [
+      43,
+      40
+     ],
+     "window": [
+      576,
+      568
+     ],
+     "match": 0.9965790282902829,
+     "direct": 0.0,
+     "raw8": 0.0,
+     "via": "colour map",
+     "collapse": 1.0,
+     "px": 26016,
+     "coverage": 1.0,
+     "wrong_crop": 0.0,
+     "wrong_map": 0.0,
+     "wrong_map_key": "3:20",
+     "neighbour_best": 0.0,
+     "margin": 0.9965790282902829,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 168,
+     "run": "2026-09-19_23-34-32_config-v2-firered__gemini-3-8-flash-minimal",
+     "key": "1:0",
+     "name": "ViridianForest",
+     "tile": [
+      12,
+      14
+     ],
+     "window": [
+      80,
+      152
+     ],
+     "match": 0.9965790282902829,
+     "direct": 0.0,
+     "raw8": 0.0,
+     "via": "colour map",
+     "collapse": 1.0294117647058822,
+     "px": 26016,
+     "coverage": 1.0,
+     "wrong_crop": 0.0,
+     "wrong_map": 0.0,
+     "wrong_map_key": "3:20",
+     "neighbour_best": 0.0,
+     "margin": 0.9965790282902829,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 222,
+     "run": "2026-09-19_23-34-32_config-v2-firered__gemini-3-8-flash-minimal",
+     "key": "3:2",
+     "name": "PewterCity",
+     "tile": [
+      23,
+      20
+     ],
+     "window": [
+      256,
+      248
+     ],
+     "match": 0.9971555965559655,
+     "direct": 0.9971555965559655,
+     "raw8": 0.0006918819188191881,
+     "via": "direct",
+     "collapse": 1.0,
+     "px": 26016,
+     "coverage": 1.0,
+     "wrong_crop": 0.13818419434194343,
+     "wrong_map": 0.07633763837638377,
+     "wrong_map_key": "1:0",
+     "neighbour_best": 0.5579643296432965,
+     "margin": 0.4391912669126691,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 280,
+     "run": "2026-09-19_23-34-32_config-v2-firered__gemini-3-8-flash-minimal",
+     "key": "3:2",
+     "name": "PewterCity",
+     "tile": [
+      6,
+      16
+     ],
+     "window": [
+      -16,
+      184
+     ],
+     "match": 0.996945178335535,
+     "direct": 0.996945178335535,
+     "raw8": 0.0004953764861294584,
+     "via": "direct",
+     "collapse": 1.0,
+     "px": 24224,
+     "coverage": 0.931119311193112,
+     "wrong_crop": 0.26495233702337023,
+     "wrong_map": 0.11377613776137761,
+     "wrong_map_key": "1:0",
+     "neighbour_best": 0.3928335535006605,
+     "margin": 0.6041116248348745,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 308,
+     "run": "2026-09-19_23-34-32_config-v2-firered__gemini-3-8-flash-minimal",
+     "key": "3:2",
+     "name": "PewterCity",
+     "tile": [
+      46,
+      21
+     ],
+     "window": [
+      624,
+      264
+     ],
+     "match": 0.9951519916142557,
+     "direct": 0.9951519916142557,
+     "raw8": 0.0023584905660377358,
+     "via": "direct",
+     "collapse": 1.0,
+     "px": 15264,
+     "coverage": 0.5867158671586716,
+     "wrong_crop": 0.058370535714285715,
+     "wrong_map": 0.09547970479704797,
+     "wrong_map_key": "1:0",
+     "neighbour_best": 0.46992260787992496,
+     "margin": 0.5252293837343307,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 405,
+     "run": "2026-09-19_23-34-32_config-v2-firered__gemini-3-8-flash-minimal",
+     "key": "3:21",
+     "name": "Route3",
+     "tile": [
+      34,
+      4
+     ],
+     "window": [
+      432,
+      -8
+     ],
+     "match": 0.9919073705179283,
+     "direct": 0.9919073705179283,
+     "raw8": 0.0,
+     "via": "direct",
+     "collapse": 1.0,
+     "px": 24096,
+     "coverage": 0.9261992619926199,
+     "wrong_crop": 0.08448646986469864,
+     "wrong_map": 0.027559963099630998,
+     "wrong_map_key": "1:0",
+     "neighbour_best": 0.764359229747676,
+     "margin": 0.22754814077025232,
+     "map_frame": true,
+     "self": 1.0
+    }
+   ]
+  }
+ }
+}

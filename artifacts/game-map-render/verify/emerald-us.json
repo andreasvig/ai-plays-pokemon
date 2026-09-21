@@ -1,0 +1,437 @@
+{
+ "band": {
+  "self_floor": 0.9999,
+  "aligned_match": 0.9,
+  "suspect_match": 0.7,
+  "spread_wrong_crop": 0.2,
+  "spread_wrong_map": 0.2,
+  "margin": 0.05,
+  "saturated_match": 0.995,
+  "saturated_wrong_crop": 0.9
+ },
+ "tolerance": 1,
+ "games": {
+  "emerald-us": {
+   "turns": 11,
+   "match": 0.9818188806888068,
+   "direct": 0.9818188806888068,
+   "raw8": 0.0014990774907749078,
+   "wrong_crop": 0.21909299829182308,
+   "wrong_map": 0.07222478474784748,
+   "margin": 0.3738068117205565,
+   "self": 1.0,
+   "reasons": [],
+   "not_map_frames": [
+    193,
+    268,
+    343
+   ],
+   "sampled": 14,
+   "verdict": "ALIGNED",
+   "game": "emerald-us",
+   "runs": [
+    "2026-09-19_22-45-52_config-v2-emerald__gemini-3-8-flash-minimal",
+    "2026-09-19_22-48-56_config-v2-emerald__gemini-3-8-flash-minimal",
+    "2026-09-20_00-28-43_config-v2-emerald__gemini-3-8-flash-minimal"
+   ],
+   "warnings": [
+    "2026-09-19_22-48-56_config-v2-emerald__gemini-3-8-flash-minimal: 386 traces and not one sample with in_battle set \u2014 this run's battle probe never fired, so its battle frames reach this tool unfiltered (and reach the stitcher's atlas unfiltered too)"
+   ],
+   "sheet": "artifacts/game-map-render/verify/emerald-us__3-runs.png",
+   "rows": [
+    {
+     "turn": 2,
+     "run": "2026-09-19_22-45-52_config-v2-emerald__gemini-3-8-flash-minimal",
+     "key": "25:40",
+     "name": "InsideOfTruck",
+     "tile": [
+      4,
+      3
+     ],
+     "window": [
+      -48,
+      -24
+     ],
+     "match": 0.8901408450704226,
+     "direct": 0.8878521126760563,
+     "raw8": 0.13221830985915492,
+     "via": "colour map",
+     "collapse": 1.0769230769230769,
+     "px": 5680,
+     "coverage": 0.21832718327183273,
+     "wrong_crop": null,
+     "wrong_map": 0.0,
+     "wrong_map_key": "0:19",
+     "neighbour_best": 0.3583815028901734,
+     "margin": 0.5317593421802491,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 37,
+     "run": "2026-09-19_22-48-56_config-v2-emerald__gemini-3-8-flash-minimal",
+     "key": "1:2",
+     "name": "LittlerootTown_MaysHouse_1F",
+     "tile": [
+      2,
+      8
+     ],
+     "window": [
+      -80,
+      56
+     ],
+     "match": 0.9712469733656174,
+     "direct": 0.9712469733656174,
+     "raw8": 0.0,
+     "via": "direct",
+     "collapse": 1.0,
+     "px": 13216,
+     "coverage": 0.5079950799507995,
+     "wrong_crop": 0.10274621212121213,
+     "wrong_map": 0.0,
+     "wrong_map_key": "0:19",
+     "neighbour_best": 0.6114491150442478,
+     "margin": 0.35979785832136957,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 76,
+     "run": "2026-09-19_22-48-56_config-v2-emerald__gemini-3-8-flash-minimal",
+     "key": "2:2",
+     "name": "OldaleTown_PokemonCenter_1F",
+     "tile": [
+      7,
+      4
+     ],
+     "window": [
+      0,
+      -8
+     ],
+     "match": 0.8705420827389444,
+     "direct": 0.8705420827389444,
+     "raw8": 0.010699001426533523,
+     "via": "direct",
+     "collapse": 1.0,
+     "px": 22432,
+     "coverage": 0.8622386223862238,
+     "wrong_crop": 0.10161924939467312,
+     "wrong_map": 0.0,
+     "wrong_map_key": "0:19",
+     "neighbour_best": 0.42676232665639446,
+     "margin": 0.44377975608254994,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 116,
+     "run": "2026-09-19_22-48-56_config-v2-emerald__gemini-3-8-flash-minimal",
+     "key": "0:10",
+     "name": "OldaleTown",
+     "tile": [
+      11,
+      18
+     ],
+     "window": [
+      64,
+      216
+     ],
+     "match": 0.9801626826029216,
+     "direct": 0.9801626826029216,
+     "raw8": 0.0009545152722443559,
+     "via": "direct",
+     "collapse": 1.0,
+     "px": 24096,
+     "coverage": 0.9261992619926199,
+     "wrong_crop": 0.05520833333333333,
+     "wrong_map": 0.02971248462484625,
+     "wrong_map_key": "0:19",
+     "neighbour_best": 0.5493680884676145,
+     "margin": 0.4307945941353071,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 155,
+     "run": "2026-09-19_22-48-56_config-v2-emerald__gemini-3-8-flash-minimal",
+     "key": "0:16",
+     "name": "Route101",
+     "tile": [
+      10,
+      7
+     ],
+     "window": [
+      48,
+      40
+     ],
+     "match": 0.9888530135301353,
+     "direct": 0.9888530135301353,
+     "raw8": 0.0013068880688806889,
+     "via": "direct",
+     "collapse": 1.0,
+     "px": 26016,
+     "coverage": 1.0,
+     "wrong_crop": 0.2885164051355207,
+     "wrong_map": 0.2116389913899139,
+     "wrong_map_key": "0:19",
+     "neighbour_best": 0.7095633456334564,
+     "margin": 0.279289667896679,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 193,
+     "run": "2026-09-19_22-48-56_config-v2-emerald__gemini-3-8-flash-minimal",
+     "key": "0:17",
+     "name": "Route102",
+     "tile": [
+      25,
+      13
+     ],
+     "window": [
+      288,
+      136
+     ],
+     "match": 0.0,
+     "direct": 0.0,
+     "raw8": 0.0,
+     "via": "colour map REFUSED (10->1 colours)",
+     "collapse": 10.0,
+     "px": 26016,
+     "coverage": 1.0,
+     "wrong_crop": 0.0,
+     "wrong_map": 0.0,
+     "wrong_map_key": "0:19",
+     "neighbour_best": 0.0,
+     "margin": 0.0,
+     "map_frame": false,
+     "self": 1.0
+    },
+    {
+     "turn": 233,
+     "run": "2026-09-19_22-48-56_config-v2-emerald__gemini-3-8-flash-minimal",
+     "key": "0:19",
+     "name": "Route104",
+     "tile": [
+      27,
+      58
+     ],
+     "window": [
+      320,
+      856
+     ],
+     "match": 0.9923508610086101,
+     "direct": 0.9923508610086101,
+     "raw8": 0.0014990774907749078,
+     "via": "direct",
+     "collapse": 1.0,
+     "px": 26016,
+     "coverage": 1.0,
+     "wrong_crop": 0.3589329643296433,
+     "wrong_map": 0.08859932349323493,
+     "wrong_map_key": "0:18",
+     "neighbour_best": 0.6803121156211562,
+     "margin": 0.3120387453874539,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 268,
+     "run": "2026-09-19_22-48-56_config-v2-emerald__gemini-3-8-flash-minimal",
+     "key": "0:19",
+     "name": "Route104",
+     "tile": [
+      11,
+      41
+     ],
+     "window": [
+      64,
+      584
+     ],
+     "match": 0.00011531365313653136,
+     "direct": 0.00011531365313653136,
+     "raw8": 0.00011531365313653136,
+     "via": "colour map REFUSED (26->3 colours)",
+     "collapse": 8.666666666666666,
+     "px": 26016,
+     "coverage": 1.0,
+     "wrong_crop": 0.0,
+     "wrong_map": 0.0,
+     "wrong_map_key": "0:18",
+     "neighbour_best": 0.00011531365313653136,
+     "margin": 0.0,
+     "map_frame": false,
+     "self": 1.0
+    },
+    {
+     "turn": 306,
+     "run": "2026-09-19_22-48-56_config-v2-emerald__gemini-3-8-flash-minimal",
+     "key": "0:9",
+     "name": "LittlerootTown",
+     "tile": [
+      0,
+      17
+     ],
+     "window": [
+      -112,
+      200
+     ],
+     "match": 0.9718713278495887,
+     "direct": 0.9718713278495887,
+     "raw8": 0.0,
+     "via": "direct",
+     "collapse": 1.0,
+     "px": 13616,
+     "coverage": 0.523370233702337,
+     "wrong_crop": 0.22887996941896024,
+     "wrong_map": 0.07222478474784748,
+     "wrong_map_key": "0:19",
+     "neighbour_best": 0.5980645161290322,
+     "margin": 0.3738068117205565,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 343,
+     "run": "2026-09-19_22-48-56_config-v2-emerald__gemini-3-8-flash-minimal",
+     "key": "0:16",
+     "name": "Route101",
+     "tile": [
+      17,
+      4
+     ],
+     "window": [
+      160,
+      -8
+     ],
+     "match": 0.0,
+     "direct": 0.0,
+     "raw8": 0.0,
+     "via": "colour map REFUSED (10->2 colours)",
+     "collapse": 5.0,
+     "px": 15776,
+     "coverage": 0.6063960639606396,
+     "wrong_crop": 0.0,
+     "wrong_map": 0.0,
+     "wrong_map_key": "0:19",
+     "neighbour_best": 0.0,
+     "margin": 0.0,
+     "map_frame": false,
+     "self": 1.0
+    },
+    {
+     "turn": 382,
+     "run": "2026-09-19_22-48-56_config-v2-emerald__gemini-3-8-flash-minimal",
+     "key": "8:1",
+     "name": "PetalburgCity_Gym",
+     "tile": [
+      4,
+      108
+     ],
+     "window": [
+      -48,
+      1656
+     ],
+     "match": 0.995020964360587,
+     "direct": 0.995020964360587,
+     "raw8": 0.07547169811320754,
+     "via": "direct",
+     "collapse": 1.0,
+     "px": 15264,
+     "coverage": 0.5867158671586716,
+     "wrong_crop": 0.07694085027726433,
+     "wrong_map": 0.0,
+     "wrong_map_key": "0:19",
+     "neighbour_best": 0.6147798742138365,
+     "margin": 0.38024109014675045,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 57,
+     "run": "2026-09-20_00-28-43_config-v2-emerald__gemini-3-8-flash-minimal",
+     "key": "0:16",
+     "name": "Route101",
+     "tile": [
+      6,
+      2
+     ],
+     "window": [
+      -16,
+      -40
+     ],
+     "match": 0.995020964360587,
+     "direct": 0.995020964360587,
+     "raw8": 0.003996331236897275,
+     "via": "direct",
+     "collapse": 1.0,
+     "px": 15264,
+     "coverage": 0.5867158671586716,
+     "wrong_crop": 0.23843019680196803,
+     "wrong_map": 0.16939575645756458,
+     "wrong_map_key": "0:19",
+     "neighbour_best": 0.5758219954648526,
+     "margin": 0.4191989688957344,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 135,
+     "run": "2026-09-20_00-28-43_config-v2-emerald__gemini-3-8-flash-minimal",
+     "key": "0:16",
+     "name": "Route101",
+     "tile": [
+      3,
+      17
+     ],
+     "window": [
+      -64,
+      200
+     ],
+     "match": 0.987160441426146,
+     "direct": 0.987160441426146,
+     "raw8": 0.0018569609507640068,
+     "via": "direct",
+     "collapse": 1.0,
+     "px": 18848,
+     "coverage": 0.7244772447724477,
+     "wrong_crop": 0.4702706812652068,
+     "wrong_map": 0.20614237392373924,
+     "wrong_map_key": "0:19",
+     "neighbour_best": 0.6208372420262664,
+     "margin": 0.36632319939987956,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 188,
+     "run": "2026-09-20_00-28-43_config-v2-emerald__gemini-3-8-flash-minimal",
+     "key": "0:10",
+     "name": "OldaleTown",
+     "tile": [
+      9,
+      15
+     ],
+     "window": [
+      32,
+      168
+     ],
+     "match": 0.9818188806888068,
+     "direct": 0.9818188806888068,
+     "raw8": 0.0,
+     "via": "direct",
+     "collapse": 1.0,
+     "px": 26016,
+     "coverage": 1.0,
+     "wrong_crop": 0.2093060271646859,
+     "wrong_map": 0.08702337023370234,
+     "wrong_map_key": "0:19",
+     "neighbour_best": 0.6354551045510455,
+     "margin": 0.34636377613776137,
+     "map_frame": true,
+     "self": 1.0
+    }
+   ]
+  }
+ }
+}
