@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BattleCard harness</title>
+    <style>
+      html, body { margin: 0; background: #14161a; color: #e6e8ec;
+                   font: 12px/1.35 ui-sans-serif, system-ui, sans-serif; }
+      #app { display: flex; flex-direction: column; gap: 10px; padding: 14px; }
+      .row { display: flex; gap: 14px; align-items: flex-start; }
+      .label { width: 430px; color: #9aa2b2; font-size: 10.5px; padding-top: 2px; }
+      .host { background: #1b1e24; border: 1px solid #2a2e36; border-radius: 6px; padding: 8px; }
+    </style>
+  </head>
+  <body>
+    <!--
+      DEV-ONLY harness for src/components/BattleCard.svelte — one real battle
+      per cartridge, so the sprite a card draws can be compared against the
+      emulator frame the run captured for that turn. Vite's build input is
+      index.html alone, so this page is served by `npm run dev` only.
+
+        npm run dev  →  http://localhost:5173/battlecards.html
+    -->
+    <div id="app"></div>
+    <script type="module" src="/src/dev/battlecards.svelte.js"></script>
+  </body>
+</html>
