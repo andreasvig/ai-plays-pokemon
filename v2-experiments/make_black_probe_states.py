@@ -85,11 +85,15 @@ def main() -> int:
                 if route:
                     emu.press_button_list(route)
                     emu.wait_for_stable_screen()
+                shot, _, statepath = shot.partition("|")
                 reads = f"  {do_reads(emu, args.read)}" if args.read else ""
+                if statepath:
+                    Path(statepath).parent.mkdir(parents=True, exist_ok=True)
+                    emu.save_state(statepath)
                 if shot:
                     Path(shot).parent.mkdir(parents=True, exist_ok=True)
                     emu.capture_screenshot(preprocess=False).save(shot)
-                print(f"  [{','.join(route) or 'origin'}] {shot or ''}{reads}")
+                print(f"  [{','.join(route) or 'origin'}] {shot or ''} {statepath}{reads}")
             return 0
         emu.load_state(args.load)
         emu.wait_for_stable_screen()
