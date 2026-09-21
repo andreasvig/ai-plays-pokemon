@@ -105,17 +105,22 @@ shape would draw the old ones at scale 0. `mapatlas.cameraOf` normalises both;
 - **`png_pad`** — `[left, top, right, bottom]` in PNG pixels: where the map's
   own **ground rectangle** sits inside the picture. Straight down the two are
   the same rectangle and the field is absent. Pitched, a roof rises out of the
-  top of the ground rect and a tree leans off its side, so the picture must be
-  bigger than the map. **Measured from the projected scene bounding box per
-  map, not assumed** — the same roof in the middle of a map is still inside the
-  ground rect, because a pitched camera pushes everything down the picture as z
-  grows; only geometry over the top ROW leaves the frame. Capped at
-  `camera.MAX_PAD_TILES = (2, 8, 2, 2)` tiles so one runaway placement cannot
-  size the canvas (uncapped, a single stray prop asks for 4,630 px of empty
-  picture above a 439 px map).
+  top of the ground rect, so the picture must be taller than the map.
   A viewer anchors the image by it: the PNG pixel holding the map's ground
   corner is `png_pad` (plus the window offset), and that pixel lands where the
   layout says the map starts.
+
+  **Left and right are always zero, and that is a proof, not a measurement.**
+  The projection has no yaw — `px = tile_px · tx`, no `ty` term, no divide —
+  so nothing whose x lies inside the map can project outside it. See §3a for
+  what a horizontal pad was actually holding.
+
+  **Top and bottom are measured, over vertices inside the map's own cell.**
+  Top from tall geometry near the map's northern edge; bottom from geometry
+  BELOW the reference plane, which projects down — Twinleaf's pond bed at −16
+  world units is 11 px. Capped at `camera.MAX_PAD_TILES = (2, 8, 2, 2)` tiles
+  so one runaway placement cannot size the canvas (uncapped, a single stray
+  prop asks for 4,630 px of empty picture above a 439 px map).
 - **`heights`** — the world altitude of the ground under each tile of the
   window, **run-length encoded row-major**: `[count, value, count, value, …]`
   over `width × height`, in DS world units, whole numbers. Indexed from the
@@ -189,6 +194,79 @@ Two traps the sampler exists to avoid, both of which produce a plausible number:
   terrain then props **per chunk**, so a two-chunk map's terrain is two runs.
   `terrain_only(scene, spans)` slices per chunk; taking the first N reads a
   second chunk's terrain as props and its props as terrain.
+
+### 3a. A gen-4 terrain model is not bounded by its own cell
+
+Found by a two-tile sliver of forest hanging off Twinleaf Town's bottom-right
+corner in the shipped pitched atlas, outside the map, attached to nothing.
+
+The first guess was that a neighbouring matrix cell had been caught in the
+chunk. **It had not.** The offending triangles are the map's OWN terrain
+model: Twinleaf's land block reaches x = 548 and z = 576 against a cell of
+512 × 512, i.e. **2.25 tiles past its own south-east corner**, and 16 units
+past it to the north-west; **20 of its 2,398 triangles lie wholly outside**.
+Route 201's reach one tile past (2 triangles). Sandgem, Route 202, Route 219
+and every Platinum interior have none. SoulSilver's MAP_60 has 34.
+
+In the game the adjacent cell's model is drawn over them and nobody sees it.
+In a map-local render there is no adjacent cell. Straight down it still cost
+nothing — a triangle outside the cell projects outside the canvas and is
+clipped for free — so this could only appear once the camera was angled and a
+pad opened a band around the picture for it to sit in.
+
+Two changes, both in `camera.py`:
+
+- **`in_footprint`** drops triangles with no part of their x/z footprint
+  inside the map's own cell, before rendering and before measuring. Dropped,
+  not clipped to the boundary, so a triangle that STRADDLES the edge — a tree
+  half in the map — is still drawn and still cut off by the frame, exactly as
+  the straight-down tier cuts it.
+- **`measure_pad`** forces the horizontal pads to zero and takes the vertical
+  bound over vertices inside the cell, so a quad reaching one tile south
+  cannot buy a band to show the next cell in.
+
+Measured, before and after, as opaque pixels strictly outside the ground rect:
+
+| map | pad before | outside L/T/R/B before | pad after | outside after |
+|---|---|---|---|---|
+| 411 Twinleaf | `[4, 31, 32, 32]` | 476 / 7 868 / **2 268** / **2 497** | `[0, 28, 0, 11]` | 0 / 7 710 / 0 / 1 443 |
+| 418 Sandgem | `[4, 31, 4, 0]` | 387 / 10 740 / 476 / 0 | `[0, 28, 0, 0]` | 0 / 10 660 / 0 / 0 |
+| 342 Route 201 | `[4, 31, 4, 5]` | 30 / 23 872 / 59 / 65 | `[0, 9, 0, 0]` | 0 / 9 216 / 0 / 0 |
+| 343 Route 202 | `[4, 31, 4, 0]` | 476 / 10 304 / 297 / 0 | `[0, 28, 0, 0]` | 0 / 10 226 / 0 / 0 |
+| 391 Route 219 | `[0, 31, 0, 0]` | 0 / 10 642 / 0 / 0 | `[0, 9, 0, 0]` | 0 / 4 608 / 0 / 0 |
+| SS 33 | `[0, 49, 0, 0]` | 0 / 43 122 / 0 / 0 | `[0, 35, 0, 0]` | 0 / 42 464 / 0 / 0 |
+| SS 60 | `[32, 54, 32, 32]` | 134 / 14 112 / 0 / 0 | `[0, 54, 0, 0]` | 0 / 14 112 / 0 / 0 |
+
+Every left and right band is now empty because it does not exist. Twinleaf's
+remaining 11 px bottom band is its pond bed, which is the map's own and does
+project down.
+
+**What it costs inside the map: 178 pixels, on one map.** Rendering every map
+with and without the clip and comparing the ground rectangle alone: identical
+on 16 of 17, and Route 201 loses a 29 × 9 px strip of grass and one flower
+cluster — a tile of Route 202's ground at y = 17, lifted 8.7 px by its own
+altitude back over the boundary and into Route 201's last nine rows. The map
+now ends where the map ends.
+
+**The byte-identity control is intact and did not need re-establishing.**
+Straight down, a dropped triangle projects outside the canvas and the
+rasteriser already clipped it, so the clip is a no-op: checked against the
+pre-change committed atlas, `--camera topdown` still reproduced all 11
+Platinum and all 14 gen-5 3D PNGs byte for byte.
+
+The control's REFERENCE changed, though, and for a different reason: the
+shipped DS atlas is pitched from 2026-09-21, so "topdown reproduces the
+shipped PNGs" is false by design and would have rotted into a skip or a lie.
+It is now two assertions that survive a re-render:
+
+- `--camera topdown` is **bit-for-bit `field.ortho_pixels`**, the
+  straight-down rasteriser that predates `camera.py` and that nothing here
+  touched. It is also the control on the clip, because `ortho_pixels` does no
+  clipping at all.
+- **re-rendering the shipped atlas under its own declared camera reproduces
+  it**, for gen 4 and gen 5 separately. That one caught this change: it
+  failed on 5 of 11 Platinum maps until the atlas was re-rendered, which is
+  exactly what it is for.
 
 ---
 

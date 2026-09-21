@@ -34,14 +34,14 @@
   "source": "artifacts/game-map-render/observed/soulsilver-us-observed.json + every map id our runs' samples name",
   "note": "the cartridge's own textured 3D field artwork, under the field camera's own pitch, orthographic at one pixel per world unit; PNG pixel (0,0) is tile png_origin, so a source rect subtracts it"
  },
- "bytes": 368499,
+ "bytes": 366837,
  "maps": {
   "33:0": {
    "name": null,
    "width": 96,
    "height": 32,
    "file": "33-0.png",
-   "bytes": 208330,
+   "bytes": 207856,
    "indoor": false,
    "border": {
     "file": "33-0-border.png",
@@ -60,7 +60,7 @@
    ],
    "png_pad": [
     0,
-    49,
+    35,
     0,
     0
    ],
@@ -1185,7 +1185,7 @@
    "width": 32,
    "height": 32,
    "file": "60-0.png",
-   "bytes": 109193,
+   "bytes": 108213,
    "indoor": false,
    "border": {
     "file": "60-0-border.png",
@@ -1203,10 +1203,10 @@
     384
    ],
    "png_pad": [
-    32,
+    0,
     54,
-    32,
-    32
+    0,
+    0
    ],
    "heights": [
     211,
@@ -1505,7 +1505,7 @@
    "width": 14,
    "height": 16,
    "file": "61-0.png",
-   "bytes": 16364,
+   "bytes": 16324,
    "indoor": true,
    "border": {
     "file": "61-0-border.png",
@@ -1515,7 +1515,7 @@
    },
    "walkable": 95,
    "png_pad": [
-    16,
+    0,
     16,
     0,
     0
@@ -1542,7 +1542,7 @@
    "width": 13,
    "height": 12,
    "file": "63-0.png",
-   "bytes": 10574,
+   "bytes": 10490,
    "indoor": true,
    "border": {
     "file": "63-0-border.png",
@@ -1552,7 +1552,7 @@
    },
    "walkable": 65,
    "png_pad": [
-    32,
+    0,
     4,
     0,
     0
@@ -1690,7 +1690,7 @@
    "width": 13,
    "height": 12,
    "file": "66-0.png",
-   "bytes": 10574,
+   "bytes": 10490,
    "indoor": true,
    "border": {
     "file": "66-0-border.png",
@@ -1700,7 +1700,7 @@
    },
    "walkable": 65,
    "png_pad": [
-    32,
+    0,
     4,
     0,
     0

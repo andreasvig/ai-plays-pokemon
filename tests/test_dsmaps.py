@@ -153,26 +153,39 @@ def _png_size(path: Path) -> tuple[int, int]:
 def test_each_ds_png_holds_exactly_the_source_rect_the_viewer_reads(atlases):
     """The invariant `RouteMap.svelte` draws by, asserted on the shipped bytes.
 
-    It takes the source rect from `drawWindow(m)` — `origin + trim` — subtracts
-    `pngOrigin(m)`, and multiplies by `tile_px`:
+    Straight down it takes the source rect from `drawWindow(m)` — `origin +
+    trim` — subtracts `pngOrigin(m)`, and multiplies by `tile_px`:
 
         c.drawImage(img, (win.x - png.x) * TPX, (win.y - png.y) * TPX,
                     win.w * TPX, win.h * TPX, ...)
 
-    A PNG whose frame does not match what the atlas declares is read outside
-    itself. The canvas spec draws nothing for a source rect outside the image
-    and raises no error, which is why this is asserted against the file header
-    rather than left to the eye.
+    Under the PITCHED camera (2026-09-21) there is no source rect that is the
+    map — a roof rises out of the top of the ground rectangle — so the viewer
+    draws the whole image ANCHORED by `png_pad`, and the invariant becomes:
+    the PNG is the ground rectangle under the atlas's own projection, plus
+    exactly the pad it declares. Same failure either way: a PNG whose frame
+    does not match what the atlas declares is read outside itself, and the
+    canvas spec draws nothing for a source rect outside the image and raises
+    no error.
     """
+    sys.path.insert(0, str(REPO_ROOT / "scripts"))
+    from ds3d import camera as C
+
     for game, atlas in atlases:
         tile = atlas["tile_px"]
+        raw = atlas.get("camera")
+        kind = raw.get("kind") if isinstance(raw, dict) else (raw or "topdown")
+        cam = C.camera_for(kind, tile)
         for key, m in atlas["maps"].items():
             ox, oy = m.get("origin", [0, 0])
             px, py = m.get("png_origin", [0, 0])
+            pl, pt, pr, pb = m.get("png_pad", [0, 0, 0, 0])
             w, h = _png_size(MAPS_ROOT / game / m["file"])
-            want = ((ox - px + m["width"]) * tile, (oy - py + m["height"]) * tile)
+            frame = C.Frame(cam, ox - px + m["width"], oy - py + m["height"],
+                            (pl, pt, pr, pb))
+            want = (frame.width, frame.height)
             assert (w, h) == want, \
-                f"{game}:{key} is {w}x{h}px but its source rect ends at {want[0]}x{want[1]}"
+                f"{game}:{key} is {w}x{h}px but its declared frame is {want[0]}x{want[1]}"
 
 
 def test_a_ds_atlas_ships_the_map_and_not_the_empty_world_before_it(atlases):
@@ -233,7 +246,10 @@ def test_a_ds_atlas_states_the_tile_px_its_own_tier_renders_at(atlases):
     """
     import render_dsmaps
 
-    want = {v: k for k, v in render_dsmaps.RENDER_KIND.items()}
+    # `render` names the tier AND the camera ("3d-ortho" / "3d-pitched"), so
+    # the tier is recovered from the pair table rather than from the old
+    # one-to-one map, which knew nothing about a camera.
+    want = {v: tier for (tier, _cam), v in render_dsmaps.RENDER_KIND_FOR.items()}
     for game, atlas in atlases:
         assert isinstance(atlas["tile_px"], int) and atlas["tile_px"] > 0, game
         tier = want.get(atlas["render"])

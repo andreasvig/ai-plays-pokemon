@@ -116,8 +116,18 @@ def test_the_ds_games_are_refused_with_the_projection_reason(game):
     atlas = json.loads(path.read_text())
     with pytest.raises(V.NoInstrument) as exc:
         V.screen_for(game, atlas)
-    assert "3d-ortho" in str(exc.value)
-    assert "PERSPECTIVE" in str(exc.value).upper()
+    msg = str(exc.value)
+    # Names the render the atlas actually declares, rather than one spelling
+    # of it: "3d-ortho" became "3d-pitched" on 2026-09-21 and the reason
+    # changed with it, so a hard-coded string would have had to be lowered to
+    # keep passing. The claim is unchanged — the refusal says WHICH render and
+    # WHY, and the why is still the emulator's perspective camera.
+    assert atlas["render"] in msg
+    assert "PERSPECTIVE" in msg.upper()
+    # And it does not send the reader off to measure a ScreenSpec, which is
+    # the instruction for a game that could have one. A DS game cannot.
+    assert "--calibrate" not in msg, \
+        f"{game} is being told to measure a screen model it cannot have: {msg}"
 
 
 # -- 2. the reader ------------------------------------------------------------

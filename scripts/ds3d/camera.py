@@ -345,30 +345,85 @@ class Frame:
 #: otherwise size the canvas off it and every map would ship a mostly-empty
 #: PNG. Eight tiles up is taller than anything gen 4 or gen 5 puts on a map —
 #: measured at 3.4 tiles for Platinum's tallest, Jubilife's buildings.
+#: Horizontally the cap is moot — see `measure_pad`, which forces those to
+#: zero — and it stays as the belt to that braces.
 MAX_PAD_TILES = (2.0, 8.0, 2.0, 2.0)
 
 
+def in_footprint(tris, tiles_w: int, tiles_h: int, origin=(0.0, 0.0)):
+    """The triangles with any part of their x/z footprint inside the map's cell.
+
+    A GEN-4 TERRAIN MODEL IS NOT BOUNDED BY ITS OWN 32x32 CELL. Measured:
+    Twinleaf Town's land block reaches 36 world units — 2.25 tiles — past its
+    cell to the south-east and 16 units past it to the north-west, and 20 of
+    its triangles lie WHOLLY outside; Route 201's reach one tile past. They
+    are the map's own terrain model, not a neighbour's: in the game the
+    adjacent cell draws over them, and in a map-local render there is no
+    adjacent cell, so they hang in the air.
+
+    Straight down they were never a problem — a triangle outside the cell
+    projects outside the canvas and is clipped for free. Pitched, a pad opens
+    a band around the canvas and they appear in it: a two-tile sliver of
+    forest floating off Twinleaf's bottom-right corner, attached to nothing.
+
+    Dropped rather than clipped to the boundary, which keeps a triangle that
+    STRADDLES the edge — a tree half in the map — drawn exactly as the
+    straight-down tier draws it, cut off at the frame.
+    """
+    gx = tiles_w * TILE + origin[0]
+    gz = tiles_h * TILE + origin[1]
+    keep = []
+    for tri in tris:
+        v = tri[0]
+        if (v[:, 0].max() <= origin[0] or v[:, 0].min() >= gx
+                or v[:, 2].max() <= origin[1] or v[:, 2].min() >= gz):
+            continue
+        keep.append(tri)
+    return keep
+
+
 def measure_pad(sc, cam: Camera, tiles_w: int, tiles_h: int) -> tuple[int, int, int, int]:
-    """How far the scene spills past its own ground rectangle, in PNG pixels.
+    """How far the map's own ground rectangle has to grow to hold its geometry.
 
     Straight down it is zero by construction — nothing is outside its own
-    footprint when the footprint IS the projection. Pitched, a roof rises and
-    a tree leans off its tile, and the picture has to hold them or a town is
+    footprint when the footprint IS the projection. Pitched, a roof rises out
+    of the top of the ground rect and the picture has to hold it or a town is
     drawn with its rooftops sliced off.
+
+    **Horizontally the answer is always zero, and that is a proof rather than
+    a measurement.** The projection has no yaw: `px = tile_px * tx`, with no
+    `ty` term and no divide. Nothing whose x lies inside the map can project
+    outside it, so a horizontal pad has nothing legitimate to hold — every
+    pixel it ever held was geometry outside the cell (see `in_footprint`).
+    Twinleaf shipped a 32 px right pad holding 2,268 opaque pixels of exactly
+    that, and it read as a sliver of forest hanging off the corner.
+
+    **Vertically it is measured, and only from geometry the map owns.** The
+    bound is taken over vertices INSIDE the cell rectangle, so a tree one tile
+    south of the map cannot buy a band for itself at the bottom — while a
+    pond bed at -16 world units, which is the map's own and does project
+    down, still can.
     """
     if not sc.tris or cam.kind == "topdown":
         return (0, 0, 0, 0)
     proj = cam.projector(1, (0.0, 0.0))
-    lo = np.array([np.inf, np.inf])
-    hi = np.array([-np.inf, -np.inf])
-    for v, _uv, _tex, _wrap in sc.tris:
-        p = proj(v)[:, :2]
-        lo = np.minimum(lo, p.min(0))
-        hi = np.maximum(hi, p.max(0))
+    gx, gz = tiles_w * TILE, tiles_h * TILE
+    lo = np.inf
+    hi = -np.inf
+    for v, _uv, _tex, _wrap in in_footprint(sc.tris, tiles_w, tiles_h):
+        inside = ((v[:, 0] >= -1e-6) & (v[:, 0] <= gx + 1e-6)
+                  & (v[:, 2] >= -1e-6) & (v[:, 2] <= gz + 1e-6))
+        # A triangle covering the cell with every vertex outside it would
+        # otherwise contribute nothing; take all three, which is the
+        # conservative direction (a pad too large shows background, a pad too
+        # small cuts artwork off).
+        py = proj(v)[inside if inside.any() else slice(None), 1]
+        lo = min(lo, float(py.min()))
+        hi = max(hi, float(py.max()))
+    if not np.isfinite(lo):
+        return (0, 0, 0, 0)
     caps = [t * cam.tile_px for t in MAX_PAD_TILES]
-    raw = (max(0.0, -lo[0]), max(0.0, -lo[1]),
-           max(0.0, hi[0] - tiles_w * cam.tile_px_x),
-           max(0.0, hi[1] - tiles_h * cam.tile_px_y))
+    raw = (0.0, max(0.0, -lo), 0.0, max(0.0, hi - tiles_h * cam.tile_px_y))
     return tuple(int(min(math.ceil(r), c)) for r, c in zip(raw, caps))
 
 
@@ -377,15 +432,19 @@ def pixels(sc, cam: Camera, tiles_w: int, tiles_h: int, ss: int,
            light=None) -> tuple[np.ndarray, Frame]:
     """Rasterise `sc` under `cam`. Returns the RGBA image and the frame it fills.
 
-    The straight-down path is `field.ortho_pixels` with the pad forced to zero,
-    which is why switching the flag back reproduces the shipped atlas exactly.
+    Only the geometry inside the map's own cell is drawn (`in_footprint`).
+    Straight down that is a no-op — a triangle outside the cell projects
+    outside the canvas and the rasteriser already clips it — which is what
+    keeps `--camera topdown` byte-identical to the shipped atlas.
     """
     from . import scene as _scene
 
+    tris = in_footprint(sc.tris, tiles_w, tiles_h)
     if pad is None:
         pad = measure_pad(sc, cam, tiles_w, tiles_h)
     frame = Frame(cam, tiles_w, tiles_h, pad)
-    fb = _scene.render(sc, cam.projector(ss, frame.origin),
+    shim = type("Clipped", (), {"tris": tris})()
+    fb = _scene.render(shim, cam.projector(ss, frame.origin),
                        frame.width * ss, frame.height * ss, light=light)
     return _scene.downsample(fb, ss), frame
 

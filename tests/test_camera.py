@@ -21,6 +21,7 @@ without it.
 
 from __future__ import annotations
 
+import json
 import math
 import sys
 from pathlib import Path
@@ -237,6 +238,102 @@ def test_measure_pad_is_zero_straight_down_and_finds_what_rises_when_pitched():
     assert C.measure_pad(middle, cam, 32, 32) == (0, 0, 0, 0)
 
 
+def test_a_horizontal_pad_is_zero_because_the_projection_has_no_yaw():
+    """Not measured — proved, and then asserted on the real maps.
+
+    `px = tile_px * tx` with no `ty` term and no divide, so nothing whose x
+    lies inside the map can project outside it. Every pixel a horizontal pad
+    ever held was geometry outside the cell: Twinleaf shipped a 32 px right
+    pad holding 2,268 opaque pixels of exactly that, and it read as a sliver
+    of forest hanging off the corner.
+    """
+    cam = C.camera_for("pitched", 16)
+    wide = S.Scene()
+    # ground, plus a tree well past the cell to the east and one to the west
+    wide.tris = (quad(0.0, 0, 512, 0, 512) + quad(40.0, 520, 560, 200, 240)
+                 + quad(40.0, -40, -4, 200, 240))
+    pad = C.measure_pad(wide, cam, 32, 32)
+    assert pad[0] == 0 and pad[2] == 0
+    # MUTATION: put the old `max(0, -lo[0])` / `max(0, hi[0] - w*tile_px_x)`
+    # back and this reads (36, _, 48, _) — the defect, exactly.
+
+
+def test_geometry_wholly_outside_the_cell_is_dropped_rather_than_padded_for():
+    """A gen-4 terrain model is NOT bounded by its own 32x32 cell.
+
+    Measured on the cartridge: 20 of Twinleaf Town's triangles lie wholly
+    outside its cell, reaching 36 world units (2.25 tiles) past it to the
+    south-east; Route 201 has 2. They are the map's OWN terrain model, not a
+    neighbour's — in the game the adjacent cell draws over them, and in a
+    map-local render there is nothing to draw over them.
+
+    Straight down they cost nothing, because a triangle outside the cell
+    projects outside the canvas. Pitched, a pad opens a band and they appear
+    in it.
+    """
+    cam = C.camera_for("pitched", 16)
+    sc = S.Scene()
+    inside = quad(0.0, 0, 512, 0, 512)
+    east = quad(0.0, 520, 560, 200, 240)        # wholly outside in x
+    south = quad(17.0, 200, 232, 512, 528)      # touches the edge, no area inside
+    straddle = quad(0.0, 496, 528, 200, 240)    # half in, half out
+    sc.tris = inside + east + south + straddle
+    keep = C.in_footprint(sc.tris, 32, 32)
+    assert len(keep) == len(inside) + len(straddle)
+    # MUTATION: `>` instead of `>=` on the far edges keeps `south`, which is
+    # the Route 201 case: one tile of ground at y=17 south of the map, lifted
+    # 8.7 px by its own altitude back over the boundary and into the last 9
+    # rows of the map's own rectangle. 178 pixels of a neighbour's grass.
+
+
+def test_a_straddling_triangle_is_kept_and_clipped_the_way_straight_down_clips_it():
+    cam = C.camera_for("pitched", 16)
+    sc = S.Scene()
+    sc.tris = quad(0.0, 0, 512, 0, 512) + quad(64.0, 496, 528, 200, 240)
+    assert len(C.in_footprint(sc.tris, 32, 32)) == len(sc.tris)
+    # and it buys no horizontal pad even so
+    assert C.measure_pad(sc, cam, 32, 32)[2] == 0
+
+
+def test_the_bottom_pad_holds_the_maps_own_low_ground_and_not_a_neighbours():
+    """Height only lifts content UP, so a bottom pad needs a reason.
+
+    A pond bed below the reference plane is one: it projects DOWN and the
+    picture has to hold it. A tree one tile south of the map is not.
+    """
+    cam = C.camera_for("pitched", 16)
+    pond = S.Scene()
+    pond.tris = quad(0.0, 0, 512, 0, 512) + quad(-16.0, 100, 200, 480, 512)
+    assert C.measure_pad(pond, cam, 32, 32)[3] == math.ceil(16 * cam.height_px)
+
+    neighbour = S.Scene()
+    neighbour.tris = quad(0.0, 0, 512, 0, 512) + quad(40.0, 100, 200, 520, 560)
+    assert C.measure_pad(neighbour, cam, 32, 32)[3] == 0
+
+
+def test_a_straddling_triangle_buys_a_pad_only_for_the_half_inside_the_cell():
+    """The half that hangs out is still DRAWN — and still clipped by the frame.
+
+    Without this rule a single quad reaching one tile past the southern edge
+    asks for 24 px of band to hold ground that is not this map's, and the
+    frame grows to show a strip of the next cell. The bound is taken over the
+    vertices inside the rectangle, so the overhang is cut at the edge exactly
+    as the straight-down tier cuts it.
+    """
+    cam = C.camera_for("pitched", 16)
+    south = S.Scene()
+    south.tris = quad(0.0, 0, 512, 0, 512) + quad(0.0, 100, 200, 500, 540)
+    assert C.in_footprint(south.tris, 32, 32) == south.tris, "it straddles; it is kept"
+    assert C.measure_pad(south, cam, 32, 32)[3] == 0
+    # MUTATION: `proj(v)[:, 1]` instead of `proj(v)[inside, 1]` — the far
+    # vertex at z=540 projects to 462.8 and buys 24 px of the next cell.
+
+    north = S.Scene()
+    north.tris = quad(0.0, 0, 512, 0, 512) + quad(64.0, 100, 200, -20, 10)
+    # the inside vertex at z=10 is 24 px up; the outside one at z=-20 is 50
+    assert C.measure_pad(north, cam, 32, 32)[1] == 25
+
+
 def test_the_pad_is_capped_so_one_runaway_placement_cannot_size_the_canvas():
     wild = S.Scene()
     wild.tris = quad(0.0, 0, 512, 0, 512) + quad(9000.0, 0, 16, 0, 16)
@@ -371,38 +468,91 @@ def test_the_games_own_camera_is_not_nearly_orthographic_over_a_whole_map():
     assert cam.tile_to_px(1, 31)[0] - cam.tile_to_px(0, 31)[0] == 16.0
 
 
-# -- 7. the control: straight down still renders the atlas that shipped --------
+# -- 7. the control: the camera module is the renderer that preceded it --------
+
+@pytest.mark.skipif(not (CACHE / "SHA").is_file(),
+                    reason="no local/pret-cache-platinum")
+def test_camera_topdown_is_bit_for_bit_field_ortho_pixels():
+    """`--camera topdown` is a switch BACK, not a re-render that looks alike.
+
+    The reference is `field.ortho_pixels`, the straight-down rasteriser that
+    predates this module and that nothing here touched. It survives the atlas
+    being re-rendered, which the comparison against the shipped PNGs did not:
+    the shipped DS atlas is pitched from 2026-09-21 and a topdown render no
+    longer matches it by design.
+
+    "Looks the same" would hide a depth base, a rounding rule or a 6.1e-17
+    cosine — each of which this caught while it was being written — and it
+    also proves `in_footprint` is a no-op straight down, because
+    `ortho_pixels` does no clipping at all.
+    """
+    import render_dsmaps as R
+    from ds3d import field as F
+    from ds3d import scene as SC
+
+    d = R.Decomp(offline=True)
+    art = R.Field3D(d, tile_px=16, cam=C.camera_for("topdown", 16))
+    ids, _ = R.placeable(d, R.observed_maps("platinum-us"))
+    checked, bad = 0, []
+    for map_id in ids:
+        win = R.map_window(d, map_id)
+        area = art.area(win.header)
+        matrix = d.matrix_of(win.header)
+        alts = matrix.get("altitudes")
+        sc = SC.Scene()
+        for col, row in sorted(win.cells):
+            raw = art.land_block(win.header, col, row)
+            if raw is None:
+                continue
+            alt = alts[row][col] if alts else 0
+            F.add_chunk(sc, art.assets, raw, area, prop_archive=art.prop_archive(win),
+                        origin=F.chunk_origin(col, row, win.c0, win.r0, alt))
+        if not sc.tris:
+            continue
+        tw, th = win.cw * 32, win.ch * 32
+        want = F.ortho_pixels(sc, tw, th, 16, R.SUPERSAMPLE)
+        got, _frame = C.pixels(sc, art.cam, tw, th, R.SUPERSAMPLE)
+        checked += 1
+        if got.shape != want.shape or not (got == want).all():
+            bad.append(win.key)
+    assert checked >= 8, f"only {checked} maps compared"
+    assert not bad, f"{len(bad)} of {checked} renders drifted: {bad}"
+
 
 @pytest.mark.skipif(not (CACHE / "SHA").is_file(),
                     reason="no local/pret-cache-platinum")
 @pytest.mark.skipif(not (MAPS / "platinum-us" / "index.json").is_file(),
                     reason="no Platinum atlas rendered yet")
-def test_camera_topdown_reproduces_the_shipped_platinum_pngs_byte_for_byte():
-    """The only way to know `--camera topdown` is a switch BACK.
+def test_rerendering_the_shipped_atlas_under_its_own_camera_reproduces_it():
+    """The other half: the pixels on disk are the pixels this code makes NOW.
 
-    Every DS render now goes through `ds3d/camera.py`, including the
-    straight-down one. "Looks the same" would hide a depth base, a rounding
-    rule or a 6.1e-17 cosine; this is the assertion that does not.
+    Under whichever camera the atlas declares, so it does not go stale the
+    next time the default changes. A failure here is either a renderer change
+    nobody re-rendered for, or an atlas rendered from a tree that is not this
+    one — and it will not say which, so read the diff.
     """
     from PIL import Image
 
     import render_dsmaps as R
 
+    atlas = json.loads((MAPS / "platinum-us" / "index.json").read_text())
+    cam = atlas.get("camera")
+    kind = cam.get("kind") if isinstance(cam, dict) else (cam or "topdown")
     d = R.Decomp(offline=True)
-    art = R.Field3D(d, tile_px=16, cam=C.camera_for("topdown", 16))
+    art = R.Field3D(d, tile_px=atlas["tile_px"],
+                    cam=C.camera_for(kind, atlas["tile_px"]))
     checked, bad = 0, []
-    for png in sorted((MAPS / "platinum-us").glob("*-0.png")):
-        map_id = int(png.stem.split("-")[0])
-        r = R.render_map(d, map_id, art, cam=art.cam)
-        if r.render != "3d-ortho":
-            continue
-        got = R.full_pixels(r, 16)
-        want = np.array(Image.open(png).convert("RGBA"))
+    for key, entry in sorted(atlas["maps"].items()):
+        if entry.get("render") and entry["render"] != atlas["render"]:
+            continue                       # fell back to the silhouette
+        r = R.render_map(d, int(key.split(":")[0]), art, cam=art.cam)
+        got = R.full_pixels(r, atlas["tile_px"])
+        want = np.array(Image.open(MAPS / "platinum-us" / entry["file"]).convert("RGBA"))
         checked += 1
         if got.shape != want.shape or not (got == want).all():
-            bad.append(png.name)
+            bad.append(f"{key} {got.shape[:2]} vs {want.shape[:2]}")
     assert checked >= 8, f"only {checked} maps compared"
-    assert not bad, f"{len(bad)} of {checked} PNGs changed: {bad}"
+    assert not bad, f"{len(bad)} of {checked} PNGs differ from a fresh render: {bad}"
 
 
 GEN5_ROM = REPO_ROOT / "roms" / "Pokemon - Black Version 2 (USA, Europe) (NDSi Enhanced).nds"
@@ -411,25 +561,28 @@ GEN5_ROM = REPO_ROOT / "roms" / "Pokemon - Black Version 2 (USA, Europe) (NDSi E
 @pytest.mark.skipif(not GEN5_ROM.is_file(), reason="no Black 2 cartridge")
 @pytest.mark.skipif(not (MAPS / "black2-us" / "index.json").is_file(),
                     reason="no Black 2 atlas rendered yet")
-def test_camera_topdown_reproduces_the_shipped_black2_pngs_byte_for_byte():
-    """The same control on the other renderer.
+def test_the_gen5_renderer_reproduces_its_own_shipped_atlas():
+    """The same control on the other renderer, under its own declared camera.
 
     Gen 5 got the camera on the same day and through the same module, and it
     has its own `render_map`, its own `to_png` density rule and its own
-    silhouette fallback. One of the two reproducing the shipped atlas says
-    nothing about the other.
+    silhouette fallback. One of the two reproducing its atlas says nothing
+    about the other.
     """
     from PIL import Image
 
     import render_gen5maps as G
 
+    atlas = json.loads((MAPS / "black2-us" / "index.json").read_text())
+    cam = atlas.get("camera")
+    kind = cam.get("kind") if isinstance(cam, dict) else (cam or "topdown")
     rom = G.Gen5Rom("black2-us")
-    art = G.Field3D(rom, tile_px=16, cam=C.camera_for("topdown", 16))
+    art = G.Field3D(rom, tile_px=16, cam=C.camera_for(kind, 16))
     checked, bad = 0, []
     for map_id in G.map_ids("black2-us"):
         win = G.map_window(rom, map_id)
-        got, kind, _frame, _h = G.render_map(rom, win, art, cam=art.cam)
-        if kind != "3d-ortho":
+        got, got_kind, _frame, _h = G.render_map(rom, win, art, cam=art.cam)
+        if got_kind != atlas["render"]:
             continue
         want = np.array(Image.open(MAPS / "black2-us" / f"{map_id}-0.png").convert("RGBA"))
         checked += 1

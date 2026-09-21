@@ -34,14 +34,14 @@
   "source": "artifacts/game-map-render/observed/platinum-us-observed.json + every map id our runs' samples name",
   "note": "the cartridge's own textured 3D field artwork, under the field camera's own pitch, orthographic at one pixel per world unit; PNG pixel (0,0) is tile png_origin, so a source rect subtracts it"
  },
- "bytes": 662965,
+ "bytes": 641753,
  "maps": {
   "342:0": {
    "name": "Route201",
    "width": 64,
    "height": 32,
    "file": "342-0.png",
-   "bytes": 122013,
+   "bytes": 119133,
    "indoor": false,
    "border": {
     "file": "342-0-border.png",
@@ -59,10 +59,10 @@
     832
    ],
    "png_pad": [
-    4,
-    31,
-    4,
-    5
+    0,
+    9,
+    0,
+    0
    ],
    "heights": [
     968,
@@ -136,7 +136,7 @@
    "width": 32,
    "height": 32,
    "file": "343-0.png",
-   "bytes": 134520,
+   "bytes": 130552,
    "indoor": false,
    "border": {
     "file": "343-0-border.png",
@@ -154,9 +154,9 @@
     800
    ],
    "png_pad": [
-    4,
-    31,
-    4,
+    0,
+    28,
+    0,
     0
    ],
    "heights": [
@@ -202,7 +202,7 @@
    "width": 32,
    "height": 32,
    "file": "391-0.png",
-   "bytes": 95806,
+   "bytes": 94022,
    "indoor": false,
    "border": {
     "file": "391-0-border.png",
@@ -221,7 +221,7 @@
    ],
    "png_pad": [
     0,
-    31,
+    9,
     0,
     0
    ],
@@ -392,7 +392,7 @@
    "width": 32,
    "height": 32,
    "file": "411-0.png",
-   "bytes": 124490,
+   "bytes": 116121,
    "indoor": false,
    "border": {
     "file": "411-0-border.png",
@@ -410,10 +410,10 @@
     864
    ],
    "png_pad": [
-    4,
-    31,
-    32,
-    32
+    0,
+    28,
+    0,
+    11
    ],
    "heights": [
     39,
@@ -825,7 +825,7 @@
    "width": 32,
    "height": 32,
    "file": "418-0.png",
-   "bytes": 114396,
+   "bytes": 110185,
    "indoor": false,
    "border": {
     "file": "418-0-border.png",
@@ -843,9 +843,9 @@
     832
    ],
    "png_pad": [
-    4,
-    31,
-    4,
+    0,
+    28,
+    0,
     0
    ],
    "heights": [
