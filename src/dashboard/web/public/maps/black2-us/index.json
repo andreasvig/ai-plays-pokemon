@@ -15,11 +15,12 @@
   "version": null,
   "source": null
  },
+ "doors": "observed-transitions",
  "map_set": {
   "kind": "observed",
   "source": "artifacts/game-map-render/observed/black2-us-observed.json + every map id our runs' samples name",
   "note": "the cartridge's own textured 3D field artwork \u2014 terrain and props \u2014 rendered straight down and orthographic at one pixel per world unit; PNG pixel (0,0) is tile png_origin, so a source rect subtracts it",
-  "doors": "none: Gen 5 event data is not decoded, so an interior renders but the viewer has no door to open it from"
+  "doors": "observed transitions: Gen 5 event data is not decoded, so a door is a warp our runs walked between two DIFFERENT maps with at least one of them an interior \u2014 a same-map warp is a staircase and two outdoor maps share matrix_000, so their seam is an `open` span. These are the doors that were used, not the doors that exist. A direction nobody walked is read off the tile the player landed on coming the other way and marked `via: landed`, which is what makes the house every run STARTS in reachable at all."
  },
  "bytes": 369551,
  "maps": {
@@ -56,6 +57,29 @@
      "from": 0,
      "to": 32
     }
+   ],
+   "doors": [
+    {
+     "x": 43,
+     "y": 750,
+     "to": "429:0",
+     "building": "Map429",
+     "via": "walked"
+    },
+    {
+     "x": 47,
+     "y": 761,
+     "to": "428:0",
+     "building": "Map428",
+     "via": "landed"
+    },
+    {
+     "x": 49,
+     "y": 741,
+     "to": "435:0",
+     "building": "Map435",
+     "via": "walked"
+    }
    ]
   },
   "428:0": {
@@ -76,7 +100,21 @@
    "floors": [
     "428:0"
    ],
-   "popup": true
+   "popup": true,
+   "exits": [
+    {
+     "x": 5,
+     "y": 10,
+     "to": "427:0",
+     "via": "walked"
+    },
+    {
+     "x": 6,
+     "y": 10,
+     "to": "427:0",
+     "via": "walked"
+    }
+   ]
   },
   "429:0": {
    "name": null,
@@ -96,7 +134,15 @@
    "floors": [
     "429:0"
    ],
-   "popup": true
+   "popup": true,
+   "exits": [
+    {
+     "x": 6,
+     "y": 11,
+     "to": "427:0",
+     "via": "walked"
+    }
+   ]
   },
   "435:0": {
    "name": null,
@@ -116,7 +162,15 @@
    "floors": [
     "435:0"
    ],
-   "popup": true
+   "popup": true,
+   "exits": [
+    {
+     "x": 7,
+     "y": 19,
+     "to": "427:0",
+     "via": "landed"
+    }
+   ]
   }
  },
  "season": "spring"

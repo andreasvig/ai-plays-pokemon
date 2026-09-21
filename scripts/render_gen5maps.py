@@ -140,9 +140,17 @@ against (Black reaches no wild battle at all), so `--render collision` ships TWO
 tones and says so in the atlas. Any map the 3D path cannot draw falls back to it
 and the atlas marks that map's `render`.
 
-STILL MISSING: doors. Gen 4 reads warps out of the decomp's events files;
-nothing here decodes Gen 5 events, so an interior renders but the viewer has no
-door to open it from. That is the next thing a follow-up should build.
+DOORS, without an event decoder. Gen 4 reads warps out of the decomp's events
+files; nothing here decodes Gen 5 events, so there is no list of every door on
+a map. What there IS is a record of the doors our runs actually walked through:
+the observed graph mints a WARP whenever two consecutive samples are not
+adjacent, and a warp whose two ends are on DIFFERENT maps is a door. Same rule
+`render_dsmaps.observed_doors` already ships for SoulSilver, from the same
+evidence, and the atlas says `"doors": "observed-transitions"` so the cost is
+on the label: this finds the doors that were used, not the doors that exist.
+See :func:`observed_doors` for the two Gen-5-specific parts — telling a door
+from a route seam without a second map matrix to compare, and reading the
+door on the far side out of the tile the player LANDED on.
 
 Usage:
     ./venv/bin/python scripts/render_gen5maps.py --check
@@ -684,6 +692,131 @@ def warp_tiles(game: str) -> set[str]:
     return out
 
 
+def cross_map_warps(game: str) -> list[tuple[tuple[int, int, int], tuple[int, int, int]]]:
+    """The observed warps that CROSS maps, as `((src, x, y), (dst, x, y))`.
+
+    Most warps do not. A staircase, a warp pad, the drop off a ledge — anything
+    the field code resolves by teleporting rather than stepping — mints a warp
+    between two tiles of the SAME map, and Black 2's `427|36|715 -> 427|36|718`
+    is one of those, not a door. They are dropped here so nothing downstream
+    has to remember to.
+    """
+    out = []
+    for a, b, _n in observed(game)["warps"]:
+        az, ax, ay = (int(v) for v in a.split("|"))
+        bz, bx, by = (int(v) for v in b.split("|"))
+        if az == bz:
+            continue
+        out.append(((az, ax, ay), (bz, bx, by)))
+    return out
+
+
+def observed_doors(game: str, indoor, blocked=lambda _m, _x, _y: False
+                   ) -> dict[int, list[tuple[int, int, int, str]]]:
+    """`{map_id: [(x, y, dest_map_id, via)]}` — the doors our runs walked.
+
+    `indoor(map_id)` says whether a map is an interior; it is the atlas's own
+    flag, read off the cartridge's zone table, and it decides the direction of
+    every door here. The coordinate frames FOLLOW from it rather than deciding
+    it: an outdoor tile is global (Black 2's world map runs x 32-63, y 704-767)
+    and an interior tile is local to its own rectangle, so the two are not
+    separable by magnitude — Black 2's world map starts at global x 32, the
+    lowest x a run stood on there is 36, and the largest interior coordinate
+    in the game is 19. `build_atlas` bounds-checks every tile emitted
+    against the rectangle of the map it is written on, which is the check that
+    a reversed direction would actually fail.
+
+    A CROSS-MAP WARP IS NOT AUTOMATICALLY A DOOR. Walking north out of Black's
+    map 317 onto 397 changes the map id and opens nothing: they are neighbours
+    on the region matrix and the seam between them is already an `open` span.
+    SoulSilver's version of this rule compares the two maps' map-matrix ids;
+    Gen 5 gives every outdoor field map the same matrix (`matrix_000`), so the
+    same rule is spelled here as "at least one end is an interior", which on
+    that matrix is the same sentence.
+
+    HALF A DOOR. A warp is directed, and our runs walked plenty of doors one
+    way only — every run STARTS inside the player's house, so Black's 390 and
+    Black 2's 428 were left and never entered, and the marker that would open
+    them is exactly the one nobody walked. Rather than leave those interiors
+    unreachable, the missing direction is read off the tile the player LANDED
+    on coming the other way: a Gen 5 door warp puts you ON the door. `via` says
+    which end a tile came from, `"walked"` or `"landed"`.
+
+    WHICH CANDIDATE, when a pair has both. `blocked(map_id, x, y)` is the
+    cartridge's own collision bit, and it is the tie-break, because an outdoor
+    door tile is IMPASSABLE — you never walk onto a door, the field code warps
+    you off it first, which is the same fact `check_walkable` already has to
+    make an exception for. Measured over Black and Black 2's cross-map warps:
+    every one of the seven outdoor-side landing tiles is blocked, while two
+    of the six outdoor-side walked tiles are not — those two are a sample taken a
+    step short of the door, and taking the walked tile there would hang the
+    marker in the street (Black's 397 -> 398 is one tile diagonally out). So a
+    blocked candidate wins; a walked one wins over a landed one; and a pair
+    with neither blocked nor walked falls back to where the run landed.
+
+    A pair with no blocked candidate at all keeps every walked tile, which is
+    how Black's 390 keeps both of the mat tiles its runs left by.
+    """
+    walked: dict[tuple[int, int], set[tuple[int, int]]] = defaultdict(set)
+    landed: dict[tuple[int, int], set[tuple[int, int]]] = defaultdict(set)
+    for (az, ax, ay), (bz, bx, by) in cross_map_warps(game):
+        if not indoor(az) and not indoor(bz):
+            continue
+        walked[(az, bz)].add((ax, ay))
+        # ...and the tile it put the player on is where the door BACK is.
+        landed[(bz, az)].add((bx, by))
+
+    out: dict[int, list[tuple[int, int, int, str]]] = defaultdict(list)
+    for pair in sorted(set(walked) | set(landed)):
+        src, dst = pair
+        by_via = [("walked", sorted(walked.get(pair, ()))),
+                  ("landed", sorted(landed.get(pair, ())))]
+        pick = next(((via, [t for t in tiles if blocked(src, *t)])
+                     for via, tiles in by_via if any(blocked(src, *t) for t in tiles)),
+                    next(((via, tiles) for via, tiles in by_via if tiles)))
+        via, tiles = pick
+        for x, y in tiles:
+            out[src].append((x, y, dst, via))
+    return {m: sorted(v) for m, v in out.items()}
+
+
+def floor_groups(doors: dict[int, list[tuple[int, int, int, str]]], indoor
+                 ) -> dict[int, int]:
+    """`{interior_id: the id its building is named after}`.
+
+    A cartridge ships map ids and no names, so the name-prefix rule that groups
+    Platinum's floors has nothing to work on. The floors are still groupable,
+    from the SHAPE of the doors: an interior whose door leads to another
+    INTERIOR is a floor of that same building. Black's 391 opens onto 390 and
+    nothing else, so the two are one house and open as one popup — which is
+    what the viewer's `floors` is for — instead of two unrelated rooms.
+
+    The building is named after its LOWEST floor, not whichever room the union
+    happened to root on: 390 is the ground floor the front door opens into and
+    391 is upstairs.
+    """
+    parent: dict[int, int] = {}
+
+    def find(k: int) -> int:
+        parent.setdefault(k, k)
+        while parent[k] != k:
+            parent[k] = parent[parent[k]]
+            k = parent[k]
+        return k
+
+    for src, entries in doors.items():
+        if not indoor(src):
+            continue
+        parent.setdefault(src, src)
+        for _x, _y, dst, _via in entries:
+            if indoor(dst):
+                parent[find(dst)] = find(src)
+    comps: dict[int, list[int]] = defaultdict(list)
+    for k in parent:
+        comps[find(k)].append(k)
+    return {k: min(members) for members in comps.values() for k in members}
+
+
 # ----------------------------------------------------------------- the atlas
 
 def render_map(rom: Gen5Rom, win: Window,
@@ -708,6 +841,27 @@ def build_atlas(rom: Gen5Rom, *, render: str = DEFAULT_RENDER,
     ids = map_ids(rom.game)
     out = MAPS_ROOT / rom.game
     windows = {i: map_window(rom, i) for i in ids}
+
+    # The doors, from our runs rather than from an event archive. See
+    # `observed_doors`; a map we did not render cannot be a destination.
+    def _blocked(i: int, x: int, y: int) -> bool:
+        w = windows.get(i)
+        if w is None or not (w.ox <= x < w.ox + w.w and w.oy <= y < w.oy + w.h):
+            return False
+        return bool(w.blocked[y - w.oy, x - w.ox])
+
+    doors = {m: [d for d in v if d[2] in windows]
+             for m, v in observed_doors(
+                 rom.game,
+                 lambda i: windows[i].indoor if i in windows else True,
+                 _blocked).items()
+             if m in windows}
+    doors = {m: v for m, v in doors.items() if v}
+    groups = floor_groups(doors, lambda i: windows[i].indoor)
+    building_of = {i: f"Map{groups.get(i, i)}" for i in ids if windows[i].indoor}
+    floors_of: dict[str, list[str]] = defaultdict(list)
+    for i, b in building_of.items():
+        floors_of[b].append(windows[i].key)
 
     maps: dict[str, dict] = {}
     for map_id, win in sorted(windows.items()):
@@ -743,12 +897,35 @@ def build_atlas(rom: Gen5Rom, *, render: str = DEFAULT_RENDER,
             if spans:
                 entry["open"] = spans
         else:
-            # One floor per building: without a Gen 5 event decoder nothing says
-            # which rooms share a house, and guessing from the parent zone would
-            # put every interior in a town into one popup.
-            entry["building"] = f"Map{map_id}"
-            entry["floors"] = [win.key]
+            # An interior belongs to a building, so the viewer can walk into it
+            # from the door below and back out again, and two floors of one
+            # house open as one popup rather than two unrelated rooms. Which
+            # rooms share a house is read off the doors — see `floor_groups`.
+            entry["building"] = building_of[map_id]
+            entry["floors"] = sorted(floors_of[building_of[map_id]])
             entry["popup"] = True
+
+        # A door is written on the map it is ON, in that map's own frame: a
+        # world tile is global and an interior tile is local, which is exactly
+        # the frame the route's own steps are in, so `mapatlas.drawWindow`
+        # subtracts the same `origin` from both. An interior spells its doors
+        # `exits` because it has no marker to draw — you are already inside.
+        here = []
+        for x, y, dest_id, via in doors.get(map_id, []):
+            if not (win.ox <= x < win.ox + win.w and win.oy <= y < win.oy + win.h):
+                raise ValueError(
+                    f"{rom.game}: door {map_id}({x},{y}) -> {dest_id} is outside "
+                    f"map {map_id}'s own rectangle x[{win.ox},{win.ox + win.w}) "
+                    f"y[{win.oy},{win.oy + win.h}) — the frames are crossed")
+            here.append({"x": x, "y": y, "to": windows[dest_id].key,
+                         **({} if win.indoor
+                            else {"building": building_of[dest_id]}),
+                         # Provenance per door, because half of these were only
+                         # ever walked one way: `walked` is a tile a run left
+                         # from, `landed` a tile a run arrived on coming back.
+                         "via": via})
+        if here:
+            entry["exits" if win.indoor else "doors"] = here
         maps[win.key] = entry
 
     atlas = {
@@ -761,6 +938,10 @@ def build_atlas(rom: Gen5Rom, *, render: str = DEFAULT_RENDER,
         "png_frame": "map-local",
         "source": {"kind": "rom", "file": rom.path.name, "sha": rom.sha},
         "walkgraph": {"version": None, "source": None},
+        # The same token SoulSilver's atlas ships, for the same reason and from
+        # the same evidence: no event archive is decoded, so a door is a map
+        # transition one of our runs actually made.
+        "doors": "observed-transitions",
         "map_set": {
             "kind": "observed",
             "source": (f"artifacts/game-map-render/observed/{rom.game}-observed.json"
@@ -768,8 +949,15 @@ def build_atlas(rom: Gen5Rom, *, render: str = DEFAULT_RENDER,
             "note": (RENDER_NOTE[render_kind]
                      + "; PNG pixel (0,0) is tile png_origin, so a source rect "
                        "subtracts it"),
-            "doors": ("none: Gen 5 event data is not decoded, so an interior "
-                      "renders but the viewer has no door to open it from"),
+            "doors": ("observed transitions: Gen 5 event data is not decoded, so "
+                      "a door is a warp our runs walked between two DIFFERENT "
+                      "maps with at least one of them an interior — a same-map "
+                      "warp is a staircase and two outdoor maps share matrix_000, "
+                      "so their seam is an `open` span. These are the doors that "
+                      "were used, not the doors that exist. A direction nobody "
+                      "walked is read off the tile the player landed on coming "
+                      "the other way and marked `via: landed`, which is what makes "
+                      "the house every run STARTS in reachable at all."),
         },
         "bytes": sum(m["bytes"] + m["border"]["bytes"] for m in maps.values()),
         "maps": maps,

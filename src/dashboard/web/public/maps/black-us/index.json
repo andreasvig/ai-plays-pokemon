@@ -15,11 +15,12 @@
   "version": null,
   "source": null
  },
+ "doors": "observed-transitions",
  "map_set": {
   "kind": "observed",
   "source": "artifacts/game-map-render/observed/black-us-observed.json + every map id our runs' samples name",
   "note": "the cartridge's own textured 3D field artwork \u2014 terrain and props \u2014 rendered straight down and orthographic at one pixel per world unit; PNG pixel (0,0) is tile png_origin, so a source rect subtracts it",
-  "doors": "none: Gen 5 event data is not decoded, so an interior renders but the viewer has no door to open it from"
+  "doors": "observed transitions: Gen 5 event data is not decoded, so a door is a warp our runs walked between two DIFFERENT maps with at least one of them an interior \u2014 a same-map warp is a staircase and two outdoor maps share matrix_000, so their seam is an `open` span. These are the doors that were used, not the doors that exist. A direction nobody walked is read off the tile the player landed on coming the other way and marked `via: landed`, which is what makes the house every run STARTS in reachable at all."
  },
  "bytes": 1466408,
  "maps": {
@@ -96,6 +97,15 @@
      "from": 0,
      "to": 64
     }
+   ],
+   "doors": [
+    {
+     "x": 761,
+     "y": 649,
+     "to": "320:0",
+     "building": "Map320",
+     "via": "landed"
+    }
    ]
   },
   "320:0": {
@@ -116,7 +126,21 @@
    "floors": [
     "320:0"
    ],
-   "popup": true
+   "popup": true,
+   "exits": [
+    {
+     "x": 1,
+     "y": 6,
+     "to": "319:0",
+     "via": "walked"
+    },
+    {
+     "x": 15,
+     "y": 6,
+     "to": "397:0",
+     "via": "landed"
+    }
+   ]
   },
   "389:0": {
    "name": null,
@@ -156,6 +180,29 @@
      "from": 0,
      "to": 32
     }
+   ],
+   "doors": [
+    {
+     "x": 776,
+     "y": 757,
+     "to": "392:0",
+     "building": "Map392",
+     "via": "walked"
+    },
+    {
+     "x": 777,
+     "y": 740,
+     "to": "396:0",
+     "building": "Map396",
+     "via": "walked"
+    },
+    {
+     "x": 782,
+     "y": 748,
+     "to": "390:0",
+     "building": "Map390",
+     "via": "landed"
+    }
    ]
   },
   "390:0": {
@@ -182,9 +229,30 @@
    ],
    "building": "Map390",
    "floors": [
-    "390:0"
+    "390:0",
+    "391:0"
    ],
-   "popup": true
+   "popup": true,
+   "exits": [
+    {
+     "x": 2,
+     "y": 2,
+     "to": "391:0",
+     "via": "landed"
+    },
+    {
+     "x": 5,
+     "y": 10,
+     "to": "389:0",
+     "via": "walked"
+    },
+    {
+     "x": 6,
+     "y": 10,
+     "to": "389:0",
+     "via": "walked"
+    }
+   ]
   },
   "391:0": {
    "name": null,
@@ -208,11 +276,20 @@
     0,
     1
    ],
-   "building": "Map391",
+   "building": "Map390",
    "floors": [
+    "390:0",
     "391:0"
    ],
-   "popup": true
+   "popup": true,
+   "exits": [
+    {
+     "x": 8,
+     "y": 2,
+     "to": "390:0",
+     "via": "walked"
+    }
+   ]
   },
   "392:0": {
    "name": null,
@@ -240,7 +317,15 @@
    "floors": [
     "392:0"
    ],
-   "popup": true
+   "popup": true,
+   "exits": [
+    {
+     "x": 6,
+     "y": 10,
+     "to": "389:0",
+     "via": "walked"
+    }
+   ]
   },
   "396:0": {
    "name": null,
@@ -260,7 +345,15 @@
    "floors": [
     "396:0"
    ],
-   "popup": true
+   "popup": true,
+   "exits": [
+    {
+     "x": 3,
+     "y": 11,
+     "to": "389:0",
+     "via": "walked"
+    }
+   ]
   },
   "397:0": {
    "name": null,
@@ -305,6 +398,22 @@
      "from": 0,
      "to": 32
     }
+   ],
+   "doors": [
+    {
+     "x": 768,
+     "y": 649,
+     "to": "320:0",
+     "building": "Map320",
+     "via": "walked"
+    },
+    {
+     "x": 796,
+     "y": 657,
+     "to": "398:0",
+     "building": "Map398",
+     "via": "landed"
+    }
    ]
   },
   "398:0": {
@@ -325,7 +434,15 @@
    "floors": [
     "398:0"
    ],
-   "popup": true
+   "popup": true,
+   "exits": [
+    {
+     "x": 8,
+     "y": 19,
+     "to": "397:0",
+     "via": "walked"
+    }
+   ]
   }
  },
  "season": "spring"

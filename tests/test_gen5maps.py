@@ -462,3 +462,306 @@ def test_two_chunks_of_one_map_meet_without_a_step_in_tone(atlases):
             f"{name} of the seam is {len(np.unique(patch, axis=0))} colour(s) — a clamped texture"
     assert np.abs(left.mean(0) - right.mean(0)).max() < 12, \
         f"a tone step across the chunk seam: {left.mean(0)} vs {right.mean(0)}"
+
+
+# -- 8. the doors --------------------------------------------------------------
+#
+# Gen 5 event data is still not decoded, so a door here is a map transition one
+# of our own runs made (`render_gen5maps.observed_doors`). Everything in this
+# section is read off the COMMITTED atlas unless it needs the cartridge, because
+# the atlas is what the browser loads and a derivation that is right in Python
+# and wrong on disk is still an interior nobody can click into.
+
+EXPECTED_DOORS = {
+    # game: {map key: {(x, y, destination, via)}}
+    "black-us": {
+        "319:0": {(761, 649, "320:0", "landed")},
+        "389:0": {(776, 757, "392:0", "walked"),
+                  (777, 740, "396:0", "walked"),
+                  (782, 748, "390:0", "landed")},
+        "397:0": {(768, 649, "320:0", "walked"),
+                  (796, 657, "398:0", "landed")},
+    },
+    "black2-us": {
+        "427:0": {(43, 750, "429:0", "walked"),
+                  (47, 761, "428:0", "landed"),
+                  (49, 741, "435:0", "walked")},
+    },
+}
+
+EXPECTED_EXITS = {
+    "black-us": {
+        "320:0": {(1, 6, "319:0", "walked"), (15, 6, "397:0", "landed")},
+        "390:0": {(2, 2, "391:0", "landed"),
+                  (5, 10, "389:0", "walked"), (6, 10, "389:0", "walked")},
+        "391:0": {(8, 2, "390:0", "walked")},
+        "392:0": {(6, 10, "389:0", "walked")},
+        "396:0": {(3, 11, "389:0", "walked")},
+        "398:0": {(8, 19, "397:0", "walked")},
+    },
+    "black2-us": {
+        "428:0": {(5, 10, "427:0", "walked"), (6, 10, "427:0", "walked")},
+        "429:0": {(6, 11, "427:0", "walked")},
+        "435:0": {(7, 19, "427:0", "landed")},
+    },
+}
+
+
+def _tiles(m, field) -> set:
+    return {(d["x"], d["y"], d["to"], d["via"]) for d in m.get(field, [])}
+
+
+def test_the_shipped_doors_are_exactly_the_ones_we_derived(atlases):
+    """The pin. Every door and every exit on disk, by tile, destination and
+    which end of the warp it came from.
+
+    A literal rather than a recomputation on purpose: recomputing the
+    derivation and comparing it to itself would pass under every mutation of
+    the derivation, which is the one thing worth guarding here. This fails if
+    a tile moves, a destination changes, a door appears or disappears, or a
+    `walked` tile silently becomes a `landed` one.
+    """
+    for game, atlas in atlases:
+        if game not in EXPECTED_DOORS:
+            continue
+        got_doors = {k: _tiles(m, "doors") for k, m in atlas["maps"].items()
+                     if m.get("doors")}
+        got_exits = {k: _tiles(m, "exits") for k, m in atlas["maps"].items()
+                     if m.get("exits")}
+        assert got_doors == EXPECTED_DOORS[game], game
+        assert got_exits == EXPECTED_EXITS[game], game
+
+
+def test_a_warp_inside_one_map_is_never_a_door(atlases):
+    """A staircase, a warp pad, a ledge the field code resolves by teleporting
+    — all of those mint a warp between two tiles of the SAME map, and Black 2's
+    `427|36|715 -> 427|36|718` is one of them. A door leads somewhere else.
+    """
+    for game, atlas in atlases:
+        for key, m in atlas["maps"].items():
+            for d in m.get("doors", []) + m.get("exits", []):
+                assert d["to"] != key, f"{game}:{key} has a door to itself"
+
+
+def test_dropping_the_same_map_rule_would_put_self_doors_on_the_page(atlases):
+    """Mutation control for the test above, which needs one: it passes for free
+    on a corpus with no same-map warps in it, and "no door leads to itself" is
+    exactly the shape of assertion that is vacuous without a count.
+
+    So: re-derive with the same-map filter taken out, and require that it
+    produces at least one door from a map to itself. Black 2's ten warps
+    include five inside `427` alone.
+    """
+    for game, _atlas in atlases:
+        warps = _observed(game)["warps"]
+        same = [(a, b) for a, b, _n in warps if a.split("|")[0] == b.split("|")[0]]
+        assert same, f"{game}: no same-map warp in the corpus, so the rule is untested"
+        # what the unfiltered derivation would emit, in the atlas's own spelling
+        self_doors = {(f"{a.split('|')[0]}:0", f"{b.split('|')[0]}:0") for a, b in same}
+        assert any(src == dst for src, dst in self_doors), game
+
+
+def test_every_interior_is_reachable_from_a_door_on_another_map(atlases):
+    """The whole point of this section. A popup nobody can open is artwork
+    nobody sees, and before the doors were derived that was every Gen 5
+    interior: rendered, shipped, listed, unclickable.
+
+    Reachable AS A BUILDING, like SoulSilver's 2F: the viewer opens every floor
+    from the one marker, so Black's 391 counts as reachable through 390.
+    """
+    for game, atlas in atlases:
+        doors = {d["to"] for m in atlas["maps"].values() for d in m.get("doors", [])}
+        interiors = [k for k, m in atlas["maps"].items() if m.get("indoor")]
+        assert interiors, f"{game}: no interior in the atlas, so this checks nothing"
+        for key in interiors:
+            m = atlas["maps"][key]
+            floors = m.get("floors") or []
+            assert m.get("building") and key in floors, (game, key)
+            assert doors & set(floors), \
+                f"{game}:{key} is in a building with no door into any of its floors"
+
+
+def test_a_door_is_written_in_the_frame_of_the_map_it_sits_on(atlases):
+    """The silent one. `mapatlas.drawWindow` subtracts a map's own `origin`
+    from a door's tile exactly as it does from a route step, so an outdoor
+    door is GLOBAL and an interior exit is LOCAL. Get it backwards and the
+    marker lands off the map, and the viewer reports nothing.
+
+    NOT decided by magnitude, which is why this is a rectangle test: Black 2's
+    world map starts at x = 32 and its interiors reach x = 17, so a "big
+    coordinate means global" rule has 15 tiles of daylight and would be a
+    coin toss on the x axis.
+    """
+    for game, atlas in atlases:
+        seen = 0
+        for key, m in atlas["maps"].items():
+            ox, oy = m.get("origin", [0, 0])
+            for d in m.get("doors", []) + m.get("exits", []):
+                assert ox <= d["x"] < ox + m["width"], (game, key, d)
+                assert oy <= d["y"] < oy + m["height"], (game, key, d)
+                seen += 1
+        assert seen, f"{game}: no door checked"
+
+
+def test_the_frame_check_rejects_a_door_written_on_the_wrong_side(atlases):
+    """Mutation control for the test above. Writing each door's tile on its
+    DESTINATION's rectangle instead — the exact mistake of mixing the two
+    frames — must put it outside, or the check above cannot see the error.
+
+    Scoped to the doors that CROSS the two frames, which is the mistake being
+    controlled for. Two interiors are both local and their rectangles overlap
+    almost completely, so a stairway written on the wrong floor stays in
+    bounds and no bounds check will ever catch it; claiming otherwise here
+    would be a control that passes for the wrong reason.
+    """
+    for game, atlas in atlases:
+        survived, checked = [], 0
+        for key, m in atlas["maps"].items():
+            for d in m.get("doors", []) + m.get("exits", []):
+                t = atlas["maps"][d["to"]]
+                if bool(t.get("indoor")) == bool(m.get("indoor")):
+                    continue
+                checked += 1
+                ox, oy = t.get("origin", [0, 0])
+                if (ox <= d["x"] < ox + t["width"]
+                        and oy <= d["y"] < oy + t["height"]):
+                    survived.append((key, d))
+        assert checked, f"{game}: no frame-crossing door to control with"
+        assert not survived, \
+            f"{game}: {len(survived)} doors would still be in bounds on the far map"
+
+
+def test_a_direction_nobody_walked_says_so(atlases):
+    """Half a door is still emitted, and labelled.
+
+    Every run STARTS inside the player's house, so the door into it is the one
+    door nobody ever opened: Black 2's `428` and Black's `390` were left and
+    never entered. Dropping those would leave the interior every Black 2 run
+    begins in unreachable, so the tile is read off where the run LANDED coming
+    out and marked `via: landed`. Pinned here from the corpus rather than from
+    the atlas: a direction with NO cross-map warp in it must be labelled
+    `landed`, because there was nothing else to read it from, and a tile
+    labelled `walked` must have a warp that actually left it.
+
+    (The converse does not hold and must not be asserted: a walked direction
+    can still be labelled `landed`, because the collision grid overrides a
+    walked tile that is not a door — Black's 397 -> 398 is exactly that.)
+    """
+    for game, atlas in atlases:
+        if game not in EXPECTED_DOORS:
+            continue
+        walked_pairs, walked_tiles = set(), set()
+        for a, b, _n in _observed(game)["warps"]:
+            (az, ax, ay), bz = a.split("|"), b.split("|")[0]
+            if az != bz:
+                walked_pairs.add((f"{az}:0", f"{bz}:0"))
+                walked_tiles.add((f"{az}:0", int(ax), int(ay), f"{bz}:0"))
+        never, checked = [], {"walked": 0, "landed": 0}
+        for key, m in atlas["maps"].items():
+            for d in m.get("doors", []) + m.get("exits", []):
+                assert d["via"] in checked, d
+                if d["via"] == "walked":
+                    assert (key, d["x"], d["y"], d["to"]) in walked_tiles, \
+                        f"{game}:{key} ({d['x']},{d['y']}) -> {d['to']} was not walked"
+                if (key, d["to"]) not in walked_pairs:
+                    never.append((key, d["to"]))
+                    assert d["via"] == "landed", (game, key, d)
+                checked[d["via"]] += 1
+        assert checked["walked"] and checked["landed"], (game, checked)
+        assert never, \
+            f"{game}: no one-way door in the corpus, so the fallback is untested"
+
+
+def test_two_rooms_are_one_building_only_when_a_door_joins_them(atlases):
+    """A cartridge ships map ids and no names, so the name-prefix rule that
+    groups Platinum's floors has nothing to work on and the floors are grouped
+    by the SHAPE of the doors instead: an interior whose door leads to another
+    interior is a floor of that building.
+
+    Black's 391 opens onto 390 and nothing else, so the two are one house. The
+    mutation this guards is the tempting alternative — grouping interiors by
+    the town they sit in — which would put all six of Black's rooms in one
+    popup: assert the rooms that share no door are in different buildings.
+    """
+    for game, atlas in atlases:
+        joined = {(k, d["to"]) for k, m in atlas["maps"].items() if m.get("indoor")
+                  for d in m.get("exits", []) if atlas["maps"][d["to"]].get("indoor")}
+        for key, m in atlas["maps"].items():
+            if not m.get("indoor"):
+                continue
+            for other in m["floors"]:
+                if other == key:
+                    continue
+                assert (key, other) in joined or (other, key) in joined, \
+                    f"{game}: {key} and {other} share a building with no door between them"
+    black = dict(atlases).get("black-us")
+    if black:
+        assert black["maps"]["391:0"]["floors"] == ["390:0", "391:0"]
+        assert black["maps"]["392:0"]["floors"] == ["392:0"]
+
+
+def test_the_atlas_says_its_doors_came_from_our_runs_and_not_from_events(atlases):
+    """The label is half the claim. These are the doors that were USED, not the
+    doors that exist, and the atlas has to say so in the same word SoulSilver
+    uses so a reader can tell the two provenances apart. The old note said Gen 5
+    doors were impossible; that sentence must be gone, not merely outnumbered.
+    """
+    for game, atlas in atlases:
+        assert atlas.get("doors") == "observed-transitions", game
+        note = atlas["map_set"].get("doors", "")
+        assert "observed transitions" in note, game
+        assert not note.startswith("none"), game
+        assert "no door to open it from" not in note, game
+
+
+def test_an_outdoor_door_tile_is_a_tile_the_collision_grid_calls_a_wall(roms):
+    """The cartridge's own opinion of where a door is, which is independent of
+    our runs: you never WALK onto an outdoor door, the field code warps you off
+    it, so its collision bit is set. That is the same exception
+    `test_every_walked_tile_is_passable_except_warp_tiles` has to make.
+
+    It is also the tie-break the derivation uses when a pair has both a walked
+    and a landed candidate, so the CONTROL matters: the tiles those doors were
+    chosen over — every other tile our runs stood on — must be overwhelmingly
+    passable, or "blocked" is not discriminating anything.
+    """
+    render_gen5maps = pytest.importorskip("render_gen5maps")
+    atlas_by_game = dict(_atlases())
+    blocked_doors = passable_doors = 0
+    for game, rom in roms.items():
+        atlas = atlas_by_game.get(game)
+        if atlas is None:
+            continue
+        wins = {i: render_gen5maps.map_window(rom, i)
+                for i in render_gen5maps.map_ids(game)}
+
+        def at(map_id, x, y):
+            w = wins[map_id]
+            return bool(w.blocked[y - w.oy, x - w.ox])
+
+        doors = set()
+        for key, m in atlas["maps"].items():
+            if m.get("indoor"):
+                continue
+            for d in m.get("doors", []):
+                doors.add((int(key.split(":")[0]), d["x"], d["y"]))
+        for map_id, x, y in doors:
+            if at(map_id, x, y):
+                blocked_doors += 1
+            else:
+                passable_doors += 1
+        # the control: every OTHER outdoor tile a run stood on
+        walls = sum(1 for z, x, y in _samples(game)
+                    if not wins[z].indoor and (z, x, y) not in doors and at(z, x, y))
+        outside = sum(1 for z, x, y in _samples(game)
+                      if not wins[z].indoor and (z, x, y) not in doors)
+        assert outside > 100, f"{game}: only {outside} control tiles"
+        assert walls / outside < 0.02, (
+            f"{game}: {walls} of {outside} non-door outdoor tiles are walls too, so "
+            f"the collision bit does not pick doors out")
+    assert blocked_doors >= 5, blocked_doors
+    # Black 2's 427 -> 435 is the one exception and it is an honest one: nobody
+    # ever walked back out of 435, so the only candidate is the tile the run
+    # stood on when it went in, two tiles short of the wall. Pinned rather than
+    # hidden — if the corpus ever grows that return trip, this number drops.
+    assert passable_doors == 1, passable_doors
