@@ -3,6 +3,7 @@
     venv/bin/python scripts/stitch_maps.py local/runs/*/
     venv/bin/python scripts/stitch_maps.py local/runs/*/ --verify
     venv/bin/python scripts/stitch_maps.py local/runs/*/ --calibrate
+    venv/bin/python scripts/stitch_maps.py local/runs/*crystal*/ --game crystal-us --verify
 
 Option C of ``artifacts/game-map-render/per-game-plan.md``: the only source of
 map pixels that works for gen 4, gen 5 and ROM hacks, because it needs nothing
@@ -10,6 +11,13 @@ but the machine we already drive. FireRed is the game it is BUILT on rather
 than the game it is FOR — it is the one with a render from pret's own tilesets
 to check against (``--verify``), so every rule can be proven here before it
 meets a game where nothing can check it.
+
+``--game`` picks the ScreenSpec and the atlas to check against. Everything in
+this file was already generic in its body; only the import and one default
+named FireRed, which meant the one acceptance test we have could only ever be
+run on the game it was written for. Crystal is the second game that can answer
+it — a GBC, a different screen, a different palette model and a 4x4-block map,
+rendered by a different front end and checked by the same per-pixel comparison.
 
 Output (gitignored, this is a derived artifact): ``local/stitched/<game>/``
 holding one PNG per map plus ``index.json`` with, per map, the canvas origin,
@@ -32,32 +40,40 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.app.stitch import (  # noqa: E402
-    GBA_FIRERED, MapCanvas, ScreenSpec, canvas_for, fit_colour_map, has_trace, keep_mask, samples,
-    to_native, window_origin,
+    SPECS, MapCanvas, ScreenSpec, canvas_for, fit_colour_map, has_trace, keep_mask, run_spec,
+    samples, to_native, window_origin,
 )
 
-MAPS_DIR = REPO_ROOT / "src" / "dashboard" / "web" / "public" / "maps" / "firered-us"
+DEFAULT_GAME = "firered-us"
+MAPS_ROOT = REPO_ROOT / "src" / "dashboard" / "web" / "public" / "maps"
 OUT_DIR = REPO_ROOT / "local" / "stitched"
 TOLERANCE = 1          # 8-bit values either side of a 5-bit GBA colour
 
 
 def collect(run_dirs: list[Path], spec: ScreenSpec, only: str | None,
-            require_trace: bool = True) -> tuple[dict[str, list], list[str]]:
-    """Every placeable frame of every run, grouped by map, and who was turned away."""
+            require_trace: bool = True) -> tuple[dict[str, list], list[str], dict[str, ScreenSpec]]:
+    """Every placeable frame of every run, grouped by map, and who was turned away.
+
+    Also each run's OWN spec: the grid overlay is a per-run recording setting,
+    so a set of runs can hold both kinds and one spec cannot read both.
+    """
     by_map: dict[str, list] = defaultdict(list)
     refused: list[str] = []
+    specs: dict[str, ScreenSpec] = {}
     for run in run_dirs:
         if require_trace and not has_trace(run):
             refused.append(run.name)
             continue
+        specs[run.name] = run_spec(spec, run)
         for s in samples(run, require_trace=False):
             if only and s.map_key != only:
                 continue
             by_map[s.map_key].append(s)
-    return by_map, refused
+    return by_map, refused, specs
 
 
 def stitch(by_map: dict[str, list], spec: ScreenSpec, threshold: float,
+           specs: dict[str, ScreenSpec] | None = None,
            report: bool = True, histogram: bool = False) -> dict[str, MapCanvas]:
     """Accumulate a map, counting RUNS rather than frames.
 
@@ -83,6 +99,7 @@ def stitch(by_map: dict[str, list], spec: ScreenSpec, threshold: float,
     not.
     """
     keep = keep_mask(spec)
+    specs = specs or {}
     out: dict[str, MapCanvas] = {}
     for key, group in sorted(by_map.items()):
         origins = {id(s): window_origin(spec, s.x, s.y) for s in group}
@@ -95,7 +112,7 @@ def stitch(by_map: dict[str, list], spec: ScreenSpec, threshold: float,
             frames = []
             for s in items:
                 with Image.open(s.path) as img:
-                    frames.append(to_native(img, spec))
+                    frames.append(to_native(img, specs.get(run, spec)))
             provisional = MapCanvas(*master.origin, master.shape[1], master.shape[0])
             for frame, s in zip(frames, items):
                 provisional.add(frame, *origins[id(s)], keep)
@@ -268,7 +285,8 @@ def sheet(canvases: dict[str, MapCanvas], spec: ScreenSpec, maps_dir: Path, out:
     print(f"\nsheet: {out}  ({out_img.width}x{out_img.height}) — pret's render left, the stitch right")
 
 
-def calibrate(by_map: dict[str, list], spec: ScreenSpec) -> None:
+def calibrate(by_map: dict[str, list], spec: ScreenSpec,
+              specs: dict[str, ScreenSpec] | None = None) -> None:
     """Re-derive the camera from motion alone, and say whether the spec matches.
 
     Two measurements, neither of which uses the render:
@@ -283,6 +301,7 @@ def calibrate(by_map: dict[str, list], spec: ScreenSpec) -> None:
       been lined up are the player (an NPC fails it too, but a different one
       each time, while the player is in the same box every time).
     """
+    specs = specs or {}
     keep = keep_mask(spec)                          # map pixels: grid, sprite, textbox out
     whole = keep_mask(spec, sprite=False)           # the same minus the sprite cut-out
     shifts: Counter = Counter()
@@ -297,7 +316,8 @@ def calibrate(by_map: dict[str, list], spec: ScreenSpec) -> None:
             if abs(dx) + abs(dy) != 1:
                 continue
             with Image.open(a.path) as ia, Image.open(b.path) as ib:
-                fa, fb = to_native(ia, spec), to_native(ib, spec)
+                rs = specs.get(a.run, spec)
+                fa, fb = to_native(ia, rs), to_native(ib, rs)
             scored = sorted((_mismatch(fa, fb, dx * s, dy * s, keep), s) for s in range(4, 33))
             best_score, best = scored[0]
             runner_up = next((sc for sc, s in scored[1:] if abs(s - best) > 2), float("inf"))
@@ -366,9 +386,12 @@ def _accumulate_residual(a: np.ndarray, b: np.ndarray, sx: int, sy: int,
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("run_dirs", nargs="+", type=Path)
+    ap.add_argument("--game", default=DEFAULT_GAME, choices=sorted(SPECS),
+                    help="which console's camera to place frames with, and whose atlas to verify against")
     ap.add_argument("--only", help="one map key, e.g. 3:0")
     ap.add_argument("--out", type=Path, default=None)
-    ap.add_argument("--maps", type=Path, default=MAPS_DIR)
+    ap.add_argument("--maps", type=Path, default=None,
+                    help="the atlas to compare against (default: the --game one)")
     ap.add_argument("--allow-untraced", action="store_true",
                     help="include runs with no per-input trace — their battle frames cannot be filtered")
     ap.add_argument("--threshold", type=float, default=0.6,
@@ -380,9 +403,10 @@ def main() -> int:
     ap.add_argument("--calibrate", action="store_true", help="re-derive the camera from motion")
     args = ap.parse_args()
 
-    spec = GBA_FIRERED
+    spec = SPECS[args.game]
+    maps_dir = args.maps or MAPS_ROOT / args.game
     runs = [d for d in args.run_dirs if (d / "events.jsonl").exists()]
-    by_map, refused = collect(runs, spec, args.only, require_trace=not args.allow_untraced)
+    by_map, refused, specs = collect(runs, spec, args.only, require_trace=not args.allow_untraced)
     total = sum(len(v) for v in by_map.values())
     print(f"{len(runs) - len(refused)} runs, {total} placeable frames, {len(by_map)} maps")
     if refused:
@@ -391,16 +415,16 @@ def main() -> int:
     if not total:
         return 1
     if args.calibrate:
-        calibrate(by_map, spec)
+        calibrate(by_map, spec, specs)
         return 0
-    canvases = stitch(by_map, spec, args.threshold, histogram=args.scores)
+    canvases = stitch(by_map, spec, args.threshold, specs, histogram=args.scores)
     index = write(canvases, spec, args.out or OUT_DIR / spec.name)
     seen = sum(m["seen_px"] for m in index["maps"].values())
     print(f"\nwrote {len(index['maps'])} maps, {seen} pixels seen")
     if args.sheet:
-        sheet(canvases, spec, args.maps, args.sheet)
+        sheet(canvases, spec, maps_dir, args.sheet)
     if args.verify:
-        return 1 if verify(canvases, spec, args.maps) else 0
+        return 1 if verify(canvases, spec, maps_dir) else 0
     return 0
 
 

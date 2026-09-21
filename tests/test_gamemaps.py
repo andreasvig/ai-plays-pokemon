@@ -395,3 +395,101 @@ def test_a_trim_never_swallows_the_map(atlas):
         t = m.get("trim") or {}
         assert m["width"] - t.get("left", 0) - t.get("right", 0) >= 1, key
         assert m["height"] - t.get("top", 0) - t.get("bottom", 0) >= 1, key
+
+
+# -- every floor of a visited building (2026-09-20) ----------------------------
+# Andreas, looking at the rendered Emerald world: "the pokecenter (and other 2
+# story/multiroom) rooms needs to show the multi rooms in their sub world". He
+# clicked Oldale Town's Pokemon Center and the popup was one panel labelled 1F.
+#
+# The grouping was never the bug — `building_of` already puts `_1F` and `_2F` in
+# one building. The 2F was not in the atlas at all, because an OBSERVED manifest
+# is the maps a run entered and no run has walked upstairs in a Centre. FireRed
+# never had the problem: its manifest is the decomp walk graph, so both Centre
+# 2Fs have always been rendered.
+
+def _render_gamemaps():
+    """scripts/ is not a package; load the renderer by path.
+
+    Registered in ``sys.modules`` BEFORE it is executed: `@dataclass` resolves
+    its own annotations through `sys.modules[cls.__module__]`, and an unlisted
+    module makes that lookup return None mid-import.
+    """
+    import importlib.util
+    import sys
+    if "render_gamemaps" in sys.modules:
+        return sys.modules["render_gamemaps"]
+    spec = importlib.util.spec_from_file_location(
+        "render_gamemaps", REPO_ROOT / "scripts" / "render_gamemaps.py")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["render_gamemaps"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_sibling_floors_adds_the_unvisited_floor_of_a_visited_building():
+    """The rule itself, on a manifest with one floor of a two-floor building.
+
+    This is the assertion that bites: with `sibling_floors` returning nothing
+    (its body replaced by `return []`, the whole of the change under test), the
+    first assert fails with `{'2:2'} != {'2:2', '2:3'}` — the 2F is absent, which
+    is precisely what the atlas looked like. The second and third asserts are the
+    over-reach controls and pass either way: they are what fails if the rule
+    widens past a building.
+    """
+    mod = _render_gamemaps()
+    mod.set_complexes("emerald-us")
+    keys = {
+        "OldaleTown_PokemonCenter_1F": "2:2",
+        "OldaleTown_PokemonCenter_2F": "2:3",
+        "OldaleTown_Mart": "2:4",            # same town, not the same building
+        "PetalburgCity_PokemonCenter_1F": "3:0",   # same NAME shape, other town
+        "PetalburgCity_PokemonCenter_2F": "3:1",
+        "OldaleTown": "0:11",                # outdoors: never a floor of anything
+    }
+    indoor = {n for n in keys if n != "OldaleTown"}
+    sel = {"2:2": "OldaleTown_PokemonCenter_1F"}
+    added = mod.sibling_floors(sel, keys, lambda n: n in indoor)
+
+    assert set(sel) == {"2:2", "2:3"}, "the visited building's other floor must be rendered"
+    assert added == ["OldaleTown_PokemonCenter_2F"]
+    # ...and nothing else. A rule that grouped on the town, or that let an
+    # outdoor map count as a floor, would have pulled in the Mart, the other
+    # town's Centre, or Oldale itself.
+    assert set(sel.values()) & {"OldaleTown_Mart", "OldaleTown",
+                                "PetalburgCity_PokemonCenter_1F"} == set()
+
+
+def test_sibling_floors_expands_nothing_from_an_outdoor_map():
+    """The guard that keeps the name rule from reading a town as a building."""
+    mod = _render_gamemaps()
+    mod.set_complexes("emerald-us")
+    keys = {"Route104": "0:6", "Route104_MrBrineysHouse": "1:0"}
+    sel = {"0:6": "Route104"}
+    assert mod.sibling_floors(sel, keys, lambda n: n != "Route104") == []
+    assert sel == {"0:6": "Route104"}
+
+
+def test_the_oldale_pokemon_center_ships_both_of_its_floors():
+    """The case Andreas reported, in the committed artifact.
+
+    Fails before the change: `emerald-us/index.json` held `2:2` and no `2:3`.
+    """
+    d = json.loads((MAPS_ROOT / "emerald-us" / "index.json").read_text())
+    floors = {k: m for k, m in d["maps"].items()
+              if m.get("building") == "OldaleTown_PokemonCenter"}
+    assert {m["name"] for m in floors.values()} == {
+        "OldaleTown_PokemonCenter_1F", "OldaleTown_PokemonCenter_2F"}
+    for key, m in floors.items():
+        assert m["floors"] == sorted(floors), key
+        assert (MAPS_ROOT / "emerald-us" / m["file"]).is_file(), key
+
+
+def test_no_building_floor_points_outside_its_own_atlas():
+    """The invariant the widening must not break: a panel with no picture."""
+    for path in _atlases():
+        d = json.loads(path.read_text())
+        for key, m in d["maps"].items():
+            for f in m.get("floors", []):
+                assert f in d["maps"], f"{path.parent.name}:{key} lists a floor {f} it has not rendered"
+                assert d["maps"][f].get("building") == m["building"], (key, f)

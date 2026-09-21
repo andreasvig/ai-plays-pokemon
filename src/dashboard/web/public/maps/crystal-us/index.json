@@ -1,0 +1,349 @@
+{
+ "schema": 2,
+ "game": "crystal-us",
+ "key_shape": "pair",
+ "tile_px": 16,
+ "camera": "topdown",
+ "source": {
+  "kind": "decomp",
+  "repo": "pret/pokecrystal",
+  "sha": "7a7881d0d62e0ddbd82dcf10e7116807487ac651"
+ },
+ "walkgraph": {
+  "version": null,
+  "source": null
+ },
+ "map_set": {
+  "kind": "observed",
+  "source": "artifacts/game-map-render/observed/crystal-us-observed.json",
+  "note": "maps our runs entered; trim omitted (no walkable-tile set)"
+ },
+ "bytes": 88225,
+ "maps": {
+  "24:3": {
+   "name": "ROUTE_29",
+   "width": 60,
+   "height": 18,
+   "file": "24-3.png",
+   "bytes": 17902,
+   "type": "MAP_TYPE_ROUTE",
+   "indoor": false,
+   "border": {
+    "file": "24-3-border.png",
+    "w": 2,
+    "h": 2,
+    "bytes": 548
+   },
+   "open": [
+    {
+     "side": "up",
+     "from": 20,
+     "to": 40
+    },
+    {
+     "side": "left",
+     "from": 0,
+     "to": 18
+    },
+    {
+     "side": "right",
+     "from": 0,
+     "to": 18
+    }
+   ],
+   "world": [
+    -60,
+    0
+   ],
+   "frame": "johto"
+  },
+  "24:4": {
+   "name": "NEW_BARK_TOWN",
+   "width": 20,
+   "height": 18,
+   "file": "24-4.png",
+   "bytes": 7568,
+   "type": "MAP_TYPE_TOWN",
+   "indoor": false,
+   "border": {
+    "file": "24-4-border.png",
+    "w": 2,
+    "h": 2,
+    "bytes": 548
+   },
+   "open": [
+    {
+     "side": "left",
+     "from": 0,
+     "to": 18
+    },
+    {
+     "side": "right",
+     "from": 0,
+     "to": 18
+    }
+   ],
+   "world": [
+    0,
+    0
+   ],
+   "frame": "johto",
+   "doors": [
+    {
+     "x": 6,
+     "y": 3,
+     "to": "24:5",
+     "building": "ELMS_LAB"
+    },
+    {
+     "x": 13,
+     "y": 5,
+     "to": "24:6",
+     "building": "PLAYERS_HOUSE"
+    }
+   ]
+  },
+  "24:5": {
+   "name": "ELMS_LAB",
+   "width": 10,
+   "height": 12,
+   "file": "24-5.png",
+   "bytes": 2728,
+   "type": "MAP_TYPE_INDOOR",
+   "indoor": true,
+   "border": {
+    "file": "24-5-border.png",
+    "w": 2,
+    "h": 2,
+    "bytes": 98
+   },
+   "building": "ELMS_LAB",
+   "floors": [
+    "24:5"
+   ],
+   "popup": true,
+   "exits": [
+    {
+     "x": 5,
+     "y": 11,
+     "to": "24:4"
+    }
+   ]
+  },
+  "24:6": {
+   "name": "PLAYERS_HOUSE_1F",
+   "width": 10,
+   "height": 8,
+   "file": "24-6.png",
+   "bytes": 1709,
+   "type": "MAP_TYPE_INDOOR",
+   "indoor": true,
+   "border": {
+    "file": "24-6-border.png",
+    "w": 2,
+    "h": 2,
+    "bytes": 98
+   },
+   "building": "PLAYERS_HOUSE",
+   "floors": [
+    "24:6",
+    "24:7"
+   ],
+   "popup": true,
+   "exits": [
+    {
+     "x": 7,
+     "y": 7,
+     "to": "24:4"
+    }
+   ]
+  },
+  "24:7": {
+   "name": "PLAYERS_HOUSE_2F",
+   "width": 8,
+   "height": 6,
+   "file": "24-7.png",
+   "bytes": 1256,
+   "type": "MAP_TYPE_INDOOR",
+   "indoor": true,
+   "border": {
+    "file": "24-7-border.png",
+    "w": 2,
+    "h": 2,
+    "bytes": 98
+   },
+   "building": "PLAYERS_HOUSE",
+   "floors": [
+    "24:6",
+    "24:7"
+   ],
+   "popup": true
+  },
+  "26:1": {
+   "name": "ROUTE_30",
+   "width": 20,
+   "height": 54,
+   "file": "26-1.png",
+   "bytes": 19724,
+   "type": "MAP_TYPE_ROUTE",
+   "indoor": false,
+   "border": {
+    "file": "26-1-border.png",
+    "w": 2,
+    "h": 2,
+    "bytes": 548
+   },
+   "open": [
+    {
+     "side": "up",
+     "from": 0,
+     "to": 20
+    },
+    {
+     "side": "down",
+     "from": 0,
+     "to": 20
+    }
+   ],
+   "world": [
+    -90,
+    -54
+   ],
+   "frame": "johto",
+   "doors": [
+    {
+     "x": 17,
+     "y": 5,
+     "to": "26:10",
+     "building": "MR_POKEMONS_HOUSE"
+    }
+   ]
+  },
+  "26:10": {
+   "name": "MR_POKEMONS_HOUSE",
+   "width": 8,
+   "height": 8,
+   "file": "26-10.png",
+   "bytes": 2821,
+   "type": "MAP_TYPE_INDOOR",
+   "indoor": true,
+   "border": {
+    "file": "26-10-border.png",
+    "w": 2,
+    "h": 2,
+    "bytes": 98
+   },
+   "building": "MR_POKEMONS_HOUSE",
+   "floors": [
+    "26:10"
+   ],
+   "popup": true,
+   "exits": [
+    {
+     "x": 3,
+     "y": 7,
+     "to": "26:1"
+    }
+   ]
+  },
+  "26:2": {
+   "name": "ROUTE_31",
+   "width": 40,
+   "height": 18,
+   "file": "26-2.png",
+   "bytes": 14882,
+   "type": "MAP_TYPE_ROUTE",
+   "indoor": false,
+   "border": {
+    "file": "26-2-border.png",
+    "w": 2,
+    "h": 2,
+    "bytes": 548
+   },
+   "open": [
+    {
+     "side": "down",
+     "from": 20,
+     "to": 40
+    },
+    {
+     "side": "left",
+     "from": 0,
+     "to": 18
+    }
+   ],
+   "world": [
+    -110,
+    -72
+   ],
+   "frame": "johto"
+  },
+  "26:3": {
+   "name": "CHERRYGROVE_CITY",
+   "width": 40,
+   "height": 18,
+   "file": "26-3.png",
+   "bytes": 17015,
+   "type": "MAP_TYPE_TOWN",
+   "indoor": false,
+   "border": {
+    "file": "26-3-border.png",
+    "w": 2,
+    "h": 2,
+    "bytes": 144
+   },
+   "open": [
+    {
+     "side": "up",
+     "from": 10,
+     "to": 30
+    },
+    {
+     "side": "right",
+     "from": 0,
+     "to": 18
+    }
+   ],
+   "world": [
+    -100,
+    0
+   ],
+   "frame": "johto",
+   "doors": [
+    {
+     "x": 29,
+     "y": 3,
+     "to": "26:5",
+     "building": "CHERRYGROVE_POKECENTER"
+    }
+   ]
+  },
+  "26:5": {
+   "name": "CHERRYGROVE_POKECENTER_1F",
+   "width": 10,
+   "height": 8,
+   "file": "26-5.png",
+   "bytes": 2620,
+   "type": "MAP_TYPE_INDOOR",
+   "indoor": true,
+   "border": {
+    "file": "26-5-border.png",
+    "w": 2,
+    "h": 2,
+    "bytes": 98
+   },
+   "building": "CHERRYGROVE_POKECENTER",
+   "floors": [
+    "26:5"
+   ],
+   "popup": true,
+   "exits": [
+    {
+     "x": 4,
+     "y": 7,
+     "to": "26:3"
+    }
+   ]
+  }
+ }
+}

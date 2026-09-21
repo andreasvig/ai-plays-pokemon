@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import struct
 import subprocess
@@ -78,6 +79,23 @@ BARRIER_OBJECTS = ("CUT_TREE", "ROCK_SMASH_ROCK", "PUSHABLE_BOULDER", "STRENGTH"
 
 # ---------------------------------------------------------------- fetching
 
+def cache_write(path: Path, data: bytes) -> None:
+    """tmp-then-``os.replace``: a reader never sees a half-written cached file.
+
+    ``local/pret-cache`` is shared — scripts/render_gamemaps.py fetches the same
+    tree into the same directory, and two worktrees run both — so a plain
+    ``write_bytes`` lets a concurrent reader pick up a truncated ``map.bin`` and
+    build a graph out of it without a word.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        tmp.write_bytes(data)
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
 def fetch(path: str, *, offline: bool) -> bytes:
     local = CACHE / path
     if local.exists():
@@ -87,15 +105,20 @@ def fetch(path: str, *, offline: bool) -> bytes:
     # raw.githubusercontent.com, not the contents API: the API's base64 for a
     # binary file came back re-encoded (map.bin 960 B → 1419 B of mojibake) on
     # 2026-09-09, which silently turned every grid into noise.
-    req = urllib.request.Request(f"https://raw.githubusercontent.com/{PRET}/master/{path}",
-                                 headers={"User-Agent": "pokebench-walkgraph/1.0"})
+    #
+    # AT THE PINNED SHA, not at `master`. This URL said `master` while the graph
+    # it produced recorded `pret_sha()` beside it, so a file fetched today and a
+    # provenance string written months ago could disagree and nothing would say
+    # so — the one thing the provenance string exists to prevent.
+    req = urllib.request.Request(
+        f"https://raw.githubusercontent.com/{PRET}/{pret_sha(offline=offline)}/{path}",
+        headers={"User-Agent": "pokebench-walkgraph/1.0"})
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
             data = resp.read()
     except urllib.error.URLError as exc:
         raise SystemExit(f"fetch {path} failed: {exc}") from exc
-    local.parent.mkdir(parents=True, exist_ok=True)
-    local.write_bytes(data)
+    cache_write(local, data)
     return data
 
 
@@ -104,15 +127,29 @@ def fetch_json(path: str, *, offline: bool) -> dict:
 
 
 def pret_sha(*, offline: bool) -> str:
+    """The commit this cache is of — a full 40-hex sha or nothing.
+
+    It used to answer "unknown" when the marker was absent and the resolve
+    failed, and that string went straight into the graph's ``source`` field.
+    Unverifiable provenance is worse than no graph: it reads exactly like a real
+    one. `tests/test_gamemaps.py` refuses a non-sha in the atlas for the same
+    reason; this is the other half of it.
+    """
     marker = CACHE / "SHA"
     if marker.exists():
-        return marker.read_text().strip()
+        sha = marker.read_text().strip()
+        if not re.fullmatch(r"[0-9a-f]{40}", sha):
+            raise SystemExit(f"{marker} holds {sha!r}, which is not a 40-hex commit")
+        return sha
     if offline:
-        return "unknown"
-    proc = subprocess.run(["gh", "api", f"repos/{PRET}/commits/master", "--jq", ".sha"], capture_output=True, text=True)
-    sha = proc.stdout.strip() if proc.returncode == 0 else "unknown"
+        raise SystemExit(f"--offline and {marker} is absent: nothing says which commit this is")
+    proc = subprocess.run(["gh", "api", f"repos/{PRET}/commits/master", "--jq", ".sha"],
+                          capture_output=True, text=True)
+    sha = proc.stdout.strip() if proc.returncode == 0 else ""
+    if not re.fullmatch(r"[0-9a-f]{40}", sha):
+        raise SystemExit(f"could not resolve {PRET}@master to a commit (got {sha!r})")
     CACHE.mkdir(parents=True, exist_ok=True)
-    marker.write_text(sha)
+    cache_write(marker, sha.encode())
     return sha
 
 
@@ -198,16 +235,22 @@ def build(*, offline: bool) -> WalkGraph:
     const_to_name = {camel_to_const(m): m for m in map_gn}
 
     def listing(path: str) -> list[str]:
-        proc = subprocess.run(["gh", "api", f"repos/{PRET}/contents/{path}", "--jq", ".[].name"],
-                              capture_output=True, text=True)
         cache = CACHE / path / "_listing.json"
         if cache.exists():
             return json.loads(cache.read_text())
-        if offline or proc.returncode != 0:
+        if offline:
+            raise SystemExit(f"cannot list {path}")
+        # ?ref=<sha>, for the same reason `fetch` pins: a directory listing taken
+        # from master can name a tileset the pinned tree does not have. The call
+        # also used to run BEFORE the cache was consulted, so every cached run
+        # still paid for it.
+        proc = subprocess.run(["gh", "api",
+                               f"repos/{PRET}/contents/{path}?ref={pret_sha(offline=offline)}",
+                               "--jq", ".[].name"], capture_output=True, text=True)
+        if proc.returncode != 0:
             raise SystemExit(f"cannot list {path}")
         names = proc.stdout.split()
-        cache.parent.mkdir(parents=True, exist_ok=True)
-        cache.write_text(json.dumps(names))
+        cache_write(cache, json.dumps(names).encode())
         return names
 
     primary_dirs = listing("data/tilesets/primary")

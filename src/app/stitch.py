@@ -40,7 +40,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Iterator, Optional
 
@@ -70,6 +70,13 @@ class ScreenSpec:
     cam_y_px: int
     textbox_top: int          # rows at or below this may be covered by a message box
     grid_overlay: bool        # the harness draws its own tile grid over the frame
+    #: How far the player's SPRITE reaches above and below the top of its own
+    #: tile. A GBA overworld sprite is 16x32 and towers over its tile; a GBC one
+    #: is 16x16 and is drawn a few pixels high. Both numbers are measured by
+    #: ``stitch_maps.py --calibrate``, which finds the sprite as the pixels that
+    #: refuse to obey the world's shift.
+    sprite_rise: int = 28
+    sprite_drop: int = 8
     grid_y_offset: int = 8    # where the overlay's horizontals sit, within a tile
     grid_rgb: tuple = (255, 0, 0)   # what it is drawn in
     grid_alpha: int = 70            # how hard (out of 255)
@@ -85,6 +92,50 @@ class ScreenSpec:
 GBA_FIRERED = ScreenSpec(name="firered-us", width=240, height=160, tile=16,
                          cam_x_tiles=7, cam_y_px=4 * 16 + 8, textbox_top=112,
                          grid_overlay=True)
+
+#: Crystal on the GBC. A smaller screen (160x144 = 10x9 tiles) and no harness
+#: grid overlay — the v2 runs set ``screenshot.grid_overlay: false``, so there
+#: is nothing to invert. The camera numbers are NOT assumed: ``stitch_maps.py
+#: --calibrate`` re-derives them from motion alone on the two Crystal runs, and
+#: ``--verify`` then checks the whole thing against the pret render.
+#: ``colour_bits`` stays 5 — a GBC writes 5 bits per channel exactly as a GBA
+#: does, and SkyEmu emits them as ``v << 3``.
+GBC_CRYSTAL = ScreenSpec(name="crystal-us", width=160, height=144, tile=16,
+                         cam_x_tiles=4, cam_y_px=4 * 16, textbox_top=96,
+                         grid_overlay=False, sprite_rise=8, sprite_drop=16)
+
+#: Every game the stitcher can place a frame for, by the same key the atlas and
+#: the ROM registry use. The stitcher's body was always generic; only its
+#: imports named one game.
+SPECS: dict[str, ScreenSpec] = {s.name: s for s in (GBA_FIRERED, GBC_CRYSTAL)}
+
+
+def run_spec(spec: ScreenSpec, run_dir: Path) -> ScreenSpec:
+    """The game's spec as one RUN was actually recorded.
+
+    ``grid_overlay`` is a property of the HARNESS's screenshot config
+    (``screenshot.grid_overlay`` in the run's own config.json), not of the
+    console — and it is off for every run recorded since the v2 control centre
+    landed. The spec's value is the default for a run that does not say.
+
+    **This is not a nicety.** ``ungrid`` inverts a constant-alpha composite, and
+    inverting one that was never applied recolours the two pixels straddling
+    every tile boundary — 1 - (14/16)^2 = 23.4% of a 16 px grid. Measured
+    2026-09-20: every FireRed map scored 74-82% against its own pret render, the
+    same number on every map, with the residual sitting exactly on the grid
+    lines. The render was right and the reader was wrong, and because the number
+    was uniform it read as "the atlas is a bit off" rather than as a bug.
+    """
+    cfg = Path(run_dir) / "config.json"
+    if not cfg.exists():
+        return spec
+    try:
+        want = json.loads(cfg.read_text()).get("screenshot", {}).get("grid_overlay")
+    except (OSError, ValueError, AttributeError):
+        return spec
+    if want is None or bool(want) == spec.grid_overlay:
+        return spec
+    return replace(spec, grid_overlay=bool(want))
 
 
 def window_origin(spec: ScreenSpec, x: int, y: int) -> tuple[int, int]:
@@ -109,7 +160,7 @@ def keep_mask(spec: ScreenSpec, textbox: bool = True, sprite: bool = True) -> np
     if sprite:
         px0 = spec.cam_x_tiles * spec.tile
         box = ((X >= px0 - 4) & (X < px0 + spec.tile + 4)
-               & (Y >= spec.cam_y_px - 28) & (Y < spec.cam_y_px + 8))
+               & (Y >= spec.cam_y_px - spec.sprite_rise) & (Y < spec.cam_y_px + spec.sprite_drop))
         keep &= ~box
     if textbox:
         keep &= Y < spec.textbox_top
@@ -291,20 +342,55 @@ def fit_colour_map(ref: np.ndarray, got: np.ndarray, mask: np.ndarray) -> np.nda
 # --- reading a run -----------------------------------------------------------
 
 def positions(run_dir: Path) -> dict[int, tuple[int, int, int, int]]:
-    """``turn -> (map_group, map_num, x, y)`` from the referee's per-turn poll."""
+    """``turn -> (map_group, map_num, x, y)`` — where the run ended that turn.
+
+    The referee's per-turn poll (``referee_position``) where the run has one.
+    A run that recorded NONE falls back to the per-input trace's ``end_tile``,
+    which is the only position a v2 (SkyEmu) run carries: the two Crystal runs
+    of 2026-09-19/20 have 383 ``turn_input_trace`` events and zero
+    ``referee_position``, so without the fallback there is no Crystal frame to
+    place at all.
+
+    **All or nothing, per run, and the poll wins.** The two are not
+    interchangeable: measured over the eight FireRed runs, 126 of 140 turns
+    that carry both agree, and every disagreement is a turn whose trace ended
+    before the emulator settled — a warp still completing (the poll reads the
+    destination, the trace the map departed) or one more step of movement. So a
+    run that has the poll is read exactly as it was before this fallback
+    existed, and mixing the two per turn is refused rather than reasoned about.
+
+    Inside the fallback, a turn whose trace CHANGED MAP is dropped: that is the
+    warp case, and its last tile is not where the turn ended. The remaining
+    one-tile cases are what the stitcher's per-frame agreement filter is for —
+    a frame placed one tile out disagrees with the settled map almost
+    everywhere and is discarded on its own.
+    """
     out: dict[int, tuple[int, int, int, int]] = {}
+    fallback: dict[int, tuple[int, int, int, int]] = {}
     path = Path(run_dir) / "events.jsonl"
     if not path.exists():
         return out
     with path.open() as fh:
         for line in fh:
-            if '"referee_position"' not in line:
-                continue
-            e = json.loads(line)
-            if e.get("type") == "referee_position" and e.get("x") is not None:
-                out[int(e["turn"])] = (int(e["map_group"]), int(e["map_num"]),
-                                       int(e["x"]), int(e["y"]))
-    return out
+            if '"referee_position"' in line:
+                e = json.loads(line)
+                if e.get("type") == "referee_position" and e.get("x") is not None:
+                    out[int(e["turn"])] = (int(e["map_group"]), int(e["map_num"]),
+                                           int(e["x"]), int(e["y"]))
+            elif '"turn_input_trace"' in line:
+                e = json.loads(line)
+                if e.get("type") != "turn_input_trace":
+                    continue
+                end = e.get("end_tile")
+                if not end or len(end) != 4 or any(v is None for v in end):
+                    continue
+                g, n = int(end[0]), int(end[1])
+                seen = [s for s in (e.get("samples") or [])
+                        if isinstance(s, dict) and s.get("x") is not None]
+                if any(s.get("map_group") != g or s.get("map_num") != n for s in seen):
+                    continue                  # the turn warped: end_tile is not where it ended
+                fallback[int(e["turn"])] = (g, n, int(end[2]), int(end[3]))
+    return out or fallback
 
 
 def battle_turns(run_dir: Path) -> set[int]:
@@ -405,6 +491,7 @@ def canvas_for(spec: ScreenSpec, placed: list[tuple[int, int]]) -> MapCanvas:
     return MapCanvas(x0, y0, max(xs) - x0 + spec.width, max(ys) - y0 + spec.height)
 
 
-__all__ = ["CANDIDATES", "ScreenSpec", "GBA_FIRERED", "MapCanvas", "Sample", "fit_colour_map",
-           "window_origin", "keep_mask", "to_native", "positions", "battle_turns",
+__all__ = ["CANDIDATES", "ScreenSpec", "GBA_FIRERED", "GBC_CRYSTAL", "SPECS", "MapCanvas",
+           "Sample", "fit_colour_map",
+           "window_origin", "keep_mask", "to_native", "run_spec", "positions", "battle_turns",
            "screenshots", "samples", "canvas_for", "ungrid", "grid_pixels", "has_trace"]

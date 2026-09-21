@@ -18,7 +18,7 @@
   "source": "artifacts/game-map-render/observed/emerald-us-observed.json",
   "note": "maps our runs entered; trim omitted (no walkable-tile set)"
  },
- "bytes": 394399,
+ "bytes": 399088,
  "maps": {
   "0:0": {
    "name": "PetalburgCity",
@@ -452,7 +452,8 @@
    },
    "building": "OldaleTown_PokemonCenter",
    "floors": [
-    "2:2"
+    "2:2",
+    "2:3"
    ],
    "popup": true,
    "exits": [
@@ -462,6 +463,27 @@
      "to": "0:10"
     }
    ]
+  },
+  "2:3": {
+   "name": "OldaleTown_PokemonCenter_2F",
+   "width": 14,
+   "height": 10,
+   "file": "2-3.png",
+   "bytes": 4689,
+   "type": "MAP_TYPE_INDOOR",
+   "indoor": true,
+   "border": {
+    "file": "2-3-border.png",
+    "w": 2,
+    "h": 2,
+    "bytes": 82
+   },
+   "building": "OldaleTown_PokemonCenter",
+   "floors": [
+    "2:2",
+    "2:3"
+   ],
+   "popup": true
   },
   "2:4": {
    "name": "OldaleTown_Mart",
