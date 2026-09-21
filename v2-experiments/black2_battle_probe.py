@@ -24,7 +24,7 @@ HP order was settled by landing a hit and watching +4 fall while +2 held). Speci
 """
 import sys, struct
 from pathlib import Path
-REPO=Path("/Users/andreasvigastrup/Desktop/Marvin-workspace/ai-plays-pokemon-skyemu")
+REPO=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(REPO)); sys.path.insert(0,str(REPO/"v2-experiments"))
 from find_battle_flag import machine
 from src.app.roms import load_roms
