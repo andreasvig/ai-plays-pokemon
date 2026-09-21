@@ -179,6 +179,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ds3d import camera as ds3d_camera                         # noqa: E402
 from ds3d import field as ds3d_field                           # noqa: E402
 from ds3d import nsbmd, nsbtx                                   # noqa: E402
+from ds3d import pngout                                         # noqa: E402
+from ds3d import mapnames                                       # noqa: E402
 from ds3d import scene as ds3d_scene                            # noqa: E402
 from ds3d.nitrofs import read_rom, narc_entries                 # noqa: E402
 
@@ -196,7 +198,6 @@ PLACE = 16                 # bytes per prop placement
 # away. The collision tier is one flat block per tile and 4 loses nothing.
 TILE_PX = {"3d": 16, "collision": 4}
 DEFAULT_RENDER = "3d"
-RENDER_KIND = {"3d": "3d-ortho", "collision": "collision"}
 # Gen 5 takes gen 4's camera, for gen 4's reason. Andreas, 2026-09-21: "both
 # teh gen 4 and 5 views are actually really bad, bith are top down whcih dsont
 # feel right". The projection is `ds3d/camera.py`.
@@ -463,6 +464,54 @@ class Gen5Rom:
                     self._cache[key] = (lut, ts)
         return self._cache[key]
 
+    def prop_elsewhere(self, which: int, pid: int) -> Optional[tuple[int, str]]:
+        """`(area, model name)` for a prop id THIS map's archive does not hold.
+
+        Diagnosis only — deliberately not a fallback in the drawing path.
+
+        A prop id is global: scanning both archive pairs of Black 2, 446
+        outdoor ids appear across 2070 repeat listings and 222 indoor ids
+        across 3593, and in not one case do two areas give the same id a
+        different model. So when a placement names an id its own area lacks,
+        the model can still be FOUND, and saying which area and which model is
+        the difference between "the lookup broke" and "this chunk references
+        the area next door".
+
+        What it must not become is a fallback. `check_props` exists to catch
+        the area arithmetic in `prop_area` going wrong, and because ids are
+        global, a renderer that quietly searched every area would resolve most
+        placements no matter how wrong that arithmetic was — the check would
+        pass while every map drew another town's furniture, which is the
+        louder half of the failure it was written for. So the drawing path
+        keeps using the map's own area and only this reports what it skipped.
+        """
+        key = ("propindex", which)
+        if key not in self._cache:
+            index: dict[int, tuple[int, str]] = {}
+            for area, raw in enumerate(self.prop_models[which]):
+                if len(raw) < 8 or raw[:2] != b"AB":
+                    continue
+                try:
+                    n = struct.unpack_from("<H", raw, 2)[0]
+                    offs = struct.unpack_from(f"<{n + 1}I", raw, 4)
+                    items = [raw[offs[i]:offs[i + 1]] for i in range(n)]
+                    recs = [y for y in items if y[:4] != b"BMD0"]
+                    mods = [y for y in items if y[:4] == b"BMD0"]
+                except Exception:
+                    continue
+                for r, mo in zip(recs, mods):
+                    if len(r) < 2:
+                        continue
+                    ident = struct.unpack_from("<H", r, 0)[0]
+                    if ident in index:
+                        continue
+                    try:
+                        index[ident] = (area, nsbmd.load_models(mo)[0][0].name)
+                    except Exception:
+                        pass
+            self._cache[key] = index
+        return self._cache[key].get(pid)
+
 
 def blocked_plane(grid: np.ndarray) -> np.ndarray:
     """Bit 0 of each tile's flags halfword: set means you cannot stand here."""
@@ -624,22 +673,23 @@ class Field3D:
         return frame.cut(full, bx0, by0, win.w, win.h)
 
 
-def to_png(rgba: np.ndarray, path: Path, tile_px: int) -> None:
+def to_png(rgba: np.ndarray, path: Path, tile_px: int, *,
+           artwork: bool = True, stats: Optional[dict] = None) -> None:
     """The map's own rectangle, `tile_px` PNG pixels per tile. Map-local.
 
     `tile_px` is 1 when the caller already rendered at the final density, which
     the 3D tier does — it rasterises at one pixel per world unit rather than
     expanding flat blocks.
+
+    `artwork` says these pixels came off the cartridge, so `ds3d/pngout.py`
+    rounds them back to the DS's own five bits per channel and the file loses
+    about a third for precision the console never had. The collision tier passes
+    False: its two tones are a palette this repo chose, not colour read off a
+    ROM, and the argument for quantising does not apply to a colour we
+    invented. See that module's docstring.
     """
-    block = (rgba if tile_px == 1 else
-             np.repeat(np.repeat(rgba, tile_px, axis=0), tile_px, axis=1))
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    try:
-        Image.fromarray(block, "RGBA").save(tmp, "PNG", optimize=True)
-        os.replace(tmp, path)
-    finally:
-        tmp.unlink(missing_ok=True)
+    pngout.write_png(rgba, path, tile_px,
+                     quantise_to_ds=artwork, stats=stats)
 
 
 def border_png(path: Path, tile_px: int) -> None:
@@ -870,7 +920,7 @@ SEASONS = ("spring", "summer", "autumn", "winter")
 def build_atlas(rom: Gen5Rom, *, render: str = DEFAULT_RENDER,
                 tile_px: Optional[int] = None, season: int = 0,
                 write: bool = True, camera: str = DEFAULT_CAMERA,
-                light: bool = False) -> dict:
+                light: bool = False, png_stats: Optional[dict] = None) -> dict:
     tile_px = TILE_PX[render] if tile_px is None else tile_px
     render_kind = RENDER_KIND_FOR[(render, camera)]
     cam = ds3d_camera.camera_for(camera, tile_px)
@@ -910,13 +960,21 @@ def build_atlas(rom: Gen5Rom, *, render: str = DEFAULT_RENDER,
         if write:
             # `tile_px` 1 where the tier already rasterised at the final pixel
             # density, which both 3D cameras and the stretched silhouette do.
-            to_png(rgba, out / png, tile_px if frame is None and kind == "collision" else 1)
+            to_png(rgba, out / png,
+                   tile_px if frame is None and kind == "collision" else 1,
+                   artwork=kind != "collision", stats=png_stats)
             border_png(out / border, tile_px)
         entry: dict = {
-            # No Gen 5 decomp means no header constant to name a map with, and
-            # the cartridge's own location names are in an archive nothing here
-            # decodes. Null is what SoulSilver's atlas ships for the same reason.
-            "name": None,
+            # The name the CARTRIDGE prints, decoded out of its own text
+            # archive (ds3d/dstext.py) and joined here by ds3d/mapnames.py.
+            # There is no Gen 5 decomp to take a header constant from, which
+            # is why this said None until 2026-09-21.
+            #
+            # A map header indexes a PLACE-name table, so an interior carries
+            # its town's name: all four of Black 2's rendered maps read
+            # "Aspertia City". That makes it a LABEL and not a key, which is
+            # why `building` below is untouched — it is the uniqueness field.
+            "name": mapnames.map_name(rom.game, map_id),
             "width": win.w,
             "height": win.h,
             "file": png,
@@ -1125,9 +1183,18 @@ def check_props(rom: Gen5Rom, *, flip_z: bool = False) -> dict:
     the shipped map set, negating z takes the fraction of prop pixels standing
     on a wall from about half to about nine tenths; `--check` prints both, so
     the number that justifies the sign is never more than one run away.
+
+    `unresolved` NAMES every placement whose id this map's own prop archive
+    does not carry, with the model the id means elsewhere and the area that
+    holds it (`prop_elsewhere`). A bare count cannot tell the two failures
+    apart: a wrong `prop_area` would strand whole maps' worth of furniture,
+    while a chunk referencing the area next door strands two backdrop objects
+    and is a fact about the cartridge. Both read as "missing: 2" until you say
+    what went missing.
     """
     on_wall = total = 0
-    resolved = missing = 0
+    resolved = 0
+    unresolved: list[dict] = []
     for map_id in map_ids(rom.game):
         win = map_window(rom, map_id)
         m = rom.matrix_for(map_id)
@@ -1162,11 +1229,18 @@ def check_props(rom: Gen5Rom, *, flip_z: bool = False) -> dict:
                                      yaw=turns * 2.0 * np.pi)
                 return ds3d_field.ortho_pixels(sc, CELL, CELL, 16, 1)
 
+            which, area = rom.prop_area(map_id)
             for _x, _y, _z, _t, pid in places:
                 if ps and pid in ps[0]:
                     resolved += 1
-                else:
-                    missing += 1
+                    continue
+                found = rom.prop_elsewhere(which, pid)
+                unresolved.append({
+                    "map": map_id, "cell": [col, row], "prop_id": pid,
+                    "area": area,
+                    "model": found[1] if found else None,
+                    "found_in_area": found[0] if found else None,
+                })
             bare, dressed = frame(False), frame(True)
             drew = np.abs(bare.astype(int) - dressed.astype(int)).sum(2) > 12
             tiles = drew.reshape(CELL, 16, CELL, 16).mean((1, 3)) > 0.35
@@ -1174,7 +1248,7 @@ def check_props(rom: Gen5Rom, *, flip_z: bool = False) -> dict:
             on_wall += int((tiles & blocked).sum())
             total += int(tiles.sum())
     return {"on_wall": on_wall, "total": total, "resolved": resolved,
-            "missing": missing,
+            "missing": len(unresolved), "unresolved": unresolved,
             "pct": (100.0 * on_wall / total) if total else 0.0}
 
 
@@ -1284,6 +1358,12 @@ def run_checks(games: list[str], camera: str = DEFAULT_CAMERA) -> int:
               f"{win['total'] - len(win['bad'])} pass, {len(win['bad'])} fail")
         print(f"    props resolved to a model   : {props['resolved']}, "
               f"{props['missing']} unresolved")
+        for u in props["unresolved"]:
+            where = (f"model {u['model']!r}, which lives in area {u['found_in_area']}"
+                     if u["model"] else "no area in either archive holds that id")
+            print(f"      unresolved prop: map {u['map']} cell {u['cell']} "
+                  f"id {u['prop_id']} — this map's prop area is {u['area']}; "
+                  f"{where}")
         print(f"    route tiles on real geometry: "
               f"{art['route'] - art['bare_route']}/{art['route']}   "
               f"(walkable tiles bare: {art['bare_walkable']}/{art['walkable']}, "
@@ -1387,6 +1467,11 @@ def main() -> int:
                     help="0 spring, 1 summer, 2 autumn, 3 winter")
     ap.add_argument("--sheet", action="store_true",
                     help="write the artifacts/ proof sheet and nothing else")
+    ap.add_argument("--png-report", action="store_true",
+                    help="also report what the DS 5-bit quantisation cost and "
+                         "saved per game. Costs a second PNG encode per map, "
+                         "so it is off by default; the quantisation itself is "
+                         "always on for the artwork tier (ds3d/pngout.py)")
     args = ap.parse_args()
     games = args.game or sorted(GAMES)
     if args.sheet:
@@ -1399,11 +1484,22 @@ def main() -> int:
         return rc
     for game in games:
         rom = Gen5Rom(game)
+        png_stats: Optional[dict] = {} if args.png_report else None
         atlas = build_atlas(rom, render=args.render, tile_px=args.tile_px,
-                            season=args.season, camera=args.camera, light=args.light)
+                            season=args.season, camera=args.camera,
+                            light=args.light, png_stats=png_stats)
         fb = atlas["map_set"].get("fallback") or []
         print(f"{game}: {len(atlas['maps'])} maps ({atlas['render']}), "
               f"{atlas['bytes']} bytes, {len(fb)} fell back -> {MAPS_ROOT / game}")
+        # The same arithmetic `tests/test_gamemaps.py` alarms on at 200: every
+        # file in the game's directory, over the tiles the atlas declares.
+        tiles = sum(m["width"] * m["height"] for m in atlas["maps"].values())
+        shipped = sum(f.stat().st_size for f in (MAPS_ROOT / game).iterdir()
+                      if f.is_file())
+        print(f"{game}: {shipped / tiles:.1f} bytes of artwork per map tile "
+              f"(alarm at 200)")
+        if png_stats:
+            print(f"{game}: DS 5-bit quantisation, {pngout.format_stats(png_stats)}")
     return 0
 
 

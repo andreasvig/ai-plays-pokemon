@@ -34,14 +34,14 @@
   "source": "artifacts/game-map-render/observed/soulsilver-us-observed.json + every map id our runs' samples name",
   "note": "the cartridge's own textured 3D field artwork, under the field camera's own pitch, orthographic at one pixel per world unit; PNG pixel (0,0) is tile png_origin, so a source rect subtracts it"
  },
- "bytes": 366837,
+ "bytes": 287862,
  "maps": {
   "33:0": {
-   "name": null,
+   "name": "Route 29",
    "width": 96,
    "height": 32,
    "file": "33-0.png",
-   "bytes": 207856,
+   "bytes": 170039,
    "indoor": false,
    "border": {
     "file": "33-0-border.png",
@@ -1178,14 +1178,22 @@
      "from": 0,
      "to": 32
     }
+   ],
+   "doors": [
+    {
+     "x": 652,
+     "y": 405,
+     "to": "63:0",
+     "building": "63:0"
+    }
    ]
   },
   "60:0": {
-   "name": null,
+   "name": "New Bark Town",
    "width": 32,
    "height": 32,
    "file": "60-0.png",
-   "bytes": 108213,
+   "bytes": 80370,
    "indoor": false,
    "border": {
     "file": "60-0-border.png",
@@ -1501,11 +1509,11 @@
    ]
   },
   "61:0": {
-   "name": null,
+   "name": "New Bark Town",
    "width": 14,
    "height": 16,
    "file": "61-0.png",
-   "bytes": 16324,
+   "bytes": 11837,
    "indoor": true,
    "border": {
     "file": "61-0-border.png",
@@ -1538,11 +1546,11 @@
    ]
   },
   "63:0": {
-   "name": null,
+   "name": "New Bark Town",
    "width": 13,
    "height": 12,
    "file": "63-0.png",
-   "bytes": 10490,
+   "bytes": 8049,
    "indoor": true,
    "border": {
     "file": "63-0-border.png",
@@ -1612,11 +1620,11 @@
    ]
   },
   "64:0": {
-   "name": null,
+   "name": "New Bark Town",
    "width": 12,
    "height": 12,
    "file": "64-0.png",
-   "bytes": 13008,
+   "bytes": 9062,
    "indoor": true,
    "border": {
     "file": "64-0-border.png",
@@ -1686,11 +1694,11 @@
    ]
   },
   "66:0": {
-   "name": null,
+   "name": "New Bark Town",
    "width": 13,
    "height": 12,
    "file": "66-0.png",
-   "bytes": 10490,
+   "bytes": 8049,
    "indoor": true,
    "border": {
     "file": "66-0-border.png",

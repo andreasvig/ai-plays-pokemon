@@ -196,3 +196,208 @@ geometry. Nothing was **missing**; what was wrong was what each triangle was
   and 0x21 (normal) and `scene._one` substitutes a flat shade by face normal.
 * **Matrix commands in display lists** (0x14 and friends) are still ignored, so
   a multi-bone prop draws every piece at bone 0.
+
+---
+
+# 2026-09-21, later: Lake Verity arrives and breaks two checks
+
+A Platinum run reached Lake Verity, so the atlas grew `311:0
+LakeVerityLowWater` (96x64) and `334:0 VerityLakefront` (64x64) — two maps
+nothing had ever rendered. Both `tests/test_dsmaps.py` failures they caused are
+in the CHECKS. Neither is a renderer defect, and neither was fixed by widening a
+threshold.
+
+## 1. `2 of 605 materials disagree` — the struct oracle
+
+**The two are `s_snow02`, in `m_dun2701_00_01c` and `m_dun2701_01_01c`** —
+Lake Verity's two content chunks. Each declares `orig_width/height` = 32x16
+where the NSBTX ships a 16x16 `s_snow02`.
+
+**They are copies of the `s_snow` material sitting beside them in the same
+model**, re-pointed at a different texture and never re-declared:
+
+| model | material | declared | NSBTX | u span |
+|---|---|---|---|---|
+| `m_dun2701_00_01c` | `s_snow` | 32x16 | 32x16 | 0..32 |
+| `m_dun2701_00_01c` | **`s_snow02`** | **32x16** | **16x16** | **0..32** |
+| `map03_26c` (Route 201) | `s_snow02` | 16x16 | 16x16 | 0..16 |
+
+Route 201's own `s_snow02` is what a material authored for that texture looks
+like: 16x16 declared, 0..16 span. Lake Verity's carries `s_snow`'s numbers
+verbatim.
+
+**Nothing reads the field, so the picture is right.** `magW`/`magH` are 1.0 and
+the texture-transform mode is 0, so `orig_width` is never spent; with repeat on,
+the 16x16 simply tiles twice across the same quad. The proof that a UV span past
+the declared size is ordinary is one material along: `s_snow04` in the same model
+declares 16x16 (correctly) and spans 0..32.
+
+**The test now lists the two**, `STALE_ORIG_SIZE`, keyed `(model, texture) ->
+(declared, actual)`, and asserts:
+* the disagreements are exactly the listed ones — a third fails;
+* a listed entry whose model is still in the atlas must still disagree — a stale
+  exception fails;
+* **and, in the same pass, that ZERO of the 605 agree eight bytes late.** That
+  second arm is the evidence for the 8-byte correction, measured here rather
+  than recalled, and it makes the test a comparison instead of a threshold so
+  the growing corpus cannot drift it.
+
+Mutations run: restore the 8-byte-late base → fails; drop one listed exception
+→ `an unlisted material disagrees`; add a bogus third → `listed but no longer
+stale`.
+
+## 2. `334:0 (64, 211, 0, 54)` — read the tuple before theorising
+
+The tuple is `(bare_walkable, walkable, bare_route, route)`. **`bare_route` is
+0**: not one of the 54 walked tiles is on a hole. What failed is
+`bare_walkable == 0` — 64 of 211 tiles the collision grid calls passable.
+
+**The 64 are exactly the `TILE_BEHAVIOR_PUDDLE` tiles**, an 8x8 block at the
+shared corner of the map's four matrix cells, at mean coverage 36.6 of 255.
+
+**The cartridge puts nothing under it.** Measured by deletion: drop the
+`puddle` and `puddlep` materials from all four terrain models and 30 of 16,384
+pixels survive over that block, all of them edge fringe. Three of the four
+chunks contain nothing but `puddle`, `puddlep`, `tshadow`, `conttree_b`,
+`conttree_t` — no ground material at all. Gen 4's water sheet is alpha-36
+texels and needs a bed to read as water; Twinleaf has `lake` under its pond and
+Route 219 has `beach`/`searock` under its sea. Verity Lakefront has neither.
+
+**The game never draws that square either.** The block is walled off: a flood
+fill over the map's walkable tiles reaches 0 of the 64 from anywhere else, and
+the nearest standable tile is 21 tiles away while the DS field camera frames
+15x10. It is scenery at the corner of four filler chunks that no camera
+position can reach.
+
+**`in_footprint` is NOT implicated.** Measured both ways, both cameras:
+
+| camera | clip | bare | see-through |
+|---|---|---|---|
+| topdown | on | 0 | 64 |
+| topdown | off | 0 | 64 |
+| pitched | on | 0 | 56 |
+| pitched | off | 0 | 56 |
+
+Identical. The clip drops triangles outside the map's own cell and this puddle
+is at the centre of the window, four cells in.
+
+### What changed: `check_artwork` counts three outcomes, not two
+
+`covered` (opaque) / **`sheer`** (drawn, see-through) / `bare` (nothing drawn at
+all, the threshold being `raster.draw_tri`'s own alpha test). A hole is `bare`.
+`sheer_behaviour` names the cartridge's behaviour for every see-through tile, so
+the caller says WHICH tiles it will see through rather than how many.
+
+The relaxation is fenced by a second test,
+`test_water_over_a_bed_is_opaque_and_water_over_nothing_is_not`, over 512 tiles
+that fail for two different reasons: Twinleaf's 40 `WATER_RIVER` are opaque
+**only because the renderer blends** the sheet onto its bed, and Route 219's 472
+`WATER_SEA` are opaque in their own texels and so say that "water" is not a
+licence.
+
+Mutations run:
+* turn off the two-pass blend → Twinleaf's 40 river tiles go see-through, and
+  **both** tests fail (`Extra items in the left set: 'TILE_BEHAVIOR_WATER_RIVER'`);
+* make one of Route 201's two chunks fail to load → 452 route tiles and 407
+  walkable tiles go `bare`, and the hole check fails, so the split did not cost
+  the original guard;
+* widen `SEE_THROUGH_BEHAVIOURS` to cover the real waters → the control's corpus
+  empties and it fails `only 0 bedded water tiles — the control is near-vacuous`.
+  The exception list cannot be widened quietly.
+
+### The one thing still visible
+
+`334:0` ships with an 8x8 see-through square in the middle of a forest; the
+viewer will show the page background through it. That is the cartridge's own
+content and the game never frames it, so nothing was invented to fill it. If it
+should be filled anyway, the honest way is to composite the map's own
+translucent-over-nothing geometry onto the field's 3D clear colour — which is
+not decoded here, so it would be a chosen colour, not a read one.
+
+### Not mine, but failing at `6d09091`
+
+Six gen-5 tests fail with none of this work involved (no gen-5 test imports
+`render_dsmaps` or reads the Platinum atlas): a Black 2 run has walked five maps
+— `437:0 438:0 439:0 443:0 446:0` — that the shipped gen-5 atlas predates, and
+two of their placements resolve to no prop model. **`black2-us` needs a
+re-render, and those two placements need the same kind of look this note gives
+Lake Verity.**
+
+## 3. `311:0 world [0, 0]` — the origin is right, the claim around it is not
+
+**Refuted: it did not default.** `map_matrix_101` resolved six cells, and
+`map_window` sets `ox, oy = (0, 0)` ON PURPOSE for a map with a private matrix
+— its runs report map-local coordinates, and the run's own samples (x 46,
+y 53-54) land inside the 96x64 window, which `check_windows` confirms
+5342/5342. The zero is measured.
+
+**Refuted: it is not the multi-cell case.** `334:0` is 2x2 and `342:0` is 2x1;
+both place correctly. The discriminator is the MATRIX, not the cell count:
+
+| map | mapType | matrix | on the region frame | origin |
+|---|---|---|---|---|
+| `311:0` | **MAP_TYPE_CAVE** | **map_matrix_101** | **no** | [0, 0] |
+| `334:0` | MAP_TYPE_OUTDOORS | map_matrix_000 | yes | [32, 800] |
+| `342:0` | MAP_TYPE_OUTDOORS | map_matrix_000 | yes | [96, 832] |
+| `411:0` | MAP_TYPE_TOWN_CITY | map_matrix_000 | yes | [96, 864] |
+| `412:0`… | MAP_TYPE_INDOORS | private | no | [0, 0] |
+
+**The defect is that `render_dsmaps.py` had two notions of "is this map on the
+world frame" and they disagreed for exactly one map.** `map_window` decides by
+the matrix (`shared = bool(matrix.get("headers"))`) — for the global
+coordinates and the interior crop. `build_atlas` decided by `indoor`, i.e. by
+`mapType in ("MAP_TYPE_INDOORS", "MAP_TYPE_POKECENTER")`. A cave is neither, so
+Lake Verity was published as a world map at the world origin, 800 tiles north
+of the band, and the viewer's `fit` fell to 0.10x. The entry even carried
+`frame: map_matrix_101` beside a `world` measured in `map_matrix_000`'s frame —
+it said so itself.
+
+This is the same trap the atlas already recorded once: *"`worldLayout` stops
+testing the string `MAP_TYPE_INDOOR`… the writer emits a normalised `indoor`
+boolean"*. The normalised boolean was still the wrong question.
+
+**The cartridge path already had it right.** `_MatrixMeta.__getitem__` derives
+SoulSilver's indoor-ness as `not self.src.matrix(const).get("headers")`, with a
+comment saying precisely why. Only the decomp path used the enum.
+
+**Fix.** `Window.shared` carries the matrix answer, and `build_atlas` spends
+that instead of `indoor` for the four things that follow from it — `world` +
+`frame` + `open`, or `popup` + `building` + `floors` + `exits`; `doors` vs
+`exits`; the name-prefix candidates; the floor union-find. `indoor` keeps its
+own meaning (a claim about the map type) and is unchanged for all 13 maps, so
+the two interior tests keep the population they were written for.
+
+Result: `311:0` ships `popup: true`, no `world`, `exits` back to Verity
+Lakefront, and `334:0` keeps the two `doors` that open it. Every other entry is
+byte-identical.
+
+Mutations run:
+* put the split back on `indoor` → `maps placed on ['map_matrix_000',
+  'map_matrix_101'] share one world`;
+* let `311:0` keep a `world` while staying off the frame → the same failure, so
+  the assertion pins the frame and not the map name.
+
+`test_an_interior_is_reachable_from_the_map_its_door_is_on` now keys on
+`popup ?? indoor`, the expression `mapatlas.js` itself keys on, so the new
+cluster is covered rather than skipped — and it passes non-vacuously: `334:0`
+holds the door into `311:0`'s single floor.
+
+## The gen-5 failures are one thing, and it is not this
+
+Six tests fail at `6d09091` with none of this work involved — no gen-5 test
+imports `render_dsmaps` or reads the Platinum atlas. **A Black 2 run has walked
+five maps the shipped gen-5 atlas predates** — `437:0 438:0 439:0 443:0 446:0`
+— which is the same moving-target situation Lake Verity created for Platinum:
+
+* `test_the_atlas_covers_exactly_the_maps_our_runs_stood_on` — the five extras;
+* `test_the_gen5_renderer_reproduces_its_own_shipped_atlas` — opens
+  `black2-us/437-0.png`, which was never rendered;
+* `test_every_walked_tile_falls_inside_the_window_the_atlas_ships`,
+  `test_the_window_check_rejects_a_map_moved_one_cell`,
+  `test_every_route_tile_lands_on_real_geometry` — same five;
+* `test_every_placement_resolves_to_a_prop_model` — **`black2-us: 2 placements
+  name no model`**, which is a NEW fact about new assets, not a stale atlas.
+
+`scripts/render_gen5maps.py --game black2-us` clears the first five. The two
+unresolved placements want the same kind of look this note gives Lake Verity
+and should not be shipped unexamined.

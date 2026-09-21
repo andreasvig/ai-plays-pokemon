@@ -300,11 +300,16 @@ def test_an_interior_is_reachable_from_the_map_its_door_is_on(atlases):
     entered from its own ground floor is reachable. SoulSilver's 2F is exactly
     that, and asserting a door per floor would have called it unreachable while
     the page opens it fine.
+
+    Keyed on `popup ?? indoor`, WHICH IS WHAT `mapatlas.js` KEYS ON, not on
+    `indoor` alone. Lake Verity Low Water is a `MAP_TYPE_CAVE` that opens as a
+    cluster because it is off the region frame, so a test that asked about
+    indoor-ness would have skipped the one map the rule was just extended to.
     """
     for game, atlas in atlases:
         doors = {d["to"] for m in atlas["maps"].values() for d in m.get("doors", [])}
         for key, m in atlas["maps"].items():
-            if not m.get("indoor"):
+            if not (m.get("popup") if m.get("popup") is not None else m.get("indoor")):
                 continue
             floors = m.get("floors") or []
             assert m.get("building") and key in floors, (game, key)
@@ -615,6 +620,19 @@ def test_a_two_chunk_map_is_two_different_chunks_side_by_side():
         "the two cells render identically, so a doubled chunk would pass this"
 
 
+#: The only tile behaviour this renderer is allowed to draw see-through, and
+#: the reason: gen 4's water sheet is alpha-36 texels, and on VERITY_LAKEFRONT
+#: the cartridge puts NOTHING under it — its 8x8 puddle sits at the shared
+#: corner of the map's four matrix cells and not one of the four terrain models
+#: draws a bed there. Measured by deletion: drop the `puddle` and `puddlep`
+#: materials and 30 of 16,384 pixels survive, all of them edge fringe.
+#: Every other water in the set comes out opaque — Twinleaf's 40 WATER_RIVER
+#: tiles, because its sheet has a `lake` bed under it and the renderer blends
+#: them; Route 219's 472 WATER_SEA tiles, because that sea is opaque in its own
+#: texels. 512 tiles, and the test below holds all of them to it.
+SEE_THROUGH_BEHAVIOURS = {"TILE_BEHAVIOR_PUDDLE"}
+
+
 def test_the_route_stands_on_rendered_artwork_and_not_on_a_hole():
     """The check this tier needs that the silhouette did not.
 
@@ -622,6 +640,13 @@ def test_the_route_stands_on_rendered_artwork_and_not_on_a_hole():
     terrain mesh placed half a chunk out, or a chunk missing from a stitch,
     still fills a correct rectangle — with a hole where the route runs. A route
     tile over a hole is drawn over the page's background and nothing reports it.
+
+    A HOLE IS NOTHING DRAWN AT ALL, not "not opaque". That distinction arrived
+    with Verity Lakefront — see `SEE_THROUGH_BEHAVIOURS` — and it is narrow on
+    purpose: a tile may be see-through only where the cartridge names it water,
+    and the set of behaviours allowed to be see-through is asserted, not the
+    count. A third map whose ground goes see-through for any other reason still
+    fails here.
     """
     mod, d, art = _three_d()
     if not mod.run_dirs(PLATINUM):
@@ -630,9 +655,62 @@ def test_the_route_stands_on_rendered_artwork_and_not_on_a_hole():
     res = mod.check_artwork(d, PLATINUM, ids, art)
     assert res["route"] > 500
     assert res["bare_route"] == 0, \
-        {k: v for k, v in res["maps"].items() if v[2]}
+        {k: v for k, v in res["maps"].items() if v[3]}
     assert res["bare_walkable"] == 0, \
         {k: v for k, v in res["maps"].items() if v[0]}
+    assert set(res["sheer_behaviour"]) <= SEE_THROUGH_BEHAVIOURS, \
+        res["sheer_behaviour"]
+
+
+def test_water_over_a_bed_is_opaque_and_water_over_nothing_is_not():
+    """The control that keeps the test above from being a licence.
+
+    Allowing see-through water would be a blank cheque if nothing said which
+    water has to stay opaque. 512 tiles say so — Twinleaf's 40 WATER_RIVER and
+    Route 219's 472 WATER_SEA — and they fail for two different reasons, which
+    is why both are here:
+
+      * Twinleaf's river IS the translucent sheet, over its own `lake` bed, so
+        it is opaque only because the renderer BLENDS it. Written instead of
+        blended, the sheet's own alpha 36 lands and the bed is gone: measured,
+        all 40 go see-through and this test and the one above both fail.
+      * Route 219's sea is opaque in its own texels, so it holds whatever the
+        blend does. It is the half that says "water" is not a licence to be
+        see-through — most of it is not.
+
+    Which water is allowed through is not the renderer's opinion: the
+    cartridge's, by whether deleting the water materials leaves anything
+    behind. On Verity Lakefront it leaves 30 pixels of 16,384.
+    """
+    import numpy as np
+
+    from ds3d import camera as ds3d_camera
+
+    mod, d, art = _three_d()
+    ids, _ = mod.placeable(d, mod.observed_maps(PLATINUM))
+    bedded = sheer = 0
+    for map_id in ids:
+        r = mod.render_map(d, map_id, art)
+        if not r.render.startswith("3d-"):
+            continue
+        cov = ds3d_camera.tile_coverage(
+            mod.full_pixels(r, art.tile_px), mod.frame_of(r, art.tile_px), r.heights)
+        behave = r.attrs & mod.BEHAVIOR_MASK
+        walk = r.defined & ~r.blocked
+        for value in np.unique(behave[walk]):
+            name = d.behaviors[value] if value < len(d.behaviors) else ""
+            if "WATER" not in name and "PUDDLE" not in name:
+                continue
+            tiles = walk & (behave == value)
+            if name in SEE_THROUGH_BEHAVIOURS:
+                sheer += int(tiles.sum())
+                continue
+            bedded += int(tiles.sum())
+            assert (cov[tiles] >= 128).all(), (
+                f"{r.key} {name}: {int((cov[tiles] < 128).sum())} of {int(tiles.sum())} "
+                f"water tiles are see-through, so the sheet was written and not blended")
+    assert bedded > 400, f"only {bedded} bedded water tiles — the control is near-vacuous"
+    assert sheer > 0, "no see-through water in the set, so the exception is untested"
 
 
 def test_every_tile_the_cartridge_calls_water_renders_as_water():
@@ -1055,6 +1133,34 @@ def test_a_door_is_never_just_an_edge_the_run_walked_over(atlases):
         assert atlas.get("doors") in ("warp_events", "observed-transitions"), game
 
 
+def test_a_map_is_on_the_world_frame_only_when_it_shares_one(atlases):
+    """`world` is a position on the REGION's frame, so only a map on that frame
+    may carry one — and the atlas already says which frame each map is on.
+
+    Lake Verity Low Water sat at `world: [0, 0]` beside `frame:
+    map_matrix_101` while every other Platinum map named `map_matrix_000`: a
+    coordinate in one frame published as a position in another. Its [0, 0] was
+    never a default — `map_window` measures a private-matrix map from zero on
+    purpose, six cells of `map_matrix_101` resolved, and the run's own samples
+    land inside the 96x64 window — so the fix is not to move the map but to
+    stop claiming it has a place on a frame it is not on.
+
+    Both directions: every map with a `world` shares the frame that the maps
+    with a `world` agree on, and every map without one opens as a popup
+    instead. A map with neither is unreachable in the viewer.
+    """
+    for game, atlas in atlases:
+        placed = {k: m for k, m in atlas["maps"].items() if "world" in m}
+        assert placed, game
+        frames = {m["frame"] for m in placed.values()}
+        assert len(frames) == 1, f"{game}: maps placed on {sorted(frames)} share one `world`"
+        for key, m in atlas["maps"].items():
+            if key in placed:
+                continue
+            assert m.get("popup"), \
+                f"{game}:{key} has no `world` and no `popup`, so nothing can draw it"
+
+
 def test_a_soulsilver_map_says_indoors_when_it_has_a_matrix_of_its_own(atlases):
     """A cartridge publishes no `MAP_TYPE_*` enum, so indoor-ness is read off
     the shape of the map's matrix: on the region matrix means somewhere in the
@@ -1146,6 +1252,28 @@ def _gen4_models():
     return out
 
 
+#: The two materials in the whole gen-4 set whose declared texture size is not
+#: their texture's, keyed by `(model, texture)` -> `(declared, actual)`.
+#:
+#: Both are `s_snow02` in Lake Verity's two content chunks, and both are a copy
+#: of the `s_snow` material sitting beside them in the same model: same
+#: declared 32x16, same 0..32 u span, re-pointed at the 16x16 `s_snow02`.
+#: Route 201's own `s_snow02` declares 16x16 and spans 0..16, which is what a
+#: material authored for that texture looks like. Nothing reads the field —
+#: `magW`/`magH` are 1.0 and the transform mode is 0 — and with repeat on, the
+#: 16x16 simply tiles twice across the same quad, so the picture is right. In
+#: the same model `s_snow04` declares 16x16 and spans 0..32, which is the proof
+#: that a UV span past the declared size is ordinary and the DECLARATION is the
+#: stale half.
+#:
+#: Listed rather than counted: a third disagreement is a new fact and must fail
+#: here rather than be absorbed by a threshold.
+STALE_ORIG_SIZE = {
+    ("m_dun2701_00_01c", "s_snow02"): ((32, 16), (16, 16)),
+    ("m_dun2701_01_01c", "s_snow02"): ((32, 16), (16, 16)),
+}
+
+
 def test_a_material_struct_starts_where_its_own_texture_size_says_it_does():
     """The oracle that settles the struct base, and it is not a reference image.
 
@@ -1154,11 +1282,30 @@ def test_a_material_struct_starts_where_its_own_texture_size_says_it_does():
     file, packed into different bits. Two sources that must agree, over every
     model both cartridges draw.
 
-    This is the test the offset could not survive: at the right base every
-    material agrees, and four bytes either side NONE of them do, because the
-    fields there are a fixed-point magnification factor and a palette base.
+    Written as a COMPARISON rather than a threshold, because the corpus grows
+    every time a run walks somewhere new and a bare count would drift: at the
+    right base all but the two known-stale declarations agree, and four bytes
+    later NOT ONE of them does. That second number is the whole evidence for
+    the eight-byte correction and it is now measured here rather than recalled.
     """
-    checked = agreed = 0
+    import struct
+
+    from ds3d.nitro import u32
+
+    # The historical error, exactly: the struct anchored at the material NAME
+    # DICTIONARY (+4) and `dummy`/`size` read as two words instead of two
+    # halfwords (+4 again). Eight bytes, and this is the arm that must find
+    # nothing.
+    LATE = 8
+
+    def declared_late(model, mi):
+        _n, _h, item = model.materials[mi]
+        at = (model.off + model.mat_off + u32(item, 0)
+              + model.MAT_ORIG_SIZE + LATE)
+        return struct.unpack_from("<2H", model.data, at)
+
+    checked = agreed = late = 0
+    seen, odd = set(), {}
     for game, model, texset in _gen4_models():
         pairs = model.texture_pairs()
         for mi, _pi in model.bind_draw():
@@ -1166,11 +1313,28 @@ def test_a_material_struct_starts_where_its_own_texture_size_says_it_does():
             if tname is None or tname not in texset.textures:
                 continue
             p = texset.tex_params(tname)
+            want = (8 << ((p >> 20) & 7), 8 << ((p >> 23) & 7))
             checked += 1
-            agreed += model.material_orig_size(mi) == (8 << ((p >> 20) & 7),
-                                                       8 << ((p >> 23) & 7))
+            got = model.material_orig_size(mi)
+            if got == want:
+                agreed += 1
+            else:
+                odd[(model.name, tname)] = (got, want)
+            try:
+                late += declared_late(model, mi) == want
+            except struct.error:
+                pass
+            seen.add((model.name, tname))
     assert checked > 400, checked
-    assert agreed == checked, f"{checked - agreed} of {checked} materials disagree"
+    assert late == 0, \
+        f"{late} of {checked} materials also agree eight bytes late — the base is not pinned"
+    assert odd == {k: v for k, v in STALE_ORIG_SIZE.items() if k in odd}, \
+        f"an unlisted material disagrees: {odd}"
+    assert agreed == checked - len(odd)
+    # a listed exception that stopped disagreeing is a fact that changed, and
+    # the list must shrink rather than quietly cover nothing
+    still = {k for k in STALE_ORIG_SIZE if k in seen}
+    assert still <= set(odd), f"listed but no longer stale: {sorted(still - set(odd))}"
 
 
 def test_the_wrap_mode_comes_from_the_material_and_not_from_the_texture():
@@ -1282,3 +1446,64 @@ def test_route_201_is_tree_rows_and_not_ribbons():
     assert int(((px[..., 3] > 200) & (px[..., :3].max(2) < 40)).sum()) == 0, \
         "opaque near-black pixels on a route: a shadow quad written instead of blended"
     assert len(np.unique(px[..., :3].reshape(-1, 3), axis=0)) > 400
+
+
+def test_no_shipped_gen4_pixel_is_a_colour_the_console_could_not_have_shown(atlases):
+    """The gen-4 twin of the gen-5 check, and it exists because there is one
+    writer rather than two.
+
+    `render_dsmaps.to_png` went through `ds3d/pngout.py` on 2026-09-21, the
+    same module `render_gen5maps.to_png` already used. Pinned as the PROPERTY,
+    not as a byte count: a size moves when a map is added, when the camera
+    changes or when zlib changes its mind, and says nothing about what was
+    done to the pixels. A DS channel has 32 levels, so a value off that grid
+    is precision the hardware never had and this renderer invented.
+
+    The collision tier is excluded for the reason gen 5 excludes it — its
+    tones are a palette this repo chose, not colour read off a cartridge.
+    """
+    import numpy as np
+    from PIL import Image
+
+    from ds3d import pngout
+
+    seen = 0
+    for game, atlas in atlases:
+        for key, m in atlas["maps"].items():
+            if m.get("render", atlas["render"]) == "collision":
+                continue
+            a = np.asarray(Image.open(MAPS_ROOT / game / m["file"]).convert("RGBA"))
+            bad = ~pngout.on_ds_grid(a)
+            if bad.any():
+                off = sorted(set(np.unique(a[bad]).tolist()))
+                raise AssertionError(
+                    f"{game}:{key} has {int(bad.sum())} channel samples the DS "
+                    f"cannot express, e.g. {off[:8]}")
+            seen += 1
+    assert seen >= 15, f"only {seen} gen-4 artwork PNGs checked"
+
+
+def test_the_gen4_colour_depth_check_rejects_an_eight_bit_pixel(atlases):
+    """Mutation control for the test above, on gen 4's own shipped pixels.
+
+    "Every sample is on a 32-value grid" is satisfied by a great many things —
+    an image of one colour, an empty array — so the check has to be shown
+    failing on the thing it rejects. One channel of one pixel moved by one is
+    the smallest possible departure and exactly what a half-applied
+    quantisation leaves behind.
+    """
+    import numpy as np
+    from PIL import Image
+
+    from ds3d import pngout
+
+    game, atlas = atlases[0]
+    key = next(k for k, m in atlas["maps"].items()
+               if m.get("render", atlas["render"]) != "collision")
+    a = np.asarray(Image.open(MAPS_ROOT / game / atlas["maps"][key]["file"])
+                   .convert("RGBA")).copy()
+    assert pngout.on_ds_grid(a).all(), "the control needs a clean image to dirty"
+    # +1 off a grid value is always off the grid: the gaps are 8 apart.
+    a[0, 0, 0] = int(a[0, 0, 0]) + 1 if a[0, 0, 0] < 255 else 254
+    assert not pngout.on_ds_grid(a).all(), \
+        "moving one channel by one still read as expressible on the DS"

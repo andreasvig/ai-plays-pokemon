@@ -216,3 +216,31 @@ The last is scoped to doors that cross the two frames on purpose: two interiors
 are both local and their rectangles overlap, so no bounds check can catch a
 stairway written on the wrong floor, and claiming otherwise would be a control
 that passes for the wrong reason.
+
+## Follow-up, 2026-09-21 — the corpus grew and this note's prediction came true
+
+Branch `polish/gen5fix`, after the observed graphs were rebuilt over two
+continuations (`skyemu-backend` 2adb79e). Full write-up in `gen5fix.md`.
+
+Black 2 went from **4 maps and 10 warps to 9 and 26**; `black-us` did not
+change at all, and its pinned door set re-derived identically, which is the
+control that says the re-pin below is the corpus moving and not the derivation
+drifting.
+
+The sentence in this file that said the `427 -> 435` door had no blocked
+collision candidate, and that an assertion on it would fail "the day a run
+walks back out", was right:
+
+* One of the new warps **leaves** 435. The derivation could then read the door
+  off the tile that run LANDED on — `(48, 739)`, which the collision grid does
+  call a wall — instead of off the walked tile `(49, 741)`, which it does not.
+* So `427`'s door into `435` moved one tile and flipped `walked` -> `landed`,
+  and `435`'s own exit flipped the other way, `landed` -> `walked`.
+* `passable_doors` in
+  `test_an_outdoor_door_tile_is_a_tile_the_collision_grid_calls_a_wall` is now
+  **0, not 1**. Every outdoor door in both Gen 5 atlases is a tile the
+  cartridge independently calls impassable, and zero is asserted as the strong
+  form: a passable outdoor door reappearing is a finding, not a tolerated case.
+
+New doors on the page: `437 -> 438` and `439 -> 443`, and `438` turns out to be
+a gate building joining `427` and `437` — it carries exits to both.

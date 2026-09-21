@@ -111,6 +111,8 @@ from ds3d import blz as ds3d_blz                                 # noqa: E402
 from ds3d import camera as ds3d_camera                           # noqa: E402
 from ds3d import field as ds3d_field                             # noqa: E402
 from ds3d import scene as ds3d_scene                             # noqa: E402
+from ds3d import mapnames                                       # noqa: E402
+from ds3d import pngout                                         # noqa: E402
 
 REPO = Path(__file__).resolve().parents[1]
 PRET = "pret/pokeplatinum"
@@ -161,6 +163,10 @@ CELL = 32                      # MAP_TILES_COUNT_X / _Z
 ATTR_OFFSET = 0x10             # TERRAIN_ATTRIBUTES_OFFSET
 ATTR_SIZE = 0x800              # TERRAIN_ATTRIBUTES_SIZE
 COLLISION_MASK = 0x8000        # TERRAIN_ATTRIBUTES_COLLISION_MASK
+# `raster.draw_tri`'s own alpha test. A tile whose mean alpha is under it
+# holds no pixel this renderer wrote, which is the one thing `check_artwork`
+# calls a hole.
+DRAWN_ALPHA = 8
 BEHAVIOR_MASK = 0xFF           # TERRAIN_ATTRIBUTES_TILE_BEHAVIOR_MASK
 
 # The four tones. A wall is the darkest thing on the map so a bright route line
@@ -922,11 +928,20 @@ class Window:
                  ox: int, oy: int, w: int, h: int, cells: list[tuple[int, int]],
                  c0: int, r0: int, cw: int, ch: int,
                  attrs: np.ndarray, defined: np.ndarray,
-                 crop: tuple[int, int]) -> None:
+                 crop: tuple[int, int], shared: bool = True) -> None:
         self.key, self.header, self.name, self.indoor = key, header, name, indoor
         self.ox, self.oy, self.w, self.h = ox, oy, w, h
         self.cells, self.c0, self.r0, self.cw, self.ch = cells, c0, r0, cw, ch
         self.attrs, self.defined, self.crop = attrs, defined, crop
+        # WHETHER THIS MAP IS ON THE REGION'S SHARED FRAME, which is a
+        # different question from whether it is indoors and the one the viewer
+        # actually spends. A map drawn on the region matrix has GLOBAL
+        # coordinates and a place beside its neighbours; a map with a private
+        # matrix of its own is measured from zero and has no place on that
+        # frame at all. `indoor` is a claim about the MAP TYPE and cannot
+        # answer it: Lake Verity Low Water is `MAP_TYPE_CAVE`, so it is not
+        # indoors, and it is not on the world either.
+        self.shared = shared
 
     @property
     def blocked(self) -> np.ndarray:
@@ -990,34 +1005,67 @@ def check_artwork(d, game: str, ids: list[int], art: "Field3D") -> dict:
     terrain mesh drawn half a chunk out, or a chunk left out of a two-chunk
     stitch, still fills a correct rectangle — with a hole where the route runs.
 
-    So two counts, per map:
-      `bare_walkable`  tiles the cartridge says you can stand on that are not
-                       covered by OPAQUE geometry;
-      `bare_route`     tiles a run actually stood on, same test.
-    A route tile over nothing is drawn over the page's background, which reads
-    as a map with a bite out of it and raises nothing.
+    THREE OUTCOMES PER TILE, not two, and the middle one is the whole point:
 
-    Opaque, not merely present: the failure this caught is a translucent
-    polygon written instead of blended. Twinleaf Town's pond is alpha-36 texels
-    over its own bed, and pasted rather than blended it is a pond-shaped hole
-    that still has pixels in it. Measured on the real eight maps, every walkable
-    tile of every one of them is alpha 1.000, so the bar is not a compromise.
+      covered  opaque geometry reaches it.
+      SHEER    something is drawn there and you can see through it.
+      bare     nothing is drawn there at all. THIS is the hole.
+
+    `bare` used to mean both, and it was right for eight maps. Verity
+    Lakefront is the counter-example the cartridge itself supplies: its 8x8
+    `TILE_BEHAVIOR_PUDDLE` sits at the shared corner of its four matrix cells
+    and NONE of the four terrain models puts anything under it — drop the
+    `puddle`/`puddlep` materials and 30 of 16,384 pixels survive, all of them
+    edge fringe. Gen 4's water sheet is alpha-36 texels and is meant to be seen
+    through; where the artist gave it a bed (Twinleaf's `lake`, Route 219's
+    `beach`/`searock`) the tile comes out opaque, and where there is no bed
+    there is no bed. A check cannot demand geometry the cartridge does not
+    have.
+
+    Opaque stays the bar for `covered`, because the failure it caught is a
+    translucent polygon WRITTEN instead of blended: pasted, a pond over its own
+    bed keeps the water's own alpha 36 and the bed under it is gone. That
+    failure now shows as 512 water tiles going sheer on Twinleaf and Route 219,
+    which the caller asserts against — see `tests/test_dsmaps.py`. It does not
+    show on Verity Lakefront and never could, because with nothing underneath,
+    blended and pasted produce the same pixel.
+
+    `sheer_behaviour` names the cartridge's own behaviour for every sheer tile,
+    so the caller can say WHICH tiles it is willing to see through rather than
+    just how many.
     """
     walked = route_tiles(game)
-    out = {"maps": {}, "bare_walkable": 0, "bare_route": 0, "route": 0}
+    out = {"maps": {}, "bare_walkable": 0, "sheer_walkable": 0,
+           "bare_route": 0, "sheer_route": 0, "route": 0,
+           "sheer_behaviour": {}}
     for map_id in ids:
         r = render_map(d, map_id, art)
         if not r.render.startswith("3d-"):
             continue
-        covered = ds3d_camera.tile_coverage(
-            full_pixels(r, art.tile_px), frame_of(r, art.tile_px), r.heights) >= 128
+        cov = ds3d_camera.tile_coverage(
+            full_pixels(r, art.tile_px), frame_of(r, art.tile_px), r.heights)
+        # DRAWN_ALPHA is `raster.draw_tri`'s own alpha test: a texel at or
+        # below it is not written at all, so a tile under it holds no pixel
+        # this renderer produced.
+        drawn, covered = cov >= DRAWN_ALPHA, cov >= 128
         walk = r.defined & ~r.blocked
-        bare_walk = int((walk & ~covered).sum())
+        bare_walk = int((walk & ~drawn).sum())
+        sheer = walk & drawn & ~covered
+        behave = r.attrs & BEHAVIOR_MASK
+        for value in np.unique(behave[sheer]) if sheer.any() else ():
+            name = d.behaviors[value] if value < len(d.behaviors) else f"#{value}"
+            out["sheer_behaviour"][name] = (out["sheer_behaviour"].get(name, 0)
+                                            + int((sheer & (behave == value)).sum()))
         pts = walked.get(map_id, [])
-        bare_route = sum(1 for x, y in pts if not covered[y - r.oy, x - r.ox])
-        out["maps"][r.key] = (bare_walk, int(walk.sum()), bare_route, len(pts))
+        bare_route = sum(1 for x, y in pts if not drawn[y - r.oy, x - r.ox])
+        sheer_route = sum(1 for x, y in pts
+                          if drawn[y - r.oy, x - r.ox] and not covered[y - r.oy, x - r.ox])
+        out["maps"][r.key] = (bare_walk, int(sheer.sum()), int(walk.sum()),
+                              bare_route, sheer_route, len(pts))
         out["bare_walkable"] += bare_walk
+        out["sheer_walkable"] += int(sheer.sum())
         out["bare_route"] += bare_route
+        out["sheer_route"] += sheer_route
         out["route"] += len(pts)
     return out
 
@@ -1074,7 +1122,8 @@ def map_window(d, map_id: int) -> Window:
 
     indoor = d.meta[header].get("mapType") in ("MAP_TYPE_INDOORS", "MAP_TYPE_POKECENTER")
     return Window(f"{map_id}:0", header, header.removeprefix("MAP_HEADER_"),
-                  indoor, ox, oy, w, h, cells, c0, r0, cw, ch, attrs, defined, crop)
+                  indoor, ox, oy, w, h, cells, c0, r0, cw, ch, attrs, defined, crop,
+                  shared)
 
 
 def silhouette(d, win: Window) -> np.ndarray:
@@ -1216,7 +1265,8 @@ def full_pixels(r: Rendered, tile_px: int) -> np.ndarray:
     return block
 
 
-def to_png(r: Rendered, path: Path, tile_px: int) -> None:
+def to_png(r: Rendered, path: Path, tile_px: int, *,
+           stats: Optional[dict] = None) -> None:
     """The map's own rectangle, one PNG pixel per `tile_px`. See the docstring.
 
     Map-local, not padded to route tile (0, 0): the atlas says so with
@@ -1225,14 +1275,17 @@ def to_png(r: Rendered, path: Path, tile_px: int) -> None:
     the ground rectangle — a roof rises out of it — so the entry also carries
     `png_pad` and the viewer anchors by that instead of by the rect alone.
     """
+    # Artwork goes through `ds3d/pngout.py`, which rounds each channel back to
+    # the DS's own five bits — the console never showed more, and the file
+    # loses about a third for precision that was never on screen. The
+    # COLLISION tier opts out: its two tones are a palette this repo chose,
+    # not colour read off a ROM, so the argument for quantising a cartridge's
+    # own output does not apply to a colour we invented. Gen 5 has made the
+    # same call since 2026-09-21 (render_gen5maps.to_png) and this is the
+    # same writer, not a second one.
     block = full_pixels(r, tile_px)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    try:
-        Image.fromarray(block, "RGBA").save(tmp, "PNG", optimize=True)
-        os.replace(tmp, path)
-    finally:
-        tmp.unlink(missing_ok=True)
+    pngout.write_png(block, path, 1, quantise_to_ds=r.render != "collision",
+                     stats=stats)
 
 
 def render_map(d, map_id: int, art: Optional[Field3D] = None, *, cam=None) -> Rendered:
@@ -1380,7 +1433,7 @@ def build_atlas(d, game: str, ids: list[int], *, render: str = DEFAULT_RENDER,
 
     # An interior's caption is cut at the header of the map its door is on, so
     # only the OUTDOOR maps we rendered are candidate prefixes.
-    outer = {r.header.removeprefix("MAP_HEADER_") for r in rendered.values() if not r.indoor}
+    outer = {r.header.removeprefix("MAP_HEADER_") for r in rendered.values() if r.shared}
     names = {r.key: pretty_name(r.header, outer) for r in rendered.values()}
     buildings: dict[str, list[str]] = defaultdict(list)
     for key, (_, b) in names.items():
@@ -1395,7 +1448,7 @@ def build_atlas(d, game: str, ids: list[int], *, render: str = DEFAULT_RENDER,
     # than as two unrelated rooms, which is what the viewer's `floors` is for.
     group: dict[str, str] = {}
     if walked_doors:
-        parent = {r.key: r.key for r in rendered.values() if r.indoor}
+        parent = {r.key: r.key for r in rendered.values() if not r.shared}
 
         def find(k):
             while parent[k] != k:
@@ -1405,11 +1458,11 @@ def build_atlas(d, game: str, ids: list[int], *, render: str = DEFAULT_RENDER,
 
         for map_id, exits in walked_doors.items():
             a = rendered.get(map_id)
-            if a is None or not a.indoor:
+            if a is None or a.shared:
                 continue
             for _x, _y, dest_id in exits:
                 b = rendered.get(dest_id)
-                if b is None or not b.indoor:
+                if b is None or b.shared:
                     continue
                 parent[find(b.key)] = find(a.key)
         # The building is named after its LOWEST floor, not after whichever
@@ -1432,6 +1485,17 @@ def build_atlas(d, game: str, ids: list[int], *, render: str = DEFAULT_RENDER,
             to_png(r, out / png, tile_px)
             border_png(out / border, tile_px)
         name, building = names[r.key]
+        # SoulSilver has no decomp, so `names` leaves it None and the place
+        # name comes off the cartridge instead (ds3d/mapnames.py). Platinum's
+        # decomp name WINS where it has one: `TwinleafTown_RivalHouse_1F` is
+        # unique and richer than the "Twinleaf Town" the cartridge prints for
+        # all four of that town's maps. `or` is the precedence, not a
+        # fallback flag — and mapnames has no Platinum entry either way.
+        #
+        # A cartridge name is a LABEL and not a key: a map header indexes a
+        # PLACE-name table, so five of SoulSilver's six maps read "New Bark
+        # Town". `building` below is the uniqueness field and is untouched.
+        name = name or mapnames.map_name(game, map_id)
         entry: dict = {
             "name": name,
             "width": r.w,
@@ -1464,13 +1528,23 @@ def build_atlas(d, game: str, ids: list[int], *, render: str = DEFAULT_RENDER,
                 r.heights if r.heights is not None else np.zeros((r.h, r.w)))
         if r.render != render_kind:
             entry["render"] = r.render
-        if not r.indoor:
+        if r.shared:
             entry["world"] = [r.ox, r.oy]
             entry["frame"] = d.meta[r.header]["mapMatrixID"]
             spans = open_edges(d, r)
             if spans:
                 entry["open"] = spans
         else:
+            # A MAP OFF THE REGION FRAME OPENS AS A CLUSTER, and `shared` is
+            # what decides that, not `indoor`. Lake Verity Low Water is
+            # `MAP_TYPE_CAVE` on a private 3x2 matrix: not indoors, and with no
+            # place on the world either. Published as outdoor it carried
+            # `world: [0, 0]` — its own measured origin, correctly zero for a
+            # map whose coordinates are map-local — and the viewer read that as
+            # a position, put it at the world origin 800 tiles north of every
+            # other Platinum map, and `fit` fell to 0.10x over a mostly empty
+            # panel. The entry even named a different `frame` while it did so.
+            #
             # An interior belongs to a building, so the viewer can walk into it
             # from the door below and back out again, and two floors of one
             # building open as one popup rather than two.
@@ -1493,9 +1567,9 @@ def build_atlas(d, game: str, ids: list[int], *, render: str = DEFAULT_RENDER,
             doors.append({"x": x, "y": y, "to": dest.key,
                           "building": (names[dest.key][1] or group.get(dest.key)
                                        or names[dest.key][0] or dest.key)})
-        if doors and not r.indoor:
+        if doors and r.shared:
             entry["doors"] = doors
-        if doors and r.indoor:
+        if doors and not r.shared:
             entry["exits"] = [{"x": x["x"], "y": x["y"], "to": x["to"]} for x in doors]
         maps[r.key] = entry
 
@@ -1856,9 +1930,11 @@ def main(argv: Optional[list[str]] = None) -> int:
             d, tile_px=TILE_PX["3d"],
             cam=ds3d_camera.camera_for(args.camera, TILE_PX["3d"])))
         print(f"check artwork   {cov['route'] - cov['bare_route']}/{cov['route']} route tiles "
-              f"on rendered geometry, {cov['bare_walkable']} walkable tile(s) bare")
+              f"on rendered geometry, {cov['bare_walkable']} walkable tile(s) bare"
+              + (f", {cov['sheer_walkable']} see-through {cov['sheer_behaviour']}"
+                 if cov["sheer_walkable"] else ""))
         if cov["bare_route"]:
-            bad = {k: v for k, v in cov["maps"].items() if v[2]}
+            bad = {k: v for k, v in cov["maps"].items() if v[3]}
             print(f"the route stands on nothing in {bad}", file=sys.stderr)
             return 2
     if args.check:
@@ -1872,6 +1948,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     for k, m in atlas["maps"].items():
         print(f"  {k:8s} {str(m['name']):38s} {m['width']:3d}x{m['height']:<3d} "
               f"origin {m.get('origin', [0, 0])}  {'indoor' if m['indoor'] else 'outdoor'}"
+              + ("  CLUSTER (off the region frame)" if m.get("popup") and not m["indoor"] else "")
               + (f"  FELL BACK TO {m['render']}" if m.get("render") else ""))
     if atlas["map_set"].get("fallback"):
         print(f"  {len(atlas['map_set']['fallback'])} map(s) fell back to the silhouette: "
