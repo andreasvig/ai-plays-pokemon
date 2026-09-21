@@ -6,7 +6,7 @@
 // `drawRoute` is handed a recording stub in place of a canvas context.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { TILE, tilePxOf, mapImageUrl, worldLayout, markersFor, buildingLabel, drawRoute, drawArrows, ARROW_EVERY_TILES, drawSize, drawWindow, laneSteps, wheelColour, cableColour, COLOUR_LOOP_TILES, visitTimes, visitAt } from '../../src/dashboard/web/src/lib/mapatlas.js'
+import { TILE, tilePxOf, pngOrigin, mapImageUrl, worldLayout, markersFor, buildingLabel, drawRoute, drawArrows, ARROW_EVERY_TILES, drawSize, drawWindow, laneSteps, wheelColour, cableColour, COLOUR_LOOP_TILES, visitTimes, visitAt } from '../../src/dashboard/web/src/lib/mapatlas.js'
 
 // Pallet Town at the world origin, Route 1 above it, Viridian Forest with no
 // place in the frame, and the player's two floors, which are never laid out.
@@ -428,4 +428,15 @@ test('the tile size comes from the atlas, then the route, then 16', () => {
   assert.equal(tilePxOf({ tile_px: 24 }, { tile_px: 16 }), 24)
   assert.equal(tilePxOf(null, { tile_px: 32 }), 32)
   assert.equal(tilePxOf(null, null), TILE)
+})
+
+test('the PNG frame defaults to the route origin and a DS map says otherwise', () => {
+  // The default IS the assertion: every gen 1-3 atlas ships artwork that starts
+  // at the route's own corner, and adding this field must not move any of it.
+  assert.deepEqual(pngOrigin({ width: 13, height: 10 }), [0, 0])
+  assert.deepEqual(pngOrigin(null), [0, 0])
+  // A gen-4 outdoor map ships the map alone, so the source rect starts at its
+  // own corner and NOT at (origin * tile_px) — which at 16 px/tile would be
+  // 13,824 px down a 42-megapixel image.
+  assert.deepEqual(pngOrigin({ origin: [160, 832], png_origin: [160, 832] }), [160, 832])
 })

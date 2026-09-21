@@ -120,6 +120,19 @@ export const drawWindow = (m) => {
   }
 }
 
+/**
+ * The tile PNG pixel (0, 0) holds, `[0, 0]` unless the atlas says otherwise.
+ *
+ * Every gen 1-3 atlas ships artwork that starts at the route's own origin, so
+ * `drawWindow(m).x * tile_px` IS the source rect and this is zero. A gen-4
+ * outdoor map's route coordinates are GLOBAL — Platinum's y reaches 888 — so an
+ * atlas that kept the same rule would have to pad each PNG out to route tile
+ * (0, 0): Sandgem Town at 16 px/tile becomes 3072 x 13824, which is 42
+ * megapixels and past what iOS Safari will decode. The DS atlases ship the map
+ * alone and declare where it starts; the source rect subtracts this.
+ */
+export const pngOrigin = (m) => m?.png_origin ?? [0, 0]
+
 export const drawSize = (m) => [
   Math.max(1, (m?.width ?? 1) - (m?.trim?.right ?? 0)),
   Math.max(1, (m?.height ?? 1) - (m?.trim?.bottom ?? 0)),

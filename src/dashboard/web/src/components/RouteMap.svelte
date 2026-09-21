@@ -20,7 +20,7 @@
   // than a corridor gets a marker on its door tile, and the marker opens the
   // building — all its floors — over the map (M10-M12).
   import { fetchRunRoute } from '../lib/api.js'
-  import { tilePxOf, loadAtlas, loadTrainers, loadMapImage, worldLayout, clusterLayout, markersFor, exitsFor, floorsFor, battlesFor, drawRoute, drawArrows, drawSize, buildingLabel, visitAt } from '../lib/mapatlas.js'
+  import { tilePxOf, pngOrigin, loadAtlas, loadTrainers, loadMapImage, worldLayout, clusterLayout, markersFor, exitsFor, floorsFor, battlesFor, drawRoute, drawArrows, drawSize, buildingLabel, visitAt } from '../lib/mapatlas.js'
   import { motionClock } from '../lib/motion.js'
   import { latticeAtlas, mergeAtlas, isLattice, drawLattice } from '../lib/lattice.js'
   import { borderSides, borderRows, hasBorder } from '../lib/borders.js'
@@ -224,7 +224,8 @@
     c.imageSmoothingEnabled = false
     const s = TPX * view.z
 
-    // Pass 1 — the FRINGE, for the maps lib/borders.js names by hand. Drawn
+    // Pass 1 — the FRINGE, for the sides lib/borders.js names (measured by
+    // scripts/analyse_border_edges.py, hand-overridable there). Drawn
     // first, so a neighbouring map's real ground always wins where the two
     // overlap, and a road out is never painted over at all.
     for (const [key, p] of Object.entries(L.at)) {
@@ -253,7 +254,13 @@
       if (isLattice(p.m)) { drawLattice(c, { width: dw, height: dh }, sx, sy, s); continue }
       const img = decoded.get(`${r.game}/${p.m.file}`)
       if (!img) continue
-      c.drawImage(img, win.x * TPX, win.y * TPX, dw * TPX, dh * TPX, sx, sy, dw * s, dh * s)
+      // The source rect is in the PNG's own frame. `pngOrigin` is [0, 0] for
+      // every atlas whose artwork already starts at the route's origin, and the
+      // tile the image starts at for a DS map, which ships map-local — see the
+      // note on `pngOrigin`.
+      const [pox, poy] = pngOrigin(p.m)
+      c.drawImage(img, (win.x - pox) * TPX, (win.y - poy) * TPX, dw * TPX, dh * TPX,
+                  sx, sy, dw * s, dh * s)
     }
     still = { off, dpr, s, lines: drawRoute(c, r, place, { scale: s }), tiles: r.visits.length }
   }
@@ -352,8 +359,8 @@
     for (const [key, p] of Object.entries(L.at)) {
       if (isLattice(p.m)) continue
       want(p.m.file)
-      // Only a border that lib/borders.js actually asks for — an uncurated map
-      // must not pay a request for a picture nothing draws.
+      // Only a border that lib/borders.js actually asks for — a map whose
+      // edges did not score must not pay a request for a picture nothing draws.
       if (hasBorder(g, key, p.m)) want(p.m.border.file)
     }
   })

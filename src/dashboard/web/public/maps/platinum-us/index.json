@@ -1,0 +1,436 @@
+{
+ "schema": 2,
+ "game": "platinum-us",
+ "key_shape": "id",
+ "tile_px": 16,
+ "camera": "topdown",
+ "render": "3d-ortho",
+ "png_frame": "map-local",
+ "source": {
+  "kind": "decomp",
+  "repo": "pret/pokeplatinum",
+  "sha": "f1af3747e0b34f37f84f19182111be41face69d6"
+ },
+ "walkgraph": {
+  "version": null,
+  "source": null
+ },
+ "doors": "warp_events",
+ "map_set": {
+  "kind": "observed",
+  "source": "artifacts/game-map-render/observed/platinum-us-observed.json + every map id our runs' samples name",
+  "note": "the cartridge's own textured 3D field artwork, rendered straight down and orthographic at one pixel per world unit; PNG pixel (0,0) is tile png_origin, so a source rect subtracts it"
+ },
+ "bytes": 520490,
+ "maps": {
+  "342:0": {
+   "name": "Route201",
+   "width": 64,
+   "height": 32,
+   "file": "342-0.png",
+   "bytes": 137957,
+   "indoor": false,
+   "border": {
+    "file": "342-0-border.png",
+    "w": 1,
+    "h": 1,
+    "bytes": 76
+   },
+   "walkable": 707,
+   "origin": [
+    96,
+    832
+   ],
+   "png_origin": [
+    96,
+    832
+   ],
+   "world": [
+    96,
+    832
+   ],
+   "frame": "map_matrix_000",
+   "open": [
+    {
+     "side": "down",
+     "from": 0,
+     "to": 32
+    },
+    {
+     "side": "left",
+     "from": 0,
+     "to": 32
+    },
+    {
+     "side": "right",
+     "from": 0,
+     "to": 32
+    }
+   ]
+  },
+  "343:0": {
+   "name": "Route202",
+   "width": 32,
+   "height": 32,
+   "file": "343-0.png",
+   "bytes": 101634,
+   "indoor": false,
+   "border": {
+    "file": "343-0-border.png",
+    "w": 1,
+    "h": 1,
+    "bytes": 76
+   },
+   "walkable": 675,
+   "origin": [
+    160,
+    800
+   ],
+   "png_origin": [
+    160,
+    800
+   ],
+   "world": [
+    160,
+    800
+   ],
+   "frame": "map_matrix_000",
+   "open": [
+    {
+     "side": "up",
+     "from": 0,
+     "to": 32
+    },
+    {
+     "side": "down",
+     "from": 0,
+     "to": 32
+    }
+   ]
+  },
+  "391:0": {
+   "name": "Route219",
+   "width": 32,
+   "height": 32,
+   "file": "391-0.png",
+   "bytes": 78259,
+   "indoor": false,
+   "border": {
+    "file": "391-0-border.png",
+    "w": 1,
+    "h": 1,
+    "bytes": 76
+   },
+   "walkable": 629,
+   "origin": [
+    160,
+    864
+   ],
+   "png_origin": [
+    160,
+    864
+   ],
+   "world": [
+    160,
+    864
+   ],
+   "frame": "map_matrix_000",
+   "open": [
+    {
+     "side": "up",
+     "from": 0,
+     "to": 32
+    },
+    {
+     "side": "down",
+     "from": 0,
+     "to": 32
+    }
+   ]
+  },
+  "411:0": {
+   "name": "TwinleafTown",
+   "width": 32,
+   "height": 32,
+   "file": "411-0.png",
+   "bytes": 85334,
+   "indoor": false,
+   "border": {
+    "file": "411-0-border.png",
+    "w": 1,
+    "h": 1,
+    "bytes": 76
+   },
+   "walkable": 476,
+   "origin": [
+    96,
+    864
+   ],
+   "png_origin": [
+    96,
+    864
+   ],
+   "world": [
+    96,
+    864
+   ],
+   "frame": "map_matrix_000",
+   "open": [
+    {
+     "side": "up",
+     "from": 0,
+     "to": 32
+    }
+   ],
+   "doors": [
+    {
+     "x": 105,
+     "y": 875,
+     "to": "412:0",
+     "building": "TwinleafTown_RivalHouse"
+    },
+    {
+     "x": 116,
+     "y": 885,
+     "to": "414:0",
+     "building": "TwinleafTown_PlayerHouse"
+    }
+   ]
+  },
+  "412:0": {
+   "name": "TwinleafTown_RivalHouse_1F",
+   "width": 13,
+   "height": 12,
+   "file": "412-0.png",
+   "bytes": 3041,
+   "indoor": true,
+   "border": {
+    "file": "412-0-border.png",
+    "w": 1,
+    "h": 1,
+    "bytes": 76
+   },
+   "walkable": 64,
+   "building": "TwinleafTown_RivalHouse",
+   "floors": [
+    "412:0",
+    "413:0"
+   ],
+   "popup": true,
+   "exits": [
+    {
+     "x": 6,
+     "y": 10,
+     "to": "411:0"
+    },
+    {
+     "x": 2,
+     "y": 3,
+     "to": "413:0"
+    }
+   ]
+  },
+  "413:0": {
+   "name": "TwinleafTown_RivalHouse_2F",
+   "width": 12,
+   "height": 12,
+   "file": "413-0.png",
+   "bytes": 3546,
+   "indoor": true,
+   "border": {
+    "file": "413-0-border.png",
+    "w": 1,
+    "h": 1,
+    "bytes": 76
+   },
+   "walkable": 57,
+   "building": "TwinleafTown_RivalHouse",
+   "floors": [
+    "412:0",
+    "413:0"
+   ],
+   "popup": true,
+   "exits": [
+    {
+     "x": 3,
+     "y": 4,
+     "to": "412:0"
+    }
+   ]
+  },
+  "414:0": {
+   "name": "TwinleafTown_PlayerHouse_1F",
+   "width": 13,
+   "height": 12,
+   "file": "414-0.png",
+   "bytes": 3065,
+   "indoor": true,
+   "border": {
+    "file": "414-0-border.png",
+    "w": 1,
+    "h": 1,
+    "bytes": 76
+   },
+   "walkable": 64,
+   "building": "TwinleafTown_PlayerHouse",
+   "floors": [
+    "414:0",
+    "415:0"
+   ],
+   "popup": true,
+   "exits": [
+    {
+     "x": 6,
+     "y": 10,
+     "to": "411:0"
+    },
+    {
+     "x": 10,
+     "y": 3,
+     "to": "415:0"
+    }
+   ]
+  },
+  "415:0": {
+   "name": "TwinleafTown_PlayerHouse_2F",
+   "width": 12,
+   "height": 12,
+   "file": "415-0.png",
+   "bytes": 3505,
+   "indoor": true,
+   "border": {
+    "file": "415-0-border.png",
+    "w": 1,
+    "h": 1,
+    "bytes": 76
+   },
+   "walkable": 57,
+   "building": "TwinleafTown_PlayerHouse",
+   "floors": [
+    "414:0",
+    "415:0"
+   ],
+   "popup": true,
+   "exits": [
+    {
+     "x": 8,
+     "y": 4,
+     "to": "414:0"
+    }
+   ]
+  },
+  "418:0": {
+   "name": "SandgemTown",
+   "width": 32,
+   "height": 32,
+   "file": "418-0.png",
+   "bytes": 90630,
+   "indoor": false,
+   "border": {
+    "file": "418-0-border.png",
+    "w": 1,
+    "h": 1,
+    "bytes": 76
+   },
+   "walkable": 485,
+   "origin": [
+    160,
+    832
+   ],
+   "png_origin": [
+    160,
+    832
+   ],
+   "world": [
+    160,
+    832
+   ],
+   "frame": "map_matrix_000",
+   "open": [
+    {
+     "side": "up",
+     "from": 0,
+     "to": 32
+    },
+    {
+     "side": "down",
+     "from": 0,
+     "to": 32
+    },
+    {
+     "side": "left",
+     "from": 0,
+     "to": 32
+    }
+   ],
+   "doors": [
+    {
+     "x": 177,
+     "y": 842,
+     "to": "420:0",
+     "building": "SandgemTown_Pokecenter"
+    },
+    {
+     "x": 168,
+     "y": 842,
+     "to": "422:0",
+     "building": "SandgemTown_PokemonResearchLab"
+    }
+   ]
+  },
+  "420:0": {
+   "name": "SandgemTown_Pokecenter_1F",
+   "width": 17,
+   "height": 14,
+   "file": "420-0.png",
+   "bytes": 6992,
+   "indoor": true,
+   "border": {
+    "file": "420-0-border.png",
+    "w": 1,
+    "h": 1,
+    "bytes": 76
+   },
+   "walkable": 115,
+   "building": "SandgemTown_Pokecenter",
+   "floors": [
+    "420:0"
+   ],
+   "popup": true,
+   "exits": [
+    {
+     "x": 8,
+     "y": 12,
+     "to": "418:0"
+    }
+   ]
+  },
+  "422:0": {
+   "name": "SandgemTown_PokemonResearchLab",
+   "width": 22,
+   "height": 18,
+   "file": "422-0.png",
+   "bytes": 5691,
+   "indoor": true,
+   "border": {
+    "file": "422-0-border.png",
+    "w": 1,
+    "h": 1,
+    "bytes": 76
+   },
+   "walkable": 151,
+   "building": "SandgemTown_PokemonResearchLab",
+   "floors": [
+    "422:0"
+   ],
+   "popup": true,
+   "exits": [
+    {
+     "x": 7,
+     "y": 15,
+     "to": "418:0"
+    }
+   ]
+  }
+ }
+}

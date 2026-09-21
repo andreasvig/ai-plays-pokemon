@@ -1,0 +1,257 @@
+{
+ "schema": 2,
+ "game": "soulsilver-us",
+ "key_shape": "id",
+ "tile_px": 16,
+ "camera": "topdown",
+ "render": "3d-ortho",
+ "png_frame": "map-local",
+ "source": {
+  "kind": "rom",
+  "file": "Pokemon - SoulSilver Version (Europe).nds",
+  "sha": "27a25c23aa1c0ecabe48a30a004b96c9dbc97730"
+ },
+ "walkgraph": {
+  "version": null,
+  "source": null
+ },
+ "doors": "observed-transitions",
+ "map_set": {
+  "kind": "observed",
+  "source": "artifacts/game-map-render/observed/soulsilver-us-observed.json + every map id our runs' samples name",
+  "note": "the cartridge's own textured 3D field artwork, rendered straight down and orthographic at one pixel per world unit; PNG pixel (0,0) is tile png_origin, so a source rect subtracts it"
+ },
+ "bytes": 281351,
+ "maps": {
+  "33:0": {
+   "name": null,
+   "width": 96,
+   "height": 32,
+   "file": "33-0.png",
+   "bytes": 176837,
+   "indoor": false,
+   "border": {
+    "file": "33-0-border.png",
+    "w": 1,
+    "h": 1,
+    "bytes": 76
+   },
+   "walkable": 1354,
+   "origin": [
+    576,
+    384
+   ],
+   "png_origin": [
+    576,
+    384
+   ],
+   "world": [
+    576,
+    384
+   ],
+   "frame": "matrix_000",
+   "open": [
+    {
+     "side": "up",
+     "from": 0,
+     "to": 96
+    },
+    {
+     "side": "down",
+     "from": 0,
+     "to": 96
+    },
+    {
+     "side": "left",
+     "from": 0,
+     "to": 32
+    },
+    {
+     "side": "right",
+     "from": 0,
+     "to": 32
+    }
+   ]
+  },
+  "60:0": {
+   "name": null,
+   "width": 32,
+   "height": 32,
+   "file": "60-0.png",
+   "bytes": 86825,
+   "indoor": false,
+   "border": {
+    "file": "60-0-border.png",
+    "w": 1,
+    "h": 1,
+    "bytes": 76
+   },
+   "walkable": 415,
+   "origin": [
+    672,
+    384
+   ],
+   "png_origin": [
+    672,
+    384
+   ],
+   "world": [
+    672,
+    384
+   ],
+   "frame": "matrix_000",
+   "open": [
+    {
+     "side": "up",
+     "from": 0,
+     "to": 32
+    },
+    {
+     "side": "down",
+     "from": 0,
+     "to": 32
+    },
+    {
+     "side": "left",
+     "from": 0,
+     "to": 32
+    },
+    {
+     "side": "right",
+     "from": 0,
+     "to": 32
+    }
+   ],
+   "doors": [
+    {
+     "x": 684,
+     "y": 393,
+     "to": "61:0",
+     "building": "61:0"
+    },
+    {
+     "x": 690,
+     "y": 407,
+     "to": "66:0",
+     "building": "66:0"
+    },
+    {
+     "x": 695,
+     "y": 396,
+     "to": "63:0",
+     "building": "63:0"
+    }
+   ]
+  },
+  "61:0": {
+   "name": null,
+   "width": 14,
+   "height": 16,
+   "file": "61-0.png",
+   "bytes": 7626,
+   "indoor": true,
+   "border": {
+    "file": "61-0-border.png",
+    "w": 1,
+    "h": 1,
+    "bytes": 76
+   },
+   "walkable": 95,
+   "building": "61:0",
+   "floors": [
+    "61:0"
+   ],
+   "popup": true,
+   "exits": [
+    {
+     "x": 4,
+     "y": 14,
+     "to": "60:0"
+    }
+   ]
+  },
+  "63:0": {
+   "name": null,
+   "width": 13,
+   "height": 12,
+   "file": "63-0.png",
+   "bytes": 2963,
+   "indoor": true,
+   "border": {
+    "file": "63-0-border.png",
+    "w": 1,
+    "h": 1,
+    "bytes": 76
+   },
+   "walkable": 65,
+   "building": "63:0",
+   "floors": [
+    "63:0",
+    "64:0"
+   ],
+   "popup": true,
+   "exits": [
+    {
+     "x": 3,
+     "y": 10,
+     "to": "60:0"
+    }
+   ]
+  },
+  "64:0": {
+   "name": null,
+   "width": 12,
+   "height": 12,
+   "file": "64-0.png",
+   "bytes": 3681,
+   "indoor": true,
+   "border": {
+    "file": "64-0-border.png",
+    "w": 1,
+    "h": 1,
+    "bytes": 76
+   },
+   "walkable": 57,
+   "building": "63:0",
+   "floors": [
+    "63:0",
+    "64:0"
+   ],
+   "popup": true,
+   "exits": [
+    {
+     "x": 2,
+     "y": 4,
+     "to": "63:0"
+    }
+   ]
+  },
+  "66:0": {
+   "name": null,
+   "width": 13,
+   "height": 12,
+   "file": "66-0.png",
+   "bytes": 2963,
+   "indoor": true,
+   "border": {
+    "file": "66-0-border.png",
+    "w": 1,
+    "h": 1,
+    "bytes": 76
+   },
+   "walkable": 65,
+   "building": "66:0",
+   "floors": [
+    "66:0"
+   ],
+   "popup": true,
+   "exits": [
+    {
+     "x": 3,
+     "y": 10,
+     "to": "60:0"
+    }
+   ]
+  }
+ }
+}
