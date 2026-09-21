@@ -8,7 +8,7 @@
 // site exactly as they do locally — the same path the vendor logos use.
 //
 // Everything here is pure geometry and fetching. The two components that draw
-// (RouteMap for the world, InteriorPopup for a building) share `drawRoute` by
+// (the world view and a building's floor, both in RouteMap) share `drawRoute` by
 // passing their own tile → pixel function, so a route inside Oak's lab is
 // drawn by the same code as one across Route 1.
 import { BASE } from './static.js'
@@ -309,10 +309,11 @@ export function loadTrainers(game) {
 
 export const trainerSpriteUrl = (game, pic) => `${BASE}trainers/${game}/${pic}`
 
-/** A species' own front pic, named by the id the ROM uses (scripts/extract_trainers.py).
- *  NOT per game, unlike the trainer sprites above it: a species id is the
- *  National Dex number on every cartridge we run, so one set serves all seven. */
-export const pokemonSpriteUrl = (id) => `${BASE}pokemon/${id}.png`
+// There is deliberately NO species sprite URL here. There used to be, and its
+// docstring claimed "a species id is the National Dex number on every
+// cartridge" — which is false: firered and emerald key their sprites by the
+// gen-3 INTERNAL index, where 390 is Anorith and not Chimchar. The one that
+// knows the difference is `pokemonSpriteUrl(game, id)` in lib/species.js.
 
 const atlasPromises = new Map()
 /** `{schema, game, tile_px, source, maps: {"a:b": {...}}}` for one game.

@@ -148,12 +148,33 @@ def test_gen_five_species_exist_only_in_the_dex_set():
     assert not (GEN3_DIR / f"{MAX_GEN3_INTERNAL + 1}.png").exists()
 
 
-def test_no_component_builds_a_sprite_url_without_a_game():
-    """``mapatlas.js`` still exports the game-blind ``pokemonSpriteUrl``.
+def test_the_game_blind_sprite_url_is_gone_from_mapatlas():
+    """``mapatlas.js`` must not DECLARE a species sprite URL at all.
 
-    It is another agent's file this week, so it is left alone — but nothing may
-    IMPORT it: that function is the bug, and its docstring still claims a
-    species id is the National Dex number on every cartridge.
+    It used to, under a docstring claiming "a species id is the National Dex
+    number on every cartridge we run" — false, because firered and emerald key
+    their sprites by the gen-3 internal index (390 is Anorith there, not
+    Chimchar). Nothing imported it, so deleting it changed no pixel; this test
+    asserts the ABSENCE so it cannot come back as a convenient one-liner.
+    The function that knows the difference lives in ``lib/species.js`` and
+    takes a game.
+    """
+    text = (WEB / "src" / "lib" / "mapatlas.js").read_text()
+    declarations = re.findall(r"^\s*export\s+(?:const|function)\s+(\w*[Ss]priteUrl)\b",
+                              text, re.M)
+    assert "pokemonSpriteUrl" not in declarations, (
+        f"mapatlas.js exports a species sprite URL again: {declarations}")
+    # trainerSpriteUrl belongs here and takes a game; it is the control that
+    # proves the pattern above actually matches an export in this file.
+    assert "trainerSpriteUrl" in declarations, declarations
+
+
+def test_no_component_builds_a_sprite_url_without_a_game():
+    """Nothing may import a species sprite URL from ``mapatlas.js``.
+
+    Kept beside the absence test above: that one pins the declaration site,
+    this one pins every consumer, so re-adding the function AND wiring it up
+    fails twice rather than once.
     """
     offenders = []
     for path in sorted((WEB / "src").rglob("*.svelte")) + sorted((WEB / "src").rglob("*.js")):
