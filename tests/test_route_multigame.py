@@ -712,3 +712,85 @@ def test_a_game_whose_only_run_is_foreign_gets_an_empty_graph_not_a_blanked_one(
     g = observed.build([write_run(tmp_path, "foreign", "soulsilver", FOREIGN)])["soulsilver-us"]
     assert g.foreign_runs == 1 and g.contractless is False
     assert dict(g.visits) == {} and dict(g.edges) == {} and g.runs == []
+
+
+# --- outcome_read: which of the two silences a card is looking at -------------
+
+
+def _platinum_fight(tmp_path, name, outcomes):
+    """A Platinum run that walks a tile, fights, and walks on.
+
+    ``outcomes`` is what ``battle_outcome`` reads on the three in-battle
+    samples — all None for a run recorded before the field was wired, and a
+    real sequence for one recorded after. Everything else is held identical,
+    which is what makes the pair a measurement of that field alone.
+    """
+    def s(i, x, y, battle=False, outcome=None):
+        d = ds_sample(i, "D", x, y, 342, battle=battle)
+        d["battle_outcome"] = outcome
+        return d
+    events = [trace_event(1, [s(0, 10, 10), s(1, 10, 11)]),
+              trace_event(2, [s(2, 10, 11, True, outcomes[0]),
+                              s(3, 10, 11, True, outcomes[1]),
+                              s(4, 10, 11, True, outcomes[2])]),
+              trace_event(3, [s(5, 10, 12)])]
+    return write_run(tmp_path, name, "platinum", events)
+
+
+def test_a_run_that_never_read_an_outcome_is_not_a_run_that_missed_one(tmp_path):
+    """The card had one sentence for two different silences.
+
+    "This run predates the read that tells them apart" was true of every
+    outcome-less wild fight until 2026-09-21, when Platinum's outcome went in.
+    Its first continuation then recorded five fights, ONE with a result and
+    four without — because the game writes the flag in the last handful of
+    frames and the trace samples once per button press. Those four were told
+    they predated a read the run itself was carrying.
+
+    The discriminator has to be the RUN and not the contract: samples are
+    decoded at record time and stored decoded, so yesterday's Platinum run can
+    never gain the field however current the contract is now.
+    """
+    blind = route.load_route(_platinum_fight(tmp_path, "blind", [None, None, None]))
+    assert blind["battles"], "the fixture must actually produce a battle"
+    assert all(b["outcome_read"] is False for b in blind["battles"])
+    assert all(b.get("outcome") is None for b in blind["battles"])
+
+    # Same run, same fight, one field different: the read is live and this
+    # fight resolved to a win on its last in-battle sample.
+    seeing = route.load_route(_platinum_fight(tmp_path, "seeing", [0, 0, 1]))
+    assert all(b["outcome_read"] is True for b in seeing["battles"])
+    assert [b.get("outcome") for b in seeing["battles"]] == ["won"]
+
+    # And the case the whole field exists for: the read is live, the fight
+    # closed, and the flag was still 0 every time we looked. The card must not
+    # call that an old recording.
+    missed = route.load_route(_platinum_fight(tmp_path, "missed", [0, 0, 0]))
+    assert all(b["outcome_read"] is True for b in missed["battles"])
+    assert all(b.get("outcome") is None for b in missed["battles"])
+
+
+def test_a_literal_zero_is_a_successful_read_and_not_an_absent_one(tmp_path):
+    """0 is gen 4 saying "not decided yet", which only a live address can say.
+
+    Truthiness would read it as no-read and put the run back in the "predates"
+    bucket — the same fight, relabelled by a falsy value. This is the mutation
+    that separates ``is not None`` from ``if s.get(...)``.
+    """
+    zeros = route.load_route(_platinum_fight(tmp_path, "zeros", [0, 0, 0]))
+    assert all(b["outcome_read"] is True for b in zeros["battles"])
+
+
+def test_no_battle_can_carry_an_outcome_it_says_it_could_not_read(tmp_path):
+    """The free self-consistency check: the two fields cannot contradict.
+
+    An outcome present with ``outcome_read`` false would mean the stamp is
+    reading somewhere other than where the outcome came from. Run over the
+    fixtures above AND over every real run on this machine, where it held on
+    all seven cartridges: 40 runs, 145 battles, 0 contradictions, including the
+    runs that have the read and caught nothing.
+    """
+    for outcomes in ([None, None, None], [0, 0, 1], [0, 0, 0]):
+        r = route.load_route(_platinum_fight(tmp_path, f"c{outcomes}", outcomes))
+        for b in r["battles"]:
+            assert not (b.get("outcome") and b["outcome_read"] is False), b

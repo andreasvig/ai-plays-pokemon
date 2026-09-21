@@ -125,3 +125,33 @@ test('an unfinished fight is not an unmeasured one', () => {
   // a fight that DID close and was measured says nothing at all
   assert.equal(battleNote({ kind: 'wild', opened_turn: 30, closed_turn: 33, outcome: 'ran' }), '')
 })
+
+test('a live read that missed is not a run that predates the read', () => {
+  // The third reason, found on 2026-09-21 when Platinum's outcome went in:
+  // the read IS live and the fight's result still was not caught, because the
+  // game writes the flag in the last handful of frames and the trace samples
+  // once per button. That continuation has five fights, one with a result and
+  // four without — and the card told all four they predated a read the run
+  // itself was carrying.
+  const missed = { kind: 'wild', opened_turn: 191, closed_turn: 196, turns: 5,
+                   outcome_read: true, foe: { species: 396, level: 2 } }
+  assert.equal(battleNote(missed), 'the fight ended between two samples, so the game never showed us how')
+  assert.doesNotMatch(battleNote(missed), /predates/)
+
+  // Explicitly false is the run that really did predate it, and keeps the
+  // old sentence — this is the pair that makes the field mean anything.
+  const predates = { ...missed, outcome_read: false }
+  assert.match(battleNote(predates), /predates the read/)
+
+  // A payload written before the field has no key at all, and must fall to
+  // the OLD sentence: absent is not "the read was live". Every such run
+  // predates the read on four of the seven cartridges.
+  const older = { kind: 'wild', opened_turn: 30, closed_turn: 33, turns: 3 }
+  assert.equal(older.outcome_read, undefined)
+  assert.match(battleNote(older), /predates the read/)
+
+  // and the field changes NOTHING about a fight that has its outcome, or one
+  // the run ended in the middle of — those branches come first and stay first.
+  assert.equal(battleNote({ ...missed, outcome: 'won' }), '')
+  assert.match(battleNote({ ...missed, closed_turn: null }), /ended before this fight did/)
+})

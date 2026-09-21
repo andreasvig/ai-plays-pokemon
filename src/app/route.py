@@ -44,7 +44,11 @@ Route dict (``ROUTE_VERSION`` 3):
   (M15). A battle we cannot place (no overworld sample before it) carries a
   null tile and is not drawn. ``outcome`` (won / lost / ran / caught / …) and
   ``foe`` (``{species, level, hp, max_hp}``) are present only on runs whose
-  referee read them — from 2026-09-15 — and absent otherwise. ``trainer_class``
+  referee read them — from 2026-09-15 — and absent otherwise, while
+  ``outcome_read`` is on every battle and says whether the RUN could read an
+  outcome at all: it separates "the recording predates the read" from "the
+  read is live and this fight's result was not caught", which look identical
+  from a missing ``outcome``. ``trainer_class``
   is gen 2's alone: Crystal names a trainer by a (class, index) pair and has no
   single id, so it reports the class it can measure and leaves ``trainer_id``
   null rather than filling it from another keyspace.
@@ -318,8 +322,51 @@ def build_route(events: Iterable[dict], graph: Optional[WalkGraph],
         "turns": {"total": total, "traced": traced, "blind": blind},
         "coverage": (traced / total) if total else 0.0,
         "maps": maps,
-        "battles": place_battles(per_turn, visits, invalid, game),
+        "battles": _stamp_outcome_read(place_battles(per_turn, visits, invalid, game),
+                                       per_turn),
     }
+
+
+def _stamp_outcome_read(battles: list[dict[str, Any]],
+                        per_turn: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:
+    """Mark each battle with whether THIS RUN could read an outcome at all.
+
+    A battle with no ``outcome`` has two unrelated reasons and the card said
+    only one of them: "this run predates the read that tells them apart". That
+    sentence went false the moment Platinum's outcome was wired today — its
+    first continuation carries the read AND still has four fights with no
+    result, because the flag is written in the last handful of frames of a
+    fight and the trace samples per button press. Saying "predates the read"
+    there blames the recording for a miss.
+
+    The discriminator is the RUN, not the game: samples are decoded at record
+    time and stored decoded, so a Platinum run from yesterday can never gain
+    the field however current the contract now is. Hence "did any sample in
+    this run come back with a value", and not "does the contract name an
+    address". Measured on the two Platinum runs: yesterday's 573 samples are
+    None every one, today's have 98 zeros and a 1.
+
+    Note the test is ``is not None`` and not truthiness — gen 4 reads a literal
+    0 all through a fight and only writes the result at the close, so 0 is a
+    successful read of "not decided yet" and is exactly the evidence that the
+    address is live.
+    """
+    read = False
+    for turn in per_turn:
+        entry = per_turn[turn]
+        b = entry.get("battle")
+        if isinstance(b, dict) and b.get("outcome") is not None:
+            read = True
+            break
+        for s in entry.get("samples") or []:
+            if isinstance(s, dict) and s.get("battle_outcome") is not None:
+                read = True
+                break
+        if read:
+            break
+    for battle in battles:
+        battle["outcome_read"] = read
+    return battles
 
 
 def place_battles(per_turn: dict[int, dict[str, Any]], visits: list[list[int]],

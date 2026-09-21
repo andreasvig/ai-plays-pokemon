@@ -82,7 +82,20 @@ export function battleNote(battle) {
   if (battle?.closed_turn == null && battle?.opened_turn != null) {
     return 'the run ended before this fight did, so the game never wrote a result'
   }
+  // `outcome_read` (route.py) is the run's OWN answer to "could I read an
+  // outcome at all", and it is what separates the two remaining reasons a
+  // fight has none. Without it the card blamed the recording's age for a
+  // miss: Platinum's outcome went in on 2026-09-21 and its first continuation
+  // still has four fights with no result, because the flag is written in the
+  // last handful of frames and the trace samples once per button press.
+  // A payload written before this field has no such key, and the old sentence
+  // is the right one for it: every run that predates the field also predates
+  // the read on four of the seven cartridges. So the NEW sentence needs the
+  // key to be present and true, not merely not-false.
   if (battle?.kind === 'wild' && !battle?.outcome) {
+    if (battle?.outcome_read === true) {
+      return 'the fight ended between two samples, so the game never showed us how'
+    }
     return 'won, ran or caught all look the same here: this run predates the read that tells them apart'
   }
   if (!kindIsKnown(battle)) {
