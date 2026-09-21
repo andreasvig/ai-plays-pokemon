@@ -170,13 +170,25 @@ page.on('pageerror', (e) => errors.push(String(e)))
 // index only gains a run when it finishes, App.svelte:119 knows that, catches
 // it and falls back to the queue item. Anything else — a missing map PNG, a
 // 500 — is real and still reported.
-const EXPECTED_404 = /\/api\/runs\/[^/?]+$/
+const EXPECTED_404 = [
+  // A run that is CURRENTLY RUNNING. The run index only gains a run when it
+  // finishes; App.svelte:119 knows that, catches it and falls back to the
+  // queue item.
+  /\/api\/runs\/[^/?]+$/,
+  // A game with no trainer roster. Only FireRed and Emerald have one — the
+  // others emit a trainer id with no table to resolve it against — and
+  // mapatlas.js `loadTrainers` already reads a failed fetch as "no roster".
+  // tests/test_gamemaps.py asserts the two that DO have one still ship it, so
+  // silencing this here does not silence a real regression.
+  /\/trainers\/[^/]+\/index\.json$/,
+]
 page.on('console', (m) => {
   if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text())
 })
 page.on('response', (r) => {
   if (r.status() < 400) return
-  if (r.status() === 404 && EXPECTED_404.test(new URL(r.url()).pathname)) return
+  const path = new URL(r.url()).pathname
+  if (r.status() === 404 && EXPECTED_404.some((re) => re.test(path))) return
   errors.push(`HTTP ${r.status()} ${r.url()}`)
 })
 let bad = 0

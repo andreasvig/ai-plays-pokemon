@@ -573,3 +573,29 @@ def test_the_published_payload_stays_something_a_branch_can_carry():
         "alarm, and every publish copies all of it into gh-pages history. Biggest: "
         + ", ".join(f"{k} {v / 1048576:.1f}M"
                     for k, v in sorted(by_dir.items(), key=lambda kv: -kv[1])[:4]))
+
+
+# Two games have a trainer roster and five do not, and the viewer asks all
+# seven — `loadTrainers` in mapatlas.js reads a failed fetch as "no roster",
+# which is right. The screenshot tool therefore has to ignore a 404 on this
+# path or it cries wolf on every DS run, and this is what stops that silence
+# from covering a real regression: if FireRed's or Emerald's roster ever fails
+# to ship, nobody would see the 404 any more, so it has to fail here instead.
+#
+# 2026-09-21: the 404 only became visible at all when the SPA catch-all
+# stopped answering missing assets with index.html and a 200.
+TRAINER_ROSTERS = ("firered-us", "emerald-us")
+TRAINERS_ROOT = REPO_ROOT / "src" / "dashboard" / "web" / "public" / "trainers"
+
+
+def test_the_two_games_with_a_trainer_roster_still_ship_one():
+    shipped = {p.name for p in TRAINERS_ROOT.iterdir() if (p / "index.json").is_file()}
+    assert shipped == set(TRAINER_ROSTERS), (
+        "the set of games shipping a trainer roster changed. If that is on "
+        "purpose, update TRAINER_ROSTERS here AND the expected-404 comment in "
+        f"scripts/shoot_walkmap.mjs. shipped={sorted(shipped)}")
+    for game in TRAINER_ROSTERS:
+        d = json.loads((TRAINERS_ROOT / game / "index.json").read_text())
+        assert d["trainers"], f"{game} ships an EMPTY roster, which reads as no roster"
+        for tid, t in d["trainers"].items():
+            assert (TRAINERS_ROOT / game / t["pic"]).is_file(), (game, tid, t["pic"])
