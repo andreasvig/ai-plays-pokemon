@@ -128,7 +128,7 @@ import sys
 import urllib.error
 import urllib.request
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace as dc_replace
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -231,12 +231,34 @@ GAMES: dict[str, Game] = {
         frame="johto",
         cache=CACHE_ROOT / "pret-cache-crystal",
         gen=2,
-        # The runs this atlas is checked against were played at night (the two
-        # 2026-09-19/20 Crystal runs), and a GBC map is a different picture at
-        # every time of day — `nite` gray is RGB 15,14,24 where `day` gray is
-        # 27,31,27. Rendering `day` and comparing against a night run would put
-        # the disagreement in the colours, where a terrain error hides.
-        time_of_day="nite",
+        # A GBC map is a different picture at every time of day — `nite` gray is
+        # RGB 15,14,24 where `day` gray is 27,31,27 — so the atlas has to pick
+        # one, and the right one is whatever the runs it is shown beside were
+        # played at.
+        #
+        # This said `nite` until 2026-09-21, chosen when the only Crystal runs
+        # were the two played on 2026-09-19/20 in the dark. It outlived its
+        # reason: the 100-turn config-6.0 runs are daytime, and a purple Johto
+        # under a green screenshot is the first thing anyone notices.
+        #
+        # Measured rather than eyeballed. For each candidate, the share of a
+        # run's own screenshot pixels whose colour the render contains, over
+        # frames from the back half of the run, textbox rows dropped:
+        #
+        #             morn    day   nite   dark
+        #   09-20_00-28-46     0.0    0.0   97.6   14.0   (a night run)
+        #   09-20_19-14-38    64.7   79.0    1.9    1.9
+        #   09-20_21-18-34    70.3   74.4    2.6    2.6
+        #
+        # The night run is the control that proves the measure discriminates —
+        # it picks `nite` at 97.6 and rejects `day` at 0.0, so a metric that
+        # simply liked bright colours would have failed it. `morn` and `day`
+        # differ in 17,440 of 276,480 pixels on ROUTE_29, so the two are a real
+        # choice and not a tie; `day` wins on both daytime runs.
+        #
+        #   ./venv/bin/python scripts/render_gamemaps.py --game crystal-us \
+        #       --time-of-day nite --out /tmp/nite      # to see the other one
+        time_of_day="day",
         observed=REPO_ROOT / "artifacts" / "game-map-render" / "observed" / "crystal-us-observed.json",
         world_origin="NEW_BARK_TOWN",
     ),
@@ -1483,9 +1505,18 @@ def main() -> int:
     ap.add_argument("--offline", action="store_true")
     ap.add_argument("--only", action="append", help="render just these map names")
     ap.add_argument("--out", type=Path, default=None)
+    ap.add_argument("--time-of-day", choices=GEN2_DAYTIMES, default=None,
+                    help="gen 2 only: which of the four palette rows to render. "
+                         "Defaults to the game descriptor's own value. A GBC map "
+                         "is a different picture at every time of day, so this "
+                         "is how you render the one your runs were played at.")
     args = ap.parse_args()
 
     game = GAMES[args.game]
+    if args.time_of_day:
+        if game.gen != 2:
+            raise SystemExit(f"--time-of-day is gen 2 only; {game.key} is gen {game.gen}")
+        game = dc_replace(game, time_of_day=args.time_of_day)
     set_complexes(game.key)
     out_dir = args.out or game.out
     ref = game.sha

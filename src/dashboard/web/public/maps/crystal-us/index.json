@@ -18,21 +18,21 @@
   "source": "artifacts/game-map-render/observed/crystal-us-observed.json",
   "note": "maps our runs entered; trim omitted (no walkable-tile set)"
  },
- "bytes": 88225,
+ "bytes": 88350,
  "maps": {
   "24:3": {
    "name": "ROUTE_29",
    "width": 60,
    "height": 18,
    "file": "24-3.png",
-   "bytes": 17902,
+   "bytes": 18249,
    "type": "MAP_TYPE_ROUTE",
    "indoor": false,
    "border": {
     "file": "24-3-border.png",
     "w": 2,
     "h": 2,
-    "bytes": 548
+    "bytes": 571
    },
    "open": [
     {
@@ -62,14 +62,14 @@
    "width": 20,
    "height": 18,
    "file": "24-4.png",
-   "bytes": 7568,
+   "bytes": 8083,
    "type": "MAP_TYPE_TOWN",
    "indoor": false,
    "border": {
     "file": "24-4-border.png",
     "w": 2,
     "h": 2,
-    "bytes": 548
+    "bytes": 571
    },
    "open": [
     {
@@ -184,14 +184,14 @@
    "width": 20,
    "height": 54,
    "file": "26-1.png",
-   "bytes": 19724,
+   "bytes": 19950,
    "type": "MAP_TYPE_ROUTE",
    "indoor": false,
    "border": {
     "file": "26-1-border.png",
     "w": 2,
     "h": 2,
-    "bytes": 548
+    "bytes": 571
    },
    "open": [
     {
@@ -251,14 +251,14 @@
    "width": 40,
    "height": 18,
    "file": "26-2.png",
-   "bytes": 14882,
+   "bytes": 14536,
    "type": "MAP_TYPE_ROUTE",
    "indoor": false,
    "border": {
     "file": "26-2-border.png",
     "w": 2,
     "h": 2,
-    "bytes": 548
+    "bytes": 571
    },
    "open": [
     {
@@ -283,14 +283,14 @@
    "width": 40,
    "height": 18,
    "file": "26-3.png",
-   "bytes": 17015,
+   "bytes": 16398,
    "type": "MAP_TYPE_TOWN",
    "indoor": false,
    "border": {
     "file": "26-3-border.png",
     "w": 2,
     "h": 2,
-    "bytes": 144
+    "bytes": 143
    },
    "open": [
     {
