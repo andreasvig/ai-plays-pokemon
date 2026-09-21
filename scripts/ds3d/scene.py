@@ -190,12 +190,18 @@ def draw_tri(fb, scr, uv, tex, wrap, shade, *, blend: bool = False) -> None:
     fb.color[miny + iy, minx + ix] = out
 
 
-def render(scene: Scene, project, w: int, h: int, bg=(0, 0, 0, 0)):
+def render(scene: Scene, project, w: int, h: int, bg=(0, 0, 0, 0), *, light=None):
     """Rasterise into a fresh framebuffer. `project` maps (N,3) world -> screen.
 
     Two passes, opaque then translucent, which is the DS's own order: a
     translucent polygon drawn into the depth buffer would hide the geometry it
     is supposed to be seen through.
+
+    `light` is an optional `normal -> brightness` callable that REPLACES the
+    slope shade below. Added for the pitched camera (`ds3d/camera.py`), which
+    is the first one that can see the four slopes of a hip roof at once and
+    therefore the first that needs them to differ; `None` is the shade every
+    straight-down atlas shipped with.
     """
     fb = raster.Framebuffer(w, h, bg)
     seen: dict[int, bool] = {}
@@ -208,13 +214,13 @@ def render(scene: Scene, project, w: int, h: int, bg=(0, 0, 0, 0)):
         if soft:
             late.append(tri)
         else:
-            _one(fb, project, tri, blend=False)
+            _one(fb, project, tri, blend=False, light=light)
     for tri in late:
-        _one(fb, project, tri, blend=True)
+        _one(fb, project, tri, blend=True, light=light)
     return fb
 
 
-def _one(fb, project, tri, *, blend: bool) -> None:
+def _one(fb, project, tri, *, blend: bool, light=None) -> None:
     v, uv, tex, wrap = tri
     n = np.cross(v[1] - v[0], v[2] - v[0])
     ln = np.linalg.norm(n)
@@ -222,9 +228,12 @@ def _one(fb, project, tri, *, blend: bool) -> None:
     # lighting: a roof and the wall under it are otherwise the same colour.
     shade = 1.0
     if ln > 1e-9:
-        up = abs(n[1] / ln)
-        shade = 1.0 if up > 0.8 else 0.80 + 0.20 * up
+        shade = light(n / ln) if light else _slope_shade(abs(n[1] / ln))
     draw_tri(fb, project(v), uv, tex, wrap, shade, blend=blend)
+
+
+def _slope_shade(up: float) -> float:
+    return 1.0 if up > 0.8 else 0.80 + 0.20 * up
 
 
 def ortho_projector(scale: float = 1.0, ox: float = 0.0, oz: float = 0.0):

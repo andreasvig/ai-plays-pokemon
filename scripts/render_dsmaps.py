@@ -5,9 +5,12 @@ TIER 2, WHICH IS WHAT SHIPS: the map as the game draws it. Gen 4's overworld is
 a textured 3D model (`BMD0`, sitting in the same `map_data_NNN.bin` as the
 collision this also reads) plus a list of building placements, and `ds3d/`
 reads, decodes and rasterises all of it in pure Python — no GL, no apicula, no
-Blender. The camera is STRAIGHT DOWN and orthographic, deliberately: the game's
-own angled field camera z-buffers correctly and therefore hides route
-information behind buildings, which is the one thing a map tier may not do.
+Blender. The camera is the field camera's OWN PITCH, orthographic (`--camera`,
+default `pitched`; `ds3d/camera.py` has the projection and the numbers).
+Straight down was the first answer and Andreas rejected it — *"both teh gen 4
+and 5 views are actually really bad, bith are top down whcih dsont feel
+right"*. An angled camera z-buffers, so a building hides the route behind it;
+measured over our own runs that is 2.8% of walked tiles, 0.6-3.8% outdoors.
 
 TIER 1, WHICH REMAINS THE FALLBACK (`--render collision`): the map's
 SILHOUETTE, one flat block per tile, coloured by what the cartridge says is
@@ -81,6 +84,7 @@ Usage:
     ./venv/bin/python scripts/render_dsmaps.py --check          # registration only
     ./venv/bin/python scripts/render_dsmaps.py --game platinum-us
     ./venv/bin/python scripts/render_dsmaps.py --game soulsilver-us --render collision
+    ./venv/bin/python scripts/render_dsmaps.py --camera topdown   # the old atlas
     ./venv/bin/python scripts/render_dsmaps.py --sheet          # the artifacts/ proof sheet
 """
 
@@ -104,6 +108,7 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ds3d import blz as ds3d_blz                                 # noqa: E402
+from ds3d import camera as ds3d_camera                           # noqa: E402
 from ds3d import field as ds3d_field                             # noqa: E402
 from ds3d import scene as ds3d_scene                             # noqa: E402
 
@@ -128,11 +133,27 @@ DEFAULT_RENDER = "3d"
 # says. A consumer reads `render` to know whether the pixels mean anything:
 # "collision" is a claim about walkability, "3d-ortho" is a picture.
 RENDER_KIND = {"3d": "3d-ortho", "collision": "collision"}
+# Andreas, 2026-09-21: "for gen 4 we shoudl defenlty not haev top down view,
+# pelase make it teh real game like view." See `ds3d/camera.py`.
+DEFAULT_CAMERA = "pitched"
+CAMERA_CAPTION = {
+    "topdown": "straight-down orthographic",
+    "pitched": ("orthographic at the field camera's own pitch "
+                f"({ds3d_camera.PITCHED.pitch_deg:.2f} deg)"),
+}
 RENDER_NOTE = {
     "3d-ortho": ("the cartridge's own textured 3D field artwork, rendered straight "
                  "down and orthographic at one pixel per world unit"),
+    "3d-pitched": ("the cartridge's own textured 3D field artwork, under the field "
+                   "camera's own pitch, orthographic at one pixel per world unit"),
     "collision": "collision silhouettes, not a tile render",
 }
+# The tier says what the pixels MEAN; the camera says where a tile is in them.
+# Both go in the atlas's `render` string because a consumer that reads
+# "3d-ortho" and gets a pitched picture places every route tile wrong.
+RENDER_KIND_FOR = {("3d", "topdown"): "3d-ortho", ("3d", "pitched"): "3d-pitched",
+                   ("collision", "topdown"): "collision",
+                   ("collision", "pitched"): "collision"}
 # Supersampling for the 3D tier. 3x is where the diagonal edge of a roof stops
 # stair-stepping; the cost is ~1 s per 32x32 chunk.
 SUPERSAMPLE = 3
@@ -924,11 +945,21 @@ class Window:
 
 
 class Rendered(Window):
-    """A `Window` with its artwork."""
+    """A `Window`, its artwork, and the camera frame that artwork is in.
 
-    def __init__(self, win: Window, rgba: np.ndarray, render: str) -> None:
+    `frame` is a `ds3d.camera.Frame`: the pixel rectangle, the pad around the
+    map's own ground rectangle, and the projection that put a tile there.
+    `heights` is the world altitude of the ground under each tile of the
+    window — flat and zero under the straight-down camera, which is why the
+    topdown atlas is unchanged by all of this.
+    """
+
+    def __init__(self, win: Window, rgba: np.ndarray, render: str,
+                 frame=None, heights: Optional[np.ndarray] = None) -> None:
         self.__dict__.update(win.__dict__)
         self.rgba, self.render = rgba, render
+        self.frame = frame
+        self.heights = heights
 
 
 def check_windows(d, game: str, ids: list[int]) -> dict:
@@ -976,10 +1007,10 @@ def check_artwork(d, game: str, ids: list[int], art: "Field3D") -> dict:
     out = {"maps": {}, "bare_walkable": 0, "bare_route": 0, "route": 0}
     for map_id in ids:
         r = render_map(d, map_id, art)
-        if r.render != "3d-ortho":
+        if not r.render.startswith("3d-"):
             continue
-        t = art.tile_px
-        covered = r.rgba[..., 3].reshape(r.h, t, r.w, t).mean((1, 3)) >= 128
+        covered = ds3d_camera.tile_coverage(
+            full_pixels(r, art.tile_px), frame_of(r, art.tile_px), r.heights) >= 128
         walk = r.defined & ~r.blocked
         bare_walk = int((walk & ~covered).sum())
         pts = walked.get(map_id, [])
@@ -1060,7 +1091,7 @@ def silhouette(d, win: Window) -> np.ndarray:
 
 
 class Field3D:
-    """Tier 2: the decomp's own artwork, straight down and orthographic.
+    """Tier 2: the decomp's own artwork, under the camera it is asked for.
 
     Holds the archive cache, so rendering eight maps reads each texture set and
     each building model once. `pixels` returns the map's window at `tile_px`
@@ -1069,9 +1100,18 @@ class Field3D:
     case that falls back to the silhouette.
     """
 
-    def __init__(self, d, *, tile_px: int, supersample: int = SUPERSAMPLE) -> None:
+    def __init__(self, d, *, tile_px: int, supersample: int = SUPERSAMPLE,
+                 cam=None, light=None) -> None:
         self.d = d
         self.tile_px, self.ss = tile_px, supersample
+        # A directional light, or None for the slope shade every atlas shipped
+        # with. Off by default: it repaints every map (see `--light`).
+        self.light = light
+        # Straight down unless told otherwise, so every caller that predates
+        # `--camera` renders exactly what it rendered before.
+        self.cam = cam or ds3d_camera.camera_for("topdown", tile_px)
+        self.frames: dict[str, ds3d_camera.Frame] = {}
+        self.heights: dict[str, np.ndarray] = {}
         if isinstance(d, RomDecomp):
             if not d.headers:
                 raise SystemExit(
@@ -1127,6 +1167,7 @@ class Field3D:
         alts = matrix.get("altitudes")
         sc = ds3d_scene.Scene()
         stats = []
+        spans = []
         for col, row in sorted(win.cells):
             raw = self.land_block(win.header, col, row)
             if raw is None:
@@ -1134,19 +1175,45 @@ class Field3D:
             # The matrix's own altitude plane, which the game spends as
             # `position.y = altitude * (MAP_OBJECT_TILE_SIZE / 2)`.
             alt = alts[row][col] if alts else 0
+            start = len(sc.tris)
             st = ds3d_field.add_chunk(
                 sc, self.assets, raw, area, prop_archive=self.prop_archive(win),
                 origin=ds3d_field.chunk_origin(col, row, win.c0, win.r0, alt))
             st.land = str(matrix["maps"][row][col])
+            # Where this chunk's TERRAIN sits in the triangle list. The props
+            # of the same chunk follow it, so the ground sampler can leave
+            # them out and not read a rooftop as the ground.
+            spans.append((start, st.terrain_tris))
             stats.append(st)
         self.stats[win.key] = stats
         if not sc.tris:
             return None
-        full = ds3d_field.ortho_pixels(sc, win.cw * CELL, win.ch * CELL,
-                                       self.tile_px, self.ss)
+        tw, th = win.cw * CELL, win.ch * CELL
+        full, frame = ds3d_camera.pixels(sc, self.cam, tw, th, self.ss, light=self.light)
         bx0, by0 = win.crop
-        t = self.tile_px
-        return full[by0 * t:(by0 + win.h) * t, bx0 * t:(bx0 + win.w) * t]
+        self.frames[win.key] = frame.crop(bx0, by0, win.w, win.h)
+        ground = ds3d_camera.ground_heights(ds3d_camera.terrain_only(sc, spans), tw, th)
+        self.heights[win.key] = ds3d_camera.walkable_plane(
+            ground[by0:by0 + win.h, bx0:bx0 + win.w], win.defined & ~win.blocked)
+        return frame.cut(full, bx0, by0, win.w, win.h)
+
+
+def frame_of(r: Rendered, tile_px: int):
+    """The `camera.Frame` this render fills — the straight-down one by default."""
+    return r.frame or ds3d_camera.Frame(
+        ds3d_camera.camera_for("topdown", tile_px), r.w, r.h, (0, 0, 0, 0))
+
+
+def full_pixels(r: Rendered, tile_px: int) -> np.ndarray:
+    """`r.rgba` at its frame's pixel size, blowing up a per-tile tier if needed."""
+    frame = frame_of(r, tile_px)
+    block = r.rgba
+    if block.shape[:2] == (r.h, r.w):
+        block = ds3d_camera.stretch(block, frame)
+    if block.shape[:2] != (frame.height, frame.width):
+        raise SystemExit(f"{r.key}: {block.shape[:2]} is not the frame's "
+                         f"{(frame.height, frame.width)}")
+    return block
 
 
 def to_png(r: Rendered, path: Path, tile_px: int) -> None:
@@ -1154,11 +1221,11 @@ def to_png(r: Rendered, path: Path, tile_px: int) -> None:
 
     Map-local, not padded to route tile (0, 0): the atlas says so with
     `png_frame` and each entry's `png_origin`, and `RouteMap.svelte` subtracts
-    it from the source rect.
+    it from the source rect. Under a pitched camera the picture is BIGGER than
+    the ground rectangle — a roof rises out of it — so the entry also carries
+    `png_pad` and the viewer anchors by that instead of by the rect alone.
     """
-    block = r.rgba
-    if block.shape[:2] != (r.h * tile_px, r.w * tile_px):
-        block = np.repeat(np.repeat(block, tile_px, axis=0), tile_px, axis=1)
+    block = full_pixels(r, tile_px)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     try:
@@ -1168,14 +1235,27 @@ def to_png(r: Rendered, path: Path, tile_px: int) -> None:
         tmp.unlink(missing_ok=True)
 
 
-def render_map(d, map_id: int, art: Optional[Field3D] = None) -> Rendered:
-    """One map's window with its artwork: the 3D tier, or the silhouette."""
+def render_map(d, map_id: int, art: Optional[Field3D] = None, *, cam=None) -> Rendered:
+    """One map's window with its artwork: the 3D tier, or the silhouette.
+
+    The silhouette is stretched into the SAME frame the 3D tier would have
+    used. A map that falls back inside a pitched atlas otherwise ships a
+    square picture in an atlas that says every map is foreshortened, and its
+    route lands on the wrong rows with nothing raising.
+    """
     win = map_window(d, map_id)
     if art is not None:
         px = art.pixels(win)
         if px is not None:
-            return Rendered(win, px, "3d-ortho")
-    return Rendered(win, silhouette(d, win), "collision")
+            return Rendered(win, px, RENDER_KIND_FOR[("3d", art.cam.kind)],
+                            art.frames[win.key], art.heights[win.key])
+    cam = cam or (art.cam if art is not None else None)
+    flat = silhouette(d, win)
+    if cam is None or cam.kind == "topdown":
+        return Rendered(win, flat, "collision")
+    frame = ds3d_camera.Frame(cam, win.w, win.h, (0, 0, 0, 0))
+    return Rendered(win, ds3d_camera.stretch(flat, frame), "collision", frame,
+                    np.zeros((win.h, win.w)))
 
 
 def border_png(path: Path, tile_px: int) -> None:
@@ -1282,13 +1362,16 @@ def provenance(d) -> dict:
 
 
 def build_atlas(d, game: str, ids: list[int], *, render: str = DEFAULT_RENDER,
-                tile_px: Optional[int] = None, write: bool = True) -> dict:
+                tile_px: Optional[int] = None, write: bool = True,
+                camera: str = DEFAULT_CAMERA, light: bool = False) -> dict:
     """Render every map and write `public/maps/<game>/`."""
     tile_px = TILE_PX[render] if tile_px is None else tile_px
-    render_kind = RENDER_KIND[render]
-    art = Field3D(d, tile_px=tile_px) if render == "3d" else None
+    render_kind = RENDER_KIND_FOR[(render, camera)]
+    cam = ds3d_camera.camera_for(camera, tile_px)
+    lamp = ds3d_camera.directional_shade() if light else None
+    art = Field3D(d, tile_px=tile_px, cam=cam, light=lamp) if render == "3d" else None
     out = MAPS_ROOT / game
-    rendered = {i: render_map(d, i, art) for i in ids}
+    rendered = {i: render_map(d, i, art, cam=cam) for i in ids}
     by_header = {r.header: r for r in rendered.values()}
     # A source with no event archive has no `warp_events` to read, so its doors
     # are the ones our own runs walked through. Provenance below.
@@ -1367,6 +1450,18 @@ def build_atlas(d, game: str, ids: list[int], *, render: str = DEFAULT_RENDER,
             # DS PNG is map-local; absent (and so zero) for every gen 1-3 atlas,
             # whose artwork already starts at the route's own corner.
             entry["png_origin"] = [r.ox, r.oy]
+        if cam.kind != "topdown":
+            # Where the map's GROUND rectangle sits inside the PNG. Straight
+            # down the two are the same rectangle and this is absent; pitched,
+            # a roof rises out of the top of the ground rect and the picture
+            # has to be bigger than it. [left, top, right, bottom], px.
+            entry["png_pad"] = list(frame_of(r, tile_px).pad)
+            # The world altitude of the ground under each tile of the window,
+            # run-length encoded row-major. The route is drawn ON it: a gen-4
+            # outdoor map's ground is 16 world units up, which is half a tile
+            # on the picture, and Twinleaf's beach is 9 units below its town.
+            entry["heights"] = ds3d_camera.atlas_heights(
+                r.heights if r.heights is not None else np.zeros((r.h, r.w)))
         if r.render != render_kind:
             entry["render"] = r.render
         if not r.indoor:
@@ -1410,7 +1505,11 @@ def build_atlas(d, game: str, ids: list[int], *, render: str = DEFAULT_RENDER,
         "game": game,
         "key_shape": "id",
         "tile_px": tile_px,
-        "camera": "topdown",
+        # Was the bare string "topdown". Now the projection itself, because a
+        # viewer that only knows the name cannot place a tile under it. A
+        # reader still has to accept the string: the atlases on disk predate
+        # this and say "topdown" with nothing beside it.
+        "camera": ds3d_camera.atlas_camera(cam),
         "render": render_kind,
         "png_frame": "map-local",
         "source": provenance(d),
@@ -1548,9 +1647,20 @@ def paint_route(base: Image.Image, r: Rendered, pts: list[tuple[int, int]],
                   (lw, lambda t: wheel_colour((t * n_tiles / COLOUR_LOOP_TILES) % 1.0))]
         gap = CABLE_GAP * ss
 
+    frame = frame_of(r, tile_px)
+
     def at(p):
-        return ((p[0] - r.ox) * tile_px * ss + tile_px * ss / 2,
-                (p[1] - r.oy) * tile_px * ss + tile_px * ss / 2)
+        """A route tile's centre, ON THE GROUND the camera drew.
+
+        Straight down this is the old `(x - ox) * tile_px + tile_px/2`
+        exactly. Pitched, the y is foreshortened AND lifted by the ground's
+        own altitude: a gen-4 outdoor map's ground plane is 16 world units up,
+        so a route drawn at zero sits half a tile below the path it walked.
+        """
+        tx, ty = p[0] - r.ox, p[1] - r.oy
+        h = 0.0 if r.heights is None else float(r.heights[ty, tx])
+        x, y = frame.tile_px(tx + 0.5, ty + 0.5, h)
+        return (x * ss, y * ss)
 
     for width, colour in passes:
         for a, b, t, lane, lanes in steps:
@@ -1576,10 +1686,8 @@ def paint_route(base: Image.Image, r: Rendered, pts: list[tuple[int, int]],
 def panel(r: Rendered, walked: dict, tile_px: int, *, route: bool = True,
           style: str = "viewer") -> Image.Image:
     """One map at real size, on the page's own ground, with its route on it."""
-    px = r.rgba
-    if px.shape[:2] != (r.h * tile_px, r.w * tile_px):
-        px = np.repeat(np.repeat(px, tile_px, 0), tile_px, 1)
-    base = Image.new("RGBA", (r.w * tile_px, r.h * tile_px), (12, 14, 18, 255))
+    px = full_pixels(r, tile_px)
+    base = Image.new("RGBA", (px.shape[1], px.shape[0]), (12, 14, 18, 255))
     base.alpha_composite(Image.fromarray(px, "RGBA"))
     pts = walked.get(int(r.key.split(":")[0]), [])
     if route and pts:
@@ -1588,7 +1696,8 @@ def panel(r: Rendered, walked: dict, tile_px: int, *, route: bool = True,
 
 
 def sheet(d, game: str, ids: list[int], path: Path, *,
-          render: str = DEFAULT_RENDER, tile_px: Optional[int] = None) -> Path:
+          render: str = DEFAULT_RENDER, tile_px: Optional[int] = None,
+          camera: str = DEFAULT_CAMERA, light: bool = False) -> Path:
     """Each map at real size with a real run's route drawn over it.
 
     Over it, not beside it: artwork that reads fine bare can be useless under a
@@ -1599,7 +1708,10 @@ def sheet(d, game: str, ids: list[int], path: Path, *,
     from PIL import ImageDraw, ImageFont
 
     tile_px = TILE_PX[render] if tile_px is None else tile_px
-    art = Field3D(d, tile_px=tile_px) if render == "3d" else None
+    cam = ds3d_camera.camera_for(camera, tile_px)
+    art = (Field3D(d, tile_px=tile_px, cam=cam,
+                   light=ds3d_camera.directional_shade() if light else None)
+           if render == "3d" else None)
     walked = route_tiles(game)
 
     def font(size, bold=False):
@@ -1612,7 +1724,7 @@ def sheet(d, game: str, ids: list[int], path: Path, *,
 
     panels = []
     for map_id in ids:
-        r = render_map(d, map_id, art)
+        r = render_map(d, map_id, art, cam=cam)
         pts = walked.get(map_id, [])
         panels.append((r, panel(r, walked, tile_px), len(pts)))
 
@@ -1628,7 +1740,7 @@ def sheet(d, game: str, ids: list[int], path: Path, *,
     # The before/after strip: the same map, the same route, the spike's stroke
     # against the viewer's.
     cmp_id = next((i for i in ids if len(walked.get(i, [])) > 50), ids[0])
-    cmp_r = render_map(d, cmp_id, art)
+    cmp_r = render_map(d, cmp_id, art, cam=cam)
     before = panel(cmp_r, walked, tile_px, style="spike")
     after = panel(cmp_r, walked, tile_px, style="viewer")
     CMPH = before.height + LABEL + GAP
@@ -1647,12 +1759,12 @@ def sheet(d, game: str, ids: list[int], path: Path, *,
     out = Image.new("RGBA", (width, height), (18, 20, 26, 255))
     g = ImageDraw.Draw(out)
 
-    kind = RENDER_KIND[render]
+    kind = RENDER_KIND_FOR[(render, camera)]
     src = provenance(d)
     g.text((PAD, PAD), f"{game} — {RENDER_NOTE[kind]}", font=font(21, True),
            fill=(240, 242, 248, 255))
     g.text((PAD, PAD + 30),
-           f"tile_px {tile_px} · straight-down orthographic · {len(panels)} maps · "
+           f"tile_px {tile_px} · {CAMERA_CAPTION[camera]} · {len(panels)} maps · "
            f"{src.get('repo', src.get('file'))} @ {src['sha'][:7]}",
            font=font(13), fill=(150, 158, 174, 255))
     g.text((PAD, PAD + 50),
@@ -1704,6 +1816,13 @@ def main(argv: Optional[list[str]] = None) -> int:
                     help="3d: the cartridge's own artwork; collision: the silhouette fallback")
     ap.add_argument("--tile-px", type=int, default=None,
                     help="override the tier's own pixels per tile")
+    ap.add_argument("--camera", choices=sorted(ds3d_camera.KINDS), default=DEFAULT_CAMERA,
+                    help="pitched: the field camera's own angle (default); "
+                         "topdown: straight down, what shipped before 2026-09-21")
+    ap.add_argument("--light", action="store_true",
+                    help="a directional light instead of the flat slope shade, so "
+                         "the four slopes of a hip roof differ (ds3d/camera.py). Off "
+                         "by default: it repaints every map of every DS game")
     args = ap.parse_args(argv)
 
     render = args.render
@@ -1733,7 +1852,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     if win["bad"]:
         return 2
     if render == "3d":
-        cov = check_artwork(d, args.game, ids, Field3D(d, tile_px=TILE_PX["3d"]))
+        cov = check_artwork(d, args.game, ids, Field3D(
+            d, tile_px=TILE_PX["3d"],
+            cam=ds3d_camera.camera_for(args.camera, TILE_PX["3d"])))
         print(f"check artwork   {cov['route'] - cov['bare_route']}/{cov['route']} route tiles "
               f"on rendered geometry, {cov['bare_walkable']} walkable tile(s) bare")
         if cov["bare_route"]:
@@ -1743,7 +1864,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.check:
         return 0
 
-    atlas = build_atlas(d, args.game, ids, render=render, tile_px=args.tile_px)
+    atlas = build_atlas(d, args.game, ids, render=render, tile_px=args.tile_px,
+                        camera=args.camera, light=args.light)
     print(f"wrote {MAPS_ROOT / args.game}/index.json  {len(atlas['maps'])} maps  "
           f"tile_px {atlas['tile_px']}  render {atlas['render']}  "
           f"{atlas['bytes'] / 1024:.0f} KB")
@@ -1757,7 +1879,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.sheet:
         name = f"{args.game}-{atlas['render']}-sheet.png"
         print("sheet:", sheet(d, args.game, ids, SHEETS / name,
-                              render=render, tile_px=args.tile_px))
+                              render=render, tile_px=args.tile_px, camera=args.camera,
+                              light=args.light))
     return 0
 
 

@@ -184,10 +184,16 @@ def projection_for(atlas: dict, entry: dict) -> TileProjection:
     loads, renders and is uniformly a little bit off, which is the failure mode
     that survived weeks of being cited as authority.
     """
+    # The field is a bare string on an atlas rendered before 2026-09-21 and an
+    # object (kind + a 2x3 matrix + height_px) after, so read the KIND either
+    # way rather than comparing the whole value to a string — otherwise every
+    # re-rendered atlas, straight-down ones included, refuses.
     camera = atlas.get("camera")
-    if camera != "topdown":
+    kind = camera.get("kind") if isinstance(camera, dict) else camera
+    if kind != "topdown":
         raise UnknownCamera(
-            f"the atlas declares camera={camera!r} and this tool only knows 'topdown'. "
+            f"the atlas declares camera kind {kind!r} and this tool only knows "
+            f"'topdown'. "
             f"Tile (x, y) is no longer at pixel (x*tile_px, y*tile_px), so a crop taken "
             f"the top-down way would be silently wrong rather than obviously wrong. "
             f"Read the projection the atlas now carries (an affine 2x3, per the "
@@ -207,7 +213,7 @@ def projection_for(atlas: dict, entry: dict) -> TileProjection:
         raise NoInstrument(f"unknown png_frame {frame!r}")
 
     return TileProjection(tile_px=int(atlas["tile_px"]), origin_tiles=(ox, oy),
-                          camera=camera)
+                          camera=kind)
 
 
 def screen_for(game: str, atlas: dict) -> ScreenSpec:
@@ -221,7 +227,8 @@ def screen_for(game: str, atlas: dict) -> ScreenSpec:
     spec = SPECS.get(game)
     if spec is not None:
         return spec
-    if atlas.get("render") == "3d-ortho":
+    render = str(atlas.get("render") or "")
+    if render == "3d-ortho":
         raise NoInstrument(
             f"{game} has no flat-tile screen model, and could not have one. Its atlas "
             f"declares render='3d-ortho': the artwork is the cartridge's own 3D field "
@@ -231,6 +238,24 @@ def screen_for(game: str, atlas: dict) -> ScreenSpec:
             f"artwork is a flat footprint. The two pictures are of one world in two "
             f"projections; a per-pixel difference between them is not a measurement "
             f"of alignment, and printing one would be worse than printing nothing.")
+    if render.startswith("3d-"):
+        # 2026-09-21: the DS atlases are now drawn at the field camera's own
+        # PITCH (`ds3d/camera.py`), which removes the first half of the reason
+        # above — both pictures now lean the same way. It does NOT make this
+        # measurable, and the remaining half has a number on it.
+        raise NoInstrument(
+            f"{game} declares render={render!r}: the artwork is now drawn at the field "
+            f"camera's own pitch, so it and the emulator frame are no longer different "
+            f"projections of the world — but they are still different CAMERAS. The "
+            f"atlas is ORTHOGRAPHIC and the DS is PERSPECTIVE at a half-FOV of 8.09 "
+            f"degrees, and it recentres on the player every frame. Across one 256x192 "
+            f"frame that perspective scales the ground by about 19% top to bottom "
+            f"(1.47x across a whole 32x32 chunk), so a fixed-size crop of the atlas is "
+            f"the right picture at the wrong magnification, wrong by ~9% at the frame "
+            f"edge. Measuring it needs a crop warped by the emulator's own camera, not "
+            f"a rectangle — which is a real and now-reachable job, not an impossible "
+            f"one. The atlas carries what that would need: camera.matrix, "
+            f"camera.height_px and each map's png_pad and heights.")
     raise NoInstrument(
         f"{game} has no ScreenSpec in src/app/stitch.py, so where the world sits in "
         f"one of its frames is unknown. Measure it with "

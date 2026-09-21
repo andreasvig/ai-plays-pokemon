@@ -168,6 +168,7 @@ import numpy as np
 from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ds3d import camera as ds3d_camera                         # noqa: E402
 from ds3d import field as ds3d_field                           # noqa: E402
 from ds3d import nsbmd, nsbtx                                   # noqa: E402
 from ds3d import scene as ds3d_scene                            # noqa: E402
@@ -188,10 +189,20 @@ PLACE = 16                 # bytes per prop placement
 TILE_PX = {"3d": 16, "collision": 4}
 DEFAULT_RENDER = "3d"
 RENDER_KIND = {"3d": "3d-ortho", "collision": "collision"}
+# Gen 5 takes gen 4's camera, for gen 4's reason. Andreas, 2026-09-21: "both
+# teh gen 4 and 5 views are actually really bad, bith are top down whcih dsont
+# feel right". The projection is `ds3d/camera.py`.
+DEFAULT_CAMERA = "pitched"
+RENDER_KIND_FOR = {("3d", "topdown"): "3d-ortho", ("3d", "pitched"): "3d-pitched",
+                   ("collision", "topdown"): "collision",
+                   ("collision", "pitched"): "collision"}
 RENDER_NOTE = {
     "3d-ortho": ("the cartridge's own textured 3D field artwork — terrain and "
                  "props — rendered straight down and orthographic at one pixel "
                  "per world unit"),
+    "3d-pitched": ("the cartridge's own textured 3D field artwork — terrain and "
+                   "props — under the field camera's own pitch, orthographic at "
+                   "one pixel per world unit"),
     "collision": ("collision silhouettes, not a tile render; two tones only "
                   "(passable and wall) because Gen 5 has no decomp to name its "
                   "tile behaviours and nothing in our runs to fit one against"),
@@ -536,21 +547,24 @@ def silhouette(win: Window) -> np.ndarray:
 
 
 class Field3D:
-    """Tier 2: the cartridge's own artwork, straight down and orthographic.
+    """Tier 2: the cartridge's own artwork, under the camera it is asked for.
 
-    The camera is straight down and orthographic DELIBERATELY, the same choice
-    `render_dsmaps.py` makes for Gen 4: the game's own angled field camera
-    z-buffers correctly and therefore hides route behind buildings, which is the
-    one thing a map tier may not do.
+    Orthographic either way; `cam` picks whether it looks straight down or at
+    the field camera's own pitch. Gen 4 made the same switch on the same day
+    and for the same reason — see `render_dsmaps.py` and `ds3d/camera.py`.
 
     `pixels` returns None for a map the 3D path cannot draw, and the caller
     falls back to the silhouette and records that in the atlas.
     """
 
     def __init__(self, rom: Gen5Rom, *, tile_px: int, supersample: int = SUPERSAMPLE,
-                 season: int = 0) -> None:
+                 season: int = 0, cam=None, light=None) -> None:
         self.rom, self.tile_px, self.ss, self.season = rom, tile_px, supersample, season
+        self.light = light
         self.stats: dict[str, dict] = {}
+        self.cam = cam or ds3d_camera.camera_for("topdown", tile_px)
+        self.frames: dict[str, ds3d_camera.Frame] = {}
+        self.heights: dict[str, np.ndarray] = {}
 
     def scene(self, win: Window) -> tuple[Optional["ds3d_scene.Scene"], dict]:
         rom = self.rom
@@ -562,6 +576,9 @@ class Field3D:
         ps = rom.prop_set(win.zone)
         sc = ds3d_scene.Scene()
         m = rom.matrix_for(win.zone)
+        # Where each chunk's TERRAIN lives in the triangle list, so the ground
+        # sampler reads the land and not the roof standing on it.
+        st["spans"] = []
         for col, row in sorted(win.cells):
             land = m["land"][row * m["w"] + col]
             model = rom.chunk_model(land) if land < len(rom.chunks) else None
@@ -569,7 +586,10 @@ class Field3D:
                 continue
             base = ds3d_field.chunk_origin(col, row, win.c0, win.r0)
             st["cells"] += 1
-            st["terrain"] += sc.add_model(model, mapts, origin=base)
+            start = len(sc.tris)
+            n = sc.add_model(model, mapts, origin=base)
+            st["spans"].append((start, n))
+            st["terrain"] += n
             for x, y, z, turns, pid in rom.placements(land):
                 mo = ps[0].get(pid) if ps else None
                 if mo is None:
@@ -585,11 +605,15 @@ class Field3D:
         self.stats[win.key] = st
         if sc is None:
             return None
-        full = ds3d_field.ortho_pixels(sc, win.cw * CELL, win.ch * CELL,
-                                       self.tile_px, self.ss)
+        tw, th = win.cw * CELL, win.ch * CELL
+        full, frame = ds3d_camera.pixels(sc, self.cam, tw, th, self.ss, light=self.light)
         bx0, by0 = win.crop
-        t = self.tile_px
-        return full[by0 * t:(by0 + win.h) * t, bx0 * t:(bx0 + win.w) * t]
+        self.frames[win.key] = frame.crop(bx0, by0, win.w, win.h)
+        ground = ds3d_camera.ground_heights(
+            ds3d_camera.terrain_only(sc, st["spans"]), tw, th)
+        self.heights[win.key] = ds3d_camera.walkable_plane(
+            ground[by0:by0 + win.h, bx0:bx0 + win.w], ~win.blocked)
+        return frame.cut(full, bx0, by0, win.w, win.h)
 
 
 def to_png(rgba: np.ndarray, path: Path, tile_px: int) -> None:
@@ -686,14 +710,25 @@ def warp_tiles(game: str) -> set[str]:
 
 # ----------------------------------------------------------------- the atlas
 
-def render_map(rom: Gen5Rom, win: Window,
-               art: Optional[Field3D]) -> tuple[np.ndarray, str]:
-    """One map's pixels: the 3D tier, or the silhouette it falls back to."""
+def render_map(rom: Gen5Rom, win: Window, art: Optional[Field3D],
+               *, cam=None) -> tuple[np.ndarray, str, object, Optional[np.ndarray]]:
+    """One map's pixels, the kind they are, the camera frame and the ground.
+
+    The silhouette lands in the SAME frame the 3D tier would have used, or a
+    map that falls back inside a pitched atlas ships a square picture into an
+    atlas that says every map is foreshortened.
+    """
     if art is not None:
         px = art.pixels(win)
         if px is not None:
-            return px, "3d-ortho"
-    return silhouette(win), "collision"
+            return (px, RENDER_KIND_FOR[("3d", art.cam.kind)],
+                    art.frames[win.key], art.heights[win.key])
+    cam = cam or (art.cam if art is not None else None)
+    flat = silhouette(win)
+    if cam is None or cam.kind == "topdown":
+        return flat, "collision", None, None
+    frame = ds3d_camera.Frame(cam, win.w, win.h, (0, 0, 0, 0))
+    return ds3d_camera.stretch(flat, frame), "collision", frame, np.zeros((win.h, win.w))
 
 
 SEASONS = ("spring", "summer", "autumn", "winter")
@@ -701,10 +736,14 @@ SEASONS = ("spring", "summer", "autumn", "winter")
 
 def build_atlas(rom: Gen5Rom, *, render: str = DEFAULT_RENDER,
                 tile_px: Optional[int] = None, season: int = 0,
-                write: bool = True) -> dict:
+                write: bool = True, camera: str = DEFAULT_CAMERA,
+                light: bool = False) -> dict:
     tile_px = TILE_PX[render] if tile_px is None else tile_px
-    render_kind = RENDER_KIND[render]
-    art = Field3D(rom, tile_px=tile_px, season=season) if render == "3d" else None
+    render_kind = RENDER_KIND_FOR[(render, camera)]
+    cam = ds3d_camera.camera_for(camera, tile_px)
+    art = (Field3D(rom, tile_px=tile_px, season=season, cam=cam,
+                   light=ds3d_camera.directional_shade() if light else None)
+           if render == "3d" else None)
     ids = map_ids(rom.game)
     out = MAPS_ROOT / rom.game
     windows = {i: map_window(rom, i) for i in ids}
@@ -713,9 +752,11 @@ def build_atlas(rom: Gen5Rom, *, render: str = DEFAULT_RENDER,
     for map_id, win in sorted(windows.items()):
         png = f"{map_id}-0.png"
         border = f"{map_id}-0-border.png"
-        rgba, kind = render_map(rom, win, art)
+        rgba, kind, frame, heights = render_map(rom, win, art, cam=cam)
         if write:
-            to_png(rgba, out / png, 1 if kind == "3d-ortho" else tile_px)
+            # `tile_px` 1 where the tier already rasterised at the final pixel
+            # density, which both 3D cameras and the stretched silhouette do.
+            to_png(rgba, out / png, tile_px if frame is None and kind == "collision" else 1)
             border_png(out / border, tile_px)
         entry: dict = {
             # No Gen 5 decomp means no header constant to name a map with, and
@@ -736,6 +777,13 @@ def build_atlas(rom: Gen5Rom, *, render: str = DEFAULT_RENDER,
         if win.ox or win.oy:
             entry["origin"] = [win.ox, win.oy]
             entry["png_origin"] = [win.ox, win.oy]
+        if cam.kind != "topdown":
+            # See the gen-4 writer: the pad is the margin the pitched picture
+            # needs around the map's own ground rectangle, and `heights` is the
+            # ground the route is drawn ON, run-length encoded in world units.
+            entry["png_pad"] = list(frame.pad)
+            entry["heights"] = ds3d_camera.atlas_heights(
+                heights if heights is not None else np.zeros((win.h, win.w)))
         if not win.indoor:
             entry["world"] = [win.ox, win.oy]
             entry["frame"] = "matrix_000"
@@ -756,7 +804,9 @@ def build_atlas(rom: Gen5Rom, *, render: str = DEFAULT_RENDER,
         "game": rom.game,
         "key_shape": "id",
         "tile_px": tile_px,
-        "camera": "topdown",
+        # The projection itself, not the bare string "topdown" it used to be:
+        # a viewer that only knows the name cannot place a tile under it.
+        "camera": ds3d_camera.atlas_camera(cam),
         "render": render_kind,
         "png_frame": "map-local",
         "source": {"kind": "rom", "file": rom.path.name, "sha": rom.sha},
@@ -940,7 +990,8 @@ def check_props(rom: Gen5Rom, *, flip_z: bool = False) -> dict:
             "pct": (100.0 * on_wall / total) if total else 0.0}
 
 
-def check_artwork(rom: Gen5Rom, *, tile_px: int = 16) -> dict:
+def check_artwork(rom: Gen5Rom, *, tile_px: int = 16,
+                  camera: str = DEFAULT_CAMERA) -> dict:
     """The 3D tier's own registration check: the route stands on the artwork.
 
     The window check proves a walked tile is inside the map's RECTANGLE. It
@@ -952,7 +1003,7 @@ def check_artwork(rom: Gen5Rom, *, tile_px: int = 16) -> dict:
 
     Opaque, not merely present, for the same reason Gen 4 measures it that way.
     """
-    art = Field3D(rom, tile_px=tile_px)
+    art = Field3D(rom, tile_px=tile_px, cam=ds3d_camera.camera_for(camera, tile_px))
     walked: dict[int, list] = defaultdict(list)
     for z, x, y in samples(rom.game):
         walked[z].append((x, y))
@@ -964,7 +1015,8 @@ def check_artwork(rom: Gen5Rom, *, tile_px: int = 16) -> dict:
         if px is None:
             continue
         out["maps"] += 1
-        cov = px[..., 3].reshape(win.h, tile_px, win.w, tile_px).mean((1, 3)) >= 128
+        cov = ds3d_camera.tile_coverage(px, art.frames[win.key],
+                                        art.heights[win.key]) >= 128
         walk = win.defined & ~win.blocked
         out["bare_walkable"] += int((walk & ~cov).sum())
         out["walkable"] += int(walk.sum())
@@ -1014,7 +1066,7 @@ def check_windows(rom: Gen5Rom) -> dict:
     return {"total": total, "bad": bad}
 
 
-def run_checks(games: list[str]) -> int:
+def run_checks(games: list[str], camera: str = DEFAULT_CAMERA) -> int:
     rc = 0
     for game in games:
         rom = Gen5Rom(game)
@@ -1023,7 +1075,7 @@ def run_checks(games: list[str]) -> int:
         walk = check_walkable(rom)
         props = check_props(rom)
         props_flipped = check_props(rom, flip_z=True)
-        art = check_artwork(rom)
+        art = check_artwork(rom, camera=camera)
         win = check_windows(rom)
         print(f"=== {game}  ({rom.code}, sha1 {rom.sha[:12]})")
         print(f"    zones {rom.zone_count}   matrices {len(rom.matrices)}   "
@@ -1137,6 +1189,12 @@ def main() -> int:
                     help="run the registration and walkability checks only")
     ap.add_argument("--render", choices=sorted(TILE_PX), default=DEFAULT_RENDER)
     ap.add_argument("--tile-px", type=int, default=None)
+    ap.add_argument("--camera", choices=sorted(ds3d_camera.KINDS), default=DEFAULT_CAMERA,
+                    help="pitched: the field camera's own angle (default); "
+                         "topdown: straight down, what shipped before 2026-09-21")
+    ap.add_argument("--light", action="store_true",
+                    help="a directional light instead of the flat slope shade "
+                         "(ds3d/camera.py). Off by default: it repaints every map")
     ap.add_argument("--season", type=int, default=0, choices=range(4),
                     help="0 spring, 1 summer, 2 autumn, 3 winter")
     ap.add_argument("--sheet", action="store_true",
@@ -1146,15 +1204,15 @@ def main() -> int:
     if args.sheet:
         return write_sheet(games)
     if args.check:
-        return run_checks(games)
-    rc = run_checks(games)
+        return run_checks(games, args.camera)
+    rc = run_checks(games, args.camera)
     if rc:
         print("checks failed; nothing written", file=sys.stderr)
         return rc
     for game in games:
         rom = Gen5Rom(game)
         atlas = build_atlas(rom, render=args.render, tile_px=args.tile_px,
-                            season=args.season)
+                            season=args.season, camera=args.camera, light=args.light)
         fb = atlas["map_set"].get("fallback") or []
         print(f"{game}: {len(atlas['maps'])} maps ({atlas['render']}), "
               f"{atlas['bytes']} bytes, {len(fb)} fell back -> {MAPS_ROOT / game}")

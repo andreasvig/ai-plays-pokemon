@@ -138,6 +138,158 @@ export const drawSize = (m) => [
   Math.max(1, (m?.height ?? 1) - (m?.trim?.bottom ?? 0)),
 ]
 
+// ---------------------------------------------------------------------------
+// The camera.
+//
+// Until 2026-09-21 every atlas was drawn STRAIGHT DOWN, so tile (x, y) was at
+// pixel (x * tile_px, y * tile_px) and nothing had to say so. The DS atlases
+// are now drawn at the field camera's own pitch (Andreas: *"both teh gen 4 and
+// 5 views are actually really bad, bith are top down whcih dsont feel right"*),
+// and under a pitched camera that identity is false in two ways at once:
+//
+//   * a tile of GROUND is shorter than it is wide — `tile_px * sin(pitch)`;
+//   * a tile at ALTITUDE is higher up the picture than one at zero, by
+//     `height * height_px`, and gen 4 puts its outdoor ground 16 world units
+//     up, which is half a tile on the page before any cliff is involved.
+//
+// So the atlas carries the projection itself rather than its name: a 2x3
+// affine `matrix`, a `height_px` scale, and a per-map `heights` grid. An atlas
+// that predates this says `camera: "topdown"` as a bare string and is read as
+// the identity, which is exactly what it was.
+// ---------------------------------------------------------------------------
+
+/** The straight-down camera at `tilePx` — the projection every atlas had. */
+export const topdownCamera = (tilePx) =>
+  ({ kind: 'topdown', pitchDeg: 90, matrix: [tilePx, 0, 0, tilePx, 0, 0], heightPx: 0 })
+
+/**
+ * The atlas's own projection, normalised, whichever of the two shapes it is in.
+ *
+ * `camera` was a STRING and is now an object; both have to read, because the
+ * atlases on disk are re-rendered one game at a time and a viewer that only
+ * understood the new shape would draw the old ones at tile_px 0.
+ */
+export function cameraOf(atlas, route) {
+  const tp = tilePxOf(atlas, route)
+  const c = atlas?.camera
+  if (!c || typeof c === 'string') return { ...topdownCamera(tp), kind: c || 'topdown' }
+  const m = Array.isArray(c.matrix) && c.matrix.length === 6
+    ? c.matrix.map(Number)
+    : topdownCamera(tp).matrix
+  return {
+    kind: c.kind ?? 'topdown',
+    pitchDeg: Number(c.pitch_deg ?? 90),
+    matrix: m,
+    heightPx: Number(c.height_px ?? 0),
+  }
+}
+
+export const isTopdown = (cam) => (cam?.kind ?? 'topdown') === 'topdown'
+/** Pixels across one tile. The matrix is the authority, never `tile_px` twice. */
+export const tilePxX = (cam) => cam.matrix[0]
+/** Pixels DOWN one tile of ground — foreshortened under a pitched camera. */
+export const tilePxY = (cam) => cam.matrix[3]
+
+/** Tile (tx, ty) at world altitude `h` → layout pixel, at zoom 1. */
+export function projectTile(cam, tx, ty, h = 0) {
+  const [a, b, c, d, e, f] = cam.matrix
+  return [a * tx + c * ty + e, b * tx + d * ty + f - h * cam.heightPx]
+}
+
+/** `projectTile` undone on the plane `h`. Affine, so this is exact. */
+export function unprojectTile(cam, px, py, h = 0) {
+  const [a, b, c, d, e, f] = cam.matrix
+  const det = a * d - b * c
+  if (!det) return [0, 0]
+  const x = px - e
+  const y = py - f + h * cam.heightPx
+  return [(d * x - c * y) / det, (a * y - b * x) / det]
+}
+
+/** A layout's extent in pixels at zoom 1 — what `fit` has to fit. */
+export const layoutSize = (cam, layout) =>
+  [(layout?.w ?? 1) * tilePxX(cam), (layout?.h ?? 1) * tilePxY(cam)]
+
+/**
+ * Where the map's GROUND rectangle sits inside its PNG, `[l, t, r, b]` px.
+ *
+ * Zero straight down, where the picture IS the ground rectangle. Pitched, a
+ * roof rises out of the top of it and a tree leans off the side, so the
+ * renderer measures the overhang and ships it; the viewer anchors the image by
+ * the pad instead of by its corner.
+ */
+export const pngPad = (m) => m?.png_pad ?? [0, 0, 0, 0]
+
+// One decoded altitude grid per atlas entry. Weak, so a game switched away
+// from does not keep its grids alive.
+const heightGrids = new WeakMap()
+
+/**
+ * The per-tile ground altitude grid, decoded from its run-length encoding.
+ *
+ * `[count, value, count, value, ...]` row-major over the map's own
+ * `width * height`, in DS world units (16 to a tile). Run-length because the
+ * grid is piecewise constant across whole terraces: Sandgem Town's 1,024 tiles
+ * are two integers, and Route 219 — the cliff-and-water case — is 142.
+ */
+export function heightGrid(m) {
+  if (!Array.isArray(m?.heights) || !m.heights.length) return null
+  const hit = heightGrids.get(m)
+  if (hit) return hit
+  const w = Math.max(1, m.width ?? 1)
+  const h = Math.max(1, m.height ?? 1)
+  const data = new Int16Array(w * h)
+  let i = 0
+  for (let k = 0; k + 1 < m.heights.length; k += 2) {
+    const n = m.heights[k]
+    const v = m.heights[k + 1]
+    for (let j = 0; j < n && i < data.length; j++) data[i++] = v
+  }
+  const g = { w, h, data }
+  heightGrids.set(m, g)
+  return g
+}
+
+/**
+ * The ground altitude under a MAP-LOCAL route tile, in world units.
+ *
+ * Zero for every atlas that ships no grid, which is every straight-down one —
+ * and zero is right there, because `height_px` is zero too.
+ */
+export function heightAt(m, x, y) {
+  const g = heightGrid(m)
+  if (!g) return 0
+  const [ox, oy] = m?.origin ?? [0, 0]
+  const tx = x - ox
+  const ty = y - oy
+  if (tx < 0 || ty < 0 || tx >= g.w || ty >= g.h) return 0
+  return g.data[ty * g.w + tx]
+}
+
+/**
+ * The widest `png_pad` in the atlas, in TILES, `[l, t, r, b]`.
+ *
+ * The layout has to leave room for it or `fit` is a lie: a building's roof is
+ * drawn above its own map's top row, and a frame sized to the ground rectangle
+ * cuts it off. Rounded up, and the same allowance on every map, because a
+ * layout that shifted per map would move the maps relative to each other.
+ */
+export function padTiles(atlas, cam) {
+  if (isTopdown(cam)) return [0, 0, 0, 0]
+  const out = [0, 0, 0, 0]
+  const sx = tilePxX(cam) || 1
+  const sy = tilePxY(cam) || 1
+  for (const m of Object.values(atlas?.maps ?? {})) {
+    const p = m?.png_pad
+    if (!Array.isArray(p)) continue
+    out[0] = Math.max(out[0], p[0] / sx)
+    out[1] = Math.max(out[1], p[1] / sy)
+    out[2] = Math.max(out[2], p[2] / sx)
+    out[3] = Math.max(out[3], p[3] / sy)
+  }
+  return out.map((v) => Math.ceil(v))
+}
+
 const trainersPromises = new Map()
 /** `{version, pret_sha, trainers: {"<id>": {label, name, class, pic, party}}}`.
  *  Extracted from pret by scripts/extract_trainers.py: a trainer's roster is a
@@ -275,12 +427,19 @@ export function worldLayout(route, atlas) {
   const insets = entries.filter(([, m]) => !Array.isArray(m.world))
   if (!outdoor.length && !insets.length) return null
 
+  // The air around the world is MARGIN plus whatever the camera's pad needs:
+  // under a pitched camera a roof is drawn above its own map's top row, and a
+  // frame sized to the ground rectangle alone would cut it off at `fit`.
+  const cam = cameraOf(atlas, route)
+  const [padL, padT, padR, padB] = padTiles(atlas, cam)
   const xs = outdoor.flatMap(([, m]) => [m.world[0], m.world[0] + m.width])
   const ys = outdoor.flatMap(([, m]) => [m.world[1], m.world[1] + m.height])
-  const x0 = (outdoor.length ? Math.min(...xs) : 0) - MARGIN
-  const y0 = (outdoor.length ? Math.min(...ys) : 0) - MARGIN
-  const worldW = outdoor.length ? Math.max(...xs) - Math.min(...xs) + 2 * MARGIN : 0
-  const worldH = outdoor.length ? Math.max(...ys) - Math.min(...ys) + 2 * MARGIN : 0
+  const x0 = (outdoor.length ? Math.min(...xs) : 0) - MARGIN - padL
+  const y0 = (outdoor.length ? Math.min(...ys) : 0) - MARGIN - padT
+  const worldW = outdoor.length
+    ? Math.max(...xs) - Math.min(...xs) + 2 * MARGIN + padL + padR : 0
+  const worldH = outdoor.length
+    ? Math.max(...ys) - Math.min(...ys) + 2 * MARGIN + padT + padB : 0
 
   const at = {}
   for (const [k, m] of outdoor) at[k] = { x: m.world[0] - x0, y: m.world[1] - y0, m, win: drawWindow(m), inset: false }
@@ -303,6 +462,7 @@ export function worldLayout(route, atlas) {
     at,
     w: Math.max(worldW, insets.length ? colX + colW + MARGIN : 0),
     h: Math.max(worldH, bottom, 1),
+    cam,
     outdoor: outdoor.length,
     insets: insets.length,
     interiors: Object.keys(route.maps).filter((k) => !!(atlas.maps[k]?.popup ?? atlas.maps[k]?.indoor)),
@@ -331,6 +491,8 @@ export function clusterLayout(building, atlas) {
   const keys = (seed?.floors ?? []).filter((k) => atlas.maps[k])
   if (!keys.length) return null
   const stacked = keys.some((k) => atlas.maps[k].complex)
+  const cam = cameraOf(atlas, null)
+  const [padL, padT, padR, padB] = padTiles(atlas, cam)
   const wins = keys.map((k) => drawWindow(atlas.maps[k]))
   const w = stacked ? Math.max(...wins.map((v) => v.w))
                     : wins.reduce((a, v) => a + v.w, 0) + INSET_GAP * (keys.length - 1)
@@ -340,18 +502,20 @@ export function clusterLayout(building, atlas) {
   const at = {}
   // A little more air than the world gets: a floor's caption sits above its top
   // edge and a door can sit ON that edge, and `fit` fits the layout exactly.
-  let run = stacked ? MARGIN + 1 : MARGIN
+  // `run` is the cursor along whichever axis the floors are laid out on, so
+  // the pad it starts at is that axis's pad.
+  let run = stacked ? MARGIN + 1 + padT : MARGIN + padL
   keys.forEach((k, i) => {
     const win = wins[i]
     // the cross axis is centred, so a narrow gate house sits under the middle
     // of the forest rather than jammed against its left edge
     at[k] = stacked
-      ? { x: MARGIN + Math.round((w - win.w) / 2), y: run, m: atlas.maps[k], win, floor: true }
-      : { x: run, y: MARGIN + 1 + Math.round((h - win.h) / 2), m: atlas.maps[k], win, floor: true }
+      ? { x: padL + MARGIN + Math.round((w - win.w) / 2), y: run, m: atlas.maps[k], win, floor: true }
+      : { x: run, y: padT + MARGIN + 1 + Math.round((h - win.h) / 2), m: atlas.maps[k], win, floor: true }
     run += (stacked ? win.h : win.w) + INSET_GAP
   })
-  return { at, w: w + 2 * MARGIN, h: h + 2 * MARGIN + 2, outdoor: 0, insets: 0,
-           interiors: keys, building, stacked }
+  return { at, w: w + 2 * MARGIN + padL + padR, h: h + 2 * MARGIN + 2 + padT + padB,
+           cam, outdoor: 0, insets: 0, interiors: keys, building, stacked }
 }
 
 /** The tiles that leave this cluster — the doors you walk back out through. */
@@ -365,6 +529,10 @@ export function exitsFor(layout, atlas) {
         to: e.to,
         name: atlas.maps[e.to]?.name ?? e.to,
         tile: { x: p.x + e.x - p.win.x, y: p.y + e.y - p.win.y },
+        // Every overlay carries the GROUND it stands on, in world units, so a
+        // door on a raised terrace is drawn where the door is. Zero under a
+        // straight-down camera, where `height_px` is zero anyway.
+        h: heightAt(atlas.maps[key], e.x, e.y),
       })
     }
   }
@@ -378,6 +546,7 @@ export function floorsFor(layout, atlas) {
     key,
     label: floorLabel(p.m?.name, layout.building) || buildingLabel(layout.building),
     tile: { x: p.x, y: p.y },
+    h: heightAt(p.m, p.win.x, p.win.y),
   }))
 }
 
@@ -394,6 +563,7 @@ export function markersFor(layout, route, atlas) {
         name: buildingLabel(d.building),
         floors,
         tile: { x: p.x + d.x - p.win.x, y: p.y + d.y - p.win.y },
+        h: heightAt(atlas.maps[key], d.x, d.y),
         entered: floors.some((f) => route.maps[f]),
       })
     }
@@ -1303,12 +1473,14 @@ export function battlesFor(layout, route, { onlyMap = null } = {}) {
     const key = `${b.tile[0]}:${b.tile[1]}`
     if (onlyMap) {
       if (key !== onlyMap) continue
-      out.push({ ...b, id: `b${i}`, tile: { x: b.tile[2], y: b.tile[3] } })
+      out.push({ ...b, id: `b${i}`, tile: { x: b.tile[2], y: b.tile[3] }, h: 0 })
       continue
     }
     const p = layout?.at[key]
     if (!p) continue
-    out.push({ ...b, id: `b${i}`, tile: { x: p.x + b.tile[2] - p.win.x, y: p.y + b.tile[3] - p.win.y } })
+    out.push({ ...b, id: `b${i}`,
+      tile: { x: p.x + b.tile[2] - p.win.x, y: p.y + b.tile[3] - p.win.y },
+      h: heightAt(p.m, b.tile[2], b.tile[3]) })
   }
   return out
 }

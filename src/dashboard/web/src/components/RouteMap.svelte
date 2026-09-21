@@ -12,15 +12,24 @@
   // drag around and zoom in and out — this would also allow us to render this
   // more detailed"). The canvas is exactly the size of the panel and the world
   // moves under it: drag to pan, wheel or pinch to zoom, double-click to zoom
-  // in. That is what lets it open at 2× instead of the fit-to-panel 1× it used
-  // to need, which is the whole point — at 1× four cables in a corridor are
-  // 3.5 px apart and you have to take my word for it.
+  // in.
+  //
+  // It used to OPEN at 2× on the first placeable visit, so that four cables in
+  // a corridor were more than 3.5 px apart without touching anything. That was
+  // a real reason and it lost to a worse first impression: on Platinum and on
+  // Black the opening view was the panel's black background and nothing else,
+  // because 2× on a 96-tile world shows about a tenth of it and the first
+  // placeable visit is wherever the run happened to start. It opens at `fit`
+  // now. Two things pay the 2× back: the panel takes the world's own aspect
+  // ratio rather than being forced square, so `fit` lands far larger than it
+  // used to (see `.frame` below), and + / − / double-click / the wheel are all
+  // one gesture away.
   //
   // Interiors are NOT on the world map. Every building that is a place rather
   // than a corridor gets a marker on its door tile, and the marker opens the
   // building — all its floors — over the map (M10-M12).
   import { fetchRunRoute } from '../lib/api.js'
-  import { tilePxOf, pngOrigin, loadAtlas, loadTrainers, loadMapImage, worldLayout, clusterLayout, markersFor, exitsFor, floorsFor, battlesFor, drawRoute, drawArrows, drawSize, buildingLabel, visitAt } from '../lib/mapatlas.js'
+  import { tilePxOf, pngOrigin, pngPad, cameraOf, isTopdown, tilePxX, tilePxY, projectTile, layoutSize, heightAt, loadAtlas, loadTrainers, loadMapImage, worldLayout, clusterLayout, markersFor, exitsFor, floorsFor, battlesFor, drawRoute, drawArrows, drawSize, buildingLabel, visitAt } from '../lib/mapatlas.js'
   import { motionClock } from '../lib/motion.js'
   import { latticeAtlas, mergeAtlas, isLattice, drawLattice } from '../lib/lattice.js'
   import { borderSides, borderRows, hasBorder } from '../lib/borders.js'
@@ -30,21 +39,42 @@
   // `onturn` is the local report link: the run detail passes a handler that
   // opens that turn's trace, and the published site passes nothing, so the map
   // is a picture there and a way into the transcript here.
-  // No `height`: the panel is a SQUARE sized off the viewport (Andreas,
+  // No `height`: the panel sizes itself off the viewport (Andreas,
   // 2026-09-16: "make the whole map a square and make the size scale to the
   // height of the screen or 95% of the height"), trimmed to 88vh a moment later
-  // ("shorten the map panel height by 5-10%"). The side is the lesser of the
-  // column it sits in and 88vh, so it never pushes the page sideways and never
-  // grows past the screen. Both dimensions are MEASURED rather than assumed —
-  // they change with the window, and a stale one paints the canvas at a size
-  // the frame does not have.
+  // ("shorten the map panel height by 5-10%"). It was a SQUARE until
+  // 2026-09-21; it now takes the world's own aspect ratio, clamped, because a
+  // square panel spends two thirds of itself on background for any world that
+  // is not square — Crystal's layout is 84x22 tiles (3.8 : 1) and it fitted at
+  // 0.60x into a band across the middle of a square frame. Both
+  // dimensions are still MEASURED rather than assumed — they change with the
+  // window, and a stale one paints the canvas at a size the frame does not
+  // have.
   let { runId = null, onturn = null } = $props()
 
   // The journey Pallet → Pewter is a 224-tile-tall strip, so a floor of 0.4×
   // made the `fit` button a lie: it clamped there and left most of the route
   // off the frame. The floor has to be below whatever `fit` computes, or the
   // control does not do the one thing it is named for.
-  const MIN_Z = 0.08, MAX_Z = 8, OPEN_Z = 2
+  const MIN_Z = 0.08, MAX_Z = 8
+  /** How far from square the panel is allowed to go.
+   *
+   *  The frame used to be a square whatever the world was, and a square spends
+   *  two thirds of itself on background for a world that is not one: Crystal's
+   *  layout is 84x22 tiles — 3.8 : 1 — and fitted at 0.60x into a band across
+   *  the middle of the panel; FireRed and Emerald are 0.4 : 1 and wasted the
+   *  sides the same way.
+   *
+   *  A clamped world does NOT fill the frame, and that is the trade: Crystal
+   *  gets 2.4 : 1 and keeps a band of background above and below, rather than
+   *  a 3.8 : 1 slit with the zoom controls sitting on the map.
+   *
+   *  Clamped at both ends rather than free. A 96x12 route would otherwise be a
+   *  letterbox slit with the controls on top of the map, and a 30x220 one a
+   *  column too narrow to read a town in. The cap on HEIGHT stays where it
+   *  was — 88vh — so a tall world still fits a screen; these only decide how
+   *  much WIDTH that height is allowed to come with. */
+  const MIN_ASPECT = 0.62, MAX_ASPECT = 2.4
   /** A map's fringe, in tiles: `rows` of its own border block, which for a
    *  gen-3 tree block is 2 tiles each. One row by default, because that is what
    *  Andreas asked for after two automatic attempts — "can't we just manually
@@ -78,9 +108,10 @@
   let hoverBattle = $state(null)
   let pinnedBattle = $state(null)
   const openBattle = $derived(pinnedBattle ?? hoverBattle)
-  let vw = $state(880)             // the frame, in CSS px — measured, and square
+  let vw = $state(880)             // the frame, in CSS px — always measured
   let vh = $state(880)
-  let view = $state({ x: 0, y: 0, z: OPEN_Z })
+  // 1 until the first `fit`, which runs on the first paint that has a layout.
+  let view = $state({ x: 0, y: 0, z: 1 })
   // $state: the template reads it for the grab cursor.
   let drag = $state(null)          // {px, py, moved} while a drag is live
   let pinch = null                 // {d, z}
@@ -107,12 +138,27 @@
   // game draws finished maps as pictures and the rest as grids, in one frame.
   const effective = $derived(mergeAtlas(atlas, latticeAtlas(route)))
   const TPX = $derived(tilePxOf(effective, route))
+  // The projection the artwork was rendered under. `topdown` is the identity
+  // and is what every gen 1-3 atlas reads as, so nothing below is a DS branch.
+  const cam = $derived(cameraOf(effective, route))
+  const PXX = $derived(tilePxX(cam))
+  const PXY = $derived(tilePxY(cam))
   const world = $derived(worldLayout(route, effective))
   const layout = $derived(inside ? clusterLayout(inside.building, effective) : world)
   const markers = $derived(!inside && layout && route && effective ? markersFor(layout, route, effective) : [])
   const exits = $derived(inside && layout ? exitsFor(layout, effective) : [])
   const floors = $derived(inside && layout ? floorsFor(layout, effective) : [])
   const drawnOnLattice = $derived(!!layout && Object.values(layout.at).every((p) => isLattice(p.m)))
+  // The panel's shape follows the WORLD's, not whichever layout is open: walking
+  // into a building would otherwise resize the panel under the pointer, and the
+  // view kept for the way back out would no longer fit the frame it returns to.
+  // Projected, because an angled camera changes a world's aspect ratio — a
+  // square world is 1.17 : 1 under this pitch.
+  const aspect = $derived(clampAspect(world ? layoutSize(cam, world) : null))
+  function clampAspect(size) {
+    if (!size || !size[1]) return 1
+    return Math.min(MAX_ASPECT, Math.max(MIN_ASPECT, size[0] / size[1]))
+  }
   // Fights on the maps this canvas draws. One inside a building is drawn in
   // that building's popup instead, where its tile actually is.
   const battles = $derived(layout && route ? battlesFor(layout, route) : [])
@@ -123,22 +169,32 @@
     if (!p) return null
     // minus the drawn window: an interior whose first column is a flat strip is
     // drawn from column 1, so its tile 1 sits at pixel 0.
-    return [(p.x + x - p.win.x + 0.5) * TPX * view.z + view.x,
-            (p.y + y - p.win.y + 0.5) * TPX * view.z + view.y]
+    //
+    // Through the CAMERA, and at the tile's own ground altitude. Straight down
+    // that is the old `(x - win.x + .5) * TPX`; pitched, the y is foreshortened
+    // and lifted, and a gen-4 outdoor map's ground is 16 world units up — half
+    // a tile — before any cliff is involved.
+    return screenAt(p.x + x - p.win.x + 0.5, p.y + y - p.win.y + 0.5,
+                    heightAt(p.m, x, y))
   }
-  /** A world tile's top-left corner in the viewport — for the overlay buttons. */
-  const screenAt = (tx, ty) => [tx * TPX * view.z + view.x, ty * TPX * view.z + view.y]
+  /** A layout tile in the viewport — the canvas, the markers and the cards. */
+  const screenAt = (tx, ty, h = 0) => {
+    const [px, py] = projectTile(cam, tx, ty, h)
+    return [px * view.z + view.x, py * view.z + view.y]
+  }
   const onScreen = (sx, sy, pad = 40) => sx > -pad && sx < vw + pad && sy > -pad && sy < vh + pad
 
-  // Open on the first tile of the run, zoomed in. Fit is one click away.
-  function centreOn(tile, z = view.z) {
-    view = { z, x: vw / 2 - (tile[0] + 0.5) * TPX * z, y: vh / 2 - (tile[1] + 0.5) * TPX * z }
-  }
+  // `centreOn` went with the 2x open: it had exactly one caller and that
+  // caller is now `fit()`. A helper with no caller is the shape of the bug
+  // that left `floorLabel` deleted and `floorsFor` still calling it.
   function fit() {
     if (!layout) return
-    // The whole route, edge to edge — the button's only claim.
-    const z = Math.max(MIN_Z, Math.min(MAX_Z, vw / (layout.w * TPX), vh / (layout.h * TPX)))
-    view = { z, x: (vw - layout.w * TPX * z) / 2, y: (vh - layout.h * TPX * z) / 2 }
+    // The whole route, edge to edge — the button's only claim. The extent is
+    // the PROJECTED one: under a pitched camera a 32-tile map is 439 px tall,
+    // not 512, and fitting it as 512 leaves it small and off centre.
+    const [lw, lh] = layoutSize(cam, layout)
+    const z = Math.max(MIN_Z, Math.min(MAX_Z, vw / lw, vh / lh))
+    view = { z, x: (vw - lw * z) / 2, y: (vh - lh * z) / 2 }
   }
   function zoomAt(cx, cy, factor) {
     const z = Math.max(MIN_Z, Math.min(MAX_Z, view.z * factor))
@@ -178,14 +234,13 @@
     const L = layout, r = route
     if (!L || !r?.visits?.length || placed || inside) return
     placed = true
-    // The FIRST PLACEABLE visit, not simply the first. Nearly every run opens
-    // in the player's bedroom, and an interior has no place on the world frame
-    // (it lives in its building's popup) — so `visits[0]` has no position here
-    // and centring on it opened the map on the empty gap beside the world.
-    const v = r.visits.find((x) => L.at[`${x[2]}:${x[3]}`])
-    if (!v) { fit(); return }
-    const p = L.at[`${v[2]}:${v[3]}`]
-    centreOn([p.x + v[4], p.y + v[5]], OPEN_Z)
+    // FIT, not the first placeable visit at 2x. The old default centred on the
+    // run's first placeable tile and zoomed to 2x, and on a big world that
+    // is a view of the panel's own background: Platinum and Black both opened
+    // on nothing, and clicking `fit` revealed a correct map in both. A first
+    // impression of a black rectangle costs more than the cable separation 2x
+    // was buying, and the zoom controls are one gesture away.
+    fit()
   })
   $effect(() => {
     runId                                     // a new run re-centres
@@ -224,11 +279,20 @@
     c.imageSmoothingEnabled = false
     const s = TPX * view.z
 
+    // The maps NORTH to SOUTH. Straight down nothing overlaps and the order
+    // is free; pitched, a building on a southern map is drawn above its own
+    // ground and over the map behind it, which is what a painter's algorithm
+    // is for. Drawing south first would put a northern map's transparent
+    // margin over a southern roof.
+    const order = Object.entries(L.at).sort((a, b) => a[1].y - b[1].y)
+
     // Pass 1 — the FRINGE, for the sides lib/borders.js names (measured by
     // scripts/analyse_border_edges.py, hand-overridable there). Drawn
     // first, so a neighbouring map's real ground always wins where the two
-    // overlap, and a road out is never painted over at all.
-    for (const [key, p] of Object.entries(L.at)) {
+    // overlap, and a road out is never painted over at all. `borders.js`
+    // lists no DS map, and a fringe tiled square under a pitched camera would
+    // not line up with the map it surrounds, so it is skipped outright there.
+    for (const [key, p] of (isTopdown(cam) ? order : [])) {
       if (isLattice(p.m) || !hasBorder(r.game, key, p.m)) continue
       const bimg = decoded.get(`${r.game}/${p.m.border.file}`)
       if (!bimg) continue
@@ -242,25 +306,50 @@
     }
 
     // Pass 2 — the maps themselves.
-    for (const p of Object.values(L.at)) {
+    const sy_ = PXY * view.z                       // one tile DOWN, in px
+    for (const [, p] of order) {
       const win = p.win
       const [dw, dh] = [win.w, win.h]
       const [sx, sy] = screenAt(p.x, p.y)
       // Off-screen maps are not drawn at all — at 8× on Viridian Forest that is
       // most of the atlas.
-      if (sx > vw || sy > vh || sx + dw * s < 0 || sy + dh * s < 0) continue
+      if (sx > vw || sy > vh || sx + dw * s < 0 || sy + dh * sy_ < 0) continue
       // A map with no artwork yet draws as its coordinate lattice, in the same
       // pass and the same frame, so a partly-rendered game is not all-or-nothing.
-      if (isLattice(p.m)) { drawLattice(c, { width: dw, height: dh }, sx, sy, s); continue }
+      // Squashed by the camera rather than by a second grid routine: the
+      // lattice IS the coordinate frame, so it has to be the same shape as the
+      // artwork it stands in for.
+      if (isLattice(p.m)) {
+        c.save()
+        c.translate(sx, sy)
+        c.scale(1, PXY / PXX)
+        drawLattice(c, { width: dw, height: dh }, 0, 0, s)
+        c.restore()
+        continue
+      }
       const img = decoded.get(`${r.game}/${p.m.file}`)
       if (!img) continue
-      // The source rect is in the PNG's own frame. `pngOrigin` is [0, 0] for
-      // every atlas whose artwork already starts at the route's origin, and the
-      // tile the image starts at for a DS map, which ships map-local — see the
-      // note on `pngOrigin`.
       const [pox, poy] = pngOrigin(p.m)
-      c.drawImage(img, (win.x - pox) * TPX, (win.y - poy) * TPX, dw * TPX, dh * TPX,
-                  sx, sy, dw * s, dh * s)
+      if (isTopdown(cam)) {
+        // The source rect is in the PNG's own frame. `pngOrigin` is [0, 0] for
+        // every atlas whose artwork already starts at the route's origin, and
+        // the tile the image starts at for a DS map, which ships map-local —
+        // see the note on `pngOrigin`. Cropping here is what applies `trim`.
+        c.drawImage(img, (win.x - pox) * TPX, (win.y - poy) * TPX, dw * TPX, dh * TPX,
+                    sx, sy, dw * s, dh * s)
+        continue
+      }
+      // Pitched: the picture is BIGGER than the ground rectangle, because a
+      // roof rises out of the top of it, so there is no source rect that is
+      // the map. The whole image is drawn, ANCHORED: the PNG pixel holding
+      // this map's ground corner is `png_pad` plus the window's own offset,
+      // and that pixel has to land on `screenAt(p.x, p.y)`.
+      // (A pitched atlas ships no `trim`; nothing here could honour one.)
+      const [padL, padT] = pngPad(p.m)
+      const gx = padL + (win.x - pox) * PXX
+      const gy = padT + (win.y - poy) * PXY
+      c.drawImage(img, sx - gx * view.z, sy - gy * view.z,
+                  img.width * view.z, img.height * view.z)
     }
     still = { off, dpr, s, lines: drawRoute(c, r, place, { scale: s }), tiles: r.visits.length }
   }
@@ -455,7 +544,7 @@
   <p class="faint small">Drawing the route…</p>
 {:else if route?.visits?.length && layout}
   <figure class="routemap">
-    <div class="frame" bind:this={frame}>
+    <div class="frame" bind:this={frame} style={`--ar:${aspect}`}>
       <canvas bind:this={canvas} class:clickable={!!onturn} class:dragging={!!drag}
         tabindex="0" role="application"
         onpointerdown={onpointerdown} onpointermove={onpointermove}
@@ -466,7 +555,9 @@
       ></canvas>
 
       {#each markers as m (m.key)}
-        {@const p = screenAt(m.tile.x + 0.5, m.tile.y + 0.5)}
+        <!-- `m.h` is the ground the door stands on, in world units: a marker on
+             a raised terrace belongs on the terrace, not on the plane below. -->
+        {@const p = screenAt(m.tile.x + 0.5, m.tile.y + 0.5, m.h ?? 0)}
         {#if onScreen(p[0], p[1])}
           <button class="marker" class:entered={m.entered}
             style={`left:${p[0]}px;top:${p[1]}px`}
@@ -480,7 +571,7 @@
       {/each}
 
       {#each battles as b (b.id)}
-        {@const p = screenAt(b.tile.x + 0.5, b.tile.y + 0.5)}
+        {@const p = screenAt(b.tile.x + 0.5, b.tile.y + 0.5, b.h ?? 0)}
         {#if onScreen(p[0], p[1])}
           <button class="fight" class:trainer={b.kind === 'trainer'} class:unknown={!kindIsKnown(b)} class:pinned={pinnedBattle?.id === b.id}
             style={`left:${p[0]}px;top:${p[1]}px`}
@@ -502,7 +593,7 @@
       {/each}
 
       {#each floors as f (f.key)}
-        {@const p = screenAt(f.tile.x, f.tile.y)}
+        {@const p = screenAt(f.tile.x, f.tile.y, f.h ?? 0)}
         {#if onScreen(p[0], p[1], 120)}
           <!-- clamped into the frame: the label is a fixed pixel height while the
                margin above the floor shrinks with the zoom, so at `fit` on a tall
@@ -512,7 +603,7 @@
       {/each}
 
       {#each exits as e (e.key)}
-        {@const p = screenAt(e.tile.x + 0.5, e.tile.y + 0.5)}
+        {@const p = screenAt(e.tile.x + 0.5, e.tile.y + 0.5, e.h ?? 0)}
         {#if onScreen(p[0], p[1])}
           <button class="exit" style={`left:${p[0]}px;top:${p[1]}px`}
             title={`Back out to ${e.name.replace(/([a-z])([A-Z0-9])/g, '$1 $2')}`}
@@ -556,11 +647,13 @@
   .routemap { margin: 0; }
   .frame {
     position: relative;
-    /* Square, and as tall as the screen allows. `min()` rather than a media
-       query: on a narrow column the width wins, on a tall screen 88vh does, and
-       `aspect-ratio` keeps the other side equal either way. */
-    width: min(100%, 88vh);
-    aspect-ratio: 1;
+    /* The world's own aspect ratio, clamped (see MIN_ASPECT), and as tall as
+       the screen allows. `min()` rather than a media query: on a narrow column
+       the column wins, on a tall screen the 88vh height cap does — expressed
+       here as the width that cap implies — and `aspect-ratio` derives the
+       other side either way. */
+    width: min(100%, calc(88vh * var(--ar, 1)));
+    aspect-ratio: var(--ar, 1);
     margin: 0 auto;
     overflow: hidden;              /* a viewport, not a scroll box */
     background: var(--dark, #14161a);
