@@ -127,7 +127,24 @@ const browser = await chromium.launch()
 const page = await browser.newPage({ viewport: { width: 1600, height: 2200 }, deviceScaleFactor: 2 })
 const errors = []
 page.on('pageerror', (e) => errors.push(String(e)))
-page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()) })
+// A console error for a failed request says only "Failed to load resource",
+// which names nothing, so the URL comes off the response event instead and the
+// bare console line is dropped as its duplicate.
+//
+// One 404 is expected and must not be reported, or the tool cries wolf on
+// every run: `GET /api/runs/<id>` for a run that is CURRENTLY RUNNING. The run
+// index only gains a run when it finishes, App.svelte:119 knows that, catches
+// it and falls back to the queue item. Anything else — a missing map PNG, a
+// 500 — is real and still reported.
+const EXPECTED_404 = /\/api\/runs\/[^/?]+$/
+page.on('console', (m) => {
+  if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text())
+})
+page.on('response', (r) => {
+  if (r.status() < 400) return
+  if (r.status() === 404 && EXPECTED_404.test(new URL(r.url()).pathname)) return
+  errors.push(`HTTP ${r.status()} ${r.url()}`)
+})
 let bad = 0
 for (const runId of runs) {
   const r = await shoot(page, runId)

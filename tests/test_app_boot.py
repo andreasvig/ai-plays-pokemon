@@ -228,3 +228,51 @@ def test_backfill_reprojects_rows_from_an_older_projection(tmp_path: Path):
     assert n == 2
     assert all(e.projection_version == PROJECTION_VERSION for e in run_index.all())
     assert all(e.error is None for e in run_index.all()), "rows come from run_summary.json again, not from the stale cache"
+
+
+def test_a_missing_asset_is_a_404_and_a_client_route_is_still_the_spa(tmp_path, monkeypatch):
+    """The SPA catch-all must not answer a missing PNG with index.html.
+
+    Found 2026-09-21 by hiding `maps/crystal-us/24-3.png` and watching the
+    screenshot tool report success: the server answered `200 text/html`, the
+    browser failed to decode it, and there was no network error, no console
+    error and no map — the exact "renders nothing and reports no error"
+    failure the map work has been dodging all along.
+
+    The two halves have to hold together, which is why they are one test: a
+    rule strict enough to 404 the PNG must not 404 `/history/<slug>`, and a
+    run slug HAS a dot in it (`config-6.0`), so "contains a dot" would have
+    broken every report page.
+    """
+    dist = tmp_path / "web" / "dist"
+    (dist / "maps" / "crystal-us").mkdir(parents=True)
+    index = dist / "index.html"
+    index.write_text("<html>spa</html>")
+    (dist / "maps" / "crystal-us" / "24-3.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    monkeypatch.setattr(server, "SPA_DIST_DIR", dist)
+    monkeypatch.setattr(server, "SPA_INDEX", index)
+
+    client = TestClient(server.app)
+
+    # The asset that exists is served as itself.
+    assert client.get("/maps/crystal-us/24-3.png").content.startswith(b"\x89PNG")
+
+    # The ones that do not exist are 404, not a 200 of HTML.
+    for missing in ("/maps/crystal-us/24-4.png",
+                    "/maps/nope-us/index.json",
+                    "/pokemon/9999.png",
+                    "/assets/never-built.js"):
+        r = client.get(missing)
+        assert r.status_code == 404, (missing, r.status_code, r.headers.get("content-type"))
+
+    # A path traversal dressed as an asset is a 404 too, not the SPA.
+    assert client.get("/maps/../../../../etc/passwd.png").status_code == 404
+
+    # Client routes still get the SPA — including the slug with a dot in it,
+    # which is what rules out "any path containing a dot is an asset".
+    for route in ("/", "/about", "/methods", "/spectate",
+                  "/history/2026-09-20_21-42-46_config-6.0__gemini-3-8-flash-low",
+                  "/models/gemini-3.8-flash"):
+        r = client.get(route)
+        assert r.status_code == 200, route
+        assert r.text == "<html>spa</html>", route

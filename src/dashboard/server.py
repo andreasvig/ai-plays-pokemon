@@ -2235,6 +2235,25 @@ if SPA_DIST_DIR.is_dir():
         app.mount("/assets", StaticFiles(directory=str(_spa_assets)), name="spa-assets")
 
 
+#: Suffixes that make a request an ASSET request rather than a client route.
+#: A missing asset must 404; a missing client route must serve the SPA, which
+#: then renders its own "not found". Deciding on the suffix rather than on a
+#: directory prefix covers every asset directory, including ones added later.
+#:
+#: This CANNOT be "any path containing a dot": a run slug does. The canonical
+#: one is `2026-09-20_21-42-46_config-6.0__gemini-3-8-flash-low`, so
+#: `/history/<slug>` has a dot in its last segment and must still serve the
+#: SPA. Matching a known suffix keeps both cases right — the slug's text after
+#: its last dot is `0__gemini-3-8-flash-low`, which is not one of these.
+#: Everything the built site actually contains, plus the fonts and source maps
+#: a future build might emit.
+ASSET_SUFFIXES = (
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".ico", ".avif",
+    ".json", ".js", ".mjs", ".css", ".map", ".txt", ".xml", ".webmanifest",
+    ".mp4", ".webm", ".woff", ".woff2", ".ttf", ".otf",
+)
+
+
 @app.get("/{full_path:path}")
 async def spa_fallback(full_path: str):
     """SPA catch-all: serve `index.html` for unmatched client routes.
@@ -2243,6 +2262,12 @@ async def spa_fallback(full_path: str):
       - 404 (not the SPA) for unmatched `/api/*` and `/runs/*` paths, so a
         missing API route returns a clean 404 instead of silently shadowing it
         with HTML.
+      - 404 for a missing ASSET — anything ending in ASSET_SUFFIXES. Without
+        this, `GET /maps/crystal-us/24-3.png` for a PNG that was never
+        rendered answered `200 text/html` with index.html in the body, and the
+        browser simply failed to decode it: no network error, no console
+        error, an empty map and nothing anywhere saying why. Found 2026-09-21
+        by hiding a map PNG and watching the screenshot tool report success.
       - serves a real built asset/file if one exists at the path (favicon, etc.).
       - 404 when the SPA isn't built (headless `pokemon run` path).
     """
@@ -2252,12 +2277,18 @@ async def spa_fallback(full_path: str):
         raise HTTPException(status_code=404, detail="SPA not built")
     # Serve a concrete static file if it exists (e.g. /favicon.ico, /vite.svg).
     candidate = (SPA_DIST_DIR / full_path).resolve()
+    escaped = False
     try:
         candidate.relative_to(SPA_DIST_DIR.resolve())
     except ValueError:
-        candidate = SPA_INDEX  # path traversal attempt → fall back to index
-    if full_path and candidate.is_file():
+        candidate, escaped = SPA_INDEX, True   # path traversal attempt
+    if full_path and not escaped and candidate.is_file():
         return FileResponse(str(candidate))
+    # No such file. An asset request gets a 404; only a client route gets the
+    # SPA. The traversal case lands here too, so `../../etc/passwd.png` is a
+    # 404 rather than a 200 of index.html.
+    if full_path.lower().endswith(ASSET_SUFFIXES):
+        raise HTTPException(status_code=404, detail=f"not found: /{full_path}")
     return FileResponse(
         str(SPA_INDEX),
         media_type="text/html",
