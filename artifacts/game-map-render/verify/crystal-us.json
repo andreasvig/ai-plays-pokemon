@@ -1,0 +1,434 @@
+{
+ "band": {
+  "self_floor": 0.9999,
+  "aligned_match": 0.9,
+  "suspect_match": 0.7,
+  "spread_wrong_crop": 0.2,
+  "spread_wrong_map": 0.2,
+  "margin": 0.05,
+  "saturated_match": 0.995,
+  "saturated_wrong_crop": 0.9
+ },
+ "tolerance": 1,
+ "games": {
+  "crystal-us": {
+   "turns": 13,
+   "match": 0.9900412087912088,
+   "direct": 0.9895833333333334,
+   "raw8": 0.9895833333333334,
+   "wrong_crop": 0.42789502164502163,
+   "wrong_map": 0.4588744588744589,
+   "margin": 0.16369047619047616,
+   "self": 1.0,
+   "reasons": [],
+   "not_map_frames": [
+    203
+   ],
+   "sampled": 14,
+   "verdict": "ALIGNED",
+   "game": "crystal-us",
+   "runs": [
+    "2026-09-19_22-48-56_config-v2-crystal__gemini-3-8-flash-minimal",
+    "2026-09-20_00-28-46_config-v2-crystal__gemini-3-8-flash-minimal"
+   ],
+   "warnings": [
+    "2026-09-19_22-48-56_config-v2-crystal__gemini-3-8-flash-minimal: 383 traces and not one sample with in_battle set \u2014 this run's battle probe never fired, so its battle frames reach this tool unfiltered (and reach the stitcher's atlas unfiltered too)"
+   ],
+   "sheet": "artifacts/game-map-render/verify/crystal-us__2-runs.png",
+   "rows": [
+    {
+     "turn": 4,
+     "run": "2026-09-19_22-48-56_config-v2-crystal__gemini-3-8-flash-minimal",
+     "key": "24:6",
+     "name": "PLAYERS_HOUSE_1F",
+     "tile": [
+      9,
+      4
+     ],
+     "window": [
+      80,
+      0
+     ],
+     "match": 0.9805555555555555,
+     "direct": 0.9805555555555555,
+     "raw8": 0.9805555555555555,
+     "via": "direct",
+     "collapse": 1.0,
+     "px": 7200,
+     "coverage": 0.487012987012987,
+     "wrong_crop": null,
+     "wrong_map": 0.0015557359307359307,
+     "wrong_map_key": "26:1",
+     "neighbour_best": 0.7784391534391535,
+     "margin": 0.20211640211640203,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 39,
+     "run": "2026-09-19_22-48-56_config-v2-crystal__gemini-3-8-flash-minimal",
+     "key": "24:3",
+     "name": "ROUTE_29",
+     "tile": [
+      26,
+      17
+     ],
+     "window": [
+      352,
+      208
+     ],
+     "match": 0.9860929319371727,
+     "direct": 0.9860929319371727,
+     "raw8": 0.9860929319371727,
+     "via": "direct",
+     "collapse": 1.0,
+     "px": 12224,
+     "coverage": 0.8268398268398268,
+     "wrong_crop": null,
+     "wrong_map": 0.4285037878787879,
+     "wrong_map_key": "26:1",
+     "neighbour_best": 0.884080497382199,
+     "margin": 0.10201243455497377,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 67,
+     "run": "2026-09-19_22-48-56_config-v2-crystal__gemini-3-8-flash-minimal",
+     "key": "24:3",
+     "name": "ROUTE_29",
+     "tile": [
+      18,
+      14
+     ],
+     "window": [
+      224,
+      160
+     ],
+     "match": 0.9895833333333334,
+     "direct": 0.9895833333333334,
+     "raw8": 0.9895833333333334,
+     "via": "direct",
+     "collapse": 1.0,
+     "px": 14784,
+     "coverage": 1.0,
+     "wrong_crop": 0.6548566878980892,
+     "wrong_map": 0.45481601731601734,
+     "wrong_map_key": "26:1",
+     "neighbour_best": 0.887987012987013,
+     "margin": 0.10159632034632038,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 95,
+     "run": "2026-09-19_22-48-56_config-v2-crystal__gemini-3-8-flash-minimal",
+     "key": "24:3",
+     "name": "ROUTE_29",
+     "tile": [
+      33,
+      14
+     ],
+     "window": [
+      464,
+      160
+     ],
+     "match": 1.0,
+     "direct": 1.0,
+     "raw8": 1.0,
+     "via": "direct",
+     "collapse": null,
+     "px": 14784,
+     "coverage": 1.0,
+     "wrong_crop": 0.459593949044586,
+     "wrong_map": 0.5413284632034632,
+     "wrong_map_key": "26:1",
+     "neighbour_best": 0.862012987012987,
+     "margin": 0.137987012987013,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 125,
+     "run": "2026-09-19_22-48-56_config-v2-crystal__gemini-3-8-flash-minimal",
+     "key": "24:3",
+     "name": "ROUTE_29",
+     "tile": [
+      16,
+      3
+     ],
+     "window": [
+      192,
+      -16
+     ],
+     "match": 0.9731675392670157,
+     "direct": 0.9731675392670157,
+     "raw8": 0.9731675392670157,
+     "via": "direct",
+     "collapse": 1.0,
+     "px": 12224,
+     "coverage": 0.8268398268398268,
+     "wrong_crop": 0.4316152597402597,
+     "wrong_map": 0.46516504329004327,
+     "wrong_map_key": "26:1",
+     "neighbour_best": 0.8803992146596858,
+     "margin": 0.09276832460732987,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 161,
+     "run": "2026-09-19_22-48-56_config-v2-crystal__gemini-3-8-flash-minimal",
+     "key": "26:10",
+     "name": "MR_POKEMONS_HOUSE",
+     "tile": [
+      3,
+      6
+     ],
+     "window": [
+      -16,
+      32
+     ],
+     "match": 0.9774590163934426,
+     "direct": 0.9774590163934426,
+     "raw8": 0.9774590163934426,
+     "via": "direct",
+     "collapse": 1.0,
+     "px": 11712,
+     "coverage": 0.7922077922077922,
+     "wrong_crop": null,
+     "wrong_map": 0.0,
+     "wrong_map_key": "26:1",
+     "neighbour_best": 0.6409665300546448,
+     "margin": 0.3364924863387978,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 203,
+     "run": "2026-09-19_22-48-56_config-v2-crystal__gemini-3-8-flash-minimal",
+     "key": "26:3",
+     "name": "CHERRYGROVE_CITY",
+     "tile": [
+      33,
+      7
+     ],
+     "window": [
+      464,
+      48
+     ],
+     "match": 0.026041666666666668,
+     "direct": 0.026041666666666668,
+     "raw8": 0.026041666666666668,
+     "via": "colour map REFUSED (12->4 colours)",
+     "collapse": 3.0,
+     "px": 14784,
+     "coverage": 1.0,
+     "wrong_crop": 0.0294811320754717,
+     "wrong_map": 0.020630411255411256,
+     "wrong_map_key": "26:1",
+     "neighbour_best": 0.028409090909090908,
+     "margin": -0.0023674242424242403,
+     "map_frame": false,
+     "self": 1.0
+    },
+    {
+     "turn": 240,
+     "run": "2026-09-19_22-48-56_config-v2-crystal__gemini-3-8-flash-minimal",
+     "key": "24:5",
+     "name": "ELMS_LAB",
+     "tile": [
+      4,
+      3
+     ],
+     "window": [
+      0,
+      -16
+     ],
+     "match": 0.9554973821989529,
+     "direct": 0.9513252617801047,
+     "raw8": 0.9513252617801047,
+     "via": "colour map",
+     "collapse": 1.125,
+     "px": 12224,
+     "coverage": 0.8268398268398268,
+     "wrong_crop": 0.32939814814814816,
+     "wrong_map": 0.0006764069264069264,
+     "wrong_map_key": "26:1",
+     "neighbour_best": 0.7078764619883041,
+     "margin": 0.24762092021064874,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 270,
+     "run": "2026-09-19_22-48-56_config-v2-crystal__gemini-3-8-flash-minimal",
+     "key": "24:3",
+     "name": "ROUTE_29",
+     "tile": [
+      27,
+      12
+     ],
+     "window": [
+      368,
+      128
+     ],
+     "match": 1.0,
+     "direct": 1.0,
+     "raw8": 1.0,
+     "via": "direct",
+     "collapse": null,
+     "px": 14784,
+     "coverage": 1.0,
+     "wrong_crop": 0.6774215367965368,
+     "wrong_map": 0.5872564935064936,
+     "wrong_map_key": "26:1",
+     "neighbour_best": 0.8527462121212122,
+     "margin": 0.14725378787878785,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 299,
+     "run": "2026-09-19_22-48-56_config-v2-crystal__gemini-3-8-flash-minimal",
+     "key": "26:3",
+     "name": "CHERRYGROVE_CITY",
+     "tile": [
+      19,
+      4
+     ],
+     "window": [
+      240,
+      0
+     ],
+     "match": 1.0,
+     "direct": 1.0,
+     "raw8": 1.0,
+     "via": "direct",
+     "collapse": null,
+     "px": 14784,
+     "coverage": 1.0,
+     "wrong_crop": 0.42417478354978355,
+     "wrong_map": 0.4588744588744589,
+     "wrong_map_key": "26:1",
+     "neighbour_best": 0.7811147186147186,
+     "margin": 0.2188852813852814,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 334,
+     "run": "2026-09-19_22-48-56_config-v2-crystal__gemini-3-8-flash-minimal",
+     "key": "26:1",
+     "name": "ROUTE_30",
+     "tile": [
+      10,
+      4
+     ],
+     "window": [
+      96,
+      0
+     ],
+     "match": 0.9903273809523809,
+     "direct": 0.9903273809523809,
+     "raw8": 0.9903273809523809,
+     "via": "direct",
+     "collapse": 1.0,
+     "px": 14784,
+     "coverage": 1.0,
+     "wrong_crop": 0.5602678571428571,
+     "wrong_map": 0.6523944805194806,
+     "wrong_map_key": "24:3",
+     "neighbour_best": 0.82129329004329,
+     "margin": 0.16903409090909094,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 365,
+     "run": "2026-09-19_22-48-56_config-v2-crystal__gemini-3-8-flash-minimal",
+     "key": "26:1",
+     "name": "ROUTE_30",
+     "tile": [
+      7,
+      30
+     ],
+     "window": [
+      48,
+      416
+     ],
+     "match": 0.99120670995671,
+     "direct": 0.99120670995671,
+     "raw8": 0.99120670995671,
+     "via": "direct",
+     "collapse": 1.0,
+     "px": 14784,
+     "coverage": 1.0,
+     "wrong_crop": 0.417478354978355,
+     "wrong_map": 0.3759469696969697,
+     "wrong_map_key": "24:3",
+     "neighbour_best": 0.7936282467532467,
+     "margin": 0.19757846320346328,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 36,
+     "run": "2026-09-20_00-28-46_config-v2-crystal__gemini-3-8-flash-minimal",
+     "key": "26:2",
+     "name": "ROUTE_31",
+     "tile": [
+      24,
+      11
+     ],
+     "window": [
+      320,
+      112
+     ],
+     "match": 0.9937770562770563,
+     "direct": 0.9883658008658008,
+     "raw8": 0.9883658008658008,
+     "via": "colour map",
+     "collapse": 1.125,
+     "px": 14784,
+     "coverage": 1.0,
+     "wrong_crop": 0.39752435064935066,
+     "wrong_map": 0.5720373376623377,
+     "wrong_map_key": "26:1",
+     "neighbour_best": 0.8300865800865801,
+     "margin": 0.16369047619047616,
+     "map_frame": true,
+     "self": 1.0
+    },
+    {
+     "turn": 77,
+     "run": "2026-09-20_00-28-46_config-v2-crystal__gemini-3-8-flash-minimal",
+     "key": "26:1",
+     "name": "ROUTE_30",
+     "tile": [
+      0,
+      8
+     ],
+     "window": [
+      -64,
+      64
+     ],
+     "match": 0.9900412087912088,
+     "direct": 0.9900412087912088,
+     "raw8": 0.9900412087912088,
+     "via": "direct",
+     "collapse": 1.0,
+     "px": 8736,
+     "coverage": 0.5909090909090909,
+     "wrong_crop": 0.25940205627705626,
+     "wrong_map": 0.5098755411255411,
+     "wrong_map_key": "24:3",
+     "neighbour_best": 0.8714514652014652,
+     "margin": 0.11858974358974361,
+     "map_frame": true,
+     "self": 1.0
+    }
+   ]
+  }
+ }
+}
