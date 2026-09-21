@@ -84,6 +84,26 @@ test('building labels read as English, not as pret identifiers', () => {
   assert.equal(buildingLabel('PewterCity_House1'), 'House 1')
 })
 
+test('a DS building falls back to the name the cartridge prints', () => {
+  // A gen 4/5 cartridge has no decomp, so its building key is the bare map
+  // id and the popup header read "61:0". Those atlases carry the cartridge's
+  // own place name since 2026-09-21, so it reads that instead.
+  assert.equal(buildingLabel('61:0', 'New Bark Town'), 'New Bark Town')
+  assert.equal(buildingLabel('428:0', 'Aspertia City'), 'Aspertia City')
+
+  // The decomp label WINS where there is one. Platinum's name is the symbol
+  // in full, so preferring the name there would be a regression: the header
+  // would read TwinleafTown_RivalHouse_1F instead of a room.
+  assert.equal(buildingLabel('TwinleafTown_RivalHouse_1F',
+                             'TwinleafTown_RivalHouse_1F'), 'Rival House 1F')
+
+  // And with no name at all nothing changes — the old single-argument
+  // behaviour is intact, including the id it has no better answer than.
+  assert.equal(buildingLabel('PewterCity_PokemonCenter'), 'Pokémon Center')
+  assert.equal(buildingLabel('61:0'), '61:0')
+  assert.equal(buildingLabel('61:0', '61:0'), '61:0')
+})
+
 // -- drawing -----------------------------------------------------------------
 
 function stub() {

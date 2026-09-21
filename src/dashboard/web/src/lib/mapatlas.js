@@ -545,7 +545,12 @@ export function floorsFor(layout, atlas) {
   if (!layout?.building) return []
   return Object.entries(layout.at).map(([key, p]) => ({
     key,
-    label: floorLabel(p.m?.name, layout.building) || buildingLabel(layout.building),
+    // `buildingLabel` takes the map's own name as its fallback: a DS
+    // building key is the bare map id, and the name is what the cartridge
+    // prints for the place. `floorLabel` still wins where a decomp gives
+    // a floor, which is the only case that says something this does not.
+    label: floorLabel(p.m?.name, layout.building)
+           || buildingLabel(layout.building, atlas.maps[layout.building]?.name),
     tile: { x: p.x, y: p.y },
     h: heightAt(p.m, p.win.x, p.win.y),
   }))
@@ -561,7 +566,12 @@ export function markersFor(layout, route, atlas) {
       out.push({
         key: `${key}:${d.x}:${d.y}`,
         building: d.building,
-        name: buildingLabel(d.building),
+        // The name the cartridge prints, where the building key is only an
+        // id — a DS marker's tooltip said "428:0" and now says "Aspertia
+        // City". `d.to` is the map the door opens into, which is the entry
+        // that carries a name when the building key itself is not a map.
+        name: buildingLabel(d.building,
+                            atlas.maps[d.building]?.name ?? atlas.maps[d.to]?.name),
         floors,
         tile: { x: p.x + d.x - p.win.x, y: p.y + d.y - p.win.y },
         h: heightAt(atlas.maps[key], d.x, d.y),
@@ -587,9 +597,26 @@ export function floorLabel(mapName, building) {
   return tail.replace(/([a-z])([A-Z0-9])/g, '$1 $2')
 }
 
-/** 'PewterCity_PokemonCenter' → 'Pokémon Center'. The town is on the map already. */
-export function buildingLabel(building) {
-  const tail = String(building).split('_').slice(1).join(' ') || String(building)
+/**
+ * 'PewterCity_PokemonCenter' → 'Pokémon Center'. The town is on the map already.
+ *
+ * `name` is the map's own name and is the answer when the building KEY has no
+ * structure to strip. A gen 4/5 cartridge has no decomp, so its building key
+ * is the bare map id — `61:0` — and this used to print that as the popup's
+ * title. Since 2026-09-21 those atlases carry the place name the cartridge
+ * itself prints, so the header reads "New Bark Town" instead of "61:0".
+ *
+ * The decomp label still WINS where there is one: Platinum's key is
+ * `TwinleafTown_RivalHouse_1F`, which strips to "Rival's house", while its
+ * `name` is that same symbol in full — using the name there would be a
+ * regression, not an improvement. So the rule is "the key when the key says
+ * something, the name when it does not", and never the raw id when a name
+ * exists.
+ */
+export function buildingLabel(building, name = null) {
+  const parts = String(building).split('_')
+  const tail = parts.length > 1 ? parts.slice(1).join(' ')
+    : (name && String(name) !== String(building) ? String(name) : String(building))
   return tail
     .replace(/([a-z])([A-Z0-9])/g, '$1 $2')
     .replace(/\bPokemon\b/g, 'Pokémon')

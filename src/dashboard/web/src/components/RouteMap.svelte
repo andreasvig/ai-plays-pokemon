@@ -618,7 +618,7 @@
       {#if inside}
         <button class="backchip" onclick={leave}>
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9.6 3.4 5 8l4.6 4.6" /></svg>
-          <span>{buildingLabel(inside.building)}</span>
+          <span>{buildingLabel(inside.building, inside.label)}</span>
         </button>
       {/if}
 
