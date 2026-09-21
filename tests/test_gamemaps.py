@@ -534,3 +534,42 @@ def test_no_game_ships_wildly_more_artwork_per_tile_than_the_others():
         f"{worst} ships {measured[worst]:.1f} bytes of artwork per tile, over "
         f"the {MAX_BYTES_PER_TILE} alarm. All: "
         + ", ".join(f"{g} {v:.1f}" for g, v in sorted(measured.items(), key=lambda kv: -kv[1])))
+
+
+# The other half of the size question, and the one that actually costs
+# something. `publish.py sync_site` rmtree's and re-copies every top-level
+# `public/` directory onto the gh-pages branch on each publish, so whatever is
+# in here lands in that branch's history permanently. Per-tile catches a render
+# that got expensive; this catches everything else — a video, an unquantised
+# sprite sheet, a directory somebody forgot was there.
+#
+# Measured 2026-09-21, after seven games of map artwork and the National Dex
+# sprite set landed:
+#
+#   maps 3.90   pokemon 0.88   trainers 0.41   logos 0.04   = 5.24 MB
+#
+# Do NOT read those off `du`, which says 9.3 MB for the same tree: over a
+# thousand of these files are a few hundred bytes each and `du` charges every
+# one of them a whole 4 KB block. `pokemon/` is 0.88 MB of sprites in 4.2 MB of
+# blocks. What gh-pages carries is the bytes.
+#
+# 16 MB is not a target. It is roughly 3x what is here, which leaves room for
+# the angled DS camera to grow the maps and for another generation of
+# anything, while still being a number a person would want to be asked about
+# before crossing. If it fires, the question is not "raise it" — it is "what
+# did we just add, and does it belong in a git branch forever".
+MAX_PUBLIC_BYTES = 16 * 1024 * 1024
+PUBLIC_ROOT = REPO_ROOT / "src" / "dashboard" / "web" / "public"
+
+
+def test_the_published_payload_stays_something_a_branch_can_carry():
+    by_dir = {}
+    for child in sorted(PUBLIC_ROOT.iterdir()):
+        by_dir[child.name] = (sum(f.stat().st_size for f in child.rglob("*") if f.is_file())
+                              if child.is_dir() else child.stat().st_size)
+    total = sum(by_dir.values())
+    assert total <= MAX_PUBLIC_BYTES, (
+        f"public/ is {total / 1048576:.1f} MB, over the {MAX_PUBLIC_BYTES / 1048576:.0f} MB "
+        "alarm, and every publish copies all of it into gh-pages history. Biggest: "
+        + ", ".join(f"{k} {v / 1048576:.1f}M"
+                    for k, v in sorted(by_dir.items(), key=lambda kv: -kv[1])[:4]))
