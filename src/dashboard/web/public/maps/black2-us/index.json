@@ -21,14 +21,14 @@
   "note": "the cartridge's own textured 3D field artwork \u2014 terrain and props \u2014 rendered straight down and orthographic at one pixel per world unit; PNG pixel (0,0) is tile png_origin, so a source rect subtracts it",
   "doors": "none: Gen 5 event data is not decoded, so an interior renders but the viewer has no door to open it from"
  },
- "bytes": 111320,
+ "bytes": 369551,
  "maps": {
   "427:0": {
    "name": null,
    "width": 32,
    "height": 64,
    "file": "427-0.png",
-   "bytes": 70896,
+   "bytes": 283520,
    "indoor": false,
    "border": {
     "file": "427-0-border.png",
@@ -63,7 +63,7 @@
    "width": 18,
    "height": 12,
    "file": "428-0.png",
-   "bytes": 11268,
+   "bytes": 32968,
    "indoor": true,
    "border": {
     "file": "428-0-border.png",
@@ -83,7 +83,7 @@
    "width": 13,
    "height": 13,
    "file": "429-0.png",
-   "bytes": 8427,
+   "bytes": 16676,
    "indoor": true,
    "border": {
     "file": "429-0-border.png",
@@ -103,7 +103,7 @@
    "width": 15,
    "height": 21,
    "file": "435-0.png",
-   "bytes": 20425,
+   "bytes": 36083,
    "indoor": true,
    "border": {
     "file": "435-0-border.png",

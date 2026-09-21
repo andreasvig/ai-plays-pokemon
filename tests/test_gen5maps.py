@@ -388,3 +388,77 @@ def test_props_stand_on_the_walls_the_collision_grid_declares(roms):
         assert good["pct"] > control["pct"] + 15, (
             f"{game}: z negated {good['pct']:.1f}% vs as stored {control['pct']:.1f}% "
             f"— the oracle does not separate the two conventions")
+
+
+# -- 7. the wrap mode, which is shared with gen 4 ------------------------------
+
+def test_a_gen5_terrain_texture_is_tiled_and_not_smeared(roms):
+    """The same `ds3d/nsbmd.py` off-by-eight that banded Platinum's routes.
+
+    Gen 5 grass is a 64x64 texture of sixteen greens laid over the terrain at
+    one texel per world unit, so a 32-tile chunk repeats it eight times each
+    way. With the wrap bits read from the NSBTX (where they are always clear)
+    every UV outside the first tile clamped to an edge texel and a whole chunk
+    came out as ONE flat green — and because neighbouring chunks clamp to
+    different corners, the 32-tile matrix grid showed as tone steps across the
+    map.
+
+    Measured on the scene rather than on a colour: the grass material must ask
+    for repeat in both directions, the renderer must give it repeat, and the
+    pixels the renderer then produces over a patch of open ground must carry
+    more than one colour.
+    """
+    render_gen5maps = pytest.importorskip("render_gen5maps")
+    import numpy as np
+    from ds3d import scene as ds3d_scene
+
+    seen = 0
+    for game, rom in roms.items():
+        zone = render_gen5maps.map_ids(game)[0]
+        win = render_gen5maps.map_window(rom, zone)
+        sc, st = render_gen5maps.Field3D(rom, tile_px=16).scene(win)
+        assert sc is not None and st["terrain"], (game, st)
+        wraps = {w[:2] for _v, _uv, _tex, w in sc.tris}
+        assert (1, 1) in wraps, \
+            f"{game}: not one triangle repeats in both directions"
+        # and the material is where that answer came from: the NSBTX disagrees
+        mapts = rom.texture_set(zone, 0)
+        m = rom.matrix_for(zone)
+        col, row = sorted(win.cells)[0]
+        model = rom.chunk_model(m["land"][row * m["w"] + col])
+        pairs = model.texture_pairs()
+        disagree = sum(
+            1 for mi, _pi in model.bind_draw()
+            if (name := pairs.get(mi, (None,))[0]) in mapts.textures
+            and (mapts.tex_params(name) >> 16) & 0xF
+            != (model.material_texparams(mi) >> 16) & 0xF)
+        assert disagree > 5, \
+            f"{game}: only {disagree} materials disagree with their NSBTX — near-vacuous"
+        seen += 1
+    assert seen
+
+
+def test_two_chunks_of_one_map_meet_without_a_step_in_tone(atlases):
+    """Black's `317:0` is four matrix cells, and the boundary between two of
+    them ran the full height of the map as a hard line between two flat greens.
+
+    Read off the shipped PNG, because that is the artifact the viewer loads.
+    Two 40x40 patches of open grass either side of the x = 512 chunk seam: each
+    must carry real texture (one flat colour is the clamp signature — it was
+    exactly one colour on each side before), and the two must agree in mean
+    colour, because they are the same grass.
+    """
+    import numpy as np
+
+    atlas = dict(atlases).get("black-us")
+    if atlas is None or "317:0" not in atlas["maps"]:
+        pytest.skip("black-us 317:0 not rendered")
+    png = MAPS_ROOT / "black-us" / atlas["maps"]["317:0"]["file"]
+    a = np.asarray(Image.open(png).convert("RGBA")).astype(float)
+    left = a[580:620, 470:510, :3].reshape(-1, 3)
+    right = a[580:620, 515:555, :3].reshape(-1, 3)
+    for name, patch in (("left", left), ("right", right)):
+        assert len(np.unique(patch, axis=0)) > 10, \
+            f"{name} of the seam is {len(np.unique(patch, axis=0))} colour(s) — a clamped texture"
+    assert np.abs(left.mean(0) - right.mean(0)).max() < 12, \
+        f"a tone step across the chunk seam: {left.mean(0)} vs {right.mean(0)}"

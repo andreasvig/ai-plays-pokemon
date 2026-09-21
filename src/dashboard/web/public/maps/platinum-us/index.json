@@ -21,14 +21,14 @@
   "source": "artifacts/game-map-render/observed/platinum-us-observed.json + every map id our runs' samples name",
   "note": "the cartridge's own textured 3D field artwork, rendered straight down and orthographic at one pixel per world unit; PNG pixel (0,0) is tile png_origin, so a source rect subtracts it"
  },
- "bytes": 520490,
+ "bytes": 611402,
  "maps": {
   "342:0": {
    "name": "Route201",
    "width": 64,
    "height": 32,
    "file": "342-0.png",
-   "bytes": 137957,
+   "bytes": 168010,
    "indoor": false,
    "border": {
     "file": "342-0-border.png",
@@ -73,7 +73,7 @@
    "width": 32,
    "height": 32,
    "file": "343-0.png",
-   "bytes": 101634,
+   "bytes": 98424,
    "indoor": false,
    "border": {
     "file": "343-0-border.png",
@@ -113,7 +113,7 @@
    "width": 32,
    "height": 32,
    "file": "391-0.png",
-   "bytes": 78259,
+   "bytes": 91623,
    "indoor": false,
    "border": {
     "file": "391-0-border.png",
@@ -153,7 +153,7 @@
    "width": 32,
    "height": 32,
    "file": "411-0.png",
-   "bytes": 85334,
+   "bytes": 96283,
    "indoor": false,
    "border": {
     "file": "411-0-border.png",
@@ -202,7 +202,7 @@
    "width": 13,
    "height": 12,
    "file": "412-0.png",
-   "bytes": 3041,
+   "bytes": 4130,
    "indoor": true,
    "border": {
     "file": "412-0-border.png",
@@ -235,7 +235,7 @@
    "width": 12,
    "height": 12,
    "file": "413-0.png",
-   "bytes": 3546,
+   "bytes": 7206,
    "indoor": true,
    "border": {
     "file": "413-0-border.png",
@@ -263,7 +263,7 @@
    "width": 13,
    "height": 12,
    "file": "414-0.png",
-   "bytes": 3065,
+   "bytes": 4465,
    "indoor": true,
    "border": {
     "file": "414-0-border.png",
@@ -296,7 +296,7 @@
    "width": 12,
    "height": 12,
    "file": "415-0.png",
-   "bytes": 3505,
+   "bytes": 4416,
    "indoor": true,
    "border": {
     "file": "415-0-border.png",
@@ -324,7 +324,7 @@
    "width": 32,
    "height": 32,
    "file": "418-0.png",
-   "bytes": 90630,
+   "bytes": 117338,
    "indoor": false,
    "border": {
     "file": "418-0-border.png",
@@ -383,7 +383,7 @@
    "width": 17,
    "height": 14,
    "file": "420-0.png",
-   "bytes": 6992,
+   "bytes": 9070,
    "indoor": true,
    "border": {
     "file": "420-0-border.png",
@@ -410,7 +410,7 @@
    "width": 22,
    "height": 18,
    "file": "422-0.png",
-   "bytes": 5691,
+   "bytes": 9601,
    "indoor": true,
    "border": {
     "file": "422-0-border.png",
