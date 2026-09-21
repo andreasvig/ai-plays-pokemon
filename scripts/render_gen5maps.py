@@ -417,6 +417,71 @@ class Gen5Rom:
             self._cache[key] = nsbtx.TextureSet(self.map_textures[i])
         return self._cache[key]
 
+    def chunk_textures(self, zone: int, col: int, row: int, season: int = 0):
+        """`(texture set, borrow note)` for the chunk in world cell (col, row).
+
+        A TEXTURE SET IS PER AREA AND A WORLD CHUNK IS NOT. Black 2's cell
+        (1, 21) belongs to zone 437, Route 19, whose set is area 53 — but the
+        chunk standing there is `map01_21`, the mountain backdrop of Aspertia
+        City on the other side of the boundary, and all eleven of its
+        materials name `C12_*` textures that live in area 52. Bound to Route
+        19's own set they resolved to nothing, and `scene.add_model` drew each
+        one as its diffuse colour, which for all eleven is (205, 205, 205):
+        one flat grey wedge over a fifth of the map.
+
+        So a name the map's own set cannot answer is looked for in the sets of
+        the zones owning the FOUR NEIGHBOURING CELLS, at the same season. Cell
+        (1, 22), immediately south, is Aspertia City, and it has all eleven.
+        That is the whole rule, and it is deliberately not a search of all 409
+        map-texture archives: a global by-name lookup would also paper over
+        `texture_set` picking the wrong area, which is the failure this would
+        otherwise be the only sign of. A neighbour is a bounded, local claim —
+        this chunk is scenery shared with the map next door — and the borrow
+        is REPORTED per chunk rather than applied silently.
+
+        The own set always wins: `TexPool` is first-match-first and it is
+        first in the list, so a borrowed set can add names and never shadow
+        one. Interiors are excluded because they have no world neighbours —
+        their matrices are private, so `zone_at` would be answering about a
+        different grid entirely.
+        """
+        own = self.texture_set(zone, season)
+        if not self.outdoor(zone):
+            return own, None
+        m = self.matrix_for(zone)
+        land = m["land"][row * m["w"] + col]
+        model = self.chunk_model(land) if land < len(self.chunks) else None
+        if model is None:
+            return own, None
+        pairs = model.texture_pairs()
+        # A material with NO texture name is a flat-colour material on purpose
+        # and is not missing anything; only a name we cannot answer counts.
+        missing = {n for n in (pairs.get(mi, (None,))[0] for mi, _pi in model.bind_draw())
+                   if n is not None and n not in own.textures}
+        if not missing:
+            return own, None
+        lenders, lent = [], {}
+        for c, r in ((col, row + 1), (col, row - 1), (col - 1, row), (col + 1, row)):
+            if not missing:
+                break
+            other = self.zone_at(c, r)
+            if other is None or other == zone:
+                continue
+            try:
+                ts = self.texture_set(other, season)
+            except Exception:
+                continue
+            got = sorted(n for n in missing if n in ts.textures)
+            if got:
+                lenders.append(ts)
+                lent[other] = got
+                missing -= set(got)
+        note = {"zone": zone, "cell": [col, row], "model": model.name,
+                "borrowed": lent, "unresolved": sorted(missing)}
+        if not lenders:
+            return own, note
+        return ds3d_field.TexPool(own, *lenders), note
+
     def _u01(self, zone: int) -> int:
         return self.zone_field(zone, 0x02, "<H")
 
@@ -625,9 +690,9 @@ class Field3D:
 
     def scene(self, win: Window) -> tuple[Optional["ds3d_scene.Scene"], dict]:
         rom = self.rom
-        st = {"terrain": 0, "props": 0, "missing": 0, "cells": 0}
+        st = {"terrain": 0, "props": 0, "missing": 0, "cells": 0, "borrowed": []}
         try:
-            mapts = rom.texture_set(win.zone, self.season)
+            rom.texture_set(win.zone, self.season)
         except Exception:
             return None, st
         ps = rom.prop_set(win.zone)
@@ -641,6 +706,12 @@ class Field3D:
             model = rom.chunk_model(land) if land < len(rom.chunks) else None
             if model is None:
                 continue
+            # Per CHUNK, not per map: a world chunk can be scenery shared with
+            # the area next door and name that area's textures. See
+            # `Gen5Rom.chunk_textures`.
+            mapts, borrow = rom.chunk_textures(win.zone, col, row, self.season)
+            if borrow is not None:
+                st["borrowed"].append(borrow)
             base = ds3d_field.chunk_origin(col, row, win.c0, win.r0)
             st["cells"] += 1
             start = len(sc.tris)
@@ -1270,12 +1341,13 @@ def check_artwork(rom: Gen5Rom, *, tile_px: int = 16,
     for z, x, y in samples(rom.game):
         walked[z].append((x, y))
     out = {"bare_walkable": 0, "walkable": 0, "bare_route": 0, "route": 0,
-           "maps": 0, "bare": []}
+           "maps": 0, "bare": [], "borrowed": []}
     for map_id in map_ids(rom.game):
         win = map_window(rom, map_id)
         px = art.pixels(win)
         if px is None:
             continue
+        out["borrowed"].extend(art.stats[win.key].get("borrowed", []))
         out["maps"] += 1
         cov = ds3d_camera.tile_coverage(px, art.frames[win.key],
                                         art.heights[win.key]) >= 128
@@ -1288,6 +1360,64 @@ def check_artwork(rom: Gen5Rom, *, tile_px: int = 16,
                 out["bare_route"] += 1
                 out["bare"].append((map_id, x, y))
     return out
+
+
+def check_textures(rom: Gen5Rom, season: int = 0) -> dict:
+    """Every material of every shipped chunk can answer its own texture name.
+
+    THE CHECK THE GREY WEDGE NEEDED, and it is exact rather than a threshold.
+    `scene.add_model` draws a material whose texture it cannot find as a flat
+    quad of the material's diffuse colour. That is the right thing to do for a
+    material that genuinely has no texture, and it is silent when the material
+    HAS one and we simply failed to load the archive holding it: Black 2's
+    `map01_21` named eleven `C12_*` textures that live in Aspertia City's area,
+    got (205, 205, 205) for all eleven, and put a flat grey wedge over a fifth
+    of Route 19 with every test green.
+
+    Two classes, kept apart:
+
+      * `untextured` — the material names NO texture. A real flat-colour
+        material, which both cartridges do use; counted, not failed.
+      * `unresolved` — the material names one and the bound set cannot answer
+        it. Always a defect: the cartridge shipped that texture somewhere.
+
+    A PIXEL HEURISTIC WAS TRIED FIRST AND DOES NOT WORK. The obvious instrument
+    is the largest 4-connected run of one exact colour, as a share of the map.
+    Measured over all 38 shipped DS artwork PNGs it does not separate the two:
+    the wedge scored 20.02% and Platinum's Sandgem Poke Center floor 19.11%,
+    and SoulSilver's Route 29 has a legitimate single-colour run of 115,042
+    pixels — larger in absolute terms than the defect. Flat artwork and a flat
+    failure look identical downstream, so the question has to be asked where
+    the two still differ, which is here.
+    """
+    named = untextured = 0
+    unresolved: list[dict] = []
+    for zone in map_ids(rom.game):
+        win = map_window(rom, zone)
+        m = rom.matrix_for(zone)
+        for col, row in sorted(win.cells):
+            land = m["land"][row * m["w"] + col]
+            if land >= len(rom.chunks):
+                continue
+            model = rom.chunk_model(land)
+            if model is None:
+                continue
+            try:
+                texset, _note = rom.chunk_textures(zone, col, row, season)
+            except Exception:
+                continue
+            pairs = model.texture_pairs()
+            for mi, _pi in model.bind_draw():
+                tname = pairs.get(mi, (None, None))[0]
+                if tname is None:
+                    untextured += 1
+                elif tname in texset.textures:
+                    named += 1
+                else:
+                    unresolved.append({"zone": zone, "cell": [col, row],
+                                       "model": model.name, "texture": tname,
+                                       "diffuse": tuple(model.material_diffuse(mi))})
+    return {"named": named, "untextured": untextured, "unresolved": unresolved}
 
 
 def check_walkable(rom: Gen5Rom) -> dict:
@@ -1364,6 +1494,12 @@ def run_checks(games: list[str], camera: str = DEFAULT_CAMERA) -> int:
             print(f"      unresolved prop: map {u['map']} cell {u['cell']} "
                   f"id {u['prop_id']} — this map's prop area is {u['area']}; "
                   f"{where}")
+        for b in art["borrowed"]:
+            lent = ", ".join(f"{len(v)} from zone {k}" for k, v in b["borrowed"].items())
+            print(f"      chunk textures borrowed: zone {b['zone']} cell {b['cell']} "
+                  f"{b['model']!r} names {len(b['borrowed']) and sum(len(v) for v in b['borrowed'].values()) + len(b['unresolved'])} "
+                  f"textures its own area lacks — {lent or 'NONE FOUND'}"
+                  + (f"; STILL UNRESOLVED {b['unresolved']}" if b["unresolved"] else ""))
         print(f"    route tiles on real geometry: "
               f"{art['route'] - art['bare_route']}/{art['route']}   "
               f"(walkable tiles bare: {art['bare_walkable']}/{art['walkable']}, "

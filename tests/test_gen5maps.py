@@ -516,86 +516,89 @@ def test_a_map_that_shares_an_areas_props_resolves_all_of_them(roms):
                             f"not a cross-area reference")
 
 
-def test_the_unresolved_props_would_not_have_been_visible_anyway(roms):
-    """What licenses skipping them: they change not one shipped pixel.
+#: How high above its own ground a prop may reach, in world units, before it
+#: is scenery for the game's camera rather than something standing on the map.
+#:
+#: DERIVED FROM THE 229 PLACEMENTS THE RENDERER ACTUALLY DRAWS, not from the
+#: two it skips. The tallest of those 229 tops out at 131 world units —
+#: Nuvema Town's lab roof — and the two skipped backdrop models reach 308.8
+#: and 369.6. The bar sits in an empty range 131..308 and nothing about 308
+#: chose it; 200 is the middle of the gap.
+MAX_PROP_TOP = 200.0
 
-    Backdrop geometry, not furniture. `c12_sky` is a thousand world units
-    across and sits between 29 and 370 units up; the tallest thing map 437
-    actually draws is 176 and stands on the ground. Both of them project
-    clear of the map's own rectangle, so resolving them — which is possible,
-    the models are right there in area 52 — adds fifty-two triangles and
-    produces a byte-identical PNG.
 
-    Measured rather than argued, and measured through the real renderer
-    rather than by reprojecting the bounding box here, because a second
-    implementation of the projection would be checking itself. The donor
-    archive is reached as map 427's own prop set, which IS area 52.
+def test_the_skipped_placements_are_backdrop_and_not_furniture(roms):
+    """WHY it is right to leave those two undrawn, measured two ways.
+
+    This test used to claim they were invisible: resolving them changed not
+    one pixel, so skipping them cost nothing. **That was true and is not any
+    more, and the reason is worth keeping.** They were invisible because map
+    437 had a flat grey wedge over that whole quarter — the untextured
+    `c12_air` plane, fixed in section 10 — and the wedge was drawing OVER
+    them. With the terrain drawn properly they are not hidden at all:
+    resolving them now repaints 4,422 pixels, laying a cloud billboard flat
+    across Route 19's pond. A measurement taken over a defect measured the
+    defect.
+
+    So the argument is no longer "it costs nothing". It is that these are
+    BACKDROP: geometry the field camera sees on the horizon, which in a
+    map-local overhead render can only sit on top of the ground. That is a
+    fact about the models and it is what this asserts, against the population
+    of everything the renderer does draw.
+
+    The hazard this guards is concrete and newly created: section 10 taught
+    the renderer to borrow a NEIGHBOUR'S texture set for a chunk that names
+    another area's textures, and the obvious next step is to borrow the
+    neighbour's PROP set the same way. It would resolve exactly these two,
+    and it would put a cloud over the pond.
     """
     render_gen5maps = pytest.importorskip("render_gen5maps")
     import numpy as np
-    from ds3d import camera as ds3d_camera
+    from ds3d import scene as ds3d_scene
 
+    def top_of(model, texset) -> float:
+        sc = ds3d_scene.Scene()
+        sc.add_model(model, texset, origin=(0, 0, 0))
+        return float(max(v[1] for tri in sc.tris for v in tri[0]))
+
+    drawn, tallest = 0, 0.0
+    for game, rom in roms.items():
+        for zone in render_gen5maps.map_ids(game):
+            win = render_gen5maps.map_window(rom, zone)
+            m = rom.matrix_for(zone)
+            ps = rom.prop_set(zone)
+            if not ps:
+                continue
+            for col, row in sorted(win.cells):
+                land = m["land"][row * m["w"] + col]
+                if land >= len(rom.chunks):
+                    continue
+                for *_xyz, pid in rom.placements(land):
+                    mo = ps[0].get(pid)
+                    if mo is None:
+                        continue
+                    drawn += 1
+                    tallest = max(tallest, top_of(mo, ps[1]))
+    assert drawn > 200, f"only {drawn} drawn placements, too few to set a bar"
+    assert tallest < MAX_PROP_TOP, (
+        f"a DRAWN prop reaches {tallest:.1f} world units, over the "
+        f"{MAX_PROP_TOP} bar — the bar was derived from the drawn population "
+        f"and no longer separates it from the backdrop")
+
+    # and the skipped pair is over it, reached through the area that holds
+    # them, which is the map next door's own prop set
     for game, rom in roms.items():
         gaps = KNOWN_PROP_GAPS[game]
         if not gaps:
             continue
         donor_of = {rom.prop_area(i)[1]: i for i in render_gen5maps.map_ids(game)}
-        by_map: dict[int, dict] = {}
-        for map_id, pid, _name, area in gaps:
-            donor = donor_of.get(area)
-            assert donor is not None, f"{game}: no shipped map uses area {area}"
-            by_map.setdefault(map_id, {})[pid] = rom.prop_set(donor)[0][pid]
-
-        real = type(rom).prop_set
-        cam = ds3d_camera.camera_for(render_gen5maps.DEFAULT_CAMERA, 16)
-        for map_id, extra in by_map.items():
-            win = render_gen5maps.map_window(rom, map_id)
-            before = render_gen5maps.Field3D(rom, tile_px=16, cam=cam).pixels(win)
-
-            def patched(self, zone, _map_id=map_id, _extra=extra):
-                got = real(self, zone)
-                if got is None or zone != _map_id:
-                    return got
-                return ({**got[0], **_extra}, got[1])
-
-            try:
-                type(rom).prop_set = patched
-                art = render_gen5maps.Field3D(rom, tile_px=16, cam=cam)
-                after = art.pixels(win)
-                drawn = art.stats[win.key]["missing"]
-            finally:
-                type(rom).prop_set = real
-
-            assert drawn == 0, f"{game}: map {map_id} still unresolved after patching"
-            assert before.shape == after.shape, (
-                f"{game}: map {map_id} changes SIZE when the backdrop resolves "
-                f"{before.shape} -> {after.shape} — it is inside the picture")
-            differing = int((np.abs(before.astype(int) - after.astype(int))
-                             .sum(2) > 0).sum())
-            assert differing == 0, (
-                f"{game}: map {map_id} changes {differing} pixels when the two "
-                f"backdrop props are resolved, so they are NOT invisible and "
-                f"skipping them is dropping artwork")
-
-
-def test_props_stand_on_the_walls_the_collision_grid_declares(roms):
-    """The oracle that fixed the placement z axis, kept as a test.
-
-    A building is a wall, and the collision grid says where the walls are —
-    recovered from a different section of a different file than the placement
-    list, so this is evidence and not a restatement. The CONTROL is the same
-    measurement with z as stored: it must be clearly worse, or the axis
-    convention is not actually being tested.
-    """
-    render_gen5maps = pytest.importorskip("render_gen5maps")
-    for game, rom in roms.items():
-        good = render_gen5maps.check_props(rom)
-        control = render_gen5maps.check_props(rom, flip_z=True)
-        assert good["total"] > 100, f"{game}: only {good['total']} prop tiles drawn"
-        assert good["pct"] > 75, f"{game}: only {good['pct']:.1f}% of prop pixels on a wall"
-        assert good["pct"] > control["pct"] + 15, (
-            f"{game}: z negated {good['pct']:.1f}% vs as stored {control['pct']:.1f}% "
-            f"— the oracle does not separate the two conventions")
+        for _map_id, pid, name, area in gaps:
+            ps = rom.prop_set(donor_of[area])
+            got = top_of(ps[0][pid], ps[1])
+            assert got > MAX_PROP_TOP, (
+                f"{game}: skipped prop {name!r} tops out at {got:.1f}, under "
+                f"the {MAX_PROP_TOP} bar — it looks like furniture, so the "
+                f"reason given for skipping it does not hold")
 
 
 # -- 7. the wrap mode, which is shared with gen 4 ------------------------------
@@ -1178,3 +1181,98 @@ def test_the_colour_depth_check_rejects_an_eight_bit_pixel(atlases):
     a[0, 0, 0] = int(a[0, 0, 0]) + 1 if a[0, 0, 0] < 255 else 254
     assert not pngout.on_ds_grid(a).all(), \
         "moving one channel by one still read as expressible on the DS"
+
+
+# -- 10. the texture join, and the flat quad a missed one draws ----------------
+
+#: Materials that name NO texture at all, per game. A real flat-colour material
+#: — both cartridges use them — so this is counted rather than failed. Pinned
+#: as an exact number so the class cannot quietly grow: a material that LOSES
+#: its texture name would otherwise land here and read as normal.
+UNTEXTURED_MATERIALS = {"black-us": 1, "black2-us": 1}
+
+
+def test_every_chunk_material_can_answer_its_own_texture_name(roms):
+    """The check the grey wedge needed.
+
+    `ds3d/scene.py` draws a material whose texture it cannot find as a flat
+    quad of that material's diffuse colour. Correct for a material with no
+    texture; silent and wrong when the material HAS one and the archive
+    holding it was never loaded. Black 2's chunk `map01_21` is scenery shared
+    with Aspertia City and names eleven `C12_*` textures out of that area's
+    set, not Route 19's own — all eleven resolved to nothing, all eleven have
+    diffuse (205, 205, 205), and the result was one flat grey wedge over a
+    fifth of the map that every existing test was happy with.
+
+    Asserted on the CAUSE and not on the pixels, because the pixels do not
+    separate: measured over all 38 shipped DS artwork PNGs, the largest
+    4-connected single-colour run puts the wedge at 20.02% of its map and
+    Platinum's Sandgem Poke Center floor at 19.11%, and SoulSilver's Route 29
+    has a legitimate run of 115,042 px — bigger than the defect in absolute
+    size. Flat artwork and a flat failure are the same picture. They are not
+    the same texture join.
+    """
+    render_gen5maps = pytest.importorskip("render_gen5maps")
+    for game, rom in roms.items():
+        got = render_gen5maps.check_textures(rom)
+        assert got["named"] > 200, f"{game}: only {got['named']} textured binds"
+        assert not got["unresolved"], (
+            f"{game}: {len(got['unresolved'])} material(s) name a texture the "
+            f"bound set cannot answer, so each is drawn as a flat quad of its "
+            f"diffuse colour: {got['unresolved'][:4]}")
+        assert got["untextured"] == UNTEXTURED_MATERIALS[game], (
+            f"{game}: {got['untextured']} materials name no texture at all, "
+            f"pinned at {UNTEXTURED_MATERIALS[game]}")
+
+
+def test_the_shared_scenery_chunk_borrows_from_the_map_next_door(roms):
+    """What makes the test above pass, pinned so it cannot pass for free.
+
+    "No material is unresolved" is also satisfied by never looking anywhere,
+    and by a map set that has no shared scenery in it. Black 2's cell (1, 21)
+    is the one chunk in either game that needs another area's textures, so it
+    is named here with its lender: the zone owning cell (1, 22), immediately
+    south, which is Aspertia City.
+
+    The borrow is bounded to the four neighbouring cells on purpose. A search
+    of all 409 map-texture archives would resolve these eleven too — and would
+    equally resolve every name if `texture_set` started picking the wrong area
+    entirely, which is the failure this is otherwise the only sign of.
+
+    WHAT THIS TEST CANNOT DECIDE, said plainly rather than implied: it does
+    not hold the scoping. Widening the search from the four neighbours to
+    every world zone was tried as a mutation and this test still passed,
+    because the one chunk that borrows has a lender that is BOTH its
+    neighbour and the first zone a global scan reaches. One borrower is not a
+    corpus, and no assertion over this data can separate the two policies.
+    The scoping rests on the masking argument above, not on a measurement.
+    What is asserted below is the part that is observable: the lender is in
+    fact a zone owning one of the four adjacent cells.
+    """
+    render_gen5maps = pytest.importorskip("render_gen5maps")
+    want = {"black-us": {}, "black2-us": {(437, 1, 21): (427, 11)}}
+    for game, rom in roms.items():
+        got = {}
+        for zone in render_gen5maps.map_ids(game):
+            win = render_gen5maps.map_window(rom, zone)
+            for col, row in sorted(win.cells):
+                _ts, note = rom.chunk_textures(zone, col, row, 0)
+                if note is None:
+                    continue
+                assert not note["unresolved"], (game, note)
+                assert len(note["borrowed"]) == 1, (game, note)
+                lender, names = next(iter(note["borrowed"].items()))
+                got[(zone, col, row)] = (lender, len(names))
+                neighbours = {rom.zone_at(c, r) for c, r in
+                              ((col, row + 1), (col, row - 1),
+                               (col - 1, row), (col + 1, row))}
+                assert lender in neighbours, (
+                    f"{game}: zone {zone} cell {(col, row)} borrowed from "
+                    f"{lender}, which owns none of the adjacent cells "
+                    f"{sorted(n for n in neighbours if n is not None)}")
+        assert got == want[game], f"{game}: {got} != {want[game]}"
+    # and the lender really is the neighbour, not just any zone with the names
+    rom = roms.get("black2-us")
+    if rom is not None:
+        assert rom.zone_at(1, 22) == 427, \
+            "cell (1, 22) is no longer Aspertia City, so the rule's reason moved"

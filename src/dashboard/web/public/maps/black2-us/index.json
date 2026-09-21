@@ -35,7 +35,7 @@
   "note": "the cartridge's own textured 3D field artwork \u2014 terrain and props \u2014 under the field camera's own pitch, orthographic at one pixel per world unit; PNG pixel (0,0) is tile png_origin, so a source rect subtracts it",
   "doors": "observed transitions: Gen 5 event data is not decoded, so a door is a warp our runs walked between two DIFFERENT maps with at least one of them an interior \u2014 a same-map warp is a staircase and two outdoor maps share matrix_000, so their seam is an `open` span. These are the doors that were used, not the doors that exist. A direction nobody walked is read off the tile the player landed on coming the other way and marked `via: landed`, which is what makes the house every run STARTS in reachable at all."
  },
- "bytes": 1497022,
+ "bytes": 1558545,
  "maps": {
   "427:0": {
    "name": "Aspertia City",
@@ -819,7 +819,7 @@
    "width": 64,
    "height": 32,
    "file": "437-0.png",
-   "bytes": 254262,
+   "bytes": 315785,
    "indoor": false,
    "border": {
     "file": "437-0-border.png",

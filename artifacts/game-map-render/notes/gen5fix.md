@@ -76,6 +76,14 @@ Three measurements decided what to do:
 * **They are invisible.** Resolving them through the real renderer adds 52
   triangles, moves the pad not at all, and produces a **byte-identical PNG**.
   They project clear of the map's own rectangle.
+  > **RETRACTED 2026-09-21, see "The grey wedge" below.** This was true and it
+  > was true FOR THE WRONG REASON: map 437 had a flat grey untextured wedge
+  > over that whole quarter, and the wedge was drawing over the props. With
+  > the texture join fixed they are not hidden — resolving them repaints 4,422
+  > pixels and lays a cloud billboard across Route 19's pond. The conclusion
+  > (leave them undrawn) is unchanged; the argument for it is now the second
+  > bullet above, which is a fact about the models rather than a measurement
+  > taken over a defect.
 
 So the drawing path is unchanged and a **global fallback was deliberately NOT
 added**: because ids are global, a renderer that searched every area would
@@ -418,3 +426,147 @@ All nine Black 2 maps named: Aspertia City (427, 428, 429, 435), Route 19
 (437), Aspertia Gate (438), Floccesy Town (439, 443), Route 20 (446). 438
 being a GATE is independent corroboration of the door derivation, which had
 already worked out that 438 is the building joining 427 and 437.
+
+## The grey wedge on Route 19 — a texture join, not a polygon
+
+`black2-us 437:0` shipped with a flat `[206,206,206]` wedge over its top-left
+quarter: 114,458 px, 19.7% of the map, one hard diagonal edge, no texture.
+
+### What it is
+
+Eleven materials of ONE terrain chunk, drawn as flat quads because their
+textures could not be found.
+
+`scene.add_model` resolves a material's texture BY NAME against the texture
+set it is handed, and when the name is absent it falls back to a 1x1 quad of
+the material's own diffuse colour (`ds3d/scene.py:65`). That is right for a
+material with no texture and silent when the material has one and we bound
+the wrong archive. Chunk `map01_21` at world cell (1, 21) is Aspertia City's
+mountain backdrop sitting on Route 19's side of the boundary, and it names
+
+    C12_yama001..004   C12_isi01..03   C12_ki01  C12_ki02
+    C12_mori_hasi      c12_air
+
+— mountain, stone, tree, bridge, air. All eleven live in map-texture archives
+**210-213**, the four seasonal variants of area 52, which is map **427**'s set.
+Route 19 is area 53 (214-217) and has none of them. All eleven have diffuse
+`(205, 205, 205)`, which quantises to the 206 on disk.
+
+The biggest single piece of it is `c12_air`: a 16x16 texture whose alpha runs
+0 to 8, i.e. **very nearly transparent**. Bound correctly it draws nothing.
+Bound to the diffuse fallback it became an opaque grey sheet.
+
+**Not the two unresolved props, and this was checked rather than assumed.**
+The eleven names come off the chunk's TERRAIN model, bound in the terrain
+call; the props are skipped before any geometry is added and contribute zero
+triangles either way. Fixing only the terrain textures took the flat grey from
+114,479 px to 18. They do share a root cause FAMILY — cell (1, 21) is c12
+scenery, so both its terrain textures and its prop ids belong to area 52 — and
+that is the interesting part, not a coincidence.
+
+### The fix
+
+`Gen5Rom.chunk_textures(zone, col, row, season)` resolves per CHUNK instead of
+per map: the map's own set first, then, only for a name it cannot answer, the
+sets of the zones owning the four neighbouring cells. Cell (1, 22) immediately
+south is Aspertia City and has all eleven. It reuses `ds3d/field.py`'s
+`TexPool`, which gen 4 already uses for the same kind of join, and the own set
+is first so a borrowed set can add names and never shadow one. Each borrow is
+REPORTED per chunk by `--check`, not applied silently:
+
+    chunk textures borrowed: zone 437 cell [1, 21] 'map01_21' names 11
+      textures its own area lacks — 11 from zone 427
+
+Bounded to neighbours rather than a search of all 409 archives, for the same
+reason the prop lookup is not global: a by-name search everywhere would also
+resolve everything if `texture_set` started picking the wrong area, which is
+the failure this would otherwise be the only sign of.
+
+### A number that got worse, honestly
+
+`walkable tiles bare` went **2 -> 7**. All five new ones are in cell (1, 21),
+and they were never covered by artwork — they were covered by the opaque grey
+sheet. The defect had been flattering the coverage metric. `bare_route`, which
+is the gate, is still 0.
+
+### The check: the obvious pixel instrument does NOT work
+
+Modelled on the see-through run check, the natural test is the largest
+4-connected run of ONE exact colour as a share of the map. **Measured over all
+38 shipped DS artwork PNGs, it does not separate the defect from paving:**
+
+    black2 437 Route 19   113,803 px  20.02%   <- the defect
+    platinum 422 Sandgem Poke Center  10,556 px  19.11%   a floor
+    soulsilver 61 New Bark Town        8,416 px  16.76%
+    soulsilver 33 Route 29           115,042 px  16.34%   <- BIGGER than the defect
+    black-us 396 Nuvema Town           7,430 px  15.37%
+    black2 429 Aspertia City           5,738 px  14.83%
+
+Neither share nor absolute size has a gap to put a bar in. Flat artwork and a
+flat failure are the same picture downstream; they differ only where the
+texture join happens. So the check asks there instead, and needs no threshold:
+
+`check_textures` walks every material of every shipped chunk and separates
+**`unresolved`** (names a texture the bound set cannot answer — always a
+defect, must be zero) from **`untextured`** (names none at all — a real
+flat-colour material, counted and pinned at 1 per game). Before the fix
+black2 had 11 unresolved; now both games have 0.
+
+### What the tests do and do not hold
+
+`test_the_shared_scenery_chunk_borrows_from_the_map_next_door` pins the one
+borrow and asserts the lender owns an adjacent cell. It does **not** hold the
+neighbour scoping: widening the search to every world zone was run as a
+mutation and the test still passed, because the single borrower's lender is
+also the first zone a global scan reaches. One borrower is not a corpus. The
+scoping rests on the masking argument, not on a measurement, and that is
+written into the test rather than left implied.
+
+### Mutations
+
+| mutation | caught by |
+|---|---|
+| no borrowing at all (the wedge restored) | `test_every_chunk_material_can_answer_its_own_texture_name` (11 unresolved) |
+| " | `test_the_shared_scenery_chunk_borrows_from_the_map_next_door` |
+| the untextured-material count drifts | `test_every_chunk_material_can_answer_its_own_texture_name` |
+| backdrop bar raised above the skipped props | `test_the_skipped_placements_are_backdrop_and_not_furniture` |
+| backdrop bar dropped below a drawn prop | " |
+| **borrow from any world zone, not just a neighbour** | **NOTHING — see above** |
+
+### A retraction this forced
+
+`test_the_unresolved_props_would_not_have_been_visible_anyway` asserted that
+resolving `c12_cloud01` and `c12_sky` changed not one pixel. True when
+measured, and true because the grey wedge was drawing over them. With the
+terrain fixed they repaint **4,422 px**, laying a cloud billboard flat across
+Route 19's pond — with the map's own prop textures a grey wash, with area 52's
+a striped band. Both are worse than not drawing them.
+
+The conclusion is unchanged and the reason is replaced. The test is now
+`test_the_skipped_placements_are_backdrop_and_not_furniture`, which asserts
+what the models ARE rather than what they happened to cost: of the 229
+placements the renderer draws, the tallest tops out at **131** world units;
+the two skipped reach **308.8** and **369.6**. The bar is 200, in an empty
+range, derived from the drawn population.
+
+This matters beyond the two props: the fix above taught the renderer to borrow
+a neighbour's TEXTURE set, and the obvious next step is to borrow the
+neighbour's PROP set the same way. It would resolve exactly these two, and put
+a cloud over the pond.
+
+### After
+
+    black2-us: 9 maps, 139.5 bytes of artwork per map tile (alarm at 200)
+               2297.6 KB -> 1521.3 KB (33.8% smaller), error max 4 mean 1.01
+    black-us : 10 maps, 87.7 bytes per tile, unchanged by this
+
+Black 2 is up from 134.1 because real texture detail compresses worse than a
+flat grey wedge — the defect was making the file smaller too.
+
+### Possibly a second instance, not mine
+
+`soulsilver-us 33:0 Route 29` has a single-colour 4-connected run of
+**115,042 px (16.3%)** in `(115, 222, 173)`. That is larger in absolute terms
+than the Route 19 wedge was. It may well be legitimate flat grass, but it is
+the one other reading in the population that looks like this one did, and
+`check_textures` is gen-5 only — gen 4 has no equivalent. Worth an eye.
