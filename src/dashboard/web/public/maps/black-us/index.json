@@ -35,14 +35,14 @@
   "note": "the cartridge's own textured 3D field artwork \u2014 terrain and props \u2014 under the field camera's own pitch, orthographic at one pixel per world unit; PNG pixel (0,0) is tile png_origin, so a source rect subtracts it",
   "doors": "observed transitions: Gen 5 event data is not decoded, so a door is a warp our runs walked between two DIFFERENT maps with at least one of them an interior \u2014 a same-map warp is a staircase and two outdoor maps share matrix_000, so their seam is an `open` span. These are the doors that were used, not the doors that exist. A direction nobody walked is read off the tile the player landed on coming the other way and marked `via: landed`, which is what makes the house every run STARTS in reachable at all."
  },
- "bytes": 1150666,
+ "bytes": 1212271,
  "maps": {
   "317:0": {
    "name": "Route 1",
    "width": 64,
    "height": 96,
    "file": "317-0.png",
-   "bytes": 519227,
+   "bytes": 547811,
    "indoor": false,
    "border": {
     "file": "317-0-border.png",
@@ -1032,7 +1032,7 @@
    "width": 64,
    "height": 64,
    "file": "319-0.png",
-   "bytes": 302004,
+   "bytes": 323997,
    "indoor": false,
    "border": {
     "file": "319-0-border.png",
@@ -1550,7 +1550,7 @@
    "width": 17,
    "height": 10,
    "file": "320-0.png",
-   "bytes": 5079,
+   "bytes": 5104,
    "indoor": true,
    "border": {
     "file": "320-0-border.png",
@@ -1656,7 +1656,7 @@
    "width": 32,
    "height": 32,
    "file": "389-0.png",
-   "bytes": 149928,
+   "bytes": 156970,
    "indoor": false,
    "border": {
     "file": "389-0-border.png",
@@ -1917,7 +1917,7 @@
    "width": 14,
    "height": 11,
    "file": "390-0.png",
-   "bytes": 10895,
+   "bytes": 11006,
    "indoor": true,
    "border": {
     "file": "390-0-border.png",
@@ -2004,7 +2004,7 @@
    "width": 12,
    "height": 9,
    "file": "391-0.png",
-   "bytes": 9344,
+   "bytes": 9340,
    "indoor": true,
    "border": {
     "file": "391-0-border.png",
@@ -2075,7 +2075,7 @@
    "width": 14,
    "height": 11,
    "file": "392-0.png",
-   "bytes": 10885,
+   "bytes": 10963,
    "indoor": true,
    "border": {
     "file": "392-0-border.png",
@@ -2133,7 +2133,7 @@
    "width": 17,
    "height": 13,
    "file": "396-0.png",
-   "bytes": 13713,
+   "bytes": 13862,
    "indoor": true,
    "border": {
     "file": "396-0-border.png",
@@ -2215,7 +2215,7 @@
    "width": 32,
    "height": 32,
    "file": "397-0.png",
-   "bytes": 99217,
+   "bytes": 103010,
    "indoor": false,
    "border": {
     "file": "397-0-border.png",
@@ -2634,7 +2634,7 @@
    "width": 15,
    "height": 21,
    "file": "398-0.png",
-   "bytes": 29614,
+   "bytes": 29448,
    "indoor": true,
    "border": {
     "file": "398-0-border.png",

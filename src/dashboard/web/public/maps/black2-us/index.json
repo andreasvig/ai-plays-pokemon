@@ -35,14 +35,14 @@
   "note": "the cartridge's own textured 3D field artwork \u2014 terrain and props \u2014 under the field camera's own pitch, orthographic at one pixel per world unit; PNG pixel (0,0) is tile png_origin, so a source rect subtracts it",
   "doors": "observed transitions: Gen 5 event data is not decoded, so a door is a warp our runs walked between two DIFFERENT maps with at least one of them an interior \u2014 a same-map warp is a staircase and two outdoor maps share matrix_000, so their seam is an `open` span. These are the doors that were used, not the doors that exist. A direction nobody walked is read off the tile the player landed on coming the other way and marked `via: landed`, which is what makes the house every run STARTS in reachable at all."
  },
- "bytes": 1558545,
+ "bytes": 1589420,
  "maps": {
   "427:0": {
    "name": "Aspertia City",
    "width": 32,
    "height": 64,
    "file": "427-0.png",
-   "bytes": 249228,
+   "bytes": 255374,
    "indoor": false,
    "border": {
     "file": "427-0-border.png",
@@ -465,7 +465,7 @@
    "width": 18,
    "height": 12,
    "file": "428-0.png",
-   "bytes": 20465,
+   "bytes": 20750,
    "indoor": true,
    "border": {
     "file": "428-0-border.png",
@@ -517,7 +517,7 @@
    "width": 13,
    "height": 13,
    "file": "429-0.png",
-   "bytes": 11010,
+   "bytes": 11187,
    "indoor": true,
    "border": {
     "file": "429-0-border.png",
@@ -567,7 +567,7 @@
    "width": 15,
    "height": 21,
    "file": "435-0.png",
-   "bytes": 29604,
+   "bytes": 29455,
    "indoor": true,
    "border": {
     "file": "435-0-border.png",
@@ -819,7 +819,7 @@
    "width": 64,
    "height": 32,
    "file": "437-0.png",
-   "bytes": 315785,
+   "bytes": 318611,
    "indoor": false,
    "border": {
     "file": "437-0-border.png",
@@ -1610,7 +1610,7 @@
    "width": 11,
    "height": 16,
    "file": "438-0.png",
-   "bytes": 5844,
+   "bytes": 5865,
    "indoor": true,
    "border": {
     "file": "438-0-border.png",
@@ -1714,7 +1714,7 @@
    "width": 32,
    "height": 64,
    "file": "439-0.png",
-   "bytes": 305193,
+   "bytes": 309097,
    "indoor": false,
    "border": {
     "file": "439-0-border.png",
@@ -2203,7 +2203,7 @@
    "width": 15,
    "height": 21,
    "file": "443-0.png",
-   "bytes": 29604,
+   "bytes": 29455,
    "indoor": true,
    "border": {
     "file": "443-0-border.png",
@@ -2455,7 +2455,7 @@
    "width": 64,
    "height": 64,
    "file": "446-0.png",
-   "bytes": 591128,
+   "bytes": 608942,
    "indoor": false,
    "border": {
     "file": "446-0-border.png",

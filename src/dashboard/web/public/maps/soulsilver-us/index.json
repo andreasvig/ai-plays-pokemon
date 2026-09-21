@@ -34,7 +34,7 @@
   "source": "artifacts/game-map-render/observed/soulsilver-us-observed.json + every map id our runs' samples name",
   "note": "the cartridge's own textured 3D field artwork, under the field camera's own pitch, orthographic at one pixel per world unit; PNG pixel (0,0) is tile png_origin, so a source rect subtracts it"
  },
- "bytes": 287862,
+ "bytes": 292526,
  "maps": {
   "33:0": {
    "name": "Route 29",
@@ -1193,7 +1193,7 @@
    "width": 32,
    "height": 32,
    "file": "60-0.png",
-   "bytes": 80370,
+   "bytes": 85034,
    "indoor": false,
    "border": {
     "file": "60-0-border.png",

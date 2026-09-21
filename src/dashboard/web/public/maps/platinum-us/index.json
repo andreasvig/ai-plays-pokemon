@@ -34,14 +34,14 @@
   "source": "artifacts/game-map-render/observed/platinum-us-observed.json + every map id our runs' samples name",
   "note": "the cartridge's own textured 3D field artwork, under the field camera's own pitch, orthographic at one pixel per world unit; PNG pixel (0,0) is tile png_origin, so a source rect subtracts it"
  },
- "bytes": 880191,
+ "bytes": 890204,
  "maps": {
   "311:0": {
    "name": "LakeVerityLowWater",
    "width": 96,
    "height": 64,
    "file": "311-0.png",
-   "bytes": 283187,
+   "bytes": 291686,
    "indoor": false,
    "border": {
     "file": "311-0-border.png",
@@ -651,7 +651,7 @@
    "width": 64,
    "height": 64,
    "file": "334-0.png",
-   "bytes": 95383,
+   "bytes": 96109,
    "indoor": false,
    "border": {
     "file": "334-0-border.png",
@@ -730,7 +730,7 @@
    "width": 64,
    "height": 32,
    "file": "342-0.png",
-   "bytes": 96659,
+   "bytes": 96356,
    "indoor": false,
    "border": {
     "file": "342-0-border.png",
@@ -825,7 +825,7 @@
    "width": 32,
    "height": 32,
    "file": "343-0.png",
-   "bytes": 104073,
+   "bytes": 104257,
    "indoor": false,
    "border": {
     "file": "343-0-border.png",
@@ -1081,7 +1081,7 @@
    "width": 32,
    "height": 32,
    "file": "411-0.png",
-   "bytes": 88060,
+   "bytes": 89098,
    "indoor": false,
    "border": {
     "file": "411-0-border.png",
@@ -1620,7 +1620,7 @@
    "width": 22,
    "height": 18,
    "file": "422-0.png",
-   "bytes": 12245,
+   "bytes": 12114,
    "indoor": true,
    "border": {
     "file": "422-0-border.png",

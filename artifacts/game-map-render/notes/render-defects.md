@@ -495,3 +495,126 @@ with `[1,1,1,…] == [64]`.
 the instrument directly and with no cartridge: 64 tiles as one 8x8 block read
 as `[64]`, the same 64 tiles scattered read as 64 ones, and a diagonal
 checkerboard stays specks so an anti-aliased edge can never be called a hole.
+
+---
+
+# 2026-09-21, night: Lake Verity had water all along, and uint8 ate it
+
+**I was wrong, and the correction is mine, not yours.** My last note said map
+311 has "no water material at all" and that the cartridge puts nothing under
+Verity Lakefront's puddle. The first half was measured over the **terrain**
+materials only. Lake Verity's water is a **prop**: `l_lake`, global model id
+311, one placement at the centre of each of the map's four content cells. It
+resolves its texture, it has 32 triangles, `props_drawn` reported 1/1 on every
+cell, and it drew **nothing**.
+
+## The cause: a multiply by 255 done in uint8
+
+`ds3d/nsbtx.py`, the `a3i5` / `a5i3` branch. Both formats carry their alpha in
+the texel and both scale it to 0-255 by `i * 255 // (2**bits - 1)`. `raw` is
+`uint8`, so the multiply **wraps**:
+
+| | index | `(i*255) & 0xFF` | `// n` | true |
+|---|---|---|---|---|
+| a5i3 | 23 | 233 | **7** | 189 |
+| a5i3 | 31 | 225 | **7** | **255** |
+| a3i5 | 6 | 250 | **35** | 218 |
+| a3i5 | 1 | 255 | 36 | 36 |
+
+Every a5i3 texel therefore arrived at 0, 7 or 8, and every a3i5 texel at 0, 35
+or 36 — whatever the cartridge said. `l_lake` is a5i3 with alpha indices 23
+and 27, so its whole texture came out at **alpha 7**, and
+`raster.draw_tri`'s `keep = rgba[:, 3] > 8` threw away every pixel of it. A
+fully OPAQUE a5i3 texel (index 31) met the same fate.
+
+Fixed by widening to `uint16` before the multiply. Three lines.
+
+**And the 36 this page has been calling "the pond's own alpha" since the
+Twinleaf note was this wrap**, not the artwork: Verity Lakefront's `puddle` is
+a3i5 at a true **109**, and its `puddlep` rim reaches **255**.
+
+## The oracle was the run's own frames
+
+`verify_map_alignment.py` refuses the DS games by name and is right to — the
+emulator's perspective camera and our orthographic one are not the same
+projection, so a per-pixel score between them measures nothing. What IS
+projection-independent is a **colour census over the same tile window**: how
+much of what the player could see is blue.
+
+Run `2026-09-21_10-52-05_..._continued_from_turn_100` stood on map 311 for
+turns 119-125, seven frames, the player never moving:
+
+| | frame | ours before | ours after |
+|---|---|---|---|
+| turns 121-125, top of the window | 9.96-10.50% blue | **0.00%** | 3.60% |
+
+Whole-map, and the two maps that said this was one missing material rather
+than a renderer that cannot draw water:
+
+| map | blue before | blue after |
+|---|---|---|
+| platinum `311:0` LakeVerityLowWater | **0** | **195,286** (14.2%) |
+| platinum `391:0` Route219 (sea) | 107,217 | 107,217 |
+| platinum `411:0` Twinleaf (pond) | 11,898 | 10,844 |
+| black `317:0` | 158,589 | **170,079** |
+
+Across all 38 DS PNGs the total opaque pixel count moves by 11,122 of
+9,941,842 — 0.11%. This does not repaint maps; it restores what was being
+discarded or drawn too faint. The residual gap on 311 (3.60% vs ~10%) is
+projection: the DS's tilted camera sees further into the distance at the top
+of the screen than a 16-tile orthographic window does, and the frame's blue
+includes the water's white ripple highlights and the HUD.
+
+## And no, the basin is not dry
+
+`LAKE_VERITY_LOW_WATER` is a state name, not a description of the artwork the
+cartridge ships for it. The map's own prop list carries the lake, and the
+render now shows the water, the ripple bands, the cliff ring, the shore, the
+tall grass and the snow patches Bulbapedia describes. The waterfall at the top
+left of the turn-122 frame is the same water body seen edge-on by a camera
+that can see edges.
+
+## What this does to the 8x8 puddle, and to the three options
+
+The options are moot. Verity Lakefront's square is no longer a black hole; it
+is pale water. Its see-through run went **64 -> 36 tiles straight down and 56
+-> 30 under the shipping camera**, because the `puddlep` rim is opaque at its
+true alpha and only the middle of the sheet is still see-through.
+`SEE_THROUGH_RUNS` is retuned to 36 and the run rule is unchanged.
+
+## The gen-5 lead was the right question and the answer is no
+
+Checked the way the gen-5 agent's split asks for it, over **every** material
+bind of every terrain model and every prop on both gen-4 cartridges:
+
+* **unresolved** (names a texture the bound set cannot answer): **0 of 692.**
+* untextured (names no texture at all — a real flat-colour material): 87,
+  across 64 models, all interiors.
+
+So gen 4 has no instance of the Black 2 Route 19 fallback. It was worth
+checking and it cost twenty minutes: the pinkish-brown basin was the cliff
+texture under a lake that was not being drawn, not a diffuse colour under a
+material that could not be resolved.
+
+**`soulsilver 33:0`'s big flat run is legitimate.** Its largest single opaque
+colour is 133,936 px (18.4%) at RGB (115, 222, 173), Route 29's grass, and the
+two next largest are the tree-canopy greens. A diffuse fallback needs an
+unresolved material and there are none on this cartridge.
+
+## Tests
+
+`test_an_a3i5_or_a5i3_texel_keeps_the_alpha_the_cartridge_gave_it` asserts a
+LADDER, not remembered numbers: every alpha a texture produces must be an
+exact rung of its own format's scale. 7 and 35 are on neither ladder, so the
+wrap cannot pass, and the corpus is asserted to USE the ladder (all 8 a3i5
+rungs, 20+ of 32 a5i3 rungs, 255 present in both) so "on the ladder" cannot be
+satisfied by a texture that is all zeroes.
+
+`test_lake_verity_has_water_in_it` is the end-to-end, with the frames named as
+its oracle, and it also asserts the four `l_lake` placements — the half a
+terrain census misses.
+
+Mutations run: put the overflow back → `allpeak (fmt 1) has alphas off its own
+ladder: [35]`; widen a3i5 only and leave a5i3 wrapping → `kemuri (fmt 6) has
+alphas off its own ladder: [7]`; make the decode emit zero alpha → `the a3i5
+corpus only reaches [0], so a collapsed ladder could pass`.

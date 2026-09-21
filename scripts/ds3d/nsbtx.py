@@ -66,13 +66,28 @@ class TextureSet:
             for k in range(4):
                 idx[k::4] = (raw >> (2 * k)) & 3
         elif fmt in (1, 6):  # a3i5 / a5i3
-            raw = np.frombuffer(d[base:base + n], np.uint8).copy()
+            # THE WIDENING IS THE WHOLE POINT. These are the two formats whose
+            # alpha lives in the texel, and the scale to 0-255 is a multiply by
+            # 255 — which overflows uint8 and wraps. Left in `raw`'s dtype,
+            # EVERY a5i3 texel came out at 7 or 8 and every a3i5 one at 35 or
+            # 36, whatever the cartridge said:
+            #
+            #   a5i3 index 23 -> (23*255) & 0xFF = 233, //31 = 7   (true 189)
+            #   a5i3 index 31 -> (31*255) & 0xFF = 225, //31 = 7   (true 255)
+            #   a3i5 index  6 -> ( 6*255) & 0xFF = 250, // 7 = 35  (true 218)
+            #
+            # A fully OPAQUE a5i3 texel therefore arrived at alpha 7, under
+            # `raster.draw_tri`'s `> 8` test, and was thrown away: Lake Verity's
+            # `l_lake` is a5i3 and its water did not draw at all, on either of
+            # its maps. The 36 that this page's notes called "the pond's own
+            # alpha" was this wrap, not the artwork.
+            raw = np.frombuffer(d[base:base + n], np.uint8).astype(np.uint16)
             if fmt == 1:
-                idx = raw & 0x1F
-                alpha = ((raw >> 5) & 7) * 255 // 7
+                idx = (raw & 0x1F).astype(np.uint8)
+                alpha = (((raw >> 5) & 7) * 255 // 7).astype(np.uint8)
             else:
-                idx = raw & 0x07
-                alpha = ((raw >> 3) & 0x1F) * 255 // 31
+                idx = (raw & 0x07).astype(np.uint8)
+                alpha = (((raw >> 3) & 0x1F) * 255 // 31).astype(np.uint8)
             lut = np.array([pal(i) for i in range(32 if fmt == 1 else 8)], np.uint8)
             out[..., :3] = lut[idx].reshape(h, w, 3)
             out[..., 3] = alpha.reshape(h, w)

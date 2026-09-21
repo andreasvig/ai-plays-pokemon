@@ -648,14 +648,17 @@ MAX_SEE_THROUGH_RUN = 1
 #: by a second without failing. `334:0` is Verity Lakefront's 8x8
 #: `TILE_BEHAVIOR_PUDDLE` at the shared corner of its four matrix cells, which
 #: the cartridge gives no bed: delete the `puddle`/`puddlep` materials and 30
-#: of 16,384 pixels survive. 64 tiles straight down, 56 under the shipping
-#: pitched camera, which foreshortens the near edge behind the trees.
+#: of 16,384 pixels survive. 36 tiles straight down, 30 under the shipping
+#: pitched camera, which foreshortens the near edge behind the trees. It was
+#: 64/56 until the a3i5 alpha overflow was fixed: the puddle's own sheet is
+#: alpha 109, not the 36 the wrap produced, and its `puddlep` rim is 255, so
+#: the rim now reaches the opaque bar and only the middle is still sheer.
 #:
 #: This entry is a HOLE THAT SHIPS, not a rule. It is listed so that the class
 #: is visible in the diff and in this file rather than absorbed by a threshold;
 #: whether it should be filled is
 #: `artifacts/game-map-render/notes/render-defects.md`'s open question.
-SEE_THROUGH_RUNS = {"334:0": 64}
+SEE_THROUGH_RUNS = {"334:0": 36}
 
 
 def test_the_route_stands_on_rendered_artwork_and_not_on_a_hole():
@@ -1578,3 +1581,98 @@ def test_the_gen4_colour_depth_check_rejects_an_eight_bit_pixel(atlases):
     a[0, 0, 0] = int(a[0, 0, 0]) + 1 if a[0, 0, 0] < 255 else 254
     assert not pngout.on_ds_grid(a).all(), \
         "moving one channel by one still read as expressible on the DS"
+
+
+# -- the alpha ladder: the two formats that carry alpha in the texel -----------
+
+def test_an_a3i5_or_a5i3_texel_keeps_the_alpha_the_cartridge_gave_it():
+    """The scale to 0-255 is a multiply by 255, and it must not be done in uint8.
+
+    `a3i5` carries 3 bits of alpha and `a5i3` carries 5, and both are scaled by
+    `i * 255 // (2**bits - 1)`. Left in the texel's own uint8 the multiply
+    WRAPS, and every rung of both ladders collapses onto two or three values:
+
+        a5i3 index 23 -> (23*255) & 0xFF = 233, //31 = 7    (true 189)
+        a5i3 index 31 -> (31*255) & 0xFF = 225, //31 = 7    (true 255)
+        a3i5 index  6 -> ( 6*255) & 0xFF = 250, // 7 = 35   (true 218)
+
+    An OPAQUE a5i3 texel therefore arrived at alpha 7, under
+    `raster.draw_tri`'s `> 8` alpha test, and was discarded: Lake Verity's
+    `l_lake` is a5i3 and its water did not draw at all, on either of its maps.
+
+    Asserted as a LADDER rather than against remembered values: every alpha a
+    texture produces must be an exact rung of its own format's ladder. 7 and 35
+    are on neither, so the wrap cannot pass, and no number here is copied from
+    a measurement that could itself be wrong.
+    """
+    import numpy as np
+
+    LADDER = {1: {i * 255 // 7 for i in range(8)},
+              6: {i * 255 // 31 for i in range(32)}}
+    seen = {1: set(), 6: set()}
+    checked = 0
+    for _game, _model, texset in _gen4_models():
+        for name in texset.textures:
+            fmt = (texset.tex_params(name) >> 26) & 7
+            if fmt not in LADDER:
+                continue
+            pals = getattr(texset, "palettes", {})
+            pal = (name + "_pl") if (name + "_pl") in pals else (name if name in pals else None)
+            try:
+                img = texset.image(name, pal)
+            except Exception:
+                continue
+            checked += 1
+            got = {int(v) for v in np.unique(img[..., 3])}
+            assert got <= LADDER[fmt], \
+                f"{name} (fmt {fmt}) has alphas off its own ladder: {sorted(got - LADDER[fmt])}"
+            seen[fmt] |= got
+    assert checked > 20, checked
+    # and the corpus USES the ladder, or "on the ladder" would be satisfied by
+    # a texture that is all zeroes
+    assert seen[1] == LADDER[1], \
+        f"the a3i5 corpus only reaches {sorted(seen[1])}, so a collapsed ladder could pass"
+    assert len(seen[6]) >= 20, f"the a5i3 corpus only reaches {len(seen[6])} of 32 rungs"
+    assert max(seen[6]) == 255 and max(seen[1]) == 255, \
+        "no fully opaque texel in either corpus, which is the rung the wrap destroyed"
+
+
+def test_lake_verity_has_water_in_it():
+    """The end of it, on the map that had none.
+
+    The oracle is the run's own frames, not an eye:
+    `2026-09-21_10-52-05_..._continued_from_turn_100` stood on map 311 for
+    turns 119-125, and the top of every one of those seven frames is
+    9.96-10.50% blue. Our render of 311 was **0.00%** blue — not a few pixels,
+    none — while Route 219's sea in the same atlas was 46.74% and Twinleaf's
+    pond 4.86%, which is what said this was one map's missing material and not
+    a renderer that cannot draw water.
+
+    The water is a PROP, `l_lake`, one placement in each of the map's four
+    content cells, and it resolves its texture correctly. Enumerating the
+    TERRAIN materials — which is what an earlier pass here did — says map 311
+    has no water material at all, and that is true and is the wrong population.
+    """
+    import numpy as np
+
+    mod, d, art = _three_d()
+    r = mod.render_map(d, 311, art)
+    px = mod.full_pixels(r, art.tile_px)
+    rr, gg, bb = (px[..., i].astype(int) for i in range(3))
+    water = (px[..., 3] > 200) & (bb > rr + 25) & (bb > gg + 15)
+    assert water.mean() > 0.05, \
+        f"{r.key} is {100 * water.mean():.2f}% blue; the frames say ~10%"
+
+    # and it is the prop that brings it, which is the half a terrain census misses
+    from ds3d import field as ds3d_field
+    win = mod.map_window(d, 311)
+    area = art.area(win.header)
+    placed = 0
+    for col, row in sorted(win.cells):
+        raw = art.land_block(win.header, col, row)
+        if raw is None:
+            continue
+        for model_id, _pos, _scale in ds3d_field.land_block(raw).placements:
+            assert art.assets.prop_model(model_id, art.prop_archive(win)).name == "l_lake"
+            placed += 1
+    assert placed == 4, f"{placed} lake placements, expected one per content cell"
