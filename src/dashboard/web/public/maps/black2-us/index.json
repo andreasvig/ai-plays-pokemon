@@ -1,0 +1,123 @@
+{
+ "schema": 2,
+ "game": "black2-us",
+ "key_shape": "id",
+ "tile_px": 16,
+ "camera": "topdown",
+ "render": "3d-ortho",
+ "png_frame": "map-local",
+ "source": {
+  "kind": "rom",
+  "file": "Pokemon - Black Version 2 (USA, Europe) (NDSi Enhanced).nds",
+  "sha": "e51e6dfb8678a3d19dcd2a10691b96a569ca0abb"
+ },
+ "walkgraph": {
+  "version": null,
+  "source": null
+ },
+ "map_set": {
+  "kind": "observed",
+  "source": "artifacts/game-map-render/observed/black2-us-observed.json + every map id our runs' samples name",
+  "note": "the cartridge's own textured 3D field artwork \u2014 terrain and props \u2014 rendered straight down and orthographic at one pixel per world unit; PNG pixel (0,0) is tile png_origin, so a source rect subtracts it",
+  "doors": "none: Gen 5 event data is not decoded, so an interior renders but the viewer has no door to open it from"
+ },
+ "bytes": 111320,
+ "maps": {
+  "427:0": {
+   "name": null,
+   "width": 32,
+   "height": 64,
+   "file": "427-0.png",
+   "bytes": 70896,
+   "indoor": false,
+   "border": {
+    "file": "427-0-border.png",
+    "w": 1,
+    "h": 1,
+    "bytes": 76
+   },
+   "walkable": 705,
+   "origin": [
+    32,
+    704
+   ],
+   "png_origin": [
+    32,
+    704
+   ],
+   "world": [
+    32,
+    704
+   ],
+   "frame": "matrix_000",
+   "open": [
+    {
+     "side": "up",
+     "from": 0,
+     "to": 32
+    }
+   ]
+  },
+  "428:0": {
+   "name": null,
+   "width": 18,
+   "height": 12,
+   "file": "428-0.png",
+   "bytes": 11268,
+   "indoor": true,
+   "border": {
+    "file": "428-0-border.png",
+    "w": 1,
+    "h": 1,
+    "bytes": 76
+   },
+   "walkable": 98,
+   "building": "Map428",
+   "floors": [
+    "428:0"
+   ],
+   "popup": true
+  },
+  "429:0": {
+   "name": null,
+   "width": 13,
+   "height": 13,
+   "file": "429-0.png",
+   "bytes": 8427,
+   "indoor": true,
+   "border": {
+    "file": "429-0-border.png",
+    "w": 1,
+    "h": 1,
+    "bytes": 76
+   },
+   "walkable": 88,
+   "building": "Map429",
+   "floors": [
+    "429:0"
+   ],
+   "popup": true
+  },
+  "435:0": {
+   "name": null,
+   "width": 15,
+   "height": 21,
+   "file": "435-0.png",
+   "bytes": 20425,
+   "indoor": true,
+   "border": {
+    "file": "435-0-border.png",
+    "w": 1,
+    "h": 1,
+    "bytes": 76
+   },
+   "walkable": 170,
+   "building": "Map435",
+   "floors": [
+    "435:0"
+   ],
+   "popup": true
+  }
+ },
+ "season": "spring"
+}

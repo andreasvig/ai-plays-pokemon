@@ -1,0 +1,332 @@
+{
+ "schema": 2,
+ "game": "black-us",
+ "key_shape": "id",
+ "tile_px": 16,
+ "camera": "topdown",
+ "render": "3d-ortho",
+ "png_frame": "map-local",
+ "source": {
+  "kind": "rom",
+  "file": "Pokemon - Black Version (USA, Europe) (NDSi Enhanced).nds",
+  "sha": "26ad0b9967aa279c4a266ee69f52b9b2332399a5"
+ },
+ "walkgraph": {
+  "version": null,
+  "source": null
+ },
+ "map_set": {
+  "kind": "observed",
+  "source": "artifacts/game-map-render/observed/black-us-observed.json + every map id our runs' samples name",
+  "note": "the cartridge's own textured 3D field artwork \u2014 terrain and props \u2014 rendered straight down and orthographic at one pixel per world unit; PNG pixel (0,0) is tile png_origin, so a source rect subtracts it",
+  "doors": "none: Gen 5 event data is not decoded, so an interior renders but the viewer has no door to open it from"
+ },
+ "bytes": 357010,
+ "maps": {
+  "317:0": {
+   "name": null,
+   "width": 64,
+   "height": 96,
+   "file": "317-0.png",
+   "bytes": 146565,
+   "indoor": false,
+   "border": {
+    "file": "317-0-border.png",
+    "w": 1,
+    "h": 1,
+    "bytes": 76
+   },
+   "walkable": 1198,
+   "origin": [
+    736,
+    672
+   ],
+   "png_origin": [
+    736,
+    672
+   ],
+   "world": [
+    736,
+    672
+   ],
+   "frame": "matrix_000",
+   "open": [
+    {
+     "side": "up",
+     "from": 32,
+     "to": 64
+    },
+    {
+     "side": "left",
+     "from": 32,
+     "to": 96
+    }
+   ]
+  },
+  "319:0": {
+   "name": null,
+   "width": 64,
+   "height": 64,
+   "file": "319-0.png",
+   "bytes": 85457,
+   "indoor": false,
+   "border": {
+    "file": "319-0-border.png",
+    "w": 1,
+    "h": 1,
+    "bytes": 76
+   },
+   "walkable": 695,
+   "origin": [
+    736,
+    608
+   ],
+   "png_origin": [
+    736,
+    608
+   ],
+   "world": [
+    736,
+    608
+   ],
+   "frame": "matrix_000",
+   "open": [
+    {
+     "side": "up",
+     "from": 0,
+     "to": 64
+    }
+   ]
+  },
+  "320:0": {
+   "name": null,
+   "width": 17,
+   "height": 10,
+   "file": "320-0.png",
+   "bytes": 5387,
+   "indoor": true,
+   "border": {
+    "file": "320-0-border.png",
+    "w": 1,
+    "h": 1,
+    "bytes": 76
+   },
+   "walkable": 97,
+   "building": "Map320",
+   "floors": [
+    "320:0"
+   ],
+   "popup": true
+  },
+  "389:0": {
+   "name": null,
+   "width": 32,
+   "height": 32,
+   "file": "389-0.png",
+   "bytes": 48105,
+   "indoor": false,
+   "border": {
+    "file": "389-0-border.png",
+    "w": 1,
+    "h": 1,
+    "bytes": 76
+   },
+   "walkable": 390,
+   "origin": [
+    768,
+    736
+   ],
+   "png_origin": [
+    768,
+    736
+   ],
+   "world": [
+    768,
+    736
+   ],
+   "frame": "matrix_000",
+   "open": [
+    {
+     "side": "up",
+     "from": 0,
+     "to": 32
+    },
+    {
+     "side": "left",
+     "from": 0,
+     "to": 32
+    }
+   ]
+  },
+  "390:0": {
+   "name": null,
+   "width": 14,
+   "height": 11,
+   "file": "390-0.png",
+   "bytes": 6037,
+   "indoor": true,
+   "border": {
+    "file": "390-0-border.png",
+    "w": 1,
+    "h": 1,
+    "bytes": 76
+   },
+   "walkable": 69,
+   "origin": [
+    0,
+    1
+   ],
+   "png_origin": [
+    0,
+    1
+   ],
+   "building": "Map390",
+   "floors": [
+    "390:0"
+   ],
+   "popup": true
+  },
+  "391:0": {
+   "name": null,
+   "width": 12,
+   "height": 9,
+   "file": "391-0.png",
+   "bytes": 4913,
+   "indoor": true,
+   "border": {
+    "file": "391-0-border.png",
+    "w": 1,
+    "h": 1,
+    "bytes": 76
+   },
+   "walkable": 47,
+   "origin": [
+    0,
+    1
+   ],
+   "png_origin": [
+    0,
+    1
+   ],
+   "building": "Map391",
+   "floors": [
+    "391:0"
+   ],
+   "popup": true
+  },
+  "392:0": {
+   "name": null,
+   "width": 14,
+   "height": 11,
+   "file": "392-0.png",
+   "bytes": 5353,
+   "indoor": true,
+   "border": {
+    "file": "392-0-border.png",
+    "w": 1,
+    "h": 1,
+    "bytes": 76
+   },
+   "walkable": 72,
+   "origin": [
+    0,
+    1
+   ],
+   "png_origin": [
+    0,
+    1
+   ],
+   "building": "Map392",
+   "floors": [
+    "392:0"
+   ],
+   "popup": true
+  },
+  "396:0": {
+   "name": null,
+   "width": 17,
+   "height": 13,
+   "file": "396-0.png",
+   "bytes": 8847,
+   "indoor": true,
+   "border": {
+    "file": "396-0-border.png",
+    "w": 1,
+    "h": 1,
+    "bytes": 76
+   },
+   "walkable": 92,
+   "building": "Map396",
+   "floors": [
+    "396:0"
+   ],
+   "popup": true
+  },
+  "397:0": {
+   "name": null,
+   "width": 32,
+   "height": 32,
+   "file": "397-0.png",
+   "bytes": 25158,
+   "indoor": false,
+   "border": {
+    "file": "397-0-border.png",
+    "w": 1,
+    "h": 1,
+    "bytes": 76
+   },
+   "walkable": 557,
+   "origin": [
+    768,
+    640
+   ],
+   "png_origin": [
+    768,
+    640
+   ],
+   "world": [
+    768,
+    640
+   ],
+   "frame": "matrix_000",
+   "open": [
+    {
+     "side": "up",
+     "from": 0,
+     "to": 32
+    },
+    {
+     "side": "down",
+     "from": 0,
+     "to": 32
+    },
+    {
+     "side": "left",
+     "from": 0,
+     "to": 32
+    }
+   ]
+  },
+  "398:0": {
+   "name": null,
+   "width": 15,
+   "height": 21,
+   "file": "398-0.png",
+   "bytes": 20428,
+   "indoor": true,
+   "border": {
+    "file": "398-0-border.png",
+    "w": 1,
+    "h": 1,
+    "bytes": 76
+   },
+   "walkable": 170,
+   "building": "Map398",
+   "floors": [
+    "398:0"
+   ],
+   "popup": true
+  }
+ },
+ "season": "spring"
+}
