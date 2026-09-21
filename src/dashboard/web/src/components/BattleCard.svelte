@@ -20,10 +20,25 @@
   // "Wild battle" for every Platinum and Crystal fight, gym leaders included.
   // The decision logic now lives in one tested module (tests/js/battle.test.mjs)
   // so the card cannot claim more than the backend measured.
-  import { trainerSpriteUrl, pokemonSpriteUrl } from '../lib/mapatlas.js'
+  import { trainerSpriteUrl } from '../lib/mapatlas.js'
+  import { pokemonSpriteUrl, partySpriteUrl, speciesName, loadDexNames, UNKNOWN_SPRITE,
+           SPECIES_KEYSPACE } from '../lib/species.js'
   import { battleTitle, battleSubtitle, battleVerdict, battleNote } from '../lib/battle.js'
 
   let { battle, trainers = null, game = null } = $props()
+
+  // The species id the referee read means what THIS cartridge means by it, and
+  // that differs by generation — so both the picture and the name are looked up
+  // through lib/species.js, which takes the game. Until 2026-09-21 the card
+  // passed the bare id to one gen-3-internal file set, so Platinum's rival
+  // Chimchar (National Dex 390) drew gen-3 internal 390, which is Anorith, and
+  // every Black card drew nothing at all because gen 5's numbers run past the
+  // end of that set.
+  let dex = $state(null)
+  $effect(() => {
+    if (SPECIES_KEYSPACE[game] !== 'national-dex') return
+    loadDexNames().then((d) => { dex = d })
+  })
 
   const t = $derived(battle?.trainer_id != null ? trainers?.trainers?.[String(battle.trainer_id)] ?? null : null)
   // ONE line about turns, and it has to agree with itself (Andreas 2026-09-16).
@@ -45,9 +60,19 @@
   // species id, so a party member needs its id — added to the roster in
   // scripts/extract_trainers.py (index version 3). A roster from the older
   // index has no `id` and simply shows no sprite rather than a broken one.
+  //
+  // A TRAINER portrait that will not load is still hidden: there is no
+  // stand-in picture of a person, and a "?" mon pic in a human's place would
+  // say something false. A MON that will not load shows the ROM's own "?"
+  // instead, because hiding it leaves a card that looks like it met nobody.
   const hide = (e) => { e.currentTarget.style.display = 'none' }
+  const unknown = (e) => {
+    const img = e.currentTarget
+    if (img.getAttribute('src') !== UNKNOWN_SPRITE) img.setAttribute('src', UNKNOWN_SPRITE)
+    else img.style.display = 'none'
+  }
   const foe = $derived(battle.foe ?? null)
-  const foeName = $derived(foe ? (trainers?.species?.[String(foe.species)] ?? `#${foe.species}`) : null)
+  const foeName = $derived(foe ? speciesName(game, foe.species, { trainers, dex }) : null)
   // The words the game's own outcome byte maps to, said the way a reader would.
   const OUTCOME = {
     won: ['won', 'win'], lost: ['lost', 'loss'], ran: ['ran', ''], caught: ['caught', 'win'],
@@ -76,7 +101,7 @@
       <!-- The foe's own sprite, whenever the run read a species — not gated on
            `kind === 'wild'`, which would drop it for exactly the battles whose
            kind this game does not report. -->
-      <img class="mon" src={pokemonSpriteUrl(foe.species)} alt="" width="48" height="48" onerror={hide} />
+      <img class="mon" src={pokemonSpriteUrl(game, foe.species)} alt="" width="48" height="48" onerror={unknown} />
     {/if}
     <div class="who">
       <b>{title}</b>
@@ -90,7 +115,7 @@
     <ul class="party">
       {#each t.party as m, i (i)}
         <li>
-          {#if m.id}<img class="mon" src={pokemonSpriteUrl(m.id)} alt="" width="28" height="28" onerror={hide} />{/if}
+          {#if m.id}<img class="mon" src={partySpriteUrl(m.id)} alt="" width="28" height="28" onerror={unknown} />{/if}
           <span class="sp">{m.species}</span><span class="lv">Lv {m.level}</span>
         </li>
       {/each}
