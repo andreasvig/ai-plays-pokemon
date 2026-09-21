@@ -382,6 +382,9 @@ def test_the_notes_quote_the_band_the_script_actually_applies():
     for key in ("aligned_match", "suspect_match", "spread_wrong_crop",
                 "spread_wrong_map", "margin", "self_floor"):
         assert str(V.BAND[key]) in text, f"{key} = {V.BAND[key]} is not in {NOTES.name}"
+    # the colour clause's own thresholds, on the same terms
+    for name, val in (("RECOLOURED_GAP", V.RECOLOURED_GAP),):
+        assert f"{name} = {val}" in text, f"{name} = {val} is not in {NOTES.name}"
 
 
 # -- 7. end to end, on real runs -----------------------------------------------
@@ -431,3 +434,486 @@ def test_the_sheet_pairs_each_turn_with_the_frame_it_came_from(tmp_path):
     with Image.open(tmp_path / Path(v["sheet"]).name) as im:
         assert im.width == 26 * 2 + spec.width * 4 + 14 * 3
         assert im.height > spec.height * len(v["rows"])
+
+
+# -- 8. colour is a second claim, and ALIGNED used to make only one of them ----
+#
+# A Crystal atlas rendered `nite` scores 0.9923 against a daytime run: every
+# tile where it should be, every colour wrong, one word covering both. These
+# guard the clause that separates the two, and the correction that clause
+# needed after it failed its own control.
+
+def _crow(turn, key, indoor, direct, match, name=None):
+    """A scored turn shaped for `colour_verdict`: the two colour numbers and
+    the atlas's word for whether this map's colours come from the world."""
+    return {"turn": turn, "key": key, "name": name, "indoor": indoor,
+            "direct": direct, "match": match}
+
+
+def test_a_wrong_palette_is_reported_and_fails_without_touching_the_geometry():
+    """The gap this clause exists to close.
+
+    MUTATION that fails this: delete the colour verdict, or fold it into the
+    geometry one. The first ships purple Johto under the word ALIGNED; the
+    second calls a perfectly-aligned atlas MISALIGNED, which is also false.
+    """
+    rows = [_crow(1, "24:3", False, 0.0000, 0.9862, "ROUTE_29"),
+            _crow(2, "24:4", False, 0.0002, 0.8965, "NEW_BARK_TOWN")]
+    v = V.colour_verdict("crystal-us", rows)
+    assert v["colour"] == "COLOURS DIFFER EVERYWHERE"
+    assert v["fails"] is True
+    assert "time of day" in v["why"]                 # it names the likely cause
+    assert "morn/day/nite/dark" in v["why"]
+
+
+def test_a_one_map_runtime_shade_stays_an_ordinary_aligned():
+    """**The control the clause had to survive.** FireRed's Viridian Forest
+    under WEATHER_SHADE is a genuine permutation the artwork is supposed to
+    absorb (raw 0.0000 -> fitted 0.9972, palette 11 -> 11).
+
+    MUTATION that fails this: fail on any recolour at all. The clause would
+    then be worse than the gap it closes — every weather-shaded map in the
+    atlas reported as the wrong palette.
+    """
+    rows = [_crow(1, "1:0", False, 0.0000, 0.9972, "ViridianForest"),
+            _crow(2, "3:19", False, 0.9842, 0.9850),
+            _crow(3, "4:3", False, 0.9835, 0.9835),
+            _crow(4, "5:3", True, 0.9615, 0.9615)]
+    v = V.colour_verdict("firered-us", rows)
+    assert v["colour"] == "COLOURS DIFFER ON SOME MAPS"
+    assert v["fails"] is False
+    assert v["recoloured_maps"] == ["1:0"]
+
+
+def test_indoor_maps_do_not_dilute_the_scope():
+    """**The correction.** The clause as first pre-registered counted every
+    sampled map, and a daytime Crystal run against the `nite` atlas came out
+    "1 of 4 recoloured" — which reads as ordinary weather — because a gen-2
+    indoor map declares PALETTE_DAY and is the same picture at midnight.
+    Measured 2026-09-21: both outdoor maps 0.0000 and 0.0002 raw, both indoor
+    maps 0.9255 and 0.9806. Over the outdoor two it is "all of them".
+
+    MUTATION that fails this: count over every sampled map instead of over the
+    outdoor ones (`n_out` -> `n_maps`). The verdict drops to COLOURS DIFFER ON
+    SOME MAPS and the defect ships.
+    """
+    rows = [_crow(1, "24:3", False, 0.0000, 0.9862, "ROUTE_29"),
+            _crow(2, "24:4", False, 0.0002, 0.8965, "NEW_BARK_TOWN"),
+            _crow(3, "24:5", True, 0.9255, 0.9299, "ELMS_LAB"),
+            _crow(4, "24:6", True, 0.9806, 0.9806, "PLAYERS_HOUSE_1F")]
+    v = V.colour_verdict("crystal-us", rows)
+    assert v["colour"] == "COLOURS DIFFER EVERYWHERE"
+    assert v["fails"] is True
+    assert v["outdoor_maps"] == 2
+    assert "indoor map takes a fixed palette" in v["why"]
+
+
+def test_the_recoloured_test_is_the_gap_the_lookup_closed_not_the_level_it_reached():
+    """NEW_BARK_TOWN fits 0.0002 raw and 0.8965 through the lookup. The 0.8965
+    is NPCs; the 0.8963 gap is the palette. The first version of this clause
+    required `match >= 0.90` as well and dropped the clearest recolour in the
+    sample over four thousandths.
+
+    MUTATION that fails this: add `and r["match"] >= BAND["aligned_match"]`
+    back to the recoloured test.
+    """
+    rows = [_crow(1, "24:3", False, 0.0000, 0.9862),
+            _crow(2, "24:4", False, 0.0002, 0.8965)]
+    v = V.colour_verdict("crystal-us", rows)
+    assert v["recoloured_maps"] == ["24:3", "24:4"]
+
+
+def test_one_outdoor_map_is_reported_as_ambiguous_rather_than_guessed():
+    """Per turn, "the game dimmed the lights on this map" and "the atlas is
+    the wrong time of day" are the SAME observation. Only scope separates
+    them, and one world-lit map is no scope.
+
+    MUTATION that fails this: call it COLOURS DIFFER ON SOME MAPS (pass) or
+    COLOURS DIFFER EVERYWHERE (pick). It is exactly how the daytime Crystal
+    run slipped through at `--turns 20`: one route recoloured, two clean
+    houses, "1 of 3".
+    """
+    rows = [_crow(1, "24:3", False, 0.0000, 0.9862, "ROUTE_29"),
+            _crow(2, "24:5", True, 0.9255, 0.9299),
+            _crow(3, "24:6", True, 0.9806, 0.9806)]
+    v = V.colour_verdict("crystal-us", rows)
+    assert v["colour"] == "COLOURS DIFFER, CAUSE AMBIGUOUS"
+    assert v["fails"] is True
+    assert "--turns" in v["why"]
+
+
+def test_matching_colours_say_so_and_pass():
+    """MUTATION that fails this: make the recoloured test fire on any turn
+    whose lookup was consulted at all. Every game would read COLOURS DIFFER
+    and the verdict would carry no information."""
+    rows = [_crow(1, "24:3", False, 0.9896, 0.9900),
+            _crow(2, "24:5", True, 0.9555, 0.9555)]
+    v = V.colour_verdict("crystal-us", rows)
+    assert v["colour"] == "COLOURS MATCH"
+    assert v["fails"] is False
+
+
+def test_the_atlas_is_one_time_of_day_so_exactly_one_kind_of_run_must_differ():
+    """End to end, and invariant under which palette the atlas currently holds.
+
+    A GBC atlas is rendered for ONE time of day. This checkout has both a
+    night Crystal sample (the two v2 runs) and a day one (the 100-turn 6.0
+    run), so whichever way `Game.time_of_day` is set, exactly one of the two
+    must come out COLOURS DIFFER and the other COLOURS MATCH. Asserting the
+    XOR rather than a fixed direction means this test survives the atlas being
+    re-rendered the other way, which is the thing that just happened.
+
+    MUTATION that fails this: any of the colour-clause mutations above, and
+    also `RECOLOURED_GAP = 1.01`, which makes nothing ever recoloured.
+    """
+    night = sorted(p for p in RUNS.glob("*config-v2-crystal__*")) if RUNS.is_dir() else []
+    day = [p for p in (RUNS / "2026-09-20_21-18-34_config-6.0__gemini-3-8-flash-low",)
+           if p.is_dir()]
+    if not night or not day:
+        pytest.skip("need both a night and a day Crystal run in local/runs")
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        a = V.run_game("crystal-us", night, turns=16, z=1, out_dir=Path(td))
+        b = V.run_game("crystal-us", day, turns=40, z=1, out_dir=Path(td))
+    if a.get("match") is None or b.get("match") is None:
+        pytest.skip("nothing scoreable")
+    # geometry is unaffected either way: the tiles line up in both
+    assert a["geometry"] == "ALIGNED" and b["geometry"] == "ALIGNED"
+    assert a["margin"] > 0 and b["margin"] > 0
+    assert a["fails"] != b["fails"], (
+        f"the atlas holds one time of day, so exactly one of these should differ in "
+        f"colour — got night={a['colour']!r} day={b['colour']!r}")
+    differing = a if a["fails"] else b
+    assert "COLOURS DIFFER" in differing["colour"]
+    assert differing["recolour_example"]            # names the two actual colours
+
+
+def test_the_viridian_forest_shade_does_not_fail_a_real_firered_sample():
+    """The control, on real data rather than fixtures.
+
+    MUTATION that fails this: fail on any recolour. FireRed would be reported
+    as the wrong palette because one of its eleven maps is weather-shaded.
+    """
+    runs = _runs("firered")
+    if not runs:
+        pytest.skip("no firered run in local/runs")
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        v = V.run_game("firered-us", runs, turns=20, z=1, out_dir=Path(td))
+    if v.get("match") is None:
+        pytest.skip(v.get("why", "nothing scoreable"))
+    assert v["geometry"] == "ALIGNED"
+    assert v["fails"] is False, f"{v['colour']}: {v['why']}"
+    if "1:0" in v["recoloured_maps"]:
+        assert v["colour"] == "COLOURS DIFFER ON SOME MAPS"
+
+
+# -- 9. the map-entry frame, a third exclusion class ---------------------------
+#
+# Emerald turn 49 carries the "LITTLEROOT TOWN" banner across the top-left and
+# scores 0.5090 with margin -0.3432 — which is the signal built to mean "a
+# neighbouring crop fits better", i.e. the constant-offset failure. It is not
+# one. But it CANNOT be told from one by its pixels (measured: at the declared
+# crop the disagreement is spread over every tile row, because the camera is
+# also still mid-scroll from the warp), so the run's own map-change record is
+# required rather than corroborating.
+
+def _banner_frame(spec, w_tiles=9, h_tiles=3):
+    """A mask over the whole frame and a `bad` array that is a top-left block."""
+    mask = keep_mask(spec)
+    bad = np.zeros_like(mask)
+    bad[:h_tiles * spec.tile, :w_tiles * spec.tile] = True
+    return bad, mask
+
+
+def test_the_banner_is_found_as_a_shape_at_the_top_left():
+    """MUTATION that fails this: require the block to be anywhere rather than
+    anchored at (0, 0). A textbox, a prompt or an NPC cluster would qualify."""
+    spec = SPECS["emerald-us"]
+    bad, mask = _banner_frame(spec)
+    got = V.banner_block(bad, mask, spec.tile)
+    assert got is not None
+    w, h, inside, outside = got
+    assert inside == pytest.approx(1.0)      # the block found is all banner
+    assert outside >= V.BANNER_OUTSIDE       # and the rest of the frame is clean
+    assert w >= V.BANNER_TILES_W and h >= V.BANNER_TILES_H
+    assert w <= 9 and h <= 3                 # it does not claim more than was painted
+
+    # moved off the top-left corner, the same block is not a banner
+    off = np.zeros_like(mask)
+    off[4 * spec.tile:7 * spec.tile, 4 * spec.tile:13 * spec.tile] = True
+    assert V.banner_block(off, mask, spec.tile) is None
+
+
+def test_a_uniformly_wrong_frame_has_no_banner_block():
+    """**The one that keeps the exclusion falsifiable.** A genuinely misaligned
+    crop disagrees everywhere, so there is no clean outside and no block.
+
+    MUTATION that fails this: drop the `outside_ok >= BANNER_OUTSIDE` clause.
+    Every badly-scoring frame would then present a "banner" and the exclusion
+    would swallow real misalignments — the exact failure the coordinator
+    warned about.
+    """
+    spec = SPECS["emerald-us"]
+    mask = keep_mask(spec)
+    bad = np.ones_like(mask)
+    assert V.banner_block(bad, mask, spec.tile) is None
+
+
+def test_a_clean_frame_has_no_banner_block():
+    """MUTATION that fails this: drop the `inside_bad >= BANNER_INSIDE` clause.
+    Every ordinary frame would report a banner and nothing would be scored."""
+    spec = SPECS["emerald-us"]
+    mask = keep_mask(spec)
+    assert V.banner_block(np.zeros_like(mask), mask, spec.tile) is None
+
+
+def test_a_map_entry_frame_needs_the_run_record_as_well_as_the_banner(tmp_path):
+    """Both, or neither. The pixels alone cannot separate a banner frame from
+    a one-tile misalignment — measured on turn 49 — so the non-pixel signal is
+    required.
+
+    MUTATION that fails this: `entry_frame = bool(banner)`. Any frame with a
+    top-left block and a clean remainder is excluded whether or not the run
+    ever entered a map there.
+    """
+    run = tmp_path / "run"
+    (run / "screenshots").mkdir(parents=True)
+    ev = []
+    for turn, key in ((1, [1, 2]), (2, [1, 2]), (3, [0, 9]), (4, [0, 9])):
+        ev.append(json.dumps({"type": "turn_input_trace", "turn": turn,
+                              "end_tile": key + [5, 5],
+                              "samples": [{"map_group": key[0], "map_num": key[1],
+                                           "x": 5, "y": 5}]}))
+    (run / "events.jsonl").write_text("\n".join(ev))
+    for t in range(1, 6):
+        Image.new("RGB", (8, 8)).save(run / "screenshots" / f"0000{t}_turn_{t}.png")
+    by_turn = {p.turn: p for p in V.placements(run)}
+    # frame 4 is paired with turn 3's position (0:9); turn 2 was on 1:2
+    assert by_turn[4].entered is True
+    # frame 5 is paired with turn 4 (0:9) and turn 3 was also 0:9
+    assert by_turn[5].entered is False
+
+
+def test_the_entry_frame_is_named_in_the_report_not_quietly_dropped():
+    """MUTATION that fails this: exclude the turn without listing it. Nobody
+    can tell an inconvenient score from a transitional frame."""
+    rows = [_row(t, 0.99, 0.35) for t in (1, 2, 3)]
+    rows.append(dict(_row(49, 0.5090, -0.3432), key="0:9", name="LittlerootTown",
+                     tile=[14, 8], entry_frame=True, banner=(9, 3, 0.48, 0.996)))
+    v = V.verdict(rows)
+    assert v["turns"] == 3
+    assert v["match"] == pytest.approx(0.99)
+    assert [e["turn"] for e in v["entry_frames"]] == [49]
+    e = v["entry_frames"][0]
+    assert e["map"] == "0:9" and e["tile"] == [14, 8]
+    assert e["banner"] == (9, 3, 0.48, 0.996)
+    assert e["margin"] == pytest.approx(-0.3432)
+
+
+def _score_one(game, run, turn, shift=0):
+    """Score one named turn of a real run, optionally with the atlas shifted.
+
+    Goes through `score_turn` rather than `run_game` so the banner rule is
+    actually reached: at the run level a four-tile offset makes almost every
+    frame fail the map-frame floor first, and a test that only looks at the
+    run-level result passes for that reason whatever the banner rule does.
+    """
+    from src.app.stitch import run_spec
+    maps_dir = REPO_ROOT / "src" / "dashboard" / "web" / "public" / "maps" / game
+    atlas = json.loads((maps_dir / "index.json").read_text())
+    spec = V.screen_for(game, atlas)
+    real = V.TileProjection.window
+    if shift:
+        def shifted(self, s_, x, y):
+            ox, oy = real(self, s_, x, y)
+            return ox + shift * self.tile_px, oy + shift * self.tile_px
+        V.TileProjection.window = shifted
+    try:
+        for p in V.placements(run):
+            if p.turn == turn:
+                return p, V.score_turn(p, spec, run_spec(spec, run), atlas, maps_dir,
+                                       keep_mask(spec), {})
+    finally:
+        V.TileProjection.window = real
+    return None, None
+
+
+EMERALD_BANNER_RUN = "2026-09-20_20-56-15_config-6.0__gemini-3-8-flash-low"
+EMERALD_BANNER_TURN = 49          # "LITTLEROOT TOWN", 0:9, tile (14, 8)
+
+
+def test_the_real_banner_frame_is_detected_and_a_four_tile_offset_is_not():
+    """**The control the exclusion has to survive**, on the real frame: an
+    exclusion that hides the failure mode is worse than the noise it removes.
+
+    Turn 49 carries the banner, and its declared crop scores 0.5090 with
+    margin -0.3432 — indistinguishable from a one-tile offset by the pixels,
+    which is why the run's map-change record is required. With the atlas four
+    tiles off, nothing matches at any of the nine candidate crops, so there is
+    no clean outside, no block, and the rule fires on nothing.
+
+    MUTATION that fails this: drop the outside-clean clause from
+    `banner_block`, or look for the block at the declared crop only.
+    """
+    run = RUNS / EMERALD_BANNER_RUN
+    if not run.is_dir():
+        pytest.skip("no flagship emerald run in local/runs")
+    p, r = _score_one("emerald-us", run, EMERALD_BANNER_TURN)
+    if r is None:
+        pytest.skip("turn 49 not placeable in this checkout")
+    assert p.entered is True, "the run's own positions say this is the first turn here"
+    assert r["banner"] is not None, "the LITTLEROOT TOWN banner should be found"
+    assert r["entry_frame"] is True
+    assert r["margin"] < 0, "and it is exactly the signal that would read as a defect"
+
+    _, bad = _score_one("emerald-us", run, EMERALD_BANNER_TURN, shift=4)
+    assert bad["banner"] is None, (
+        "a four-tile offset must not present as a banner — that exclusion would be "
+        "hiding the failure mode rather than the noise")
+    assert bad["entry_frame"] is False
+    assert bad["map_frame"] is False, "it is excluded, but as showing no map at all"
+
+
+def test_a_four_tile_offset_still_comes_out_misaligned():
+    """MUTATION that fails this: any exclusion broad enough to swallow the
+    offset. The point of the map-entry class is to remove transitional frames,
+    not to make a broken atlas unfalsifiable."""
+    run = RUNS / EMERALD_BANNER_RUN
+    if not run.is_dir():
+        pytest.skip("no flagship emerald run in local/runs")
+    import tempfile
+    real = V.TileProjection.window
+
+    def shifted(self, spec, x, y):
+        ox, oy = real(self, spec, x, y)
+        return ox + 4 * self.tile_px, oy + 4 * self.tile_px
+
+    with tempfile.TemporaryDirectory() as td:
+        V.TileProjection.window = shifted
+        try:
+            v = V.run_game("emerald-us", [run], turns=200, z=1, out_dir=Path(td))
+        finally:
+            V.TileProjection.window = real
+    assert v["geometry"] == "MISALIGNED"
+    assert v["entry_frames"] == []
+
+
+def test_both_signals_are_required_to_exclude_a_frame():
+    """The conjunction, on its own.
+
+    MUTATION that fails this: `entry_frame = bool(banner)` — any frame with a
+    bright rectangle in its corner is dropped whether or not the run ever
+    entered a map there. Or `bool(entered)` — every first-frame-on-a-new-map
+    is dropped, including a genuinely misaligned one.
+    """
+    block = (9, 3, 0.48, 0.996)
+    assert V.is_entry_frame(True, block) is True
+    assert V.is_entry_frame(False, block) is False
+    assert V.is_entry_frame(True, None) is False
+    assert V.is_entry_frame(False, None) is False
+
+
+def test_excluding_entry_frames_does_not_flatter_the_controls():
+    """If removing transitional frames moved the wrong-crop spread, the spread
+    was measuring the transitions.
+
+    MUTATION that fails this: exclude on a low score instead of on the banner
+    plus the run record — dozens of frames go, and the controls move.
+    """
+    run = RUNS / "2026-09-20_20-56-15_config-6.0__gemini-3-8-flash-low"
+    if not run.is_dir():
+        pytest.skip("no flagship emerald run in local/runs")
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        v = V.run_game("emerald-us", [run], turns=200, z=1, out_dir=Path(td))
+    if v.get("match") is None:
+        pytest.skip(v.get("why", "nothing scoreable"))
+    dropped = len(v["entry_frames"])
+    assert dropped <= max(2, v["turns"] // 20), (
+        f"{dropped} of {v['turns'] + dropped} turns excluded as map-entry frames — "
+        f"this clause is meant to remove the first frame after a warp, not a slice "
+        f"of the run")
+    # and the frames it keeps still separate a right crop from a wrong one
+    assert v["match"] - v["wrong_crop"] >= V.BAND["spread_wrong_crop"]
+    assert v["margin"] >= V.BAND["margin"]
+
+
+# -- 10. the sheet and the table must describe the same run --------------------
+
+def test_the_json_and_the_sheet_share_one_run_derived_name():
+    """A fixed `<game>.json` beside a run-named PNG goes stale silently: a
+    10:11 sheet next to a 09:56 table of different runs, with nothing in
+    either saying so.
+
+    MUTATION that fails this: write the table to `out_dir / f"{game}.json"`.
+    """
+    runs = _runs("crystal")
+    if not runs:
+        pytest.skip("no crystal run in local/runs")
+    import subprocess
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        r = subprocess.run(
+            [sys.executable, str(REPO_ROOT / "scripts" / "verify_map_alignment.py"),
+             *[str(p) for p in runs], "--turns", "6", "--zoom", "1", "--out", td],
+            cwd=REPO_ROOT, capture_output=True, text=True,
+            env={"PYTHONPATH": str(REPO_ROOT), "PATH": "/usr/bin:/bin"})
+        assert r.returncode in (0, 1), r.stderr[-2000:]
+        pngs = sorted(Path(td).glob("*.png"))
+        jsons = sorted(Path(td).glob("*.json"))
+        assert pngs and jsons
+        assert {p.stem for p in pngs} == {j.stem for j in jsons}
+        body = json.loads(jsons[0].read_text())
+        assert body["runs"] == [p.name for p in runs]
+        assert body["generated"]
+        assert Path(body["sheet"]).name == pngs[0].name
+
+
+def test_a_row_carries_the_map_the_sheet_prints():
+    """The sheet prints the map key and name on every panel; the table has to
+    carry them too, or a reader has to go back to the picture.
+
+    MUTATION that fails this: drop `map` / `map_name` from the row.
+    """
+    runs = _runs("crystal")
+    if not runs:
+        pytest.skip("no crystal run in local/runs")
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        v = V.run_game("crystal-us", runs, turns=4, z=1, out_dir=Path(td))
+    if v.get("match") is None:
+        pytest.skip(v.get("why", "nothing scoreable"))
+    for r in v["rows"]:
+        assert r["map"], f"turn {r['turn']} has no map"
+        assert r["map_name"], f"turn {r['turn']} on {r['map']} has no map_name"
+        assert r["map"] == r["key"]
+
+
+def test_a_warp_frame_without_a_banner_is_still_scored():
+    """The conjunction at the CALL SITE, not just in `is_entry_frame`.
+
+    On the flagship Emerald run seven turns carry the run's map-change record
+    and only one of them carries the banner; the other six are ordinary frames
+    that happen to be the first on a new map, and dropping them would throw
+    away six perfectly good measurements — including, on a broken atlas, six
+    chances to catch it.
+
+    MUTATION that fails this: `"entry_frame": bool(p.entered)` at the call
+    site. `test_both_signals_are_required_to_exclude_a_frame` cannot see that
+    one, because it tests the function and not who calls it.
+    """
+    run = RUNS / EMERALD_BANNER_RUN
+    if not run.is_dir():
+        pytest.skip("no flagship emerald run in local/runs")
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        v = V.run_game("emerald-us", [run], turns=200, z=1, out_dir=Path(td))
+    if v.get("match") is None:
+        pytest.skip(v.get("why", "nothing scoreable"))
+    warped = [r for r in v["rows"] if r["entered"]]
+    assert len(warped) > 1, "this run should have several map changes in the sample"
+    kept = [r for r in warped if not r["entry_frame"] and r["map_frame"]]
+    assert kept, ("every warp frame was excluded — the banner has to be required "
+                  "as well, or the clause is dropping ordinary frames")
+    assert [r["turn"] for r in warped if r["entry_frame"]] == [EMERALD_BANNER_TURN]

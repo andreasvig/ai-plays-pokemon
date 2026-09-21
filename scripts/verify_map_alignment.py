@@ -59,6 +59,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional
@@ -107,6 +108,64 @@ MAP_FRAME_FLOOR = 0.70
 #: three quarters of the palette distinct separates the two cleanly, with the
 #: nearest legitimate case at 23 -> 22.
 LOOKUP_KEEPS = 0.75
+
+#: How much of the disagreement the fitted colour lookup had to close before
+#: the frame counts as RECOLOURED — the artwork and the game not sharing their
+#: colours, with a palette permutation explaining it.
+#:
+#: **The gap, and only the gap.** Two things this is deliberately not. It is
+#: not `match >= 0.90`: Crystal's NEW_BARK_TOWN under a day/night mismatch
+#: fits 0.0002 raw and 0.8965 through the lookup, where the 0.8965 is NPCs and
+#: the 0.8963 gap is the palette — a 0.90 level gate discarded the second
+#: clearest recolour in the sample over four thousandths (measured
+#: 2026-09-21). And it is not paired with a `direct < 0.70` floor, which is
+#: what this constant replaced: since `match <= 1` and `match >= direct`, a
+#: gap of 0.30 already implies a pre-lookup agreement at or under 0.70, so the
+#: floor decided nothing. Its mutation control was a NO-OP, which is how it
+#: was caught — two constants where one bites is one of them waiting to drift.
+#:
+#: Being recoloured is not by itself a fault: a runtime recolour is exactly
+#: what the lookup exists to see through. It becomes a fault when it reaches
+#: every map whose colours come from the world. See :func:`colour_verdict`.
+RECOLOURED_GAP = 0.30
+
+#: The area-name banner the game paints for a second or two on entering a new
+#: area — "LITTLEROOT TOWN" on a wooden sign across the top-left. A frame
+#: carrying it is a map-ENTRY frame, and on top of the occlusion the camera
+#: may still be mid-scroll from the warp that put the player there.
+#:
+#: **It cannot be told from a real misalignment by its pixels.** Measured on
+#: Emerald turn 49 (2026-09-21), per tile row, the share of comparable pixels
+#: disagreeing:
+#:
+#:     at the DECLARED crop     0.80 0.74 0.30 0.47 0.53 0.42 0.17
+#:     at the best neighbour    0.43 0.45 0.10 0.00 0.00 0.02 0.00   (0, +1)
+#:
+#: The disagreement at the declared crop is spread over the whole frame, not
+#: concentrated at the top, because the camera had not settled — which is
+#: exactly what a one-tile atlas offset looks like. So the run's own
+#: map-change record is REQUIRED, not corroborating, and these shape numbers
+#: only decide whether a banner is on top of it.
+BANNER_TILES_W, BANNER_TILES_H = 5, 2     # the smallest block worth calling a banner
+BANNER_INSIDE = 0.3                       # ...of which this much must disagree
+BANNER_OUTSIDE = 0.9                      # ...while the rest of the frame agrees this well
+
+#: What an atlas-wide recolour usually means, per game. Keyed by game because
+#: nothing in the atlas records which palette variant it was rendered from —
+#: `Game.time_of_day` lives in `scripts/render_gamemaps.py` and stops there.
+#: If the atlas carried it, this could name the mismatch outright instead of
+#: inferring it from how far the recolour reaches.
+PALETTE_CAUSE = {
+    "crystal-us":
+        "a GBC recolours the whole world by the clock, and a render is of ONE time of "
+        "day — `Game.time_of_day` in scripts/render_gamemaps.py, one of morn/day/nite/"
+        "dark. An atlas rendered `nite` under daytime runs (or the reverse) looks "
+        "exactly like this: every tile in the right place and every colour wrong.",
+}
+DEFAULT_PALETTE_CAUSE = (
+    "every sampled map is a palette permutation of what the game drew, so this is a "
+    "property of the atlas rather than of any one map — a palette variant, a colour "
+    "depth, or a season chosen at render time.")
 
 #: A window has to see at least this many comparable pixels to be scored at
 #: all. Below it the turn is standing in a corner where the camera is mostly
@@ -250,6 +309,10 @@ class Placement:
     x: int
     y: int
     shot: Path
+    #: the previous turn's position was on a DIFFERENT map, so this frame is
+    #: the first after a warp — the game paints its area-name banner over it
+    #: and the camera may not have finished scrolling
+    entered: bool = False
 
 
 def game_of(run_dir: Path) -> Optional[str]:
@@ -399,7 +462,13 @@ def placements(run_dir: Path) -> list[Placement]:
         if turn - 1 not in pos or turn in fights or turn - 1 in fights:
             continue
         key, x, y = pos[turn - 1]
-        out.append(Placement(run_dir.name, turn, key, x, y, shots[turn]))
+        # Is this the first frame after a warp? The run's own positions say so,
+        # with no reference to any pixel: the previous turn was on another map.
+        # That is the signal the map-entry exclusion is REQUIRED to have — the
+        # banner and the unsettled camera cannot be read off the frame alone.
+        before = pos.get(turn - 2)
+        out.append(Placement(run_dir.name, turn, key, x, y, shots[turn],
+                             entered=before is not None and before[0] != key))
     return out
 
 
@@ -508,6 +577,54 @@ def _palette(a: np.ndarray, mask: np.ndarray) -> int:
     return int(np.unique(codes).size)
 
 
+def banner_block(bad: np.ndarray, mask: np.ndarray, tile: int) -> Optional[tuple]:
+    """The area-name banner, as a block of disagreement at the top-left corner.
+
+    A SHAPE statement, never a score one: the block has to be substantially
+    wrong while everything outside it is substantially right. A genuine
+    misalignment has no such block — once the right offset is found it is
+    clean everywhere, top included — and a frame that matches nothing anywhere
+    has no clean outside.
+
+    Returns ``(w_tiles, h_tiles, inside_bad, outside_agree)`` for the block
+    that hugs the banner most tightly — the qualifying one whose interior
+    disagrees most — or None. Taking the LARGEST qualifying block instead
+    reports the banner as the whole top three rows at 33% wrong, which is true
+    and tells the reader nothing; the tight block is 9x3 at 48%.
+    """
+    best = None
+    for h in range(BANNER_TILES_H, 5):
+        for w in range(BANNER_TILES_W, max(BANNER_TILES_W, mask.shape[1] // tile) + 1):
+            sub = mask[:h * tile, :w * tile]
+            if not sub.any():
+                continue
+            outside = mask.copy()
+            outside[:h * tile, :w * tile] = False
+            if not outside.any():
+                continue
+            inside_bad = float(bad[:h * tile, :w * tile][sub].mean())
+            outside_ok = 1.0 - float(bad[outside].mean())
+            if inside_bad >= BANNER_INSIDE and outside_ok >= BANNER_OUTSIDE:
+                cand = (w, h, inside_bad, outside_ok)
+                if best is None or inside_bad > best[2]:
+                    best = cand
+    return best
+
+
+def is_entry_frame(entered: bool, banner: Optional[tuple]) -> bool:
+    """Both signals, or nothing is excluded.
+
+    ``entered`` comes from the run's own positions — the previous turn was on
+    another map — and involves no pixel. ``banner`` is the shape of what is
+    left over at the best-fitting crop. The first alone would drop every
+    legitimate first-frame-on-a-new-map, including a genuinely misaligned one;
+    the second alone would drop anything with a bright rectangle in its corner
+    and would give the exclusion room to swallow real defects. Kept as its own
+    function so the conjunction can be stated once and tested on its own.
+    """
+    return bool(entered and banner)
+
+
 def self_control(want: np.ndarray, mask: np.ndarray, spec: ScreenSpec,
                  shot_size: tuple[int, int]) -> float:
     """The crop pushed out through the SCREENSHOT reader and back, against itself.
@@ -573,7 +690,7 @@ def score_turn(p: Placement, spec: ScreenSpec, rspec: ScreenSpec, atlas: dict,
         wrong = compare(shot, wref, wx, wy, keep, colour_map, spec.colour_bits)
 
     # margin: the best of the eight one-tile neighbours
-    neighbours = []
+    neighbours, candidates = [], [got]
     for dx in (-1, 0, 1):
         for dy in (-1, 0, 1):
             if dx == 0 and dy == 0:
@@ -582,9 +699,24 @@ def score_turn(p: Placement, spec: ScreenSpec, rspec: ScreenSpec, atlas: dict,
                         keep, colour_map, spec.colour_bits)
             if n is not None:
                 neighbours.append(n["match"])
+                candidates.append(n)
+
+    # The area-name banner, looked for at the BEST of the nine candidates and
+    # not at the declared one: on an entry frame the camera may not have
+    # settled, so the declared crop is off and its residual is spread over the
+    # whole frame. Only paired with the run's own map-change record does this
+    # exclude anything — see BANNER_INSIDE.
+    fit = max(candidates, key=lambda c: c["match"])
+    banner = banner_block(fit["bad"], fit["mask"], spec.tile)
 
     return {
-        "turn": p.turn, "run": p.run, "key": p.key, "name": entry.get("name"),
+        "turn": p.turn, "run": p.run,
+        # What the sheet prints on the panel, under names a reader can guess.
+        # `key` is kept because everything else in this file joins on it.
+        "map": p.key, "map_name": entry.get("name"), "key": p.key,
+        "name": entry.get("name"),
+        # the atlas's own word for whether this map's colours come from the world
+        "indoor": bool(entry.get("indoor")),
         "tile": [p.x, p.y], "window": [ox, oy],
         "match": got["match"], "direct": got["direct"], "raw8": got["raw8"],
         "via": got["via"], "collapse": got["collapse"],
@@ -598,6 +730,12 @@ def score_turn(p: Placement, spec: ScreenSpec, rspec: ScreenSpec, atlas: dict,
         # candidate crops is still under the floor, nothing fits, and the turn
         # is evidence about the frame rather than about the artwork.
         "map_frame": max([got["match"]] + neighbours) >= MAP_FRAME_FLOOR,
+        # ...and is it the first frame after a warp, with the area-name banner
+        # over it and the camera perhaps still scrolling? BOTH the run's own
+        # record and the banner's shape have to say so.
+        "entered": p.entered,
+        "banner": banner,
+        "entry_frame": is_entry_frame(p.entered, banner),
         "self": self_control(got["want"], got["mask"], rspec, shot_size),
         "_shot": shot, "_want": got["want"], "_mask": got["mask"], "_bad": got["bad"],
     }
@@ -627,8 +765,11 @@ def verdict(all_rows: list[dict]) -> dict:
     counted, not averaged in. Folding them in would mean reporting "the map is
     misaligned" about a picture of a Zigzagoon.
     """
-    rows = [r for r in all_rows if r.get("map_frame", True)]
+    rows = [r for r in all_rows
+            if r.get("map_frame", True) and not r.get("entry_frame")]
     skipped = [r for r in all_rows if not r.get("map_frame", True)]
+    entered = [r for r in all_rows
+               if r.get("map_frame", True) and r.get("entry_frame")]
     m = median(r["match"] for r in rows)
     dm = median(r["direct"] for r in rows)
     r8 = median(r["raw8"] for r in rows)
@@ -639,7 +780,11 @@ def verdict(all_rows: list[dict]) -> dict:
 
     out = {"turns": len(rows), "match": m, "direct": dm, "raw8": r8, "wrong_crop": wc,
            "wrong_map": wm, "margin": mg, "self": sf, "reasons": [],
-           "not_map_frames": [r["turn"] for r in skipped], "sampled": len(all_rows)}
+           "not_map_frames": [r["turn"] for r in skipped], "sampled": len(all_rows),
+           "entry_frames": [{"turn": r["turn"], "map": r["key"], "name": r.get("name"),
+                             "tile": r["tile"], "match": r["match"],
+                             "margin": r["margin"], "banner": r["banner"]}
+                            for r in entered]}
     if m is None:
         out["verdict"] = "NO DATA"
         out["reasons"].append(
@@ -681,6 +826,128 @@ def verdict(all_rows: list[dict]) -> dict:
     out["verdict"] = "ALIGNED" if not fails else "SUSPECT"
     out["reasons"] = fails
     return out
+
+
+def colour_verdict(game: str, rows: list[dict]) -> dict:
+    """Whether the artwork is the right COLOUR, which is not whether it lines up.
+
+    Geometry and colour are two claims and ALIGNED was making only one of them:
+    a Crystal atlas rendered `nite` scores 0.9923 against a daytime run with a
+    raw agreement of 0.0000 — every tile where it should be, every colour
+    wrong, and one word covering both.
+
+    **Per turn the two causes are the same observation** — a palette
+    permutation with a near-zero raw agreement and a near-perfect fitted one —
+    and this function does not pretend otherwise. What separates them is
+    SCOPE. `WEATHER_SHADE` belongs to Viridian Forest; a clock belongs to the
+    world and recolours every map the run walked. So the verdict is taken over
+    distinct MAPS, and a sample holding only one map has no scope to measure
+    and is reported as ambiguous rather than guessed at.
+    """
+    by_map: dict[str, list[bool]] = {}
+    for r in rows:
+        # The GAP the lookup closed is the colour statement. The LEVEL it
+        # reached is not: that carries the sprites and the animated tiles too.
+        recoloured = r["match"] - r["direct"] >= RECOLOURED_GAP
+        by_map.setdefault(r["key"], []).append(recoloured)
+    names = {r["key"]: r.get("name") for r in rows}
+    outdoor = {r["key"] for r in rows if not r.get("indoor")}
+    hit = sorted(k for k, v in by_map.items() if any(v))
+    hit_out = sorted(k for k in hit if k in outdoor)
+    n_maps, n_out = len(by_map), len(outdoor)
+
+    def label(k: str) -> str:
+        return f"{k}" + (f" {names[k]}" if names.get(k) else "")
+
+    out = {"maps": n_maps, "outdoor_maps": n_out, "recoloured_maps": hit, "fails": False}
+    if not hit:
+        out["colour"] = "COLOURS MATCH"
+        out["why"] = ""
+        return out
+
+    # The scope unit is the maps whose colours come from the WORLD. A clock or
+    # a season reaches those and only those: a gen-2 indoor map declares
+    # PALETTE_DAY and is the same picture at midnight, so counting it dilutes
+    # the very signal being measured. Measured 2026-09-21 on a daytime Crystal
+    # run against the `nite` atlas: both outdoor maps recoloured (raw 0.0000
+    # and 0.0002) and both indoor maps clean (0.9255, 0.9806) — over all four
+    # that is "1 of 4", which reads as ordinary weather; over the outdoor two
+    # it is "all of them", which is the truth.
+    if n_out >= 2 and len(hit_out) == n_out:
+        out["colour"] = "COLOURS DIFFER EVERYWHERE"
+        out["fails"] = True
+        out["why"] = (
+            f"every one of the {n_out} outdoor maps sampled is recoloured "
+            f"({', '.join(label(k) for k in hit_out)}), so this is a property of the "
+            f"atlas and not of any one map. " + PALETTE_CAUSE.get(game, DEFAULT_PALETTE_CAUSE)
+            + (f" The {n_maps - n_out} indoor map(s) sampled are clean, which is "
+               f"consistent: an indoor map takes a fixed palette and is the same "
+               f"picture whatever the world is doing." if n_maps > n_out else ""))
+        return out
+
+    # Ambiguity is about the OUTDOOR maps too, not about all of them. A sample
+    # of one route and two houses, with the route recoloured, is "1 of 3
+    # recoloured" — which reads as ordinary weather and is exactly how the
+    # daytime Crystal run slipped through at --turns 20. The clean houses are
+    # not evidence: a clock never touches them.
+    if hit and len(hit_out) == n_out:
+        out["colour"] = "COLOURS DIFFER, CAUSE AMBIGUOUS"
+        out["fails"] = True
+        out["why"] = (
+            (f"the only map sampled that takes its colours from the world "
+             f"({label(hit_out[0])}) is a palette permutation of what the game drew"
+             if n_out == 1 else
+             f"{len(hit)} sampled map(s) are a palette permutation of what the game "
+             f"drew and NOT ONE outdoor map was sampled") +
+            f", so there is no scope to measure and the two causes are the same "
+            f"observation here: a runtime recolour of that one place (weather, a cave "
+            f"— ordinary, and the artwork is meant to absorb it), or the whole atlas "
+            f"being the wrong palette variant. Raise --turns until the sample spans "
+            f"two or more outdoor maps. Failed rather than passed because a sample too "
+            f"narrow to tell the two apart is not a pass.")
+        return out
+
+    out["colour"] = "COLOURS DIFFER ON SOME MAPS"
+    out["why"] = (
+        f"{len(hit)} of {n_maps} sampled maps are recoloured and the rest are not "
+        f"({', '.join(label(k) for k in hit)}), and {len(hit_out)} of the {n_out} "
+        f"outdoor ones — so the recolour belongs to those maps, not to the world: "
+        f"weather, a cave, a dark room. The artwork is supposed to absorb it and the "
+        f"fitted lookup is supposed to see through it, so this does not fail.")
+    return out
+
+
+def dominant_recolour(rows: list[dict]) -> Optional[str]:
+    """The commonest colour the artwork uses, and what the game drew there.
+
+    One concrete pair beats any amount of prose about palettes: "the map's
+    120,112,192 is the game's 176,248,80" is indigo against green and needs no
+    explaining.
+    """
+    best = None
+    for r in rows:
+        if r["match"] - r["direct"] < RECOLOURED_GAP or r.get("indoor") \
+                or "_want" not in r:
+            continue
+        want, shot, mask = r["_want"], r["_shot"], r["_mask"]
+        w = want.reshape(-1, 3)[mask.reshape(-1)]
+        sh = shot.reshape(-1, 3)[mask.reshape(-1)]
+        if not len(w):
+            continue
+        codes = (w[:, 0].astype(np.int32) << 16) | (w[:, 1].astype(np.int32) << 8) | w[:, 2]
+        vals, counts = np.unique(codes, return_counts=True)
+        top = int(vals[counts.argmax()])
+        where = codes == top
+        scodes = ((sh[:, 0].astype(np.int32) << 16) | (sh[:, 1].astype(np.int32) << 8)
+                  | sh[:, 2])
+        sv, sc = np.unique(scodes[where], return_counts=True)
+        got = int(sv[sc.argmax()])
+        rgb = lambda c: f"{(c >> 16) & 0xFF},{(c >> 8) & 0xFF},{c & 0xFF}"   # noqa: E731
+        cand = (int(counts.max()), f"the map's commonest colour {rgb(top)} is "
+                                   f"{rgb(got)} on screen")
+        if best is None or cand[0] > best[0]:
+            best = cand
+    return best[1] if best else None
 
 
 def saturated(results: dict) -> bool:
@@ -725,7 +992,7 @@ def sheet(game: str, rows: list[dict], v: dict, spec: ScreenSpec, runs: list[str
     number about it.
     """
     W, H = spec.width * z, spec.height * z
-    PAD, GAP, LAB, HEAD = 26, 14, 34, 132
+    PAD, GAP, LAB, HEAD = 26, 14, 34, 196
     ctl = max(rows, key=lambda r: r["match"])
     CTLH = LAB + H + GAP + 22
 
@@ -734,11 +1001,14 @@ def sheet(game: str, rows: list[dict], v: dict, spec: ScreenSpec, runs: list[str
     img = Image.new("RGB", (width, height), (18, 20, 26))
     g = ImageDraw.Draw(img)
 
-    ok = {"ALIGNED": (120, 205, 150), "SUSPECT": (235, 190, 110)}.get(v["verdict"], (235, 110, 110))
+    ok = {"ALIGNED": (120, 205, 150), "SUSPECT": (235, 190, 110)}.get(v["geometry"],
+                                                                      (235, 110, 110))
+    if v.get("fails"):
+        ok = (235, 150, 100)
     g.text((PAD, PAD), f"{game} — does the shipped map line up with the game?",
            font=font(22, True), fill=(240, 242, 248))
     g.text((PAD, PAD + 30), f"{v['verdict']}", font=font(18, True), fill=ok)
-    g.text((PAD + 130, PAD + 32),
+    g.text((PAD + 300, PAD + 32),
            f"match {v['match']:.4f} (before any colour fit {v['direct']:.4f})   ·   "
            f"wrong crop {fmt(v['wrong_crop'])}   ·   wrong map {fmt(v['wrong_map'])}   ·   "
            f"self {v['self']:.4f}   ·   margin {fmt(v['margin'], sign=True)}",
@@ -755,8 +1025,16 @@ def sheet(game: str, rows: list[dict], v: dict, spec: ScreenSpec, runs: list[str
            font=font(12), fill=(150, 158, 174))
     g.text((PAD, PAD + 92),
            ("; ".join(v["reasons"])[:200] if v["reasons"] else
-            "every clause of the band cleared"),
+            "every clause of the geometry band cleared"),
            font=font(12), fill=(230, 170, 120) if v["reasons"] else (140, 175, 150))
+    colour_line = (f"colour: {v.get('colour', '?')} — "
+                   f"{len(v.get('recoloured_maps', []))} of {v.get('maps', 0)} sampled "
+                   f"maps are a palette permutation of what the game drew. "
+                   + (v.get("recolour_example") or "")).strip()
+    g.text((PAD, PAD + 128), colour_line[:230], font=font(13, True),
+           fill=(235, 150, 100) if v.get("fails") else (140, 175, 150))
+    for i, line in enumerate(wrap(v.get("why", ""), 168)[:3]):
+        g.text((PAD, PAD + 146 + i * 14), line, font=font(11), fill=(160, 166, 180))
     g.text((PAD, PAD + 110),
            f"camera {atlas.get('camera')!r} · png_frame {atlas.get('png_frame', 'map')!r} · "
            f"tile_px {atlas['tile_px']} · compared at the console's {spec.colour_bits} bits "
@@ -789,14 +1067,19 @@ def sheet(game: str, rows: list[dict], v: dict, spec: ScreenSpec, runs: list[str
     y += CTLH - 22
 
     for r in rows:
-        shown = r.get("map_frame", True)
+        shown = r.get("map_frame", True) and not r.get("entry_frame")
         g.text((PAD, y),
                f"turn {r['turn']:>4}   map {r['key']}"
                + (f" {r['name']}" if r.get("name") else "")
                + f"   tile ({r['tile'][0]}, {r['tile'][1]})   window {r['window']}"
                + ("" if shown else
-                  "   —   NOT A MAP FRAME: no crop of any of the nine offsets fits, so "
-                  "this frame is a battle / menu / fade, and it is EXCLUDED from the median"),
+                  ("   —   MAP-ENTRY FRAME: the run says this is the first turn on this "
+                   "map and the area-name banner is over it, camera possibly still "
+                   "scrolling. EXCLUDED from the median"
+                   if r.get("entry_frame") else
+                   "   —   NOT A MAP FRAME: no crop of any of the nine offsets fits, so "
+                   "this frame is a battle / menu / fade, and it is EXCLUDED from the "
+                   "median")),
                font=font(13, True), fill=(222, 228, 240) if shown else (235, 170, 110))
         g.text((PAD, y + 16),
                f"match {r['match']:.4f} (before colour fit {r['direct']:.4f}, raw8 "
@@ -882,11 +1165,22 @@ def run_game(game: str, runs: list[Path], turns: int, z: int, out_dir: Path,
     v["game"] = game
     v["runs"] = [r.name for r in runs]
     v["warnings"] = [w for w in (battle_flag_warning(r) for r in runs) if w]
+    # Colour is a SECOND claim, answered separately: a wrong palette leaves the
+    # geometry perfect, so it must not be folded into the geometry verdict, and
+    # it must not be silent either.
+    scored = [r for r in rows if r.get("map_frame", True)]
+    v["geometry"] = v["verdict"]
+    v.update(colour_verdict(game, scored))
+    v["recolour_example"] = dominant_recolour(scored)
+    if v["fails"]:
+        v["verdict"] = f"{v['geometry']}, COLOURS DIFFER"
     name = (f"{game}__{runs[0].name}" if len(runs) == 1 else f"{game}__{len(runs)}-runs")
     drawn = sheet(game, rows, v, spec, [r.name for r in runs], atlas,
                   out_dir / f"{name}.png", z)
     v["sheet"] = str(drawn.relative_to(REPO_ROOT)) if drawn.is_relative_to(REPO_ROOT) else str(drawn)
     v["rows"] = [{k: r[k] for k in r if not k.startswith("_")} for r in rows]
+    v["stem"] = name
+    v["generated"] = datetime.now().astimezone().isoformat(timespec="seconds")
     return v
 
 
@@ -916,11 +1210,19 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("run_dirs", nargs="+", type=Path)
-    ap.add_argument("--turns", type=int, default=10,
-                    help="how many turns to sample, spread evenly across the run")
+    ap.add_argument("--turns", type=int, default=16,
+                    help="how many turns to sample, spread evenly across the run. The "
+                         "colour verdict needs the sample to span two or more OUTDOOR "
+                         "maps to tell a per-map recolour from a wrong palette, and "
+                         "says so when it does not.")
     ap.add_argument("--zoom", type=int, default=2, help="sheet panels at this multiple of native")
     ap.add_argument("--out", type=Path, default=OUT_DIR)
-    ap.add_argument("--json", type=Path, help="also write the full per-turn table here")
+    ap.add_argument("--json", type=Path,
+                    help="write the full per-turn table HERE instead of beside the sheet. "
+                         "By default each game's table is written next to its own sheet "
+                         "under the same run-derived name, because a fixed name goes "
+                         "stale the moment the next invocation names a different set of "
+                         "runs and nothing in either file says so.")
     ap.add_argument("--no-colour-map", action="store_true",
                     help="score the raw residual only, with no fitted per-colour lookup")
     args = ap.parse_args(argv)
@@ -945,30 +1247,47 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     print(f"\nband pre-registered in {NOTES}; the metric is the share of comparable "
           f"pixels agreeing within ±{TOLERANCE} per channel\n")
-    hdr = (f"{'game':>14}  {'verdict':>14}  {'turns':>5}  {'match':>7}  {'no fit':>7}  "
+    hdr = (f"{'game':>14}  {'verdict':>22}  {'turns':>5}  {'match':>7}  {'no fit':>7}  "
            f"{'wrong crop':>10}  {'wrong map':>9}  {'self':>7}  {'margin':>8}  {'raw8':>6}")
     print(hdr)
     print("-" * len(hdr))
     bad = 0
     for game, v in sorted(results.items()):
         if v.get("match") is None:
-            print(f"{game:>14}  {v['verdict']:>14}  " + "—" * 5)
+            print(f"{game:>14}  {v['verdict']:>22}  " + "—" * 5)
             for line in wrap(v.get("why", ""), 92):
                 print(f"{'':>16}{line}")
             bad += 1
             continue
-        print(f"{game:>14}  {v['verdict']:>14}  {v['turns']:5d}  {v['match']:7.4f}  "
+        print(f"{game:>14}  {v['verdict']:>22}  {v['turns']:5d}  {v['match']:7.4f}  "
               f"{v['direct']:7.4f}  {fmt(v['wrong_crop']):>10}  {fmt(v['wrong_map']):>9}  "
               f"{v['self']:7.4f}  {fmt(v['margin'], sign=True):>8}  {v['raw8']:6.4f}")
+        print(f"{'':>16}geometry {v['geometry']}   ·   {v['colour']} "
+              f"({len(v['recoloured_maps'])} of {v['maps']} sampled maps recoloured)")
+        for line in wrap(v["why"], 92):
+            print(f"{'':>18}{line}")
+        if v["fails"] and v.get("recolour_example"):
+            print(f"{'':>18}{v['recolour_example']}")
         for r in v["reasons"]:
             print(f"{'':>16}· {r}")
         print(f"{'':>16}sheet: {v['sheet']}")
-        mapped = [r for r in v["rows"] if r.get("map_frame", True)]
+        mapped = [r for r in v["rows"]
+                  if r.get("map_frame", True) and not r.get("entry_frame")]
         worst = min(mapped or v["rows"], key=lambda r: r["match"])
         print(f"{'':>16}worst map frame: turn {worst['turn']} on {worst['key']}"
               + (f" ({worst['name']})" if worst.get("name") else "")
               + f" tile {tuple(worst['tile'])} — {worst['match']:.4f} "
               + f"(margin {fmt(worst['margin'], sign=True)})")
+        for e in v.get("entry_frames", []):
+            w, h, inside, outside = e["banner"]
+            print(f"{'':>16}excluded turn {e['turn']} on {e['map']}"
+                  + (f" ({e['name']})" if e.get("name") else "")
+                  + f" tile {tuple(e['tile'])} — MAP-ENTRY FRAME: the run's own positions "
+                    f"say it is the first turn on this map, and a {w}x{h}-tile block at the "
+                    f"top-left disagrees on {inside:.0%} of its pixels while the rest of the "
+                    f"frame agrees on {outside:.0%}. That is the area-name banner over a "
+                    f"camera that may still be scrolling from the warp, not the artwork. "
+                    f"It scored {e['match']:.4f} with margin {fmt(e['margin'], sign=True)}.")
         if v.get("not_map_frames"):
             print(f"{'':>16}{len(v['not_map_frames'])} of {v['sampled']} sampled turns show no "
                   f"map at all and were excluded — turns "
@@ -977,7 +1296,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                   f"the artwork.")
         for w in v.get("warnings", []):
             print(f"{'':>16}! {w}")
-        if v["verdict"] != "ALIGNED":
+        if v["geometry"] != "ALIGNED" or v["fails"]:
             bad += 1
 
     if saturated(results):
@@ -986,11 +1305,27 @@ def main(argv: Optional[list[str]] = None) -> int:
               "above must not be quoted.")
         bad += 1
 
+    # The table goes beside the sheet, under the sheet's own name. A fixed
+    # `<game>.json` goes stale the moment the next invocation names a different
+    # set of runs: a 10:11 PNG next to a 09:56 JSON of other runs, with nothing
+    # in either saying so. Both artifacts now share one stem, and the JSON
+    # carries the runs, the time and the sheet it belongs to, so a mismatch is
+    # readable rather than invisible.
+    head = {"band": BAND, "tolerance": TOLERANCE,
+            "generated": datetime.now().astimezone().isoformat(timespec="seconds")}
     if args.json:
         args.json.parent.mkdir(parents=True, exist_ok=True)
-        args.json.write_text(json.dumps({"band": BAND, "tolerance": TOLERANCE,
-                                         "games": results}, indent=1, default=str))
+        args.json.write_text(json.dumps(dict(head, games=results), indent=1, default=str))
         print(f"\njson: {args.json}")
+    else:
+        for game, v in sorted(results.items()):
+            stem = v.get("stem") or game
+            path = args.out / f"{stem}.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(
+                dict(head, game=game, runs=v.get("runs"), sheet=v.get("sheet"),
+                     result=v), indent=1, default=str))
+            print(f"{'':>16}json:  {path}")
     return 1 if bad else 0
 
 
