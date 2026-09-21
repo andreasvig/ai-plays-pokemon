@@ -1062,3 +1062,207 @@ def test_a_soulsilver_map_says_indoors_when_it_has_a_matrix_of_its_own(atlases):
         seen_both.add(m["indoor"])
     assert seen_both == {True, False}, \
         "the atlas is all one kind, so this could not tell the two apart"
+
+
+# -- the material struct: where a texture's wrap mode and alpha actually live --
+#
+# One off-by-eight in `ds3d/nsbmd.py` produced four separate visual defects on
+# both gen-4 cartridges and both gen-5 ones, and none of the counters this file
+# already asserts on could see it: every triangle was decoded, every prop
+# resolved, every declared quad was drawn. What was wrong was what each
+# triangle was PAINTED with.
+#
+#   `_material_at` anchored the struct at the material NAME DICTIONARY rather
+#   than at the material section, and then read `dummy`/`size` as two words
+#   where the format has two halfwords. Four bytes plus four bytes: the
+#   "diffuse colour" was really the polygon attribute, and the "texture
+#   parameters" were really the palette base.
+#
+# The renderer therefore took the wrap mode from the NSBTX instead, where the
+# repeat bits are always clear — so every UV past the first tile CLAMPED to the
+# edge texel. A tree row tiling across a chunk became one flat ribbon of its
+# darkest colour edge to edge (Route 201, Route 29), a roof became one flat
+# saturated slab, a 64x64 noise-grass texture became one green, and two
+# neighbouring chunks clamping to different corners met at a visible tone step.
+
+def _gen4_models():
+    """`(game, model, texture pool)` for every model the two gen-4 games draw.
+
+    Terrain and props both: the bug is in the format, not in either path, and a
+    census over one of them would leave the other unguarded.
+    """
+    import render_dsmaps
+
+    from ds3d import field
+    from ds3d.nsbmd import load_models
+
+    out = []
+    for game in (PLATINUM, SOULSILVER):
+        rom = render_dsmaps.ROMS.get(game)
+        if rom is not None and not rom.is_file():
+            continue
+        if rom is None and not (render_dsmaps.CACHE / "SHA").exists():
+            continue
+        d = render_dsmaps.source_for(game, offline=True)
+        art = render_dsmaps.Field3D(d, tile_px=render_dsmaps.TILE_PX["3d"])
+        ids, _ = render_dsmaps.placeable(d, render_dsmaps.observed_maps(game))
+        for map_id in ids:
+            win = render_dsmaps.map_window(d, map_id)
+            area = art.area(win.header)
+            mt = art.assets.map_texset(area.map_texture_set)
+            pt = art.assets.prop_texset(area.prop_texture_set)
+            archive = art.prop_archive(win)
+            for col, row in sorted(win.cells):
+                raw = art.land_block(win.header, col, row)
+                if raw is None:
+                    continue
+                block = field.land_block(raw)
+                if block.model:
+                    out.append((game, load_models(block.model, 0)[0][0], mt))
+                for model_id, _pos, _scale in block.placements:
+                    try:
+                        pm = art.assets.prop_model(model_id, archive)
+                    except (IndexError, SystemExit, KeyError):
+                        continue
+                    out.append((game, pm, field.TexPool(pt, field.own_textures(pm.data))))
+    if not out:
+        pytest.skip("neither gen-4 source is on disk")
+    return out
+
+
+def test_a_material_struct_starts_where_its_own_texture_size_says_it_does():
+    """The oracle that settles the struct base, and it is not a reference image.
+
+    A material states `orig_width`/`orig_height` — the size of the texture it
+    binds — and the NSBTX states the same size independently, in a different
+    file, packed into different bits. Two sources that must agree, over every
+    model both cartridges draw.
+
+    This is the test the offset could not survive: at the right base every
+    material agrees, and four bytes either side NONE of them do, because the
+    fields there are a fixed-point magnification factor and a palette base.
+    """
+    checked = agreed = 0
+    for game, model, texset in _gen4_models():
+        pairs = model.texture_pairs()
+        for mi, _pi in model.bind_draw():
+            tname, _pname = pairs.get(mi, (None, None))
+            if tname is None or tname not in texset.textures:
+                continue
+            p = texset.tex_params(tname)
+            checked += 1
+            agreed += model.material_orig_size(mi) == (8 << ((p >> 20) & 7),
+                                                       8 << ((p >> 23) & 7))
+    assert checked > 400, checked
+    assert agreed == checked, f"{checked - agreed} of {checked} materials disagree"
+
+
+def test_the_wrap_mode_comes_from_the_material_and_not_from_the_texture():
+    """The two sources DISAGREE, and the material is the one that is right.
+
+    An NSBTX entry owns where a texture is, how big it is, what format it is in
+    and whether colour 0 is transparent. Whether it REPEATS belongs to the
+    material that binds it, and in every texture set these two cartridges ship
+    the NSBTX's repeat bits are clear. Reading them there clamps every UV past
+    the first tile to the edge texel.
+
+    Asserted on the scene the renderer actually builds, not on a reimagined
+    copy of the rule: `Scene.add_model` is what stores the wrap flags with each
+    triangle, so that is what is read back. The first assertion is the one that
+    stops this going vacuous — if the two sources ever agreed, the test would
+    pass for the wrong reason.
+    """
+    from ds3d import scene as ds3d_scene
+
+    disagreed = repeated = 0
+    for game, model, texset in _gen4_models():
+        pairs = model.texture_pairs()
+        for mi, _pi in model.bind_draw():
+            tname, _pname = pairs.get(mi, (None, None))
+            if tname is None or tname not in texset.textures:
+                continue
+            tex_bits = (texset.tex_params(tname) >> 16) & 0xF
+            mat_bits = (model.material_texparams(mi) >> 16) & 0xF
+            disagreed += tex_bits != mat_bits
+            repeated += mat_bits != 0
+    assert disagreed > 300, \
+        f"only {disagreed} materials disagree with their NSBTX, so this is near-vacuous"
+    assert repeated > 300, repeated
+
+    # and the scene carries the material's answer, not the texture's
+    game, model, texset = next((g, m, t) for g, m, t in _gen4_models()
+                               if any((m.material_texparams(mi) >> 16) & 3 == 3
+                                      for mi, _ in m.bind_draw()))
+    sc = ds3d_scene.Scene()
+    sc.add_model(model, texset)
+    assert any(w[0] and w[1] for _v, _uv, _tex, w in sc.tris), \
+        "no triangle in a model whose materials ask for repeat was given repeat"
+
+
+def test_a_translucent_material_is_blended_even_when_its_texture_is_not():
+    """A building's drop shadow is an OPAQUE texture at polygon alpha 9 of 31.
+
+    `is_translucent` reads texels, so with the material's alpha dropped on the
+    floor the shadow went through the opaque pass and every house on both gen-4
+    cartridges stood beside a solid black slab. The alpha is folded into the
+    texel alpha in `Scene.add_model` precisely so the existing two-pass split
+    picks it up with no second mechanism.
+
+    Both directions, because "everything is translucent now" would also pass a
+    one-sided check: the opaque materials must still come out opaque.
+    """
+    from ds3d import scene as ds3d_scene
+
+    soft = hard = 0
+    for game, model, texset in _gen4_models():
+        pairs = model.texture_pairs()
+        for mi, _pi in model.bind_draw():
+            tname, _pname = pairs.get(mi, (None, None))
+            if tname is None or tname not in texset.textures:
+                continue
+            alpha = model.material_alpha(mi)
+            if not (0 < alpha < 31):
+                hard += 1
+                continue
+            soft += 1
+            sc = ds3d_scene.Scene()
+            n = sc.add_model(model, texset)
+            if not n:
+                continue
+            tex = sc.tris[-1][2] if sc.tris else None
+            # every triangle this material contributed must now be soft
+            softs = [t for t in sc.tris if ds3d_scene.is_translucent(t[2])]
+            assert softs, (game, model.name, mi, alpha)
+    assert soft >= 20, f"only {soft} translucent materials in the corpus"
+    assert hard > soft, "almost everything is translucent, which would pass vacuously"
+
+
+def test_route_201_is_tree_rows_and_not_ribbons():
+    """The picture, end to end, on the map Andreas pointed at.
+
+    ROUTE_201 has NO props — measured, `add_chunk` reports 0 placements on both
+    its cells — so everything on it is terrain, and the dark-green bands
+    running the full 64 tiles were the `conttree` tree-row material clamped to
+    one texel. The metric is the one that separates the two renders without
+    naming a colour: how many image rows are more than half a single RGB value.
+    262 of 512 before, 51 after; the surviving ones are the genuine unbroken
+    tree walls along the top and bottom edges.
+    """
+    import collections
+
+    import numpy as np
+
+    mod, d, art = _three_d()
+    win = mod.map_window(d, 342)
+    px = art.pixels(win)
+    assert px is not None
+    for st in art.stats[win.key]:
+        assert st.props == 0, "Route 201 has props now; the band cannot be blamed on terrain alone"
+    flat = 0
+    for y in range(px.shape[0]):
+        top = collections.Counter(map(tuple, px[y, :, :3])).most_common(1)[0][1]
+        flat += top > px.shape[1] // 2
+    assert flat < 120, f"{flat} of {px.shape[0]} rows are more than half one colour"
+    assert int(((px[..., 3] > 200) & (px[..., :3].max(2) < 40)).sum()) == 0, \
+        "opaque near-black pixels on a route: a shadow quad written instead of blended"
+    assert len(np.unique(px[..., :3].reshape(-1, 3), axis=0)) > 400

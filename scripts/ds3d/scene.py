@@ -61,6 +61,7 @@ class Scene:
         before = len(self.tris)
         for mi, pi in model.bind_draw():
             tname, pname = pairs.get(mi, (None, None))
+            alpha = model.material_alpha(mi)
             if tname is None or tname not in texset.textures:
                 # An untextured material is a FLAT COLOUR, not a hole. Drawn as
                 # a 1x1 texture of its own diffuse colour, which is where the
@@ -71,8 +72,22 @@ class Scene:
                 wrap = (1, 1, 0, 0)
             else:
                 tex = texset.image(tname, pname)
-                p = texset.tex_params(tname)
+                # WHERE the texture is and HOW IT WRAPS come from two different
+                # files. The NSBTX entry owns the offset, the size, the format
+                # and the colour-0 flag; the repeat and flip bits belong to the
+                # MATERIAL that binds it (`Model.material_texparams`), and in
+                # every NSBTX we read they are clear. Taking them from the
+                # texture clamps everything, which is a whole tree row drawn as
+                # one flat ribbon of its edge texel — see `material_texparams`.
+                p = texset.tex_params(tname) | model.material_texparams(mi)
                 wrap = ((p >> 16) & 1, (p >> 17) & 1, (p >> 18) & 1, (p >> 19) & 1)
+            if alpha < 31:
+                # The MATERIAL is translucent even where its texture is not.
+                # Folded into the texel alpha so `is_translucent` sees it and
+                # the second, blended pass picks the triangle up; the copy is
+                # per material bind, not per triangle.
+                tex = tex.copy()
+                tex[..., 3] = (tex[..., 3].astype(np.uint16) * alpha // 31).astype(np.uint8)
             tris, _ = decode(model.piece_dl(pi))
             for t in tris:
                 v = np.array([[a[0], a[1], a[2]] for a in t], np.float64) * scale * ps

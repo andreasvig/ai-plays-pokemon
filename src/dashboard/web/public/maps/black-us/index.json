@@ -21,14 +21,14 @@
   "note": "the cartridge's own textured 3D field artwork \u2014 terrain and props \u2014 rendered straight down and orthographic at one pixel per world unit; PNG pixel (0,0) is tile png_origin, so a source rect subtracts it",
   "doors": "none: Gen 5 event data is not decoded, so an interior renders but the viewer has no door to open it from"
  },
- "bytes": 357010,
+ "bytes": 1466408,
  "maps": {
   "317:0": {
    "name": null,
    "width": 64,
    "height": 96,
    "file": "317-0.png",
-   "bytes": 146565,
+   "bytes": 734839,
    "indoor": false,
    "border": {
     "file": "317-0-border.png",
@@ -68,7 +68,7 @@
    "width": 64,
    "height": 64,
    "file": "319-0.png",
-   "bytes": 85457,
+   "bytes": 360257,
    "indoor": false,
    "border": {
     "file": "319-0-border.png",
@@ -103,7 +103,7 @@
    "width": 17,
    "height": 10,
    "file": "320-0.png",
-   "bytes": 5387,
+   "bytes": 7544,
    "indoor": true,
    "border": {
     "file": "320-0-border.png",
@@ -123,7 +123,7 @@
    "width": 32,
    "height": 32,
    "file": "389-0.png",
-   "bytes": 48105,
+   "bytes": 170622,
    "indoor": false,
    "border": {
     "file": "389-0-border.png",
@@ -163,7 +163,7 @@
    "width": 14,
    "height": 11,
    "file": "390-0.png",
-   "bytes": 6037,
+   "bytes": 11943,
    "indoor": true,
    "border": {
     "file": "390-0-border.png",
@@ -191,7 +191,7 @@
    "width": 12,
    "height": 9,
    "file": "391-0.png",
-   "bytes": 4913,
+   "bytes": 12333,
    "indoor": true,
    "border": {
     "file": "391-0-border.png",
@@ -219,7 +219,7 @@
    "width": 14,
    "height": 11,
    "file": "392-0.png",
-   "bytes": 5353,
+   "bytes": 10777,
    "indoor": true,
    "border": {
     "file": "392-0-border.png",
@@ -247,7 +247,7 @@
    "width": 17,
    "height": 13,
    "file": "396-0.png",
-   "bytes": 8847,
+   "bytes": 14291,
    "indoor": true,
    "border": {
     "file": "396-0-border.png",
@@ -267,7 +267,7 @@
    "width": 32,
    "height": 32,
    "file": "397-0.png",
-   "bytes": 25158,
+   "bytes": 107051,
    "indoor": false,
    "border": {
     "file": "397-0-border.png",
@@ -312,7 +312,7 @@
    "width": 15,
    "height": 21,
    "file": "398-0.png",
-   "bytes": 20428,
+   "bytes": 35991,
    "indoor": true,
    "border": {
     "file": "398-0-border.png",

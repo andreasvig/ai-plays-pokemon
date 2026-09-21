@@ -70,15 +70,75 @@ class Model:
         _f0, _f1, dlo, dll = struct.unpack_from('<4I', d, po)
         return d[po + dlo: po + dlo + dll]
 
+    # -- the material struct ------------------------------------------------
+    #
+    # Offsets into `NNSG3dResMtl`, and the first two are ONE word between them:
+    #
+    #   0x00 u16 dummy            always 0
+    #   0x02 u16 size             the struct's own length: 0x2C, or more when
+    #                             it carries a texture matrix
+    #   0x04 u32 diffuse_ambient  <- the flat colour an untextured face draws
+    #   0x08 u32 specular_emission
+    #   0x0C u32 polygon_attr
+    #   0x10 u32 polygon_attr_mask
+    #   0x14 u32 texture_params   <- the repeat/flip bits, and ONLY those
+    #   0x18 u32 texture_params_mask
+    #   0x1C u16 palette_base, u16 flags
+    #   0x20 u16 orig_width, u16 orig_height
+    #
+    # Reading `dummy` and `size` as two WORDS rather than two halfwords put
+    # every field four bytes late, and a second four came from anchoring the
+    # struct at the name dictionary rather than at the material section — so
+    # the diffuse colour was really the polygon attribute and the texture
+    # parameters were really the palette base. Neither raises: a wrong colour
+    # is a colour and a wrong parameter word is still 32 bits.
+    #
+    # The oracle that settles it is `orig_width`/`orig_height`: the material
+    # states the size of the texture it binds, and the NSBTX states it too.
+    # Over every model the four rendered gen-4 games reach, 514 of 514 agree at
+    # this base and 0 of 514 agree four bytes later (`tests/test_dsmaps.py`).
+    MAT_DIFFUSE = 0x04
+    MAT_POLY_ATTR = 0x0C
+    MAT_TEXPARAMS = 0x14
+    MAT_ORIG_SIZE = 0x20
+
     def _material_at(self, idx):
         _, _, item = self.materials[idx]
-        # material struct: u32 dummy, u32 size, u32 diffuse_ambient,
-        # u32 specular_emission, u32 polygon_attr, u32 polygon_attr_mask,
-        # u32 texture_params, ...
-        return self.off + self.mat_off + 4 + u32(item, 0)
+        return self.off + self.mat_off + u32(item, 0)
 
-    def material_teximage(self, idx):
-        return struct.unpack_from('<I', self.data, self._material_at(idx) + 24)[0]
+    def material_texparams(self, idx):
+        """The material's own `TEXIMAGE_PARAM`, which carries the WRAP MODE.
+
+        A texture's NSBTX entry declares where it is, how big it is and what
+        format it is in; whether it REPEATS is a property of the material that
+        binds it, and the two live in different files. Read from the NSBTX the
+        repeat bits are always clear, every UV outside the first tile clamps to
+        the edge texel, and a tree row whose canopy tiles across a whole chunk
+        becomes one flat ribbon of the darkest colour in its texture, running
+        edge to edge. 495 of the 514 materials above ask for repeat in both
+        directions; ten genuinely want the clamp.
+        """
+        return struct.unpack_from('<I', self.data,
+                                  self._material_at(idx) + self.MAT_TEXPARAMS)[0]
+
+    def material_alpha(self, idx) -> int:
+        """`POLYGON_ATTR` bits 16-20: 31 opaque, 1-30 translucent, 0 wireframe.
+
+        A material can be see-through with a texture that is not: a building's
+        drop shadow on Gen 4 is an OPAQUE black texture drawn at alpha 9/31,
+        and a renderer that reads only the texels paints a black slab beside
+        every house. 134 of the 630 materials the four rendered gen-4 maps
+        touch are translucent this way, and none of them is translucent in its
+        texture.
+        """
+        pa = struct.unpack_from('<I', self.data,
+                                self._material_at(idx) + self.MAT_POLY_ATTR)[0]
+        return (pa >> 16) & 0x1F
+
+    def material_orig_size(self, idx):
+        """`(width, height)` of the texture this material expects to bind."""
+        return struct.unpack_from('<2H', self.data,
+                                  self._material_at(idx) + self.MAT_ORIG_SIZE)
 
     def material_diffuse(self, idx):
         """The material's own diffuse colour, as RGB 0-255.
@@ -88,7 +148,8 @@ class Model:
         renderer that only knows how to draw textures drops those polygons and
         leaves a black hole in the middle of the room.
         """
-        v = struct.unpack_from('<I', self.data, self._material_at(idx) + 8)[0] & 0x7FFF
+        v = struct.unpack_from('<I', self.data,
+                               self._material_at(idx) + self.MAT_DIFFUSE)[0] & 0x7FFF
         return ((v & 31) * 255 // 31, ((v >> 5) & 31) * 255 // 31, ((v >> 10) & 31) * 255 // 31)
 
 
