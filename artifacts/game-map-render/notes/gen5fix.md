@@ -292,3 +292,129 @@ Also: the first baseline here was captured with `pytest -q | tail -25`, which
 silently cut the first two `FAILED` lines off a 26-failure list — both of them
 the camera tests above, which made them look new when they were not. A
 tail-capped log is not the list.
+
+## Follow-up: the footprint clip, and why black 2 would not render
+
+Merged `skyemu-backend` (e1446b5), which added `camera.in_footprint`. Black 2
+then failed `run_checks` on `bare_route` — `route tiles on real geometry
+517/518`, bare tile `(438, 6, 1)` — and the renderer refuses to write on that
+gate, so the game shipped nothing, names included.
+
+### The clip is NOT pure loss in gen 5 — the argument dies
+
+The proposal was that gen 5 renders the whole cell block and then CROPS to the
+window, so out-of-cell geometry is already gone and the clip can only take
+something useful. Two measurements kill it.
+
+**Gen 5 keeps a pad, exactly as gen 4 does.** `Field3D.pixels` crops with
+`frame.crop(...)`, which preserves `pad`, and `frame.cut` goes through
+`crop_box`, which ADDS it back. Every shipped Gen 5 map has a non-zero top pad
+(18 to 128 px). The band the gen-4 slivers appeared in is present here too.
+
+**And the crop provably cannot do the clip's job, because the pitch lifts
+out-of-cell geometry back INSIDE the ground rectangle.** Measured per map,
+clip on versus off with the pad pinned so only the triangle set varies:
+
+    TOTAL 70,918 opaque px removed — 60,153 in pad bands,
+                                     10,765 INSIDE the ground rectangle
+
+    black2 427   19,414  (8,998 pad, 10,416 inside)   black2 437   33,195 (all pad)
+    black2 435    5,798  (all pad)                    black2 443    5,798 (all pad)
+    black-us 398  5,798  (all pad)                    black2 446      566 (all pad)
+    black-us 319    349  (all inside)
+
+The 10,765 pixels inside the ground rect are unreachable by any crop. They are
+the mechanism gen 4's own test already names: a neighbour's ground south of the
+cell, "lifted 8.7 px by its own altitude back over the boundary and into the
+last 9 rows of the map's own rectangle". 427's is a full-width band of
+treetops along its southern edge. The clip earns its place in gen 5.
+
+### Tile (6, 1) of map 438: the triangle
+
+Two triangles, one quad, and they are not a sliver:
+
+    x [8.0, 152.0]   y [-64.0, 72.0]   z [0.0, 0.0]
+
+A VERTICAL face standing in the plane `z = 0` — map 438's reception counter,
+against the north wall of Aspertia Gate. Its footprint on the z axis is a
+LINE, not a box, so `v[:, 2].max() <= origin[1]` reads `0.0 <= 0.0` and drops
+it. It left a black hole through the counter and a walked tile standing on
+nothing. One tile out of 518 because a room has exactly one north wall.
+
+### The fix is in `in_footprint`, NOT a call-site opt-out
+
+A gen-5 opt-out would have been wrong twice over: it would have thrown away
+70,918 px of correct clipping in gen 5, and it would have left gen 4 holding
+the same latent bug for the first wall it ever puts on a cell boundary.
+
+The rule is now per axis: a footprint **with extent** must overlap the cell, a
+**degenerate** one need only lie within it.
+
+    def outside(lo_v, hi_v, lo, hi):
+        if lo_v == hi_v:                 # a line, not a box: edge-on face
+            return lo_v < lo or lo_v > hi
+        return hi_v <= lo or lo_v >= hi
+
+Both halves are load-bearing and the existing tests already pinned the other
+one: `quad(17.0, 200, 232, 512, 528)` has `z.min() == 512 == gz`, real extent,
+no area inside, and must still be dropped — relaxing the whole comparison to
+`<`/`>` keeps it and puts 178 px of Route 201's neighbour back on the map.
+Equality is exact, not toleranced: the case is a face whose vertices share a
+coordinate literally.
+
+### Controls
+
+* **Gen 4 unchanged, measured.** All 13 placeable Platinum maps render
+  byte-identically under the old rule and the new one. Twinleaf's right-pad
+  sliver stays at **0** opaque px outside the ground rect under both.
+  (SoulSilver could not be measured — `map_data_048.bin` is not in the local
+  pret cache.)
+* **Gen 5 changes one map.** Of the 19 maps, only 438 differs (1,710 px, the
+  counter). Five maps keep a handful of extra degenerate triangles and render
+  byte-identically — they are edge-on to the camera.
+* **`tests/test_camera.py` 42/42**, including every `in_footprint` fixture.
+
+### Mutations
+
+| mutation | caught by |
+|---|---|
+| drop the degenerate branch (the original rule) | `test_a_face_standing_in_the_boundary_plane_is_inside_the_cell` |
+| " | `test_every_route_tile_lands_on_real_geometry` — reproduces `black2-us: [(438, 6, 1)]` exactly |
+| relax to `<`/`>` for every triangle | `test_a_face_standing_in_the_boundary_plane_is_inside_the_cell` |
+| " | `test_geometry_wholly_outside_the_cell_is_dropped_rather_than_padded_for` |
+| drop the `quantise` call in the gen-5 reproduce test | `test_the_gen5_renderer_reproduces_its_own_shipped_atlas` — 9 of 9 |
+
+### Two more things this turned up
+
+**`test_the_gen5_renderer_reproduces_its_own_shipped_atlas` compared the wrong
+two things.** It put `render_map`'s raw output against the shipped PNG, but the
+shipped PNG went through `to_png` and is 5-bit quantised, so it asked the
+renderer to reproduce something it never wrote. Fixed by comparing through
+`pngout.quantise` for the artwork tier. **The gen-4 twin
+(`test_rerendering_the_shipped_atlas_under_its_own_camera_reproduces_it`) has
+the identical seam and passes today only because gen-4 PNGs are not yet
+quantised — it needs the same line the moment `render_dsmaps` adopts the
+writer.**
+
+**The names were not wired.** `ds3d/mapnames.py` says it is "the one lookup
+both renderers call" and nothing called it; every Gen 5 entry still shipped
+`name: null`. Wired at the single `"name":` site in `build_atlas`, and the
+comment there — "no Gen 5 decomp means no header constant, the location names
+are in an archive nothing here decodes" — was true when written and is not any
+more, so it is replaced rather than left to mislead.
+
+### After
+
+    black-us  : 10 maps (3d-pitched), 87.7 bytes of artwork per map tile
+                1667.6 KB -> 1123.0 KB (32.7% smaller), error max 4 mean 0.88
+    black2-us :  9 maps (3d-pitched), 134.1 bytes of artwork per map tile
+                2198.5 KB -> 1461.3 KB (33.5% smaller), error max 4 mean 1.01
+
+Both under the 200 alarm. Black 2 is lower than the 139.8 measured before this
+merge because `measure_pad` now forces the horizontal pad to zero, so every
+map is 32 to 64 px narrower.
+
+All nine Black 2 maps named: Aspertia City (427, 428, 429, 435), Route 19
+(437), Aspertia Gate (438), Floccesy Town (439, 443), Route 20 (446). 438
+being a GATE is independent corroboration of the door derivation, which had
+already worked out that 438 is the building joining 427 and 437.

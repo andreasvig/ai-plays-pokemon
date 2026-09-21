@@ -632,6 +632,31 @@ def test_a_two_chunk_map_is_two_different_chunks_side_by_side():
 #: texels. 512 tiles, and the test below holds all of them to it.
 SEE_THROUGH_BEHAVIOURS = {"TILE_BEHAVIOR_PUDDLE"}
 
+#: How big a see-through REGION may get before it is a hole rather than a
+#: speck, in tiles, 4-connected.
+#:
+#: ONE TILE, and that is derived rather than fitted. The tile is the unit both
+#: the collision grid and `tile_coverage` are measured in and the smallest
+#: region that can be a shape instead of an edge artefact; any larger number
+#: would have to come from the one square this rule was written for. The
+#: population says the same thing from the other side: of the 19 gen-4 maps
+#: both cartridges ship, EIGHTEEN have zero see-through tiles of any kind, so
+#: the bar sits in an empty range 1..55 and nothing about 56 chose it.
+MAX_SEE_THROUGH_RUN = 1
+
+#: The one region over that bar, and its size, so it cannot grow or be joined
+#: by a second without failing. `334:0` is Verity Lakefront's 8x8
+#: `TILE_BEHAVIOR_PUDDLE` at the shared corner of its four matrix cells, which
+#: the cartridge gives no bed: delete the `puddle`/`puddlep` materials and 30
+#: of 16,384 pixels survive. 64 tiles straight down, 56 under the shipping
+#: pitched camera, which foreshortens the near edge behind the trees.
+#:
+#: This entry is a HOLE THAT SHIPS, not a rule. It is listed so that the class
+#: is visible in the diff and in this file rather than absorbed by a threshold;
+#: whether it should be filled is
+#: `artifacts/game-map-render/notes/render-defects.md`'s open question.
+SEE_THROUGH_RUNS = {"334:0": 64}
+
 
 def test_the_route_stands_on_rendered_artwork_and_not_on_a_hole():
     """The check this tier needs that the silhouette did not.
@@ -660,6 +685,52 @@ def test_the_route_stands_on_rendered_artwork_and_not_on_a_hole():
         {k: v for k, v in res["maps"].items() if v[0]}
     assert set(res["sheer_behaviour"]) <= SEE_THROUGH_BEHAVIOURS, \
         res["sheer_behaviour"]
+    # and the SHAPE, which is the half that let an 8x8 square through: a
+    # see-through run over the bar must be one of the listed holes, at no more
+    # than its listed size, and a listed hole that has gone must leave the list.
+    for key, sizes in res["sheer_runs"].items():
+        cap = SEE_THROUGH_RUNS.get(key)
+        if cap is None:
+            assert sizes[0] <= MAX_SEE_THROUGH_RUN, \
+                f"{key}: a see-through region of {sizes[0]} tiles, runs {sizes[:5]}"
+        else:
+            assert sizes[0] <= cap, f"{key}: see-through run grew to {sizes[0]}, listed {cap}"
+    gone = set(SEE_THROUGH_RUNS) - set(res["sheer_runs"]) - {
+        k for k in SEE_THROUGH_RUNS if k not in res["maps"]}
+    assert not gone, f"listed as a see-through hole but no longer one: {sorted(gone)}"
+
+
+def test_a_square_and_a_scatter_of_the_same_area_are_not_the_same_reading():
+    """The instrument for the rule above, on its own, with no cartridge.
+
+    56 see-through tiles in one 8x8 block and 56 see-through tiles sprinkled
+    over a map are the same COUNT and the same BEHAVIOUR, and the old check
+    could see nothing else — which is how an 8x8 hole reached the browser with
+    every test green. `runs_of` is the thing that tells them apart, so it is
+    asserted directly rather than only through a map.
+    """
+    import numpy as np
+
+    mod, _d = _decomp()
+    grid = np.zeros((32, 32), bool)
+    grid[8:16, 8:16] = True
+    assert mod.runs_of(grid) == [64], "a solid 8x8 is one region of 64"
+
+    scatter = np.zeros((32, 32), bool)
+    scatter[::4, ::4] = True                       # 64 tiles, none touching
+    assert scatter.sum() == 64
+    assert mod.runs_of(scatter) == [1] * 64, "a scatter is 64 regions of one"
+
+    assert grid.sum() == scatter.sum(), \
+        "the two shapes must have equal area or this proves nothing about shape"
+    assert max(mod.runs_of(grid)) > max(mod.runs_of(scatter))
+
+    # touching diagonally is NOT connected — a checkerboard is specks, and a
+    # rule that called it one region would fail every anti-aliased edge
+    diag = np.zeros((8, 8), bool)
+    diag[::2, ::2] = True
+    diag[1::2, 1::2] = True
+    assert max(mod.runs_of(diag)) == 1
 
 
 def test_water_over_a_bed_is_opaque_and_water_over_nothing_is_not():

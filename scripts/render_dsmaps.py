@@ -167,6 +167,36 @@ COLLISION_MASK = 0x8000        # TERRAIN_ATTRIBUTES_COLLISION_MASK
 # holds no pixel this renderer wrote, which is the one thing `check_artwork`
 # calls a hole.
 DRAWN_ALPHA = 8
+
+
+def runs_of(mask: np.ndarray) -> list[int]:
+    """Sizes of the 4-connected components of a boolean tile grid, largest first.
+
+    WHY A RUN AND NOT A COUNT. A scattered see-through tile is a texel on an
+    edge; a see-through REGION is a hole you can see the page through, and the
+    two are the same number. Verity Lakefront's 8x8 puddle reached the browser
+    with every test green because the check only asked how many tiles were
+    see-through and what the cartridge called them — 56 tiles named
+    `TILE_BEHAVIOR_PUDDLE`, which is as true of one speck as of one square.
+    """
+    seen = np.zeros(mask.shape, bool)
+    sizes = []
+    for sy, sx in zip(*np.where(mask)):
+        if seen[sy, sx]:
+            continue
+        stack, n = [(sy, sx)], 0
+        seen[sy, sx] = True
+        while stack:
+            y, x = stack.pop()
+            n += 1
+            for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                ny, nx = y + dy, x + dx
+                if (0 <= ny < mask.shape[0] and 0 <= nx < mask.shape[1]
+                        and mask[ny, nx] and not seen[ny, nx]):
+                    seen[ny, nx] = True
+                    stack.append((ny, nx))
+        sizes.append(n)
+    return sorted(sizes, reverse=True)
 BEHAVIOR_MASK = 0xFF           # TERRAIN_ATTRIBUTES_TILE_BEHAVIOR_MASK
 
 # The four tones. A wall is the darkest thing on the map so a bright route line
@@ -1037,7 +1067,7 @@ def check_artwork(d, game: str, ids: list[int], art: "Field3D") -> dict:
     walked = route_tiles(game)
     out = {"maps": {}, "bare_walkable": 0, "sheer_walkable": 0,
            "bare_route": 0, "sheer_route": 0, "route": 0,
-           "sheer_behaviour": {}}
+           "sheer_behaviour": {}, "sheer_runs": {}}
     for map_id in ids:
         r = render_map(d, map_id, art)
         if not r.render.startswith("3d-"):
@@ -1056,6 +1086,11 @@ def check_artwork(d, game: str, ids: list[int], art: "Field3D") -> dict:
             name = d.behaviors[value] if value < len(d.behaviors) else f"#{value}"
             out["sheer_behaviour"][name] = (out["sheer_behaviour"].get(name, 0)
                                             + int((sheer & (behave == value)).sum()))
+        if sheer.any():
+            # The SHAPE of the see-through, not only its area: one 8x8 square
+            # and 56 scattered specks are the same 56 tiles and are not the
+            # same defect.
+            out["sheer_runs"][r.key] = runs_of(sheer)
         pts = walked.get(map_id, [])
         bare_route = sum(1 for x, y in pts if not drawn[y - r.oy, x - r.ox])
         sheer_route = sum(1 for x, y in pts
@@ -1932,6 +1967,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"check artwork   {cov['route'] - cov['bare_route']}/{cov['route']} route tiles "
               f"on rendered geometry, {cov['bare_walkable']} walkable tile(s) bare"
               + (f", {cov['sheer_walkable']} see-through {cov['sheer_behaviour']}"
+                 f" in runs { {k: v[:3] for k, v in cov['sheer_runs'].items()} }"
                  if cov["sheer_walkable"] else ""))
         if cov["bare_route"]:
             bad = {k: v for k, v in cov["maps"].items() if v[3]}

@@ -286,6 +286,66 @@ def test_geometry_wholly_outside_the_cell_is_dropped_rather_than_padded_for():
     # rows of the map's own rectangle. 178 pixels of a neighbour's grass.
 
 
+def wall(x0: float, x1: float, z: float, y0: float, y1: float):
+    """A VERTICAL surface standing in the plane `z`, as two triangles.
+
+    Its footprint on the z axis is a line, not a box, which is the whole
+    point of the test below.
+    """
+    tex = np.zeros((1, 1, 4), np.uint8)
+    tex[0, 0] = (0, 255, 0, 255)
+    uv = np.array([[0.5, 0.5]] * 3)
+    a = np.array([x0, y0, z])
+    b = np.array([x1, y0, z])
+    c = np.array([x1, y1, z])
+    d = np.array([x0, y1, z])
+    return [(np.array([a, b, c]), uv, tex, (1, 1, 0, 0)),
+            (np.array([a, c, d]), uv, tex, (1, 1, 0, 0))]
+
+
+def test_a_face_standing_in_the_boundary_plane_is_inside_the_cell():
+    """The edge-on case "touching is outside" gets wrong.
+
+    A triangle with real extent on an axis must OVERLAP the cell to be kept:
+    a quad from z = 512 to z = 528 against a cell ending at 512 has no area
+    inside and keeping it puts a strip of the neighbour's grass in the map
+    (`test_geometry_wholly_outside_the_cell_is_dropped_rather_than_padded_for`
+    measures that at 178 pixels on Route 201).
+
+    A vertical face has no extent on one axis AT ALL. Its footprint is a
+    line, so a wall standing on the cell's own northern edge has
+    `z.min() == z.max() == 0` and the same rule reads it as outside. Black
+    2's map 438 lost the two triangles of its reception counter that way:
+    a hole straight through the room, and a walked tile standing on nothing,
+    which took `check_artwork` to 517/518 and stopped the game rendering at
+    all.
+
+    Both directions in one place, because the fix is only correct if it
+    leaves the first case alone.
+    """
+    ground = quad(0.0, 0, 512, 0, 512)
+    counter = wall(8, 152, 0.0, -64.0, 72.0)       # 438's, on the near edge
+    far_wall = wall(8, 152, 512.0, -64.0, 72.0)    # the cell's own far edge
+    beyond = wall(8, 152, 520.0, -64.0, 72.0)      # a neighbour's, past it
+    grass = quad(17.0, 200, 232, 512, 528)         # extent, touching: outside
+
+    keep = C.in_footprint(ground + counter + far_wall + beyond + grass, 32, 32)
+    kept = {id(t) for t in keep}
+    assert all(id(t) in kept for t in ground)
+    assert all(id(t) in kept for t in counter), \
+        "a wall on the cell's own edge was dropped — this is the 438 hole"
+    assert all(id(t) in kept for t in far_wall), \
+        "the same face on the far edge must be kept for the same reason"
+    assert not any(id(t) in kept for t in beyond), \
+        "a wall a tile beyond the cell is a neighbour's and must go"
+    assert not any(id(t) in kept for t in grass), \
+        "a flat quad merely touching the far edge has no area inside it"
+    # MUTATION: drop the degenerate branch, so the rule is `max <= lo or min
+    # >= hi` for every triangle — `counter` and `far_wall` both disappear.
+    # MUTATION: relax it to `max < lo or min > hi` for every triangle
+    # instead, and `grass` survives, which is the Route 201 defect.
+
+
 def test_a_straddling_triangle_is_kept_and_clipped_the_way_straight_down_clips_it():
     cam = C.camera_for("pitched", 16)
     sc = S.Scene()
@@ -534,6 +594,7 @@ def test_rerendering_the_shipped_atlas_under_its_own_camera_reproduces_it():
     from PIL import Image
 
     import render_dsmaps as R
+    from ds3d import pngout
 
     atlas = json.loads((MAPS / "platinum-us" / "index.json").read_text())
     cam = atlas.get("camera")
@@ -547,12 +608,24 @@ def test_rerendering_the_shipped_atlas_under_its_own_camera_reproduces_it():
             continue                       # fell back to the silhouette
         r = R.render_map(d, int(key.split(":")[0]), art, cam=art.cam)
         got = R.full_pixels(r, atlas["tile_px"])
+        # Through the writer's quantiser, because that is what the shipped
+        # file went through. `render_dsmaps.to_png` adopted `ds3d/pngout.py`
+        # on 2026-09-21 — the same writer gen 5 uses — and rounds the artwork
+        # tier to the DS's own five bits while the collision tier deliberately
+        # keeps its full-depth palette. Comparing `full_pixels`' raw output
+        # against the PNG would ask the renderer to reproduce something it
+        # never wrote. The gen-5 twin below carried this line first and said
+        # this one would need it.
+        if r.render != "collision":
+            got = pngout.quantise(got)
         want = np.array(Image.open(MAPS / "platinum-us" / entry["file"]).convert("RGBA"))
         checked += 1
         if got.shape != want.shape or not (got == want).all():
             bad.append(f"{key} {got.shape[:2]} vs {want.shape[:2]}")
     assert checked >= 8, f"only {checked} maps compared"
     assert not bad, f"{len(bad)} of {checked} PNGs differ from a fresh render: {bad}"
+    # MUTATION: drop the `quantise` call and every artwork map differs — the
+    # shipped atlas is 5-bit and the raw render is not.
 
 
 GEN5_ROM = REPO_ROOT / "roms" / "Pokemon - Black Version 2 (USA, Europe) (NDSi Enhanced).nds"
@@ -572,6 +645,7 @@ def test_the_gen5_renderer_reproduces_its_own_shipped_atlas():
     from PIL import Image
 
     import render_gen5maps as G
+    from ds3d import pngout
 
     atlas = json.loads((MAPS / "black2-us" / "index.json").read_text())
     cam = atlas.get("camera")
@@ -584,12 +658,23 @@ def test_the_gen5_renderer_reproduces_its_own_shipped_atlas():
         got, got_kind, _frame, _h = G.render_map(rom, win, art, cam=art.cam)
         if got_kind != atlas["render"]:
             continue
+        # Through the writer's quantiser, because that is what the shipped
+        # file went through. `render_gen5maps.to_png` rounds the artwork tier
+        # to the DS's own five bits per channel (`ds3d/pngout.py`) and the
+        # collision tier deliberately not, so comparing `render_map`'s raw
+        # output against the PNG asks the renderer to reproduce something it
+        # never wrote. The gen-4 twin above has the same line, added when
+        # `render_dsmaps` adopted the writer later the same day.
+        if got_kind != "collision":
+            got = pngout.quantise(got)
         want = np.array(Image.open(MAPS / "black2-us" / f"{map_id}-0.png").convert("RGBA"))
         checked += 1
         if got.shape != want.shape or not (got == want).all():
             bad.append(map_id)
     assert checked >= 3, f"only {checked} maps compared"
     assert not bad, f"{len(bad)} of {checked} PNGs changed: {bad}"
+    # MUTATION: drop the `quantise` call and all nine maps differ — the shipped
+    # atlas is 5-bit and the raw render is not.
 
 
 @pytest.mark.skipif(not (CACHE / "SHA").is_file(),

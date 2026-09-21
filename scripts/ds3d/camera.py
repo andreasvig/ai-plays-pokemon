@@ -369,14 +369,40 @@ def in_footprint(tris, tiles_w: int, tiles_h: int, origin=(0.0, 0.0)):
     Dropped rather than clipped to the boundary, which keeps a triangle that
     STRADDLES the edge — a tree half in the map — drawn exactly as the
     straight-down tier draws it, cut off at the frame.
+
+    A FACE LYING IN THE BOUNDARY PLANE IS INSIDE, and needs saying because
+    the obvious test gets it wrong. "Touching is outside" (`max <= lo`) is
+    right for a triangle with real extent on that axis: a quad from z = 512
+    to z = 528 on a cell that ends at 512 has no area inside it, and keeping
+    it put 178 pixels of the next cell's grass into Route 201 — see
+    `test_geometry_wholly_outside_the_cell_is_dropped_rather_than_padded_for`.
+    But a VERTICAL face has no extent on one axis at all: its footprint is a
+    line, and a wall standing on the cell's own northern edge has
+    `z.min() == z.max() == 0`, which the same test reads as "outside" and
+    throws the wall away. Black 2's map 438 lost the two triangles of its
+    reception counter to exactly that, leaving a hole through the room and a
+    walked tile standing on nothing.
+
+    So the rule is per axis: a footprint with extent must OVERLAP the cell, a
+    degenerate one need only lie within it. Equality is exact on purpose —
+    the case is a face whose vertices share a coordinate literally, not one
+    that lands near a boundary, and a tolerance here would start eating the
+    Route 201 sliver back in from the other side.
     """
     gx = tiles_w * TILE + origin[0]
     gz = tiles_h * TILE + origin[1]
+
+    def outside(lo_v: float, hi_v: float, lo: float, hi: float) -> bool:
+        if lo_v == hi_v:                    # a line, not a box: edge-on face
+            return lo_v < lo or lo_v > hi
+        return hi_v <= lo or lo_v >= hi
+
     keep = []
     for tri in tris:
         v = tri[0]
-        if (v[:, 0].max() <= origin[0] or v[:, 0].min() >= gx
-                or v[:, 2].max() <= origin[1] or v[:, 2].min() >= gz):
+        if outside(v[:, 0].min(), v[:, 0].max(), origin[0], gx):
+            continue
+        if outside(v[:, 2].min(), v[:, 2].max(), origin[1], gz):
             continue
         keep.append(tri)
     return keep

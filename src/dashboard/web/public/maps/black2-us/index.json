@@ -35,14 +35,14 @@
   "note": "the cartridge's own textured 3D field artwork \u2014 terrain and props \u2014 under the field camera's own pitch, orthographic at one pixel per world unit; PNG pixel (0,0) is tile png_origin, so a source rect subtracts it",
   "doors": "observed transitions: Gen 5 event data is not decoded, so a door is a warp our runs walked between two DIFFERENT maps with at least one of them an interior \u2014 a same-map warp is a staircase and two outdoor maps share matrix_000, so their seam is an `open` span. These are the doors that were used, not the doors that exist. A direction nobody walked is read off the tile the player landed on coming the other way and marked `via: landed`, which is what makes the house every run STARTS in reachable at all."
  },
- "bytes": 1561699,
+ "bytes": 1497022,
  "maps": {
   "427:0": {
-   "name": null,
+   "name": "Aspertia City",
    "width": 32,
    "height": 64,
    "file": "427-0.png",
-   "bytes": 294432,
+   "bytes": 249228,
    "indoor": false,
    "border": {
     "file": "427-0-border.png",
@@ -60,10 +60,10 @@
     704
    ],
    "png_pad": [
-    32,
-    44,
-    32,
-    32
+    0,
+    38,
+    0,
+    17
    ],
    "heights": [
     162,
@@ -461,11 +461,11 @@
    ]
   },
   "428:0": {
-   "name": null,
+   "name": "Aspertia City",
    "width": 18,
    "height": 12,
    "file": "428-0.png",
-   "bytes": 23299,
+   "bytes": 20465,
    "indoor": true,
    "border": {
     "file": "428-0-border.png",
@@ -475,8 +475,8 @@
    },
    "walkable": 98,
    "png_pad": [
-    18,
-    39,
+    0,
+    22,
     0,
     0
    ],
@@ -513,11 +513,11 @@
    ]
   },
   "429:0": {
-   "name": null,
+   "name": "Aspertia City",
    "width": 13,
    "height": 13,
    "file": "429-0.png",
-   "bytes": 11532,
+   "bytes": 11010,
    "indoor": true,
    "border": {
     "file": "429-0-border.png",
@@ -527,7 +527,7 @@
    },
    "walkable": 88,
    "png_pad": [
-    18,
+    0,
     33,
     0,
     0
@@ -563,11 +563,11 @@
    ]
   },
   "435:0": {
-   "name": null,
+   "name": "Aspertia City",
    "width": 15,
    "height": 21,
    "file": "435-0.png",
-   "bytes": 30984,
+   "bytes": 29604,
    "indoor": true,
    "border": {
     "file": "435-0-border.png",
@@ -577,7 +577,7 @@
    },
    "walkable": 170,
    "png_pad": [
-    24,
+    0,
     65,
     0,
     0
@@ -815,11 +815,11 @@
    ]
   },
   "437:0": {
-   "name": null,
+   "name": "Route 19",
    "width": 64,
    "height": 32,
    "file": "437-0.png",
-   "bytes": 261751,
+   "bytes": 254262,
    "indoor": false,
    "border": {
     "file": "437-0-border.png",
@@ -837,9 +837,9 @@
     672
    ],
    "png_pad": [
-    32,
+    0,
     128,
-    24,
+    0,
     0
    ],
    "heights": [
@@ -1606,11 +1606,11 @@
    ]
   },
   "438:0": {
-   "name": null,
+   "name": "Aspertia Gate",
    "width": 11,
    "height": 16,
    "file": "438-0.png",
-   "bytes": 5932,
+   "bytes": 5844,
    "indoor": true,
    "border": {
     "file": "438-0-border.png",
@@ -1621,7 +1621,7 @@
    "walkable": 99,
    "png_pad": [
     0,
-    49,
+    38,
     0,
     0
    ],
@@ -1710,11 +1710,11 @@
    ]
   },
   "439:0": {
-   "name": null,
+   "name": "Floccesy Town",
    "width": 32,
    "height": 64,
    "file": "439-0.png",
-   "bytes": 311528,
+   "bytes": 305193,
    "indoor": false,
    "border": {
     "file": "439-0-border.png",
@@ -1734,7 +1734,7 @@
    "png_pad": [
     0,
     79,
-    32,
+    0,
     0
    ],
    "heights": [
@@ -2199,11 +2199,11 @@
    ]
   },
   "443:0": {
-   "name": null,
+   "name": "Floccesy Town",
    "width": 15,
    "height": 21,
    "file": "443-0.png",
-   "bytes": 30984,
+   "bytes": 29604,
    "indoor": true,
    "border": {
     "file": "443-0-border.png",
@@ -2213,7 +2213,7 @@
    },
    "walkable": 170,
    "png_pad": [
-    24,
+    0,
     65,
     0,
     0
@@ -2451,11 +2451,11 @@
    ]
   },
   "446:0": {
-   "name": null,
+   "name": "Route 20",
    "width": 64,
    "height": 64,
    "file": "446-0.png",
-   "bytes": 590573,
+   "bytes": 591128,
    "indoor": false,
    "border": {
     "file": "446-0-border.png",
@@ -2475,7 +2475,7 @@
    "png_pad": [
     0,
     51,
-    32,
+    0,
     25
    ],
    "heights": [

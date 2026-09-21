@@ -401,3 +401,97 @@ five maps the shipped gen-5 atlas predates** — `437:0 438:0 439:0 443:0 446:0`
 `scripts/render_gen5maps.py --game black2-us` clears the first five. The two
 unresolved placements want the same kind of look this note gives Lake Verity
 and should not be shipped unexamined.
+
+---
+
+# 2026-09-21, later still: what is behind the puddle, and what to do about it
+
+## The clear colour IS decodable, and it endorses leaving the pixels alone
+
+`src/easy3d.c`, `Easy3D_SetupEngine` — the field's own 3D pipeline, the one
+`Easy3D_DrawRenderObj` draws map props through:
+
+```c
+G3X_SetClearColor(GX_RGB(0, 0, 0), 0, G3X_DEPTH_MAX, 63, FALSE);
+```
+
+Black, **alpha 0**. `src/g3d_pipeline.c`'s default state says the same with
+`COLOR_BLACK`. So an untouched pixel of the DS's 3D layer is transparent, and
+`scene.render`'s `bg=(0, 0, 0, 0)` is bit-faithful to the register. Behind it
+is BG0 at priority 1 — the field's 2D layer, not map artwork. **There is no
+cartridge colour to put behind the water; the cartridge puts nothing there on
+purpose.** Recovered, not guessed.
+
+## Nor is there geometry, and four more places were checked
+
+* **A second model in the land block.** Each of the four BMD0s holds exactly
+  one (`map01_25c`, `map01_26c`, `map02_25c`, `map02_26c`).
+* **Props.** All four chunks have a props section of **0 bytes**.
+* **The neighbouring matrix cells.** The puddle is at the shared corner of
+  cells (1,25) (1,26) (2,25) (2,26), and all four belong to VERITY_LAKEFRONT.
+  What surrounds them is `MAP_173 EVERYWHERE` filler and Route 201; nothing
+  reaches the centre.
+* **The same chunk used elsewhere with a bed.** `MAP_001`…`MAP_004` appear in
+  exactly one cell each, all four of them this map's. There is no second
+  placement where the artist gave the puddle a floor.
+* **`311:0 LakeVerityLowWater`.** It shares the NAME and nothing else: a
+  private `map_matrix_101`, its own drained basin, and **no water material at
+  all**. It is not the bed of `334:0`'s puddle and has no coordinates in
+  common with it.
+
+## The 20,357 transparent pixels are two different things
+
+| | px | what it is |
+|---|---|---|
+| alpha 0 | 8,192 | the **bottom 8 rows** of the ground rect, on EVERY pitched gen-4 map (311, 342, 343, 391, 411, 418 all have it): the ground plane sits at Y 16 and the pitch lifts it `16·cos 59°` = 8.2 px. Frame geometry, not a hole. |
+| 0 < alpha < 255 | **12,165** | the hole. One 4-connected run, 1.34% of the picture. |
+
+## The options, with the numbers — `notes/verity-puddle-options.png` has them side by side at real size
+
+**A — leave it.** 12,165 see-through px, one run of 64 tiles (56 under the
+shipping pitched camera), 1.37% of the map. Faithful to the decoded clear
+colour. Costs nothing and reads, on a dark panel, as a renderer failure.
+
+**B — make the run opaque with its own colour.** Only runs over the bar, only
+inside the ground rect: alpha 36 → 255, RGB untouched, so every value is the
+cartridge's `puddle`/`puddlep` texels. 12,165 → **0** see-through px; the
+square becomes a pale-blue pond with its own shoreline. No other DS map has a
+run over the bar, so nothing else moves. The honest cost: it overrides an alpha
+the artist chose, and as a standing rule it would silently fill the next hole
+too — so it wants to be scoped to the listed runs, not to a size.
+
+**C — drop the sheet (removes the capability).** Stop drawing translucent
+terrain with nothing under it. 16,384 px fully void, `bare_walkable` 0 → 64,
+and `test_the_route_stands_on_rendered_artwork_and_not_on_a_hole` **fails** —
+which is the point of listing it: the cost becomes explicit rather than
+cosmetic.
+
+One fact that bears on all three: **the game never frames this square.** A
+flood fill over the map's walkable tiles reaches 0 of the 64 from anywhere
+else, and the nearest standable tile is 21 tiles away against a 15x10 viewport.
+Whatever is chosen is a choice about our map product, not about fidelity.
+
+## The check now reads shape, not only area
+
+`runs_of` in `render_dsmaps.py` reports the 4-connected component sizes of the
+see-through walkable tiles, `check_artwork` carries them as `sheer_runs`, and
+the command line prints them. The bar is `MAX_SEE_THROUGH_RUN = 1` **tile** —
+derived, not fitted: the tile is the unit both the collision grid and
+`tile_coverage` are measured in and the smallest region that can be a shape
+rather than an edge artefact. The population agrees from the other side: of the
+19 gen-4 maps the two cartridges ship, **18 have zero see-through tiles of any
+kind**, so the bar sits in an empty range 1..55 and nothing about 56 chose it.
+
+`SEE_THROUGH_RUNS = {"334:0": 64}` lists the one hole that ships, with its
+size, so it cannot grow and cannot be joined by a second.
+
+Mutations run: unlist the hole → `a see-through region of 64 tiles`; list a map
+that has none → `listed as a see-through hole but no longer one`; shrink the
+listed cap to 20 → `see-through run grew to 64, listed 20`; make `runs_of`
+count tiles instead of regions (the old blindness) → the instrument test fails
+with `[1,1,1,…] == [64]`.
+
+`test_a_square_and_a_scatter_of_the_same_area_are_not_the_same_reading` asserts
+the instrument directly and with no cartridge: 64 tiles as one 8x8 block read
+as `[64]`, the same 64 tiles scattered read as 64 ones, and a diagonal
+checkerboard stays specks so an anti-aliased edge can never be called a hole.
