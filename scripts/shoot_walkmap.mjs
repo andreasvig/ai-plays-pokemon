@@ -82,6 +82,40 @@ async function shoot(page, runId) {
   if (blank) notes.push(blank)
   mkdirSync(OUT, { recursive: true })
   await section.screenshot({ path: `${OUT}/${runId}.png` })
+  // The panel promises "click one for its turn", and nothing tests it. A route
+  // tile is drawn on the canvas, not as an element, so there is nothing to
+  // locate — but battle and building markers ARE elements and they sit ON
+  // route tiles, so the straight line between two of them runs through the
+  // part of the map the player walked. Walk it until a turn lights up.
+  //
+  // This needs the fit above: at the viewer's default zoom the markers are
+  // off-screen and therefore not rendered at all, and a scan of the empty
+  // corner finds nothing and looks exactly like a broken feature. It fooled me
+  // for twenty minutes.
+  const marks = await section.locator('button.fight, button.marker').evaluateAll(
+    (els) => els.map((e) => { const r = e.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2] }))
+  const cbox = await section.locator('canvas').first().boundingBox()
+  let focused = null
+  for (let a = 0; a < marks.length && !focused; a++) {
+    for (let c = a + 1; c < marks.length && !focused; c++) {
+      for (let t = 0.05; t <= 0.95; t += 0.04) {
+        const x = marks[a][0] + (marks[c][0] - marks[a][0]) * t
+        const y = marks[a][1] + (marks[c][1] - marks[a][1]) * t
+        if (x < cbox.x + 2 || x > cbox.x + cbox.width - 2) continue
+        if (y < cbox.y + 2 || y > cbox.y + cbox.height - 2) continue
+        await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.up()
+        await page.waitForTimeout(60)
+        if (await page.locator('.turn.focused').count()) {
+          focused = await page.locator('.turn.focused').first().getAttribute('id'); break
+        }
+        const back = section.locator('button.backchip')
+        if (await back.count()) { await back.click(); await page.waitForTimeout(200) }
+      }
+    }
+  }
+  if (marks.length < 2) notes.push('fewer than two markers, so the tile-click check did not run')
+  else if (!focused) notes.push('clicked along every marker-to-marker line and no turn focused')
+
   // Then one battle card, opened by clicking its marker on the map. The card
   // is the other half of what Andreas judges — it carries the species sprite,
   // the trainer and the outcome — and it exists only once a `.fight` button is
@@ -102,11 +136,11 @@ async function shoot(page, runId) {
   // pokecenter (adn oteh r2 story/multiroom) rooms needs to show the multi
   // rooms in thir sub world" — and a marker that opens an empty room is a
   // failure nobody sees from the world view.
-  const marks = section.locator('button.marker.entered')
-  const mn = await marks.count()
+  const doors = section.locator('button.marker.entered')
+  const mn = await doors.count()
   if (!mn) notes.push('no entered buildings on the map')
   else {
-    await marks.nth(0).click()
+    await doors.nth(0).click()
     await page.waitForTimeout(1200)
     const back = section.locator('button.backchip')
     if (!(await back.count())) notes.push('clicked a building and the view did not go inside')
