@@ -1,12 +1,14 @@
 // Where a map gets a fringe of the game's own border block drawn outside it.
 //
-// BY HAND, one map at a time. Andreas, 2026-09-20, after two automatic
-// attempts: "nope it just didn't work with adding trees as the standard. can't
-// we just manually augment the places where 1 row of trees would help
-// enormously?"
+// MEASURED, by scripts/analyse_border_edges.py, and then hand-overridable.
+// Andreas, 2026-09-20, after hand-listing one map at a time: "some routes on
+// this map need the row of trees too, don't you have a way to analyse and
+// guestimate where we need a row to indicate a wall such that I don't have to
+// tell you each time? so basically all of the 'holes' in the side of maps where
+// roads don't go."
 //
-// Why automatic failed, twice, because both failures are still worth avoiding
-// when adding an entry here:
+// The three things the rule has to get right are the three that went wrong
+// before, in order:
 //
 //  1. It covered the roads. A map's border block is what the game repeats
 //     beyond its bounds ONLY where there is nothing else; on an edge with a
@@ -14,68 +16,149 @@
 //     of trees across Oldale Town's three exits. That is fixed in the data and
 //     is not something this file can undo: `open` on each atlas entry carries
 //     the exact spans a neighbour covers, from pret's own `connections`, and
-//     the viewer punches every one of them out of whatever is listed here.
+//     the viewer punches every one of them out of whatever is listed here. A
+//     side that is ENTIRELY open never appears below — there is nothing to draw
+//     and an entry that draws nothing reads as a setting.
 //
 //  2. It was a second map, not a fringe. Twenty-eight tiles in every direction
 //     of one repeated block, meeting another map's field along a straight line.
 //     The unit here is a ROW — one border block, which for a gen-3 tree block
 //     is two tiles — and the default is one of them.
 //
-// An entry is a list of sides, in pret's own four words. A side that is
-// partly open still belongs in the list: Viridian City's top edge is 48 tiles
-// and Route 2 covers 24 of them, so listing 'up' draws the other 24 and the
-// road stays clear.
+//  3. "i dont want them popping up randomly at water edges or cave edges." A
+//     row of trees ran down Route 104's SEA edge. That is now the measurement:
+//     `fit` is the fraction of a closed edge's own outermost tiles painted, to
+//     90% of their pixels, out of the border block's OWN palette. Littleroot's
+//     grass rim against a tree block scores 0.90-1.00 — same place, so more of
+//     it outside looks right — and Route 104's sea against the same block
+//     scores 0.47. It is palette containment, not tile equality: a town's small
+//     trees are different tiles from the block's big ones and still score 1.00,
+//     while open water scores near zero. A block that is one flat colour over
+//     more than 60% of its area is open WATER, not a wall (FireRed's Route 21,
+//     Crystal's Cherrygrove) and is vetoed however well it fits — a fringe of
+//     ocean cannot do the job a fringe is for.
 //
-//   '3:1': ['up', 'down', 'left', 'right'],
+// Everything at fit >= 0.85 is generated into MEASURED below with its number.
+// Everything from 0.50 to 0.85 is written there as a COMMENTED line, also with
+// its number: those are the ones the measurement is not sure about, and turning
+// one on is deleting two slashes. Re-run after rendering new maps:
 //
-// For more than one row, give an object instead. Two rows of trees around
-// Viridian Forest, say:
+//   ./venv/bin/python scripts/analyse_border_edges.py            # the table
+//   ./venv/bin/python scripts/analyse_border_edges.py --write    # rewrite below
+//   ./venv/bin/python scripts/analyse_border_edges.py --sheet    # before/after
+//
+// To change one by hand, do not edit MEASURED — the next --write overwrites it.
+// Put it in OVERRIDES, which wins for that map key: a list of sides replaces
+// the measured ones, and an empty list turns the map off entirely. For more
+// than one row, give an object instead — two rows of trees around Viridian
+// Forest, say:
 //
 //   '1:0': { sides: ['left', 'right'], rows: 2 },
-//
-// Delete an entry and that map ends at its own artwork again.
-export const BORDER_EDGES = {
-  // Named by Andreas, 2026-09-20, looking at a row of trees running down Route
-  // 104's sea edge: "i dont want them popping up randomly at water edges or
-  // cave edges. the only places they are needed is at the bottom of the second
-  // route, and to the left, right, bottom of the first town and first route,
-  // and to the left of the second town (first non-start town)."
-  //
-  // Read in story order and applied to both cartridges. Four of the named sides
-  // are ENTIRELY a connection, so there is nothing there to draw — a row of
-  // trees across one would be a wall over the road out. They are named in the
-  // comments rather than listed, because an entry that draws nothing looks like
-  // a setting and is really a misread of the geography:
-  //
-  //   Route 1 and Route 101       bottom — all of it is the town below
-  //   Route 2 (FireRed)           bottom — all of it is Viridian City
-  //   Oldale Town                 left   — all of it is Route 102
-  //
-  // Emerald's second route DOES have a closed bottom, and Viridian City's left
-  // is only half road (Route 22 covers 24 of its 40), so both are listed.
-  'firered-us': {
-    '3:0': ['left', 'right'],      // Pallet Town, the first town
-    '3:19': ['left', 'right'],     // Route 1, the first route
-    '3:1': ['left'],               // Viridian City, the first non-start town
+
+// >>> generated by scripts/analyse_border_edges.py — do not hand-edit
+//   fit >= 0.85 draws; 0.50-0.85 is offered as a commented
+//   candidate; a flat (open-water) block is vetoed whatever it fits.
+export const MEASURED = {
+  'crystal-us': {
+    '24:3': ['up', 'down'],                 // ROUTE_29 — fit up 1.00 down 1.00
+    '24:4': ['down'],                       // NEW_BARK_TOWN — fit down 1.00
+    // NEW_BARK_TOWN held back, under 0.85: up 0.70
+    // to add, REPLACING the line above: '24:4': ['down', 'up'],
+    '26:1': ['left', 'right'],              // ROUTE_30 — fit left 1.00 right 0.85
+    '26:2': ['down'],                       // ROUTE_31 — fit down 1.00
+    // ROUTE_31 held back, under 0.85: up 0.80, right 0.67
+    // to add, REPLACING the line above: '26:2': ['down', 'up', 'right'],
+    // CHERRYGROVE_CITY held back, block is open water (0.94 flat): up 0.10, down 0.17, left 0.22
+    // nothing is drawn for this map; to draw it anyway: '26:3': ['up', 'down', 'left'],
   },
   'emerald-us': {
-    '0:9': ['left', 'right', 'down'],   // Littleroot Town, the first town
-    '0:16': ['left', 'right'],          // Route 101, the first route
-    // "left of Oldale town": Oldale's OWN left edge is 20 of 20 Route 102, so
-    // what is actually west of Oldale is Route 102 itself. Both of its long
-    // edges, then — its short ones are the town at one end and Petalburg at
-    // the other.
-    '0:17': ['up', 'down'],             // Route 102, the second route
-    '0:0': ['down'],                    // south of Petalburg City
-    // Its EAST side, not the west one the sea is on — 50 of its 80 tiles, the
-    // rest being the connection down to Petalburg.
-    '0:19': ['right'],                  // Route 104
+    '0:0': ['up', 'down', 'right'],         // PetalburgCity — fit up 1.00 down 1.00 right 1.00
+    '0:10': ['right'],                      // OldaleTown — fit right 1.00
+    '0:16': ['left', 'right'],              // Route101 — fit left 1.00 right 1.00
+    '0:17': ['up', 'down'],                 // Route102 — fit up 1.00 down 1.00
+    '0:18': ['left'],                       // Route103 — fit left 1.00
+    // Route103 held back, under 0.85: down 0.70
+    // to add, REPLACING the line above: '0:18': ['left', 'down'],
+    '0:19': ['right'],                      // Route104 — fit right 1.00
+    '0:9': ['down', 'left', 'right'],       // LittlerootTown — fit down 1.00 left 0.90 right 0.90
   },
+  'firered-us': {
+    '3:0': ['left', 'right'],               // PalletTown — fit left 1.00 right 1.00
+    '3:1': ['right'],                       // ViridianCity — fit right 1.00
+    // ViridianCity held back, under 0.85: up 0.67, down 0.75
+    // to add, REPLACING the line above: '3:1': ['right', 'up', 'down'],
+    '3:19': ['left', 'right'],              // Route1 — fit left 1.00 right 1.00
+    '3:2': ['down', 'left', 'right'],       // PewterCity — fit down 1.00 left 1.00 right 1.00
+    // PewterCity held back, under 0.85: up 0.77
+    // to add, REPLACING the line above: '3:2': ['down', 'left', 'right', 'up'],
+    '3:20': ['left', 'right'],              // Route2 — fit left 1.00 right 1.00
+    '3:21': ['down', 'right'],              // Route3 — fit down 0.98 right 1.00
+    // Route3 held back, under 0.85: up 0.72
+    // to add, REPLACING the line above: '3:21': ['down', 'right', 'up'],
+    // Route21_North held back, block is open water (0.76 flat): left 0.34, right 0.32
+    // nothing is drawn for this map; to draw it anyway: '3:39': ['left', 'right'],
+    '3:41': ['down'],                       // Route22 — fit down 1.00
+    // Route22 held back, under 0.85: left 0.50
+    // to add, REPLACING the line above: '3:41': ['down', 'left'],
+  },
+  // platinum-us: nothing drawn, every side held back —
+  // ROUTE_201 held back, block is one flat colour — this atlas is a collision silhouette, not a tile render: up 1.00, down 1.00
+  // nothing is drawn for this map; to draw it anyway: '342:0': ['up', 'down'],
+  // ROUTE_202 held back, block is one flat colour — this atlas is a collision silhouette, not a tile render: left 1.00, right 1.00
+  // nothing is drawn for this map; to draw it anyway: '343:0': ['left', 'right'],
+  // TWINLEAF_TOWN held back, block is one flat colour — this atlas is a collision silhouette, not a tile render: down 1.00, left 1.00, right 1.00
+  // nothing is drawn for this map; to draw it anyway: '411:0': ['down', 'left', 'right'],
+  // SANDGEM_TOWN held back, block is one flat colour — this atlas is a collision silhouette, not a tile render: right 1.00
+  // nothing is drawn for this map; to draw it anyway: '418:0': ['right'],
+}
+// <<< end generated
+
+/**
+ * By hand, and it wins. An entry REPLACES whatever MEASURED says for that map
+ * key — not merges with it, so name every side you want, measured ones
+ * included. A list of sides, `{ sides, rows }` for a thicker fringe, or `[]`
+ * to switch a measured map off entirely.
+ *
+ * Empty on purpose: the measurement currently agrees with every side Andreas
+ * named except one, and that one is written out below rather than applied.
+ */
+export const OVERRIDES = {
+  // Viridian City's LEFT is the single side of the hand list the measurement
+  // drops, at fit 0.00. Andreas named it in story order — "to the left of the
+  // second town (first non-start town)" — rather than from a picture, and the
+  // 16 closed tiles of that edge are the mountain the city is built against,
+  // so what shipped was a green bar of trees stuck to a cliff face: the "cave
+  // edges" case he complained about, arrived at from the other direction.
+  // Viridian's `right` is measured at 1.00 and draws either way. The top row of
+  // artifacts/game-map-render/border-edges/firered-us-changes.png is that edge
+  // with and without. To put it back, uncomment — and keep 'right', because an
+  // override replaces the whole key:
+  //
+  // 'firered-us': { '3:1': ['left', 'right'] },
 }
 
 const SIDES = ['up', 'down', 'left', 'right']
-const entry = (game, key) => BORDER_EDGES?.[game]?.[key] ?? null
 const listed = (e) => (Array.isArray(e) ? e : Array.isArray(e?.sides) ? e.sides : [])
+
+/** MEASURED under OVERRIDES, per map key. Built once, at module load.
+ *  Exported so the test drives THIS function rather than a copy of it: an
+ *  override that silently stopped removing a map is the failure that matters
+ *  and a reimplementation in the test cannot see it. */
+export function mergeEdges(measured, overrides) {
+  const out = {}
+  for (const game of new Set([...Object.keys(measured), ...Object.keys(overrides)])) {
+    out[game] = { ...(measured[game] ?? {}) }
+    for (const [key, e] of Object.entries(overrides[game] ?? {})) {
+      if (listed(e).length) out[game][key] = e
+      else delete out[game][key]        // `[]` is how a measured map is switched off
+    }
+  }
+  return out
+}
+
+export const BORDER_EDGES = mergeEdges(MEASURED, OVERRIDES)
+
+const entry = (game, key) => BORDER_EDGES?.[game]?.[key] ?? null
 
 /** The sides to draw for one map, as a Set. Empty unless this map is listed. */
 export function borderSides(game, key, m) {
