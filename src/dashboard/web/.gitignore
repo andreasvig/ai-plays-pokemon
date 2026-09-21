@@ -1,3 +1,6 @@
-node_modules/
+# No trailing slash: with one, git matches only a real directory, and a
+# SYMLINK named node_modules (which is how you share one install between
+# git worktrees) would be staged as a link into someone's home directory.
+node_modules
 dist/
 .vite/
