@@ -603,7 +603,30 @@ def open_edges(mj: dict, w: int, h: int, dims_of) -> list[dict]:
 # ---------------------------------------------------------------- tilesets
 
 def read_pal(raw: bytes) -> np.ndarray:
-    """JASC-PAL -> (16, 3) uint8."""
+    """JASC-PAL -> (16, 3) uint8. Gen 3 only; gen 2 goes through gen2_pal.
+
+    The bytes are taken as written and NOT re-quantised, which makes a gen-3
+    render disagree with a SkyEmu frame in every single byte. That is correct
+    and deliberate; it is written down because it looks exactly like a bug.
+
+    A GBA colour is 5 bits per channel and there are two ways to widen it to 8.
+    pret's .pal files carry the full-range spelling, `(v<<3)|(v>>2)`, so that
+    pure white is 255 and not 248. SkyEmu writes frames with `v<<3`. Both are
+    the same 5-bit value; they differ by 0-7 per channel, which is invisible
+    and, where it differs at all, ours is the truer colour.
+
+    So it stays. The consequence is that a BYTE-EXACT comparison against an
+    emulator frame is meaningless for gen 3 — `verify_map_alignment.py` reduces
+    both sides to the console's own 32 levels before comparing, and still
+    prints the raw 8-bit agreement (0.0000 for FireRed and Emerald, 0.9896 for
+    Crystal) so the asymmetry stays visible rather than being mistaken for
+    alignment error. Crystal agrees byte for byte because `gen2_pal` has to
+    match SkyEmu exactly for a different reason, measured there.
+
+    Found 2026-09-21, when Emerald first scored 0.9854 on a colour-mapped
+    comparison whose raw agreement was 0.0012 — the whole score was coming out
+    of a lookup fitted on its own data.
+    """
     lines = raw.decode("ascii", "replace").split()
     if lines[0] != "JASC-PAL":
         raise SystemExit("not a JASC-PAL file")
