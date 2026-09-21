@@ -98,6 +98,24 @@ async function shoot(page, runId) {
       await card.screenshot({ path: `${OUT}/${runId}-battle.png` })
     } catch { notes.push(`clicked a battle marker of ${n} and no card opened`) }
   }
+  // And one building interior. Andreas asked for these specifically — "the
+  // pokecenter (adn oteh r2 story/multiroom) rooms needs to show the multi
+  // rooms in thir sub world" — and a marker that opens an empty room is a
+  // failure nobody sees from the world view.
+  const marks = section.locator('button.marker.entered')
+  const mn = await marks.count()
+  if (!mn) notes.push('no entered buildings on the map')
+  else {
+    await marks.nth(0).click()
+    await page.waitForTimeout(1200)
+    const back = section.locator('button.backchip')
+    if (!(await back.count())) notes.push('clicked a building and the view did not go inside')
+    else {
+      await section.screenshot({ path: `${OUT}/${runId}-inside.png` })
+      await back.click()
+      await page.waitForTimeout(400)
+    }
+  }
   return { runId, ok: true, notes }
 }
 

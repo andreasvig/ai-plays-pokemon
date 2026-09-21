@@ -493,3 +493,44 @@ def test_no_building_floor_points_outside_its_own_atlas():
             for f in m.get("floors", []):
                 assert f in d["maps"], f"{path.parent.name}:{key} lists a floor {f} it has not rendered"
                 assert d["maps"][f].get("building") == m["building"], (key, f)
+
+
+# A published game's artwork gets copied to gh-pages on every publish, and it
+# stays in that branch's history. Nothing measured it until 2026-09-21, which
+# is a reasonable way to wake up one morning with a 200 MB repository.
+#
+# The guard is bytes per TILE rather than bytes per game, because a game that
+# ships more maps should be allowed to be bigger — what must not change is how
+# expensive one tile of artwork is. Measured across all seven on 2026-09-21,
+# every one of them 16 px per tile:
+#
+#   crystal 22.2   black 27.0   firered 38.9   emerald 41.8
+#   black2 41.4    soulsilver 59.7   platinum 71.5
+#
+# The 2D games sit at 22-42 and the DS 3D renders at 60-72, which is the cost
+# of real shading instead of a 16-colour tile repeated across a map.
+#
+# 200 is a regression alarm, not a budget: it is about 3x the worst game today,
+# so it has room for the angled field camera (which draws the same map as a
+# pitched parallelogram inside a larger bounding box) and for supersampling,
+# while still catching the failure this is really for — a render that starts
+# emitting full-colour PNGs, or forgets to quantise, and silently 10x's.
+#
+# If this fires because a render legitimately got richer, raise it and write
+# the new measurement here. If it fires at 10x, something is broken.
+MAX_BYTES_PER_TILE = 200
+
+
+def test_no_game_ships_wildly_more_artwork_per_tile_than_the_others():
+    measured = {}
+    for path in _atlases():
+        d = json.loads(path.read_text())
+        tiles = sum(m["width"] * m["height"] for m in d["maps"].values())
+        assert tiles, f"{path.parent.name} declares no tiles at all"
+        size = sum(f.stat().st_size for f in path.parent.iterdir() if f.is_file())
+        measured[path.parent.name] = size / tiles
+    worst = max(measured, key=measured.get)
+    assert measured[worst] <= MAX_BYTES_PER_TILE, (
+        f"{worst} ships {measured[worst]:.1f} bytes of artwork per tile, over "
+        f"the {MAX_BYTES_PER_TILE} alarm. All: "
+        + ", ".join(f"{g} {v:.1f}" for g, v in sorted(measured.items(), key=lambda kv: -kv[1])))
