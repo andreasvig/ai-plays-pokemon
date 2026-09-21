@@ -30,10 +30,17 @@ of in black. Two things decide whether that is right for a given side:
   A block that is one flat colour over more than FLAT_VETO of its area is open
   water, not a wall — FireRed's Route 21 and Crystal's Cherrygrove both ship
   one — and a fringe of open water cannot do the job a fringe is for. Those
-  sides are vetoed whatever they fit. At exactly one colour the block is not
-  artwork at all: Platinum's atlas is a collision silhouette (tile_px 4, a 4x4
-  block of pure black), and every one of its sides is vetoed the same way, so
-  the gen-4 atlases cost nothing here until they are really rendered.
+  sides are vetoed whatever they fit.
+
+  At EXACTLY one colour the veto means something different and the report says
+  so separately. A gen-1/2/3 map's border is a real block the cartridge repeats
+  beyond the map's bounds; gen 4 and gen 5 have no such thing, so the DS
+  renderers emit a 1x1 placeholder and every DS side is vetoed as `blank`.
+  That is a property of those cartridges, not of how well the atlas is
+  rendered: it stayed true when Platinum went from a collision silhouette to
+  the full 3D render, and it will stay true after any further render work. If
+  a DS map ever needs a fringe it has to come from somewhere other than a
+  border block.
 
   fit >= DRAW  -> draw.  CAND <= fit < DRAW -> candidate, listed in borders.js
   as a commented line with its number so Andreas can switch it on. Below that,
@@ -165,6 +172,15 @@ def coverage(cell: np.ndarray, pal: set) -> float:
     return hit / float(cnt.sum())
 
 
+def map_name(key: str, m: dict) -> str:
+    """A name to print for one map. Gen 4 and gen 5 have no decomp to read map
+    names out of, so their atlas entries carry `name: null` — every row of this
+    report used to crash on the first one of those. The key without its `:0`
+    matches how the gen-5 renderer already spells a nameless map (`building:
+    "Map428"`), so the two surfaces agree rather than inventing a second form."""
+    return m.get("name") or f"Map{key.split(':')[0]}"
+
+
 @dataclass
 class Edge:
     game: str
@@ -198,7 +214,7 @@ def score(game: str, cell_cover: float = CELL_COVER) -> list[Edge]:
             closed = sum(b - a_ for a_, b in spans)
             n = edge_len(m, side)
             if not closed:
-                out.append(Edge(game, key, m["name"], side, 0, n, 0.0, flat, "road"))
+                out.append(Edge(game, key, map_name(key, m), side, 0, n, 0.0, flat, "road"))
                 continue
             cov = [coverage(edge_cell(img, m, side, i, t), pal)
                    for a_, b in spans for i in range(a_, b)]
@@ -213,7 +229,7 @@ def score(game: str, cell_cover: float = CELL_COVER) -> list[Edge]:
                 v = "candidate"
             else:
                 v = "skip"
-            out.append(Edge(game, key, m["name"], side, closed, n, fit, flat, v, cov))
+            out.append(Edge(game, key, map_name(key, m), side, closed, n, fit, flat, v, cov))
     out.sort(key=lambda e: (e.key, SIDES.index(e.side)))
     return out
 
@@ -262,7 +278,7 @@ def black_regions(game: str) -> dict:
                 if p not in fr:
                     res["unrendered_edges"] += 1
                     res["unrendered_tiles"] += b - a_
-                    res["unrendered_to"].append(f"{key} {m['name']} {side}")
+                    res["unrendered_to"].append(f"{key} {map_name(key, m)} {side}")
     return res
 
 
@@ -288,6 +304,9 @@ def render_generated(all_edges: dict[str, list[Edge]]) -> str:
     lines = [GEN_OPEN,
              f"//   fit >= {DRAW:.2f} draws; {CAND:.2f}-{DRAW:.2f} is offered as a commented",
              "//   candidate; a flat (open-water) block is vetoed whatever it fits.",
+             "//   \"no border block\" below means the cartridge has none to tile: gen 4",
+             "//   and gen 5 do not have the concept, so their renderers emit a 1x1",
+             "//   placeholder and every DS side is held back for that one reason.",
              "export const MEASURED = {"]
     for game, edges in all_edges.items():
         rows = [e for e in edges if e.verdict in ("draw", "candidate", "water", "blank")]
@@ -312,8 +331,7 @@ def render_generated(all_edges: dict[str, list[Edge]]) -> str:
             # the same key in an object literal is the last one silently winning.
             if held:
                 why = {"water": "block is open water (%.2f flat)" % held[0].flat,
-                       "blank": "block is one flat colour — this atlas is a collision "
-                                "silhouette, not a tile render",
+                       "blank": "no border block",
                        }.get(held[0].verdict, f"under {DRAW:.2f}")
                 nums = ", ".join(f"{e.side} {e.fit:.2f}" for e in held)
                 allsides = ", ".join(f"'{e.side}'" for e in drawn + held)
