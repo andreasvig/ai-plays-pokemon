@@ -44,7 +44,10 @@ Route dict (``ROUTE_VERSION`` 3):
   (M15). A battle we cannot place (no overworld sample before it) carries a
   null tile and is not drawn. ``outcome`` (won / lost / ran / caught / …) and
   ``foe`` (``{species, level, hp, max_hp}``) are present only on runs whose
-  referee read them — from 2026-09-15 — and absent otherwise.
+  referee read them — from 2026-09-15 — and absent otherwise. ``trainer_class``
+  is gen 2's alone: Crystal names a trainer by a (class, index) pair and has no
+  single id, so it reports the class it can measure and leaves ``trainer_id``
+  null rather than filling it from another keyspace.
 """
 
 from __future__ import annotations
@@ -56,6 +59,7 @@ from pathlib import Path
 from typing import Any, Iterable, Optional
 
 from src.referee.battles import BattleTracker, TRAINER_NAMES
+from src.referee.contracts import contract_for
 from src.referee.trace import MAX_TILES_PER_INPUT
 from src.referee.walkgraph import DEFAULT_GRAPH_PATH, WalkGraph
 
@@ -399,12 +403,22 @@ def _battles_from_trace(per_turn: dict[int, dict[str, Any]],
     * ``foe`` from ``foe_species``/``foe_level``.
     * ``outcome`` from ``battle_outcome``, taken at the sample where the flag
       goes CLEAR — that is where the game writes it. Taken during the fight it
-      is 0, or the PREVIOUS fight's result during the intro.
+      is 0, or the PREVIOUS fight's result during the intro. What its numbers
+      MEAN is the contract's (``GameMemory.outcome_names``): Crystal's enum
+      overlaps gen 3's B_OUTCOME without agreeing with it.
 
     A run recorded before its game had those fields stores samples without them
     and degrades to exactly the old behaviour, because this reads what is in the
     sample and never re-derives it.
+
+    ``in_battle`` has THREE values and the third one is load bearing. ``None``
+    is "this sample could not be read", not "no battle": treating it as a clear
+    flag closes the open segment and re-opens a new one on the next press, so a
+    single refused sample splits one fight into two cards with two ambush tiles.
+    Crystal's 17 refused samples inside one 79-sample trainer battle would have
+    made eighteen.
     """
+    names = getattr(contract_for(game), "outcome_names", None) or _TRACE_OUTCOMES
     out: list[dict[str, Any]] = []
     tile: Optional[Tile] = None
     seg: Optional[dict[str, Any]] = None
@@ -412,6 +426,8 @@ def _battles_from_trace(per_turn: dict[int, dict[str, Any]],
         for s in per_turn[turn].get("samples") or []:
             if not isinstance(s, dict):
                 continue
+            if s.get("in_battle") is None:
+                continue              # unreadable: it neither opens, places nor closes
             here = _sample_tile(s, invalid)
             if s.get("in_battle"):
                 if seg is None:
@@ -427,7 +443,7 @@ def _battles_from_trace(per_turn: dict[int, dict[str, Any]],
                 if seg is not None:
                     # The outcome is written as the fight CLOSES, so this
                     # sample — the first with the flag clear — is where it is.
-                    _close_battle(seg, s)
+                    _close_battle(seg, s, names)
                     out.append(seg)
                     seg = None
     if seg is not None:                       # the run ended mid-battle
@@ -469,6 +485,12 @@ def _fold_battle_sample(seg: dict[str, Any], s: dict[str, Any],
         # public/trainers/<game>/index.json, which is already per game.
         if game == GRAPH_GAME:
             seg["trainer"] = TRAINER_NAMES.get(int(s["trainer_id"]))
+    if seg.get("trainer_class") is None and s.get("trainer_class"):
+        # Gen 2's answer to "who". It is a CLASS and never an id — Bug Catcher
+        # 36 is a kind of person, not a person — so it rides in its own key
+        # rather than standing in for `trainer_id`, which a roster lookup
+        # resolves against a table that has no such numbering.
+        seg["trainer_class"] = int(s["trainer_class"])
     if s.get("foe_species"):
         foe = {"species": int(s["foe_species"])}
         if s.get("foe_level"):
@@ -476,10 +498,25 @@ def _fold_battle_sample(seg: dict[str, Any], s: dict[str, Any],
         seg["foe"] = foe
 
 
-def _close_battle(seg: dict[str, Any], after: dict[str, Any]) -> None:
-    """Finish a segment on the first sample where the flag has gone clear."""
+def _close_battle(seg: dict[str, Any], after: dict[str, Any],
+                  names: dict[int, str] = _TRACE_OUTCOMES) -> None:
+    """Finish a segment on the first sample where the flag has gone clear.
+
+    ``names`` is the cartridge's own outcome enum. The default is gen 3's
+    B_OUTCOME; Crystal's wBattleResult shares its low values and means something
+    else by each of them, so reading one through the other renames a loss "won"
+    and an escape "lost" with nothing to raise on.
+    """
     seg["turns"] = seg["closed_turn"] - seg["opened_turn"] + 1
-    name = _TRACE_OUTCOMES.get(int(after.get("battle_outcome") or 0))
+    raw = after.get("battle_outcome")
+    if raw is None:
+        # The run never read the byte. Not the same as reading a zero, and the
+        # difference only became visible with Crystal: gen 3's table has no
+        # entry for 0 so `or 0` degraded silently, while Crystal's 0 means WON —
+        # so every battle in every run recorded before this contract would have
+        # been declared a victory by a missing field.
+        return
+    name = names.get(int(raw))
     if name:
         seg["outcome"] = name
         if name in _OUTCOME_WON:

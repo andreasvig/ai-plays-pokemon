@@ -105,10 +105,54 @@ AB_BUTTONS = {"A", "B"}
 
 FPS = 60.0
 
-# The window a dereferenced trace pointer has to land in to be believed — GBA
-# EWRAM. Same bound as the Lua bridge's ``sample_range``, so a spec entry means
-# the same thing on both backends.
-EWRAM_LO, EWRAM_HI = 0x02000000, 0x02040000
+# The window a dereferenced trace pointer has to land in to be believed, PER
+# CONSOLE — because the same base address means two different sizes. The GBA's
+# EWRAM is 256 KB at 0x02000000; the DS's main RAM is 4 MB at the same base. A
+# single 0x02040000 ceiling is therefore not a conservative choice on an NDS, it
+# is a wrong one: it rejects 15/16ths of the address space the pointer can
+# legally point into, and it rejected EVERY gen-4 and gen-5 heap pointer — which
+# is why a pointer chase was not an option on any of the four DS cartridges. It
+# was the stated blocker for gen 5's ``battle_outcome`` (Black's setup param
+# landed at four different addresses in four battles) and it is at least a
+# blocker for gen 4, whose own note says the result lives in a caller-allocated
+# struct that only a chase reaches. Raising it does not by itself produce an
+# outcome on either — see ``src/referee/contracts.py``, which records what the
+# chase did and did not reach once it worked.
+#
+# The GBA entry is UNCHANGED, and the check it performs is the one that matters
+# there: FireRed mid-warp relocates SaveBlock1 and 0x03005008 is briefly not a
+# pointer, so a window that admitted 4 MB on a GBA would read garbage as
+# coordinates. Widening it globally would have bought gen 5 an outcome by taking
+# that away.
+#
+# THE LUA BRIDGE still applies the flat 0x02040000 in its own ``sample_range``
+# (lua/socketserver-1.lua:80), and after this change a spec entry STILL means the
+# same thing on both backends — not by coincidence and not by assumption. mGBA
+# cannot hold an NDS cartridge at all, and the repo refuses one before anything
+# launches: ``BACKEND_CONSOLES["mgba"] == {"GB", "GBA"}`` and ``backend_holds``
+# gates on it (src/emulator/backends/__init__.py). So the only consoles that
+# bridge ever sees are exactly the ones whose window is unchanged here. If mGBA
+# ever grows a DS core, that Lua line is the second half of this change.
+POINTER_WINDOWS: dict[str, tuple[int, int]] = {
+    "GBA": (0x02000000, 0x02040000),
+    # A GB/GBC cartridge has no 0x02000000 region at all, and no GB contract
+    # uses a pointer entry (gen 2 does not shuffle its blocks, so Crystal's spec
+    # is raw addresses). The entry exists so an unexpected one is refused rather
+    # than silently admitted.
+    "GB": (0x02000000, 0x02040000),
+    "NDS": (0x02000000, 0x02400000),
+}
+#: What a console that could not be identified gets: the NARROW window. Failing
+#: closed is the safe direction in both places it can bite — a GBA run keeps
+#: exactly the check it had, and an NDS run whose console never got measured
+#: reads its pointer fields as ``None``, which renders as "unknown" rather than
+#: as a number from an address nothing vouched for. :meth:`_probe_system` runs
+#: inside :meth:`wait_for_connection`, before a savestate loads and before turn
+#: 1, so a healthy run has measured its console long before the first trace
+#: sample.
+DEFAULT_POINTER_WINDOW = POINTER_WINDOWS["GBA"]
+#: The pre-2026-09-20 spelling, kept because it is what the GBA window still is.
+EWRAM_LO, EWRAM_HI = DEFAULT_POINTER_WINDOW
 
 
 class SkyEmuError(RuntimeError):
@@ -902,6 +946,18 @@ class SkyEmuClient:
                 parts.append(b"")
         self._trace_rows.append((name, parts))
 
+    @property
+    def pointer_window(self) -> tuple[int, int]:
+        """``(lo, hi)`` a dereferenced trace pointer must land in to be believed.
+
+        Keyed on the console this run MEASURED (:meth:`_probe_system` reads it
+        off a capture's shape), not on what a config declared, because the
+        declared value is the thing that can be wrong about the cartridge that
+        actually loaded. An unmeasured console gets the narrow window — see
+        ``DEFAULT_POINTER_WINDOW``.
+        """
+        return POINTER_WINDOWS.get(self.system or "", DEFAULT_POINTER_WINDOW)
+
     def _read_spec_entry(self, entry: str) -> bytes:
         """One ``trace_spec`` range.
 
@@ -910,9 +966,12 @@ class SkyEmuClient:
             <addr>:<len>           absolute bus address
             *<ptr>+<off>:<len>     dereference the u32 at ptr, then read at +off
 
-        A pointer that does not land in EWRAM reads as ``b""`` — the same bound
-        the bridge applies, so a spec entry means the same thing on both
-        backends. Numbers are decimal or ``0x``-prefixed.
+        A pointer that does not land in :attr:`pointer_window` reads as ``b""``.
+        That window is PER CONSOLE (``POINTER_WINDOWS``) because the DS's main
+        RAM is 4 MB where the GBA's EWRAM is 256 KB; on the consoles the Lua
+        bridge can hold it is the bridge's own bound, so a spec entry still
+        means the same thing on both backends. Numbers are decimal or
+        ``0x``-prefixed.
         """
         text = entry.strip()
         if text.startswith("*"):
@@ -920,7 +979,8 @@ class SkyEmuClient:
             off_s, _, len_s = rest.partition(":")
             ptr, off, length = int(ptr_s, 0), int(off_s, 0), int(len_s, 0)
             base = int.from_bytes(self.read_memory(ptr, 4), "little")
-            if base < EWRAM_LO or base >= EWRAM_HI:
+            lo, hi = self.pointer_window
+            if base < lo or base >= hi:
                 return b""
             return self.read_memory(base + off, length)
         addr_s, _, len_s = text.partition(":")

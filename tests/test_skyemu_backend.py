@@ -527,15 +527,54 @@ def test_fetch_clears_the_rows():
 
 
 def test_a_pointer_outside_ewram_reads_as_empty_not_as_garbage():
-    """The same bound the Lua bridge applies (``sample_range``), so a spec entry
-    means the same thing on both backends. Mid-warp FireRed relocates
-    SaveBlock1 and the pointer is briefly not a pointer."""
+    """The same bound the Lua bridge applies (``sample_range``) on the consoles
+    that bridge can hold, so a spec entry means the same thing on both backends.
+    Mid-warp FireRed relocates SaveBlock1 and the pointer is briefly not a
+    pointer."""
     emu = _traced_emu()
     emu.write_u32(GSAVEBLOCK1_PTR, 0x08000000)        # ROM, not EWRAM
     emu.press_button_list(["up"])
     (name, samples), = emu.fetch_trace()
     assert samples[0] == b""
     assert samples[1] != b""                          # the absolute entry still read
+
+
+def test_the_pointer_window_is_the_consoles_own_and_not_the_gbas_everywhere():
+    """0x02040000 is the top of the GBA's EWRAM and the top of nothing on a DS,
+    whose main RAM is 4 MB at the same base. One flat ceiling therefore rejected
+    EVERY gen-4 and gen-5 heap pointer, which is why four cartridges had no
+    ``battle_outcome`` for what looked like four unrelated reasons.
+
+    The GBA side must not move: FireRed mid-warp relocates SaveBlock1 and
+    0x03005008 is briefly not a pointer, so a 4 MB window on a GBA would read
+    garbage as coordinates. The NDS side must reach 0x0226xxxx, where gen 5
+    allocates its battle heap.
+    """
+    from src.emulator.backends.skyemu import DEFAULT_POINTER_WINDOW, POINTER_WINDOWS
+
+    assert POINTER_WINDOWS["GBA"] == (0x02000000, 0x02040000)
+    assert POINTER_WINDOWS["NDS"] == (0x02000000, 0x02400000)
+    # An unidentified console fails CLOSED — the narrow window, so a run whose
+    # console was never measured reads its pointer fields as nothing rather than
+    # as a number from an address nothing vouched for.
+    assert DEFAULT_POINTER_WINDOW == POINTER_WINDOWS["GBA"]
+
+    emu = _traced_emu()
+    assert emu.system is None and emu.pointer_window == POINTER_WINDOWS["GBA"]
+    emu.system = "NDS"
+    assert emu.pointer_window == POINTER_WINDOWS["NDS"]
+
+    # A live gen-5 heap pointer, read through the real spec grammar: 0x0226d8c0
+    # is Black's opponent battler block. On a GBA it is out of the window and
+    # reads as nothing; on the NDS it reads.
+    emu.mem.clear()
+    emu.write_u32(0x02269760, 0x0226D8C0)
+    emu.write_bytes(0x0226D8D4, bytes([0xF8, 0x01]))   # Patrat, 504
+    emu.system = "NDS"
+    assert emu._read_spec_entry("*0x02269760+0x14:2") == bytes([0xF8, 0x01])
+    emu.system = "GBA"
+    assert emu._read_spec_entry("*0x02269760+0x14:2") == b"", (
+        "the GBA window must still refuse a DS-sized pointer")
 
 
 def test_a_range_that_raises_comes_back_as_empty_bytes():

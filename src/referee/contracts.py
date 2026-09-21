@@ -164,10 +164,25 @@ class GameMemory:
     #: the fight it is either zero or, during the intro, the PREVIOUS fight's
     #: result — 35 of 146 FireRed mid-battle states (src/referee/battles.py).
     battle_outcome: Optional[Field] = None
+    #: What ``battle_outcome``'s numbers MEAN, when they are not gen 3's
+    #: B_OUTCOME. None keeps ``src/app/route.py``'s B_OUTCOME table, which is
+    #: FireRed's and Emerald's. Crystal needs its own and the reason is the
+    #: worst kind: the two enums OVERLAP without agreeing. pokecrystal's
+    #: wBattleResult is 0 win / 1 lose / 2 draw, so reading it through B_OUTCOME
+    #: renames a LOSS "won" and an escape "lost" — every value legal, every
+    #: value wrong, and nothing to raise on.
+    outcome_names: Optional[dict[int, str]] = None
     #: Who the trainer was, when the kind says one. Set at the start of a
     #: trainer battle and kept until the next, so it is read with the kind and
     #: means nothing without it.
     trainer_id: Optional[Field] = None
+    #: The trainer's CLASS, for a generation that has no single trainer id.
+    #: Gen 2 names a trainer by a (class, index-in-class) PAIR, so there is no
+    #: number that means "Youngster Mikey" the way FireRed's 114 does — and
+    #: writing the class into ``trainer_id`` would hand a roster lookup a key
+    #: from a different keyspace. Gated with the kind, like the id: measured
+    #: stale in the overworld for several presses after a trainer battle ends.
+    trainer_class: Optional[Field] = None
     #: The game's own battle counter, XOR-encrypted with a key the referee reads
     #: separately. FireRed-only; the decoder skips it without a key.
     battles_total: Optional[Field] = None
@@ -180,6 +195,21 @@ class GameMemory:
     #: returns another bank's memory. Left in, it draws a phantom one-tile map
     #: and two phantom warps per occurrence.
     invalid_maps: tuple[tuple[int, ...], ...] = ()
+    #: The bank register that says whether the sample above is even readable,
+    #: and the bank this contract's addresses live in. GBC only: 0xd000-0xdfff
+    #: is a SWITCHABLE WRAM bank, so a read taken while the register points at
+    #: another bank returns that bank's bytes — not a failure, a DIFFERENT
+    #: memory, silently. Measured on Crystal across 1,318 live samples: 84 read
+    #: a bank other than 1, and all 84 of those — every single one, both
+    #: directions — also read the phantom (0,0) map that ``invalid_maps``
+    #: refuses. The register is what turns that from a symptom into a cause,
+    #: and it makes the battle flag as refusable as the map key already was:
+    #: 4 of the 65 in-battle samples in the 2026-09-20 Crystal run are this,
+    #: the flag reading non-zero while the player walks down a route.
+    #: NOT a safe failure in either direction, which the note this replaced
+    #: claimed it was.
+    bank_reg: Optional[Field] = None
+    bank_value: int = 1
     #: True for the ONE contract that the pre-2026-09-20 global decoder was.
     #: `TRACE_SPEC` was FireRed's SaveBlock1 spec applied to every cartridge, so
     #: a run recorded before contracts existed was decoded with FIRERED's layout
@@ -396,6 +426,81 @@ EMERALD = GameMemory(
     ),
 )
 
+# --- the gen-2 battle block ---------------------------------------------------
+#
+# Crystal's four battle reads, all located 2026-09-20 by
+# v2-experiments/crystal_battle_probe.py and crystal_battle_walk.py and scored
+# by crystal_battle_analyse.py. The oracle is never another address: gen 2
+# writes the whole answer on the screen, and it writes it as CHARACTER CODES
+# into wTilemap (0xc4a0, 20x18) — the font is laid out so the code IS the tile
+# index — so the words are readable straight out of memory beside the byte they
+# are judging. That decoder was itself checked against rendered PNGs first
+# ("Got away safely!", "Can't escape!", "CYNDAQUIL's attack missed!" came back
+# character for character) because an instrument is part of its measurement.
+#
+# The corpus is 1,318 samples: 47 savepoints from the two Crystal runs plus
+# eight replays that re-play a run's own recorded button lists forward from a
+# savepoint, which is what turns "a battle every 10 turns" into a battle
+# sampled after every press.
+#
+#   0xd22d  wBattleMode, 0 none / 1 wild / 2 trainer. 9 of 9 battle segments
+#           agree with the game's own wording — six say "Wild <SPECIES>
+#           appeared!" and read 1, three say "<NAME> wants to battle!" and read
+#           2 — and four of the six ALSO printed "Got away safely!", which gen 2
+#           refuses to print in a trainer battle at all. 0 false positives in
+#           576 non-zero samples and 658 readable zero samples in the negative
+#           class (walking, dialogue, a Pokegear call, menus, map transitions).
+#           The claim this had to beat was "a byte that reads 2 in EVERY
+#           battle", which the two wild savepoints could not refute on their own
+#           because the species is not evidence of the kind.
+#   0xd206  wEnemyMon.Species. 382/382 in-battle samples equal the species named
+#           on tilemap row 0, plus 5/5 on savepoint states the search never saw,
+#           three of whose species (Zubat, Poliwag, Totodile) appear nowhere in
+#           the replay corpus.
+#   0xd213  wEnemyMon.Level, +13 into the same struct. 382/382 and 5/5 the same
+#           way. NOT 0xd21f, which an earlier pass read as 8 against a level-3
+#           screen — the struct is gen 2's 32-byte battle_struct, not the
+#           48-byte party one, and the two put the level 18 bytes apart.
+#   0xd22f  wOtherTrainerClass. 9 RIVAL1, 22 YOUNGSTER, 36 BUG_CATCHER — three
+#           trainers, three pokecrystal constants, each matched to the class
+#           name PRINTED in the intro ("??? wants to battle!", "YOUNGSTER
+#           MIKEY", "BUG CATCHER DON"). 0 in all 372 wild in-battle samples, and
+#           stale in the overworld after a trainer battle, so it is gated on the
+#           kind.
+#   0xd0ee  wBattleResult, read at the close like gen 3's B_OUTCOME: 0 on three
+#           won battles (two trainer, one wild), 1 on the rival battle the run
+#           LOST, 2 on all four escapes. It is RESET to 0 when a battle opens —
+#           traced 2 -> 0 across the boundary of the next encounter — so a 0 at
+#           the close means this fight, not the last one.
+#
+# What is NOT here, and why. wOtherTrainerID: gen 2 names a trainer by a
+# (class, index) PAIR, and no byte in 0xd200-0xd25f is both distinct across the
+# three trainers and zero in the wild battles except the class itself. A capture
+# and a mutual knock-out are both unmeasured; the escape code is pokecrystal's
+# DRAW, so a genuine double KO would read "ran" — named for the four cases the
+# corpus actually produced rather than for the one it did not.
+_CRYSTAL_ENEMY_MON = 0xD206
+_CRYSTAL_MON_LEVEL = 0x0D          # battle_struct, not party_struct
+_CRYSTAL_BATTLE_MODE = 0xD22D
+_CRYSTAL_TRAINER_CLASS = 0xD22F
+_CRYSTAL_BATTLE_RESULT = 0xD0EE
+#: wEnemyMon through wOtherTrainerClass inclusive, as one range: species, level,
+#: mode and class in one round trip per button instead of four.
+_CRYSTAL_BATTLE_LEN = _CRYSTAL_TRAINER_CLASS - _CRYSTAL_ENEMY_MON + 1
+_CRYSTAL_MODE_OFF = _CRYSTAL_BATTLE_MODE - _CRYSTAL_ENEMY_MON
+_CRYSTAL_CLASS_OFF = _CRYSTAL_TRAINER_CLASS - _CRYSTAL_ENEMY_MON
+#: A MODE byte read as a MASK, which is what keeps the kind and the flag one
+#: value: 1 & 0x02 == 0 is wild and 2 & 0x02 == 2 is a trainer.
+_CRYSTAL_MODE_TRAINER = 0x02
+#: pokecrystal wBattleResult. A DIFFERENT enum from gen 3's B_OUTCOME at every
+#: value it shares, which is why the contract carries it rather than the
+#: consumer. "ran" is 4 of 4 measured escapes; pokecrystal calls the constant
+#: DRAW and a double knock-out would land here too, unmeasured.
+_CRYSTAL_OUTCOMES = {0: "won", 1: "lost", 2: "ran"}
+#: The GBC's WRAM bank select. Not a game address — a hardware register, and the
+#: only thing that says whether the 0xd000-0xdfff reads beside it mean anything.
+_GBC_SVBK = 0xFF70
+
 CRYSTAL = GameMemory(
     game="crystal-us",
     console="GB",
@@ -405,7 +510,10 @@ CRYSTAL = GameMemory(
     # search returned 0xdcb5/0xdcb6, and neither was told about the other.
     # Gen 2 does not shuffle its blocks, so these are raw addresses and there is
     # no pointer to dereference.
-    spec=("0xdcb5:4", "0xd22d:1"),
+    spec=("0xdcb5:4",
+          f"{_CRYSTAL_ENEMY_MON:#x}:{_CRYSTAL_BATTLE_LEN:#x}",
+          f"{_CRYSTAL_BATTLE_RESULT:#x}:1",
+          f"{_GBC_SVBK:#x}:1"),
     map_group=Field(0, 0, "<B"),
     map_num=Field(0, 1, "<B"),
     y=Field(0, 2, "<B"),
@@ -422,19 +530,43 @@ CRYSTAL = GameMemory(
     # one whose values partition wild from trainer consistently.
     #
     # It sits in 0xd000-0xdfff, the switchable bank, so it carries the same
-    # hazard as the position bytes above: on 1 of 174 labelled samples the page
-    # collapsed and it read 0 mid-battle. It fails in the SAFE direction, and
-    # it fails at the same instant the map key goes invalid, so a consumer can
-    # see it. 0xc15a mask 0x01 agreed on 174/174 and lives in the always-mapped
-    # bank, but it is an unidentified byte in the sprite area — robustness
-    # without provenance. Provenance won; if the 0.6% ever matters, that is the
-    # alternative and this is the note that says so.
-    battle_flag=Field(1, 0, "<B"),
+    # hazard as the position bytes above — and the claim that used to stand here
+    # was that it "fails in the SAFE direction". It does not. Measured live at
+    # input resolution: 84 of 1,318 samples read a bank other than 1 and their
+    # 0xd22d came back 0, 2, 5, 6, 47, 63, 122, 216, 249, 252 and 255 — a zero
+    # mid-battle AND a two in the overworld, from the same mechanism. The four
+    # in-battle samples in the 2026-09-20 run that sit on the phantom (0,0) map
+    # are that false positive, in production. `bank_reg` below refuses them
+    # instead: with the register read beside the byte, 0xd22d takes exactly
+    # {0, 1, 2} over all 1,234 readable samples and nothing else.
+    battle_flag=Field(1, _CRYSTAL_MODE_OFF, "<B"),
     battle_mask=0x03,
+    # The SAME byte as the flag, and deliberately: in gen 2 "a battle is on" and
+    # "whose battle it is" are one value, so there is no second address that can
+    # drift out of step with the first.
+    battle_kind=Field(1, _CRYSTAL_MODE_OFF, "<B"),
+    battle_kind_trainer=_CRYSTAL_MODE_TRAINER,
+    foe_species=Field(1, 0, "<B"),
+    foe_level=Field(1, _CRYSTAL_MON_LEVEL, "<B"),
+    trainer_class=Field(1, _CRYSTAL_CLASS_OFF, "<B"),
+    battle_outcome=Field(2, 0, "<B"),
+    outcome_names=_CRYSTAL_OUTCOMES,
+    bank_reg=Field(3, 0, "<B"),
+    bank_value=1,
     notes=(
         "Gen 2 keeps a coordinate in ONE byte and does not DMA-shuffle, so this "
         "is the only contract here with no pointer. Coordinates are unsigned. "
-        "Battle flag located 2026-09-20 and it is a MODE byte, not a bit."
+        "Battle flag located 2026-09-20 and it is a MODE byte, not a bit — one "
+        "value carries both 'a battle is running' and 'whose it is', scored "
+        "9/9 segments against the game's own 'Wild X appeared!' / 'X wants to "
+        "battle!' wording. Species and level are wEnemyMon +0 and +13, 382/382 "
+        "and 5/5 against the name and level printed on the battle HUD. The "
+        "trainer is a CLASS, not an id: gen 2 has no single trainer number, so "
+        "trainer_id stays None and a roster lookup is never handed a key from "
+        "the wrong keyspace. The outcome enum is pokecrystal's, not gen 3's. "
+        "And the read is only as good as the WRAM bank: bank_reg refuses the "
+        "6.4% of samples taken while the GBC had another bank paged in, which "
+        "is the same event as the phantom (0,0) map — 84 of 84, both ways."
     ),
 )
 
@@ -498,11 +630,139 @@ _PLATINUM_BATTLE_OVERLAY = 16
 # battle, so the decoder gates it on the flag.
 _PLATINUM_FOE_SPECIES = 0x022C57EC
 
+# --- the gen-4 battle block ---------------------------------------------------
+#
+# Two HEAP ALLOCATIONS, not two addresses, and the difference is the whole
+# argument. `local/battleflag/black/NOTES.md` is what a byte chosen for
+# correlating with battle state costs on this hardware (18 hours, 14,670
+# indistinguishable candidates) and commit a377f67 is what one that passed 40/40
+# in both directions cost. So each field below is an offset into a block whose
+# allocator HEADER — the magic 0x5544 and the size beside it — is at the same
+# address with the same size in every state dumped, and the block's identity is
+# corroborated by a field that was already verified independently.
+#
+#   BattleSystem   hdr 0x022bf950, size 0x2494, data 0x022bf958
+#     +0x44  battleType, a MASK. BATTLE_TYPE_TRAINER is bit 0.
+#     +0x48  a pointer into the BattleContext block below (its data + 0x18),
+#            which is what ties the two allocations together rather than
+#            leaving them two unrelated regions that happen to be adjacent.
+#     +0xB8  trainer ids, one u16 per battler. [0] is the player's side and
+#            reads 0; [1] at +0xBA is the opponent's.
+#   BattleContext  hdr 0x022c29cc, size 0x3168, data 0x022c29d4
+#     +0x2d58  battleMons[0], the player's battler; [1] is 0xc0 after it, and
+#              [1].species is _PLATINUM_FOE_SPECIES, already measured. So the
+#              LEVEL below is not a new find — it is the same struct read 0x34
+#              further in, at the offset that reads the PLAYER's level out of
+#              battleMons[0] at the same time.
+#
+# The corpus: 70 savepoints from the four Platinum runs, 16 of them inside a
+# battle, plus 1,500 samples from 12 REPLAYS — which re-play a run's own
+# recorded button_sequence lists forward from a savepoint and sample after every
+# press, which is crystal_battle_walk.py's method and what turns "a battle every
+# ten turns" into a battle sampled every press. 542 of those samples are
+# in-battle, in 16 segments.
+#
+# Scores, all against the SCREEN and never against another byte:
+#
+#   foe_level    16/16 in-battle savepoints from 4 runs. Every one matches the
+#                "<SPECIES> Lv<N>" plate the battle HUD draws — Piplup L5,
+#                Starly L3/L5, Bidoof L2/L3/L5, Kricketot L3 — and the same
+#                offset in battleMons[0] matches the player's own plate
+#                (Chimchar L5/L6) in the same 16 frames, which is the control
+#                that separates "the level field" from "a byte that happens to
+#                be 5".
+#   battle_kind  25/25 battles: 11 savepoints and 14 replay segments, which is
+#                every battle in the corpus whose kind the SCREEN settles (5
+#                savepoints show no opponent ball row at the frame they were
+#                taken, and one replay segment's intro text is mid-scroll).
+#                The oracle is gen 4's own wording and its own HUD: "A wild
+#                BIDOOF appeared!" against "You are challenged by Lass
+#                Natalie!", the opponent's party balls on the touch screen,
+#                "Got away safely!" (which only a wild battle prints) and a
+#                prize payout (which only a trainer battle does). Composition:
+#                11 TRAINER — Diamond the rival, Youngster Tristan, Lass
+#                Natalie — and 14 WILD. That balance is the point: a wild-only
+#                corpus cannot refute a wild/trainer discriminator, which is
+#                exactly the mistake that produced a false refutation on
+#                Emerald. Across all 542 in-battle samples the word takes only
+#                {0, 1} and nothing else.
+#   trainer_id   852 for the rival, 1 for Youngster Tristan, 3 for Lass
+#                Natalie, each matched to the name PRINTED in the intro, and 0
+#                in every one of the 323 wild in-battle samples. Three
+#                trainers, three values, stale between them — the behaviour
+#                that separates a field from a constant.
+#
+# WHAT IS NOT HERE: battle_outcome. Gen 4 FREES the battle heap when the
+# overlay unloads, so gen 3's rule — read the result on the first sample after
+# the flag goes clear — has nothing left to read. The candidate that survived
+# the corpus was 0x022a64cc, 0x50 past the overlay id and inside a 0x1d8-byte
+# allocation: 1 on two wins, 5 on two escapes, 0 on two losses, 6 for 6. It is
+# WRONG. Every win and every escape in that corpus was a WILD battle and both
+# losses were TRAINER battles, so the outcome classes were confounded with the
+# KIND — and the decoupled control settles it: a trainer battle WON, same
+# address, same frame, reads 0 where a wild win reads 1. The block at that
+# address is a different object in a trainer battle (its header says size 0xec,
+# not 0x1d8). So the outcome is left None, which renders as "unknown", rather
+# than shipped as a number that is right for half the battles.
+#
+# STILL None after 2026-09-20, and here is what changed and what a follow-up
+# needs. One obstacle is gone: the backend used to bound every ``*ptr+off``
+# dereference to the GBA's EWRAM window ending at 0x02040000, so NO gen-4 heap
+# pointer could be followed and a pointer chase was not an option anybody had.
+# The window is per console now (``POINTER_WINDOWS``, skyemu.py), and a chase
+# into the DS heap works — demonstrated on gen 5, where it reads the battle
+# setup param through the battle proc's own work.
+#
+# Nothing here has been re-measured on gen 4, and this comment is not the place
+# to pretend otherwise: what follows is the experiment, not a result. On GEN 5
+# the chase turned out not to reach an outcome, for a reason that may or may not
+# transfer — the caller's param is zeroed or reallocated by the frame the flag
+# clears, and the game acts on the result while the flag is still SET. The
+# follow-up on Platinum is the same three questions in order, each answerable
+# from one driven battle per outcome:
+#   1. does anything at a FIXED address still point into the caller's battle
+#      argument on the first sample after the overlay id leaves 16;
+#   2. does that argument's content CHANGE during the battle, or only at a
+#      teardown no sample sees (gen 5: it never changed);
+#   3. and the corpus condition that is not optional — every outcome class must
+#      contain both a trainer battle and a wild one, because 0x022a64cc scored
+#      6 for 6 on a corpus where it could not. Expect a second confound on top
+#      of that one and CHECK it rather than assume it either way: gen 5 warps a
+#      loser to a Pokemon Center, which makes "lost" and "the scene changed"
+#      the same event and leaves 9,149 graphics bytes looking like an outcome.
+#      Whether gen 4 does the same has not been measured here.
+_PLATINUM_BATTLE_SYSTEM = 0x022BF958        # data of the 0x2494 block at 0x022bf950
+_PLATINUM_BATTLE_CONTEXT = 0x022C29D4       # data of the 0x3168 block at 0x022c29cc
+#: Offsets inside those two blocks. Shared with SoulSilver, which is the same
+#: engine and — measured, not assumed — the same two block sizes and the same
+#: battleMons offset inside them.
+_G4_BATTLE_MONS = 0x2D58
+_G4_BATTLE_MON_SIZE = 0xC0
+_G4_BATTLE_MON_LEVEL = 0x34
+_G4_BATTLE_TYPE = 0x44
+_G4_TRAINERS = 0xB8
+#: BATTLE_TYPE_TRAINER. Bit 0 here, where gen 3 puts it at bit 3 — which is why
+#: `battle_kind_trainer` is a per-contract MASK and not a shared constant.
+_G4_BATTLE_TYPE_TRAINER = 1 << 0
+#: The opponent's battler, from the block base. battleMons[1] is battler 1 on
+#: both cartridges, the same indexing the trainer id array uses.
+_G4_FOE_OFF = _G4_BATTLE_MONS + _G4_BATTLE_MON_SIZE
+#: species .. level as ONE range, so a foe costs one round trip per button.
+_G4_FOE_LEN = _G4_BATTLE_MON_LEVEL + 1
+#: battleType .. trainers[1], likewise one range.
+_G4_BSYS_LEN = _G4_TRAINERS + 4 - _G4_BATTLE_TYPE
+_G4_TRAINER_OFF = _G4_TRAINERS + 2 - _G4_BATTLE_TYPE
+
 PLATINUM = GameMemory(
     game="platinum-us",
     console="NDS",
+    # Sample 2 widens the foe read from 2 bytes to species..level, and sample 3
+    # is the BattleSystem pair. Both are RANGES inside one allocation rather
+    # than separate entries, which is the same economy the gen-3 block uses.
     spec=(f"{_PLATINUM_LOCATION:#x}:16",
-          f"{_PLATINUM_OVERLAY:#x}:4", f"{_PLATINUM_FOE_SPECIES:#x}:2"),
+          f"{_PLATINUM_OVERLAY:#x}:4",
+          f"{_PLATINUM_FOE_SPECIES:#x}:{_G4_FOE_LEN:#x}",
+          f"{_PLATINUM_BATTLE_SYSTEM + _G4_BATTLE_TYPE:#x}:{_G4_BSYS_LEN:#x}"),
     map_id=Field(0, 0, "<i"),
     x=Field(0, 8, "<i"),
     y=Field(0, 12, "<i"),
@@ -510,6 +770,10 @@ PLATINUM = GameMemory(
     battle_mask=0xFFFFFFFF,
     battle_value=_PLATINUM_BATTLE_OVERLAY,
     foe_species=Field(2, 0, "<H"),
+    foe_level=Field(2, _G4_BATTLE_MON_LEVEL, "<B"),
+    battle_kind=Field(3, 0, "<I"),
+    battle_kind_trainer=_G4_BATTLE_TYPE_TRAINER,
+    trainer_id=Field(3, _G4_TRAINER_OFF, "<H"),
     notes=(
         "pret/pokeplatinum struct Location at 0x0227f408: mapHeaderID +0, "
         "warpId +4, x +8, z +12, faceDirection +16, all s32. The map key is a "
@@ -579,10 +843,55 @@ _SOULSILVER_LOCATION = 0x0227D448
 # different game states, but all on one map.
 _SOULSILVER_FOE_SPECIES = 0x021D05C8
 
+# The gen-4 battle block again, and finding it here is the strongest evidence
+# that Platinum's is a STRUCT and not a coincidence. Searching this cartridge's
+# RAM for the pair (battleMons[0].species == 158 Totodile, battleMons[1].species
+# == the on-screen foe, both levels matching the HUD) returns exactly ONE site
+# in 4 MB, 0x022c6018 — and walking back from it to the allocator header lands
+# on a block of size 0x3168 whose data begins 0x2d58 before it. That is
+# Platinum's BattleContext, byte for byte: same block size, same battleMons
+# offset inside it. The BattleSystem is the same story one block over, 0x24a0
+# against Platinum's 0x2494, and its first forty words line up field for field
+# — including the pointer at +0x48, which holds this cartridge's BattleContext
+# data + 0x18 exactly as Platinum's holds its own.
+#
+# So the foe's LEVEL here is not a second search. It is Platinum's offset read
+# on the cartridge whose engine Platinum's offset was measured on, and it scores
+# against the screen the same way: 8/8 battles — the 2 in-battle savepoints
+# (Rattata L2, Hoothoot L4) and 6 replay segments (Hoothoot L2/L3) — each read
+# matching the "<SPECIES> Lv<N>" plate on the frame it was taken from. The
+# corpus behind that is 20 savepoints and 8 replays, 1,399 samples in all, 315
+# of them in-battle.
+#
+# 0x021D05C8 above is a DIFFERENT thing and stays where it is: a packed pair of
+# u16 (foe species low, the player's own active species high) that the earlier
+# work located and that the battle FLAG is derived from. It is left as the flag
+# because it is the measured one, and because the species it carries agrees
+# with battleMons[1].species in 315 of 315 in-battle samples — two addresses
+# found by two independent searches reading the same number is corroboration,
+# and collapsing them into one would throw that away.
+_SOULSILVER_BATTLE_SYSTEM = 0x022C01F4      # data of the 0x24a0 block at 0x022c01ec
+_SOULSILVER_BATTLE_CONTEXT = 0x022C32C0     # data of the 0x3168 block at 0x022c32b8
+
+# NOT wired, and the reason is a corpus and not an address. battleType sits at
+# _SOULSILVER_BATTLE_SYSTEM + _G4_BATTLE_TYPE = 0x022c0238, and it reads 0 in
+# all 315 in-battle samples this cartridge has ever produced. That is not
+# evidence: every one of those 8 battles is WILD. HGSS's first trainer is past Cherrygrove
+# and the only SoulSilver run never left Route 29 — its westward corridor dead
+# ends at x=606 in the run's own trace and in about 400 presses of driving it by
+# hand, none of which got through the tree line. A wild-only corpus cannot
+# refute a wild/trainer discriminator (the Emerald false refutation), so wiring
+# this would make every SoulSilver battle claim "wild" on the strength of a
+# structural analogy — which is exactly what commit f03dd4b took out. It stays
+# None, the card says "unknown", and the day a trainer battle is reachable this
+# is a one-line change with a known address to check first.
+_SOULSILVER_BATTLE_TYPE = _SOULSILVER_BATTLE_SYSTEM + _G4_BATTLE_TYPE
+
 SOULSILVER = GameMemory(
     game="soulsilver-us",
     console="NDS",
-    spec=(f"{_SOULSILVER_LOCATION:#x}:16", f"{_SOULSILVER_FOE_SPECIES:#x}:2"),
+    spec=(f"{_SOULSILVER_LOCATION:#x}:16", f"{_SOULSILVER_FOE_SPECIES:#x}:2",
+          f"{_SOULSILVER_BATTLE_CONTEXT + _G4_FOE_OFF:#x}:{_G4_FOE_LEN:#x}"),
     map_id=Field(0, 0, "<i"),
     x=Field(0, 8, "<i"),
     y=Field(0, 12, "<i"),
@@ -590,6 +899,9 @@ SOULSILVER = GameMemory(
     battle_flag=Field(1, 0, "<H"),
     battle_mask=0xFFFF,
     foe_species=Field(1, 0, "<H"),
+    # From the BattleMon, not from the packed word the flag comes off — that
+    # word carries two species and no level.
+    foe_level=Field(2, _G4_BATTLE_MON_LEVEL, "<B"),
     notes=(
         "Same struct shape as Platinum at a different base: map id +0, x +8, "
         "y +12, elevation +16, and a previous-map/x/y triple after it. Raw "
@@ -664,17 +976,68 @@ _BLACK2_FOE_SPECIES = 0x0225B414
 
 _BLACK2_LOCATION = 0x0223B444
 
+# --- the gen-5 battle block, first half ---------------------------------------
+#
+# The two offsets below are SHARED with Black, and the sharing is measured
+# rather than assumed. The full argument — gen 5's debug allocator, which tags
+# every heap block with the source file that asked for it, and what that buys —
+# is in the Black block further down, where the corpus that settles it lives.
+# What is true on THIS cartridge:
+#
+#   btl_pokeparam.c  hdr 0x0225b3dc, size 0x214, data 0x0225b400
+#       +0x14 is _BLACK2_FOE_SPECIES above, so the species already shipped is
+#       an offset into a named allocation, and the LEVEL is the same block
+#       0xc further in — the offset the comment above this already recorded.
+#       Black's opponent block is the same size and the same +0x14, and the
+#       four battler blocks are 0x224 apart on both cartridges.
+#   procsys.c        hdr 0x02257274, size 0x49c, data 0x02257294
+#       The BATTLE PROC's work. Located WITHOUT reference to Black: exactly one
+#       procsys.c block in 4 MB holds, at +0x0c, a pointer into this battle's
+#       BATTLE_SETUP_PARAM (itself a btl_setup.c block, whose +0x00 reads 1 for
+#       a trainer battle). Black's is the same block at 0x02269760.
+#       +0x58  the opponent trainer's NAME buffer — and this is the corroboration
+#              that the offset transfers: on Black the pointer at +0x58 leads to
+#              a STRBUF spelling "Bianca" in the Bianca battle, and here to one
+#              spelling "Hugh".
+#
+# THE LIMIT, and it is a corpus and not an address: Black 2 has exactly ONE
+# reachable battle, PKMN Trainer Hugh at the Aspertia lookout, because the game
+# HANGS in the Pokemon Center doorway the story walks the player into
+# immediately afterwards — the original run died there, and driving the same
+# savepoint by hand ends at the same tile (map 435, 7,19) unresponsive to every
+# direction. So battle_kind here is measured on ONE battle, and what makes it
+# shippable rather than a guess is that its value is not a default: the field
+# holds a live pointer to a buffer containing the opponent's name, and the NULL
+# reading that means "wild" is the one verified 30 times on Black, on the same
+# engine at the same offset of the same block. That is the difference from
+# SoulSilver's battleType, which was left None because it read 0 — the same
+# thing an unwritten field reads — in every sample it had.
+#
+# foe_level is measured on this cartridge and not inherited: the block reads
+# level 5 in the Hugh battle, which is the "Oshawott Lv. 5" the run's own
+# turn-166 screen reading records.
+_G5_FOE_LEVEL = 0xC                          # from the species, inside btl_pokeparam
+_G5_TRAINER_NAME = 0x58                      # into the battle proc's work
+#: species .. level as ONE range, so a foe costs one round trip per button.
+_G5_FOE_LEN = _G5_FOE_LEVEL + 1
+_BLACK2_BATTLE_PROC = 0x02257294             # data of the 0x49c block at 0x02257274
+
 BLACK2 = GameMemory(
     game="black2-us",
     console="NDS",
     spec=(f"{_BLACK2_LOCATION:#x}:16", f"{_BLACK2_IN_BATTLE:#x}:1",
-          f"{_BLACK2_FOE_SPECIES:#x}:2"),
+          f"{_BLACK2_FOE_SPECIES:#x}:{_G5_FOE_LEN:#x}",
+          f"{_BLACK2_BATTLE_PROC + _G5_TRAINER_NAME:#x}:4"),
     map_id=Field(0, 0, "<I"),
     x=Field(0, 4, "<i", shift=16),
     y=Field(0, 12, "<i", shift=16),
     battle_flag=Field(1, 0, "<B"),
     battle_mask=0x01,
     foe_species=Field(2, 0, "<H"),
+    foe_level=Field(2, _G5_FOE_LEVEL, "<B"),
+    battle_kind=Field(3, 0, "<I"),
+    #: The whole word: the test is "the trainer-name pointer is not NULL".
+    battle_kind_trainer=0xFFFFFFFF,
     notes=(
         "Gen 5. map id +0, x +4, height +8, y +12; x and y are 16.16 fixed "
         "point, so the Field carries shift=16 and the tile is value >> 16. Raw "
@@ -686,7 +1049,17 @@ BLACK2 = GameMemory(
         "see the comment above for the candidate that passed 40/40 and was "
         "still wrong. Wild battles are unreachable — the game HANGS entering "
         "the Aspertia Pokemon Center under SkyEmu, which froze the original run "
-        "too — so bit vs mode byte is untested."
+        "too — so bit vs mode byte is untested. The battle fields are offsets "
+        "into two NAMED heap allocations (gen 5 tags every block with the "
+        "source file that asked for it): the level is the species' own block "
+        "read 0xc further in, and the kind is the battle proc's pointer to the "
+        "opponent trainer's name buffer — which on this cartridge leads to a "
+        "buffer spelling 'Hugh'. Only ONE battle is reachable here, so the "
+        "wild reading of that pointer is the one measured on Black, 30 times. "
+        "battle_outcome is None: gen 5 acts on the result inside the battle "
+        "and the block that carries it is zeroed or reallocated by the frame "
+        "the flag clears — measured on Black, where battles can be driven to "
+        "each ending; see its block for what was tried."
     ),
 )
 
@@ -734,16 +1107,180 @@ _BLACK_ACTOR = 0x0224F90C
 # Verified 18/18 on held-out states, and reproduced here across four battle and
 # four overworld states.
 #
-# Untested: every battle in the corpus is a TRAINER battle, so wild is unproven
-# and wild-vs-trainer is unmeasurable from it. Neither is reachable yet — B/W's
-# starter selection is touch-only (the d-pad does not move that cursor) and
-# Cheren blocks Nuvema Town's north exit at (791, 741) until the lab is visited.
+# That paragraph used to end "every battle in the corpus is a TRAINER battle,
+# so wild is unproven". It is not true any more: Route 1's grass is reachable
+# from the run's own turn-70 savepoint, and the block below is measured against
+# 30 wild battles.
 _BLACK_FOE_SPECIES = 0x0226D8D4
+
+# --- the gen-5 battle block ---------------------------------------------------
+#
+# Gen 5 ships its DEBUG ALLOCATOR in the retail cartridge, and that is the whole
+# reason this was tractable at all after the blind search gave up. Every heap
+# block is preceded by a header — the magic 0x5544, the size, the doubly-linked
+# neighbours, and then the NUL-terminated SOURCE FILE NAME of whoever asked for
+# the block — so a 4 MB dump is a LABELLED MAP of the battle heap rather than
+# 4 MB of bytes (``v2-experiments/gen5_heap_map.py``). Every field here is
+# therefore an offset into a NAMED allocation, which is the same discipline the
+# gen-4 block above gets from pret/pokeplatinum's struct names.
+#
+#   btl_pokeparam.c  hdr 0x0226d89c, size 0x214, data 0x0226d8c0
+#       +0x14  species — which IS _BLACK_FOE_SPECIES above. So the level below
+#              is not a new address: it is the same block read 0xc further in,
+#              at the offset Black 2's own notes already record (species +0,
+#              max HP +2, current HP +4, level +0xc). Four of these blocks sit
+#              0x224 apart and the opponent's is the second, which is the same
+#              spacing measured on Black 2.
+#       +0x20  level.
+#   procsys.c        hdr 0x02269740, size 0x490, data 0x02269760
+#       The BATTLE PROC's work struct. The tag is the proc system's because gen
+#       5 allocates a proc's work there; the CONTENT is the battle's, and what
+#       identifies it is +0x0c — one of only two words in all 4 MB that point
+#       into the BATTLE_SETUP_PARAM this battle was started with, whose +0x00
+#       reads 1 in every trainer battle and 0 in every wild one.
+#       +0x58  the opponent trainer's NAME buffer, which is battle_kind below.
+#
+# Both blocks are at the SAME address with the SAME size and the SAME tag in
+# all 34 battle dumps, taken on four maps — and in NEITHER of them in any of
+# the seven overworld dumps, where the search finds no block at those headers
+# at all, because gen 5 allocates the battle heap when a battle starts and
+# frees it when it ends. That is why gating on the flag is load-bearing here
+# and not tidiness.
+#
+# battle_kind is a POINTER compared against 0, which is unusual enough to say
+# why. The battle proc keeps the opponent trainer's name in a STRBUF and
+# 0x022697b8 is the pointer to it — identified by its CONTENT, not by
+# correlation: it points at a buffer whose characters spell "Bianca" in the
+# Bianca battle, and the same offset of the same block on BLACK 2 points at one
+# spelling "Hugh". A wild Pokemon has no name to put there and the pointer is
+# NULL. So the test is "does this battle have a named opponent", read off the
+# battle's own work struct, rather than a byte that happens to differ.
+#
+# Scores, every label read off the SAMPLE'S OWN FRAME and never off another
+# byte. 34 battle states, 4 TRAINER and 30 WILD.
+#
+#   TRAINER  Bianca's Snivy L5 and Cheren in the bedroom (map 391), N's
+#            Purrloin L7 in Accumula (397), a Youngster's Patrat L7 on Route 2
+#            (319). Four trainers, three maps.
+#   WILD     25 walked into from Route 1's grass (317, Lillipup L2-L4) and 5
+#            from Route 2's (319, Lillipup L4 and Patrat L4/L5). Two maps and
+#            two species, and the Route 2 ones matter most: that is the SAME
+#            map the Youngster stands on, so the kind is not confounded with
+#            the place, which it would be if every wild fight were on Route 1.
+#
+#   foe_species  34/34 against the name on the HUD plate.
+#   foe_level    33/33 against the "Lv<N>" on the same plate. The 34th is the
+#                Cheren state, whose frame is the prize-money line after the
+#                fight, so it shows no foe plate to score against.
+#   battle_kind  34/34. The oracle is gen 5's own wording and its consequences:
+#                "A wild Lillipup appeared!" and "A wild Patrat appeared!",
+#                captured on the hunted encounters' intro frame, before any
+#                battle input; "A Trainer catches another Trainer's eye" for the
+#                Youngster; and for Cheren the trainer sprite standing on the
+#                field under "A got P500 for winning!", a payout only a trainer
+#                battle prints.
+#
+# And at INPUT resolution, which is where a field that leads or lags the battle
+# shows up: 9 consecutive presses through the Youngster battle read the pointer
+# set on exactly the press the opponent's species appears, and 36 consecutive
+# presses of one wild battle read it NULL throughout.
+#
+# What is NOT in the corpus, stated plainly: a double battle, a battle begun
+# indoors other than the bedroom, and any wild encounter outside Routes 1 and 2
+# — the run never got further.
+#
+# The chase at the battle proc's +0x0c is REACHABLE now, and it is worth saying
+# what that bought and what it did not. Until 2026-09-20 the backend bounded
+# every ``*ptr+off`` dereference to the GBA's EWRAM window, which ends at
+# 0x02040000, so no gen-4 or gen-5 heap pointer could be followed at all; the
+# window is PER CONSOLE now (``POINTER_WINDOWS``, src/emulator/backends/skyemu.py).
+# What it buys HERE is corroboration rather than a new field: ``*0x0226976c+0``
+# lands on the BATTLE_SETUP_PARAM's own competitor word — 1 for a trainer
+# battle, 0 for a wild one — and it agrees with the RAW battle_kind above on
+# 352 of 352 in-battle presses across ten driven battles (162 trainer, 190
+# wild). Two addresses reached by two independent routes reading the same fact,
+# which is why the contract keeps the raw one: it is the measured one, it costs
+# no chase, and collapsing them would throw the agreement away.
+#
+# WHAT IS NOT HERE: battle_outcome — and the reason is no longer the pointer
+# bound. It is that gen 5 CONSUMES the result inside the battle and leaves
+# nothing behind to read.
+#
+#   * The BATTLE_SETUP_PARAM is the only carrier, and the CALLER allocates it:
+#     four battles, four addresses (0x0225d610, 0x02259750, 0x0225ddd4,
+#     0x0225dc60). Read through the chase press by press, it is BYTE-IDENTICAL
+#     from the first in-battle sample to the last — the result is never written
+#     into it at a frame any sample can see.
+#   * At the close — the first sample after the flag goes clear, which is where
+#     ``src/app/route.py`` reads an outcome — the param is already gone. In the
+#     trainer drive it reads all zeros and every one of the four words that
+#     pointed at it is gone; in the wild drive some of those words still hold
+#     the address, but the allocator has already handed the BYTES to a
+#     ``msgdata.`` block, so following them is worse than not following them.
+#   * The field's own script work (``scrcmd_work.c`` at 0x0225c484, alive on
+#     both sides of the boundary) carries no result either.
+#   * The reason is on the screen: the whiteout line — "A scurried to a Pokemon
+#     Center, protecting the exhausted and fainted Pokemon from further
+#     harm..." — plays before the flag goes clear. There is no "after" in which
+#     to read an answer the game has already acted on.
+#
+# One measured limit of the DERIVED flag fell out of driving a loss, and it
+# belongs here because nothing else in the tree records it. The flag is "the
+# opponent's species is non-zero", and the block it reads is FREED at teardown
+# but not zeroed: on the two presses that play the whiteout line it holds 2711,
+# which is not a dex number and is not 0 either. So a lost battle's last two
+# presses are filed as in-battle with a nonsense species. A dex-range check
+# would refuse them, but the contract has no way to express one — ``battle_mask``
+# masks and ``battle_value`` compares for equality, and neither is a range — so
+# this is recorded rather than fixed. It is a LOST battle's last two presses in
+# the drives here; a won battle's block reads 0 at the same point, and an
+# ESCAPE was never driven, so whether it does the same is untested.
+#
+# And this confound is not one a corpus can break, which is worth saying because
+# the instinct is to go and fight more battles. A gen-5 LOSS WARPS the player to
+# a Pokemon Center, so "lost" and "the scene changed" are the same event, and a
+# byte that separates them is at least as likely to be reading the scene.
+# Measured: the strictest law over the close frames — one value across every
+# drive in an outcome class, a different one across the others, inside the same
+# NAMED allocation at the same offset in every dump, and every value under 8 —
+# leaves 9,149 candidates, and every one of them sits inside an ``arc_tool.c``
+# graphics archive. That is Platinum's 6-for-6 wearing a bigger number.
+#
+# The corpus is also incomplete in the way that matters, and that is part of the
+# result rather than a footnote to it: trainer WON (the prize payout), trainer
+# LOST (the whiteout to a Pokemon Center) and wild WON four times are driven and
+# screen-confirmed, but a wild LOSS is not. Tepig outruns and out-damages
+# everything on Routes 1 and 2; the input route to a non-damaging move does not
+# survive the action ring (d-pad RIGHT selects POKEMON, not the second move);
+# and writing the battler's current HP down does not hold, because the engine
+# refreshes it from the party mon. So the "lost" class contains one KIND — which
+# is exactly the shape that made Platinum's outcome byte look perfect. The
+# outcome stays None, which renders as "unknown".
+#
+# WHAT IS ALSO NOT HERE: a trainer identity. The battle proc work carries the
+# opponent's record right after the name pointer — u16 at +0x5c and +0x5e, plus
+# +0x60 — populated in all 4 trainer battles and zero in all 30 wild ones:
+# Bianca (38, 60, 16), Cheren (37, 54, 16), N (40, 64, 7), the Youngster
+# (2, 1, 1), and Black 2's Hugh (145, 162, 16). One of the first two is the
+# trainer's id and the other is his CLASS, and this corpus cannot say which:
+# all four Black trainers differ in BOTH fields, so nothing repeats to mark
+# the class, and the magnitudes do not separate them either.
+# Writing a class into ``trainer_id`` hands a roster lookup a key from the
+# wrong keyspace, which is exactly what ``trainer_class`` exists to prevent, so
+# both stay None. The control that settles it is one more fight against a
+# trainer of a class already seen — a second Youngster on Route 2 — where the
+# class repeats and the id does not.
+#: Data of the 0x490 procsys.c block at 0x02269740. ``_G5_FOE_LEVEL``,
+#: ``_G5_TRAINER_NAME`` and ``_G5_FOE_LEN`` are Black 2's, defined with its
+#: contract above — one definition for both cartridges, because the offsets are
+#: the same MEASUREMENT and not two that happen to agree.
+_BLACK_BATTLE_PROC = 0x02269760
 
 BLACK = GameMemory(
     game="black-us",
     console="NDS",
-    spec=(f"{_BLACK_ACTOR:#x}:16", f"{_BLACK_FOE_SPECIES:#x}:2"),
+    spec=(f"{_BLACK_ACTOR:#x}:16", f"{_BLACK_FOE_SPECIES:#x}:{_G5_FOE_LEN:#x}",
+          f"{_BLACK_BATTLE_PROC + _G5_TRAINER_NAME:#x}:4"),
     map_id=Field(0, 0, "<I"),
     x=Field(0, 4, "<i", shift=16),
     y=Field(0, 12, "<i", shift=16),
@@ -751,6 +1288,11 @@ BLACK = GameMemory(
     battle_flag=Field(1, 0, "<H"),
     battle_mask=0xFFFF,
     foe_species=Field(1, 0, "<H"),
+    foe_level=Field(1, _G5_FOE_LEVEL, "<B"),
+    battle_kind=Field(2, 0, "<I"),
+    #: The whole word: the test is "the trainer-name pointer is not NULL", and
+    #: masking a pointer down to a bit would be picking one of its address bits.
+    battle_kind_trainer=0xFFFFFFFF,
     notes=(
         "Gen 5, same block shape as Black 2 at a different base: map id +0, x "
         "+4, height +8, y +12, coordinates 16.16 fixed point. The actor is also "
@@ -762,8 +1304,20 @@ BLACK = GameMemory(
         "Town), interiors local. Map ids seen: 391 bedroom, 390 living room, "
         "389 Nuvema Town. No battle flag located: in-battle is DERIVED from "
         "the opponent's species being non-zero, which is weaker than a flag "
-        "and is documented above. Wild battles and the wild/trainer split are "
-        "both unreachable on this cartridge so far."
+        "and is documented above. The battle fields are offsets into two NAMED "
+        "heap allocations — gen 5's debug allocator tags every block with the "
+        "source file that asked for it — so the level is the species' own "
+        "block read 0xc further in, and the kind is the battle proc's pointer "
+        "to the opponent trainer's name buffer, NULL when there is no trainer. "
+        "34 battle states, 4 trainer and 30 wild, all labelled off their own "
+        "frame, and the kind is corroborated by the newly reachable pointer "
+        "chase to the BATTLE_SETUP_PARAM's own competitor word — 352/352 "
+        "in-battle presses over ten driven battles. battle_outcome is None "
+        "because gen 5 consumes the result INSIDE the battle: the param that "
+        "carries it never changes while a sample can see it, and is zeroed or "
+        "reallocated by the frame the flag clears. The trainer id is None "
+        "because the two candidate numbers cannot be told apart yet — all "
+        "three above."
     ),
 )
 

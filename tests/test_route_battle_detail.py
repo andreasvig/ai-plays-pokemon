@@ -30,11 +30,29 @@ import pytest
 from src.app import route as R
 
 
-def s(i, x, y, *, batt=False, kind=None, foe=None, lvl=None, out=None, tid=None):
+def s(i, x, y, *, batt=False, kind=None, foe=None, lvl=None, out=None, tid=None, cls=None):
     return {"i": i, "input": "D", "map_group": 0, "map_num": 9, "map_id": None,
             "x": x, "y": y, "in_battle": batt, "battles_total": None,
             "foe_species": foe, "foe_level": lvl, "battle_kind": kind,
-            "battle_outcome": out, "trainer_id": tid}
+            "battle_outcome": out, "trainer_id": tid, "trainer_class": cls}
+
+
+def g4(i, x, y, **kw):
+    """A gen-4 sample: one map ID and no (group, number) pair. The tile key has
+    a different SHAPE on this generation, so a card built from gen-3-shaped
+    rows would pass a test that the real decoder's output fails."""
+    row = s(i, x, y, **kw)
+    row.update({"map_group": None, "map_num": None, "map_id": 343})
+    return row
+
+
+def unreadable(i):
+    """What a Crystal sample taken on the wrong WRAM bank decodes to: every
+    field None, in_battle included (src/referee/trace.py)."""
+    return {"i": i, "input": "D", "map_group": None, "map_num": None, "map_id": None,
+            "x": None, "y": None, "in_battle": None, "battles_total": None,
+            "foe_species": None, "foe_level": None, "battle_kind": None,
+            "battle_outcome": None, "trainer_id": None, "trainer_class": None}
 
 
 def turns(*rows):
@@ -158,3 +176,235 @@ def test_an_invalid_map_is_not_a_battle_tile():
     )
     b, = R._battles_from_trace(per_turn, frozenset({(0, 0)}), "crystal-us")
     assert b["tile"] == [0, 9, 9, 9], "the phantom map must not become the ambush tile"
+
+
+# --- Crystal (gen 2): one battle, a different enum, and a refusable read -------
+
+def test_an_unreadable_sample_does_not_cut_a_battle_in_half():
+    """`in_battle` has three values and the third is not False. A sample the
+    contract REFUSED — Crystal's wrong WRAM bank, 17 of them inside one
+    79-sample trainer battle — closes nothing: read as a clear flag it would
+    close the segment, write an outcome out of a field that is None, and open a
+    fresh card on the next press, so one fight becomes eighteen.
+
+    The tile matters as much as the count: a refused sample carries no tile, so
+    it must not become the ambush tile either."""
+    per_turn = turns(
+        (1, [s(0, 5, 5)]),
+        (2, [s(0, 5, 5, batt=True, kind="trainer", foe=16, lvl=2, cls=22),
+             unreadable(1),
+             s(2, 5, 5, batt=True, kind="trainer", foe=19, lvl=4, cls=22)]),
+        (3, [s(0, 5, 5, out=0)]),
+    )
+    got = R._battles_from_trace(per_turn, game="crystal-us")
+    assert len(got) == 1, "one fight, not one per readable run of samples"
+    b, = got
+    assert (b["opened_turn"], b["closed_turn"], b["turns"]) == (2, 2, 1)
+    assert b["tile"] == [0, 9, 5, 5] and b["outcome"] == "won"
+
+
+def test_crystal_reads_its_outcome_byte_through_its_own_enum():
+    """pokecrystal's wBattleResult is 0 win / 1 lose / 2 draw and gen 3's
+    B_OUTCOME is 1 win / 2 lose / 3 draw. The two overlap at every value they
+    share and agree at none of them, so the wrong table renames a loss "won"
+    and an escape "lost" — every name legal, nothing to raise on.
+
+    Emerald is the control: the SAME bytes through the SAME code must keep
+    saying what they said yesterday."""
+    def crystal(byte):
+        per_turn = turns((1, [s(0, 1, 1)]),
+                         (2, [s(0, 1, 1, batt=True, kind="wild", foe=41, lvl=3)]),
+                         (3, [s(0, 1, 1, out=byte)]))
+        return R._battles_from_trace(per_turn, game="crystal-us")[0]
+
+    assert [(crystal(b)["outcome"], crystal(b)["won"]) for b in (0, 1, 2)] == [
+        ("won", True), ("lost", False), ("ran", None)]
+
+    def emerald(byte):
+        per_turn = turns((1, [s(0, 1, 1)]),
+                         (2, [s(0, 1, 1, batt=True, kind="wild", foe=290)]),
+                         (3, [s(0, 1, 1, out=byte)]))
+        return R._battles_from_trace(per_turn, game="emerald-us")[0]
+
+    assert [emerald(b).get("outcome") for b in (1, 2, 4)] == ["won", "lost", "ran"]
+
+
+def test_a_run_with_no_outcome_field_is_not_a_run_of_victories():
+    """Crystal's 0 means WON, and `.get(x or 0)` cannot tell a byte that read 0
+    from a field the run never had. Gen 3's table has no entry for 0, so the
+    bug was invisible until a cartridge gave 0 a meaning: every battle in every
+    Crystal run recorded before 2026-09-20 would have been declared a win."""
+    per_turn = turns((1, [s(0, 2, 2)]),
+                     (2, [s(0, 2, 2, batt=True)]),
+                     (3, [s(0, 2, 2)]))                 # battle_outcome is None
+    b, = R._battles_from_trace(per_turn, game="crystal-us")
+    assert "outcome" not in b and b["won"] is None
+
+
+def test_crystal_reports_the_trainer_class_and_leaves_the_id_alone():
+    """Gen 2 names a trainer by a (class, index) PAIR and has no single id, so
+    the class travels in its own key. Putting 36 in `trainer_id` would hand the
+    browser's roster — which is keyed by FireRed-style ids — a number out of a
+    different keyspace, which is the cross-cartridge collision `trainer` is
+    already gated against.
+
+    And a wild fight carries neither, whatever the stale byte said."""
+    per_turn = turns((1, [s(0, 3, 3)]),
+                     (2, [s(0, 3, 3, batt=True, kind="trainer", foe=10, lvl=3, cls=36)]),
+                     (3, [s(0, 3, 3, out=0)]))
+    b, = R._battles_from_trace(per_turn, game="crystal-us")
+    assert b["trainer_class"] == 36 and b["trainer_id"] is None and b["trainer"] is None
+    assert b["foe"] == {"species": 10, "level": 3}      # Caterpie, Lv 3
+
+    wild = turns((1, [s(0, 3, 3)]),
+                 (2, [s(0, 3, 3, batt=True, kind="wild", foe=41, lvl=3)]),
+                 (3, [s(0, 3, 3, out=2)]))
+    w, = R._battles_from_trace(wild, game="crystal-us")
+    assert "trainer_class" not in w and w["outcome"] == "ran"
+
+
+def test_a_gen_4_card_names_the_trainer_and_the_foe_and_never_how_it_ended():
+    """Platinum's samples carry a kind, a trainer id and a foe and NO outcome,
+    which is the whole shape of what gen 4 can honestly say.
+
+    The trainer id is real and per cartridge: 852 is the rival on Platinum, 1
+    is Youngster Tristan and 3 is Lass Natalie, each matched to the name the
+    intro PRINTS. The NAME still does not travel — TRAINER_NAMES is FireRed's
+    roster, and 852 is somebody else there — so `trainer` stays None exactly as
+    it does for Emerald.
+
+    The outcome is absent because the battle heap is FREED when gen 4's battle
+    overlay unloads: the sample after the flag goes clear, which is where gen 2
+    and gen 3 keep the answer, is reading memory that has already been handed
+    back. `won` must stay None rather than collapsing to False, because "we do
+    not know" and "they lost" are different rows on a sheet."""
+    per_turn = turns(
+        (1, [g4(0, 4, 4)]),
+        (2, [g4(0, 4, 4, batt=True, kind="trainer", foe=396, lvl=5, tid=1),
+             g4(1, 4, 4, batt=True, kind="trainer", foe=396, lvl=5, tid=1)]),
+        (3, [g4(0, 4, 4)]),                                # battle_outcome is None
+    )
+    b, = R._battles_from_trace(per_turn, game="platinum-us")
+    assert b["kind"] == "trainer" and b["trainer_id"] == 1
+    assert b["trainer"] is None, "the id travels between cartridges, the name does not"
+    assert b["foe"] == {"species": 396, "level": 5}         # Starly, Lv 5
+    assert "outcome" not in b and b["won"] is None
+    # A gen-4 map id takes the first slot of the tile key and the second stays
+    # a constant zero (tests/test_route_multigame.py), so the ambush tile is
+    # (map 343, 0, x, y) and not a (group, number) pair.
+    assert b["turns"] == 1 and b["tile"] == [343, 0, 4, 4]
+
+
+def test_a_soulsilver_card_carries_a_levelled_foe_and_no_kind_at_all():
+    """SoulSilver's contract declares `foe_level` and NOT `battle_kind`: its
+    battleType is at a known address by the same structural argument Platinum's
+    passed, but every battle the cartridge has ever produced is wild, and a
+    wild-only corpus cannot settle a wild/trainer discriminator.
+
+    So `kind` stays None and the card says "unknown". A caller filtering on
+    `kind == "trainer"` finds none, which is the honest answer — commit f03dd4b
+    is what the alternative looked like."""
+    per_turn = turns(
+        (1, [g4(0, 6, 6)]),
+        (2, [g4(0, 6, 6, batt=True, foe=163, lvl=3)]),      # battle_kind is None
+        (3, [g4(0, 6, 6)]),
+    )
+    b, = R._battles_from_trace(per_turn, game="soulsilver-us")
+    assert b["kind"] is None and b["trainer_id"] is None
+    assert b["foe"] == {"species": 163, "level": 3}         # Hoothoot, Lv 3
+    assert "outcome" not in b and b["won"] is None
+
+
+def test_the_kind_is_the_intros_and_a_later_sample_cannot_overwrite_it():
+    """FIRST writer wins, and until this test nothing bit when it stopped.
+
+    The existing "the kind survives later silence" test only feeds later
+    samples whose kind is None, and None is already skipped by the `if` — so
+    turning the rule into last-writer-wins left the whole suite green. The rule
+    is only visible when a later sample carries a DIFFERENT kind, which is what
+    this feeds.
+
+    It is not hypothetical on gen 4. Five of the 542 in-battle samples in the
+    Platinum replay corpus read the whole battle block as ZEROS — species 0,
+    level 0, battleType 0 — and every one of them is the FIRST sample of a
+    segment, the frame where the overlay is already up and the BattleContext is
+    not yet filled. All five happen to belong to wild battles, so no card is
+    wrong today; but a battleType of 0 decodes as "wild", so the ordering rule
+    is the only thing standing between that frame and a trainer battle labelled
+    wild for its whole length."""
+    per_turn = turns(
+        (1, [g4(0, 7, 7)]),
+        (2, [g4(0, 7, 7, batt=True, kind="trainer", foe=396, lvl=5, tid=1),
+             g4(1, 7, 7, batt=True, kind="wild", foe=396, lvl=5)]),
+        (3, [g4(0, 7, 7)]),
+    )
+    b, = R._battles_from_trace(per_turn, game="platinum-us")
+    assert b["kind"] == "trainer" and b["trainer_id"] == 1
+
+
+def g5(i, x, y, **kw):
+    """A gen-5 sample. Same single-map-id shape as gen 4, at Route 2's id —
+    the map that carries BOTH a trainer battle and wild encounters in the
+    corpus, which is the pairing that keeps these cards from being a test of
+    the place instead of the kind."""
+    row = s(i, x, y, **kw)
+    row.update({"map_group": None, "map_num": None, "map_id": 319})
+    return row
+
+
+def test_a_gen_5_card_says_which_kind_and_a_levelled_foe_and_never_how_it_ended():
+    """Black's samples carry a kind and a levelled foe and NO trainer and NO
+    outcome, and each of those three is a different decision.
+
+    The kind is real: the contract reads the battle proc's pointer to the
+    opponent trainer's NAME buffer, NULL when there is no trainer, scored
+    34/34 against what the screen said — "A wild Patrat appeared!" against "A
+    Trainer catches another Trainer's eye".
+
+    `trainer_id` stays None because the two integers beside that pointer cannot
+    yet be told apart — one is the id and one the class — and `won` stays None
+    because gen 5 frees the battle heap when the fight ends, so the sample
+    after the flag clears is reading memory already handed back. None renders
+    as "unknown", which is true; False would say the player lost."""
+    trainer = turns(
+        (1, [g5(0, 754, 636)]),
+        (2, [g5(0, 754, 636, batt=True, kind="trainer", foe=504, lvl=7),
+             g5(1, 754, 636, batt=True, kind="trainer", foe=504, lvl=7)]),
+        (3, [g5(0, 754, 636)]),                             # battle_outcome is None
+    )
+    b, = R._battles_from_trace(trainer, game="black-us")
+    assert b["kind"] == "trainer"
+    assert b["foe"] == {"species": 504, "level": 7}          # the Youngster's Patrat
+    assert b["trainer_id"] is None and b["trainer"] is None
+    assert "trainer_class" not in b
+    assert "outcome" not in b and b["won"] is None
+    assert b["tile"] == [319, 0, 754, 636]
+
+    wild = turns(
+        (1, [g5(0, 751, 641)]),
+        (2, [g5(0, 751, 641, batt=True, kind="wild", foe=506, lvl=4)]),
+        (3, [g5(0, 751, 641)]),
+    )
+    w, = R._battles_from_trace(wild, game="black-us")
+    assert w["kind"] == "wild" and w["foe"] == {"species": 506, "level": 4}
+    assert w["trainer_id"] is None and w["won"] is None
+
+
+def test_black_2s_one_reachable_battle_still_names_its_kind_and_its_foe():
+    """Black 2 reaches exactly ONE battle — PKMN Trainer Hugh at the Aspertia
+    lookout — because the game hangs in the Pokemon Center doorway the story
+    walks the player into next. The card it produces is the whole of what that
+    cartridge can show today, and it has to say "trainer" and carry Hugh's
+    Oshawott: the contract's kind is the same offset of the same block as
+    Black's, and on this cartridge it points at a buffer spelling "Hugh"."""
+    per_turn = turns(
+        (1, [s(0, 36, 715, batt=False)]),
+        (2, [s(0, 36, 715, batt=True, kind="trainer", foe=501, lvl=5)]),
+        (3, [s(0, 36, 715)]),
+    )
+    for t in per_turn.values():
+        for row in t["samples"]:
+            row.update({"map_group": None, "map_num": None, "map_id": 427})
+    b, = R._battles_from_trace(per_turn, game="black2-us")
+    assert b["kind"] == "trainer" and b["foe"] == {"species": 501, "level": 5}
+    assert b["trainer_id"] is None and b["won"] is None

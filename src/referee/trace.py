@@ -83,6 +83,21 @@ MAX_TILES_PER_INPUT = 16
 DIRECTIONS = {"U": "up", "D": "down", "L": "left", "R": "right", "UP": "up", "DOWN": "down", "LEFT": "left", "RIGHT": "right"}
 
 
+def _bank_is_wrong(contract: GameMemory, samples: list[bytes]) -> bool:
+    """True when the sample was taken with the wrong memory bank paged in.
+
+    Fails OPEN when the register itself did not arrive: a missing spec entry is
+    the short-read case the per-field rule already covers, and blanking a whole
+    turn over it would refuse far more than the hazard it guards. What is
+    refused is only the measured event — the register present and saying a
+    different bank.
+    """
+    if contract.bank_reg is None:
+        return False
+    bank = contract.bank_reg.read(samples)
+    return bank is not None and bank != contract.bank_value
+
+
 def decode_samples(rows: list[tuple[str, list[bytes]]], key: Optional[int] = None,
                    contract: Optional[GameMemory] = None) -> list[dict[str, Any]]:
     """``[(input name, [bytes per spec entry])]`` → one dict per input.
@@ -107,7 +122,16 @@ def decode_samples(rows: list[tuple[str, list[bytes]]], key: Optional[int] = Non
                              "in_battle": None, "battles_total": None,
                              "foe_species": None, "foe_level": None,
                              "battle_kind": None, "battle_outcome": None,
-                             "trainer_id": None}
+                             "trainer_id": None, "trainer_class": None}
+        if contract is not None and _bank_is_wrong(contract, samples):
+            # The GBC paged another WRAM bank in while this sample was taken, so
+            # every 0xd000-0xdfff byte in it belongs to a different memory. Not
+            # a short read and not a zero: a CONFIDENT wrong number. Leaving the
+            # whole row None is what makes it an unreadable sample rather than
+            # an overworld one — measured on Crystal, where these rows carry the
+            # phantom (0,0) map and a battle flag that reads 2 on a route.
+            out.append(d)
+            continue
         if contract is not None:
             for key_, f in (("x", contract.x), ("y", contract.y),
                             ("map_group", contract.map_group), ("map_num", contract.map_num),
@@ -137,11 +161,17 @@ def decode_samples(rows: list[tuple[str, list[bytes]]], key: Optional[int] = Non
                         if raw is not None:
                             d["battle_kind"] = ("trainer" if raw & contract.battle_kind_trainer
                                                 else "wild")
-                        if d["battle_kind"] == "trainer" and contract.trainer_id is not None:
-                            # Only with the kind. The field keeps the last
-                            # trainer until the next one, so on a wild fight it
-                            # names somebody the player is not fighting.
-                            d["trainer_id"] = contract.trainer_id.read(samples)
+                        if d["battle_kind"] == "trainer":
+                            # Only with the kind. These keep the last trainer
+                            # until the next one, so on a wild fight they name
+                            # somebody the player is not fighting — measured on
+                            # Emerald for the id and on Crystal for the class,
+                            # which still read 9 and 22 several presses into the
+                            # overworld after their battles ended.
+                            if contract.trainer_id is not None:
+                                d["trainer_id"] = contract.trainer_id.read(samples)
+                            if contract.trainer_class is not None:
+                                d["trainer_class"] = contract.trainer_class.read(samples)
                 # The outcome is the one battle field read OUTSIDE the flag, and
                 # deliberately: gen 3 writes it as the fight closes and holds it,
                 # so the sample that carries a segment's result is the first one
@@ -237,6 +267,13 @@ def derive(samples: list[dict[str, Any]], start_tile: Optional[tuple[int, int, i
         quiet = (prev_batt is False) and (batt is False)
         if batt:
             pass                       # already counted in battle_inputs
+        elif batt is None and tile is None:
+            # Nothing was read at all — a blind turn, or a sample the contract
+            # refused (Crystal's wrong WRAM bank). ``battle_edge`` means "the
+            # press a battle ended on", which this is not, and filing it there
+            # put 6% of a Crystal run in a bucket that is supposed to hold one
+            # press per fight.
+            unclassified += 1
         elif not quiet:
             battle_edge += 1           # the press a battle ended on: neither
         elif tile is None or prev_tile is None:

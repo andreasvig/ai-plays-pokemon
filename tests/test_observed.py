@@ -43,7 +43,7 @@ def sample(i, inp, x, y, group=3, num=0, battle=False, total=0):
     return {"i": i, "input": inp, "map_group": group, "map_num": num,
             "map_id": None, "x": x, "y": y,
             "in_battle": battle, "battles_total": total, "foe_species": None, "foe_level": None, "battle_kind": None,
-            "battle_outcome": None, "trainer_id": None}
+            "battle_outcome": None, "trainer_id": None, "trainer_class": None}
 
 
 def ds_sample(i, inp, x, y, map_id):
@@ -51,7 +51,7 @@ def ds_sample(i, inp, x, y, map_id):
     return {"i": i, "input": inp, "map_group": None, "map_num": None,
             "map_id": map_id, "x": x, "y": y,
             "in_battle": False, "battles_total": None, "foe_species": None, "foe_level": None, "battle_kind": None,
-            "battle_outcome": None, "trainer_id": None}
+            "battle_outcome": None, "trainer_id": None, "trainer_class": None}
 
 
 def torn(i, inp, x, y):
@@ -60,7 +60,7 @@ def torn(i, inp, x, y):
     arrived and the map bytes did not."""
     return {"i": i, "input": inp, "map_group": None, "map_num": None,
             "map_id": None, "x": x, "y": y, "in_battle": False, "battles_total": None, "foe_species": None, "foe_level": None, "battle_kind": None,
-            "battle_outcome": None, "trainer_id": None}
+            "battle_outcome": None, "trainer_id": None, "trainer_class": None}
 
 
 def graph_of(*runs):

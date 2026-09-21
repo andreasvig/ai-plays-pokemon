@@ -67,7 +67,8 @@ def sample(i, inp, x, y, group=3, num=0, battle=False, total=None, **battle_fiel
             "map_id": None, "x": x, "y": y,
             "in_battle": battle, "battles_total": total,
             **{"foe_species": None, "foe_level": None, "battle_kind": None,
-               "battle_outcome": None, "trainer_id": None, **battle_fields}}
+               "battle_outcome": None, "trainer_id": None, "trainer_class": None,
+               **battle_fields}}
 
 
 def ds_sample(i, inp, x, y, map_id, battle=False):
@@ -75,7 +76,8 @@ def ds_sample(i, inp, x, y, map_id, battle=False):
     return {"i": i, "input": inp, "map_group": None, "map_num": None,
             "map_id": map_id, "x": x, "y": y,
             "in_battle": battle, "battles_total": None, "foe_species": None, "foe_level": None,
-            "battle_kind": None, "battle_outcome": None, "trainer_id": None}
+            "battle_kind": None, "battle_outcome": None, "trainer_id": None,
+            "trainer_class": None}
 
 
 def pre_contract_sample(i, inp, x, y, group=3, num=0, battle=False, total=0):

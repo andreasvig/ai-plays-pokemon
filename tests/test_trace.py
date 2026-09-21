@@ -45,7 +45,7 @@ def test_decode_reads_tile_bit_and_counter_and_tolerates_missing_ranges():
                       # which is the point: a run recorded before it decodes to
                       # None per field rather than failing or guessing.
                       "foe_species": None, "foe_level": None, "battle_kind": None,
-                      "battle_outcome": None, "trainer_id": None}
+                      "battle_outcome": None, "trainer_id": None, "trainer_class": None}
     assert out[1]["x"] is None and out[1]["in_battle"] is None and out[1]["battles_total"] is None
     assert out[2]["x"] == 6 and out[2]["in_battle"] is None
     assert trace.decode_samples(rows, None, FIRERED)[0]["battles_total"] is None  # no key → no counter
@@ -284,6 +284,25 @@ def test_the_buckets_partition_every_input():
     assert sum(d[k] for k in trace.INPUT_BUCKETS) == d["inputs"] == 6
     assert d["moved_inputs"] == 2 and d["battle_edge"] == 1 and d["battle_inputs"] == 1
     assert d["walls_hit"] == 1 and d["idle_ab"] == 1
+
+
+def test_a_sample_nothing_could_be_read_from_is_unclassified_not_a_battle_edge():
+    """`battle_edge` means "the press a battle ended on" and a report states it
+    as such — one press per fight. A sample with no tile AND no flag is not
+    that; it is a press nothing was read for, which is what `unclassified`
+    already says it holds. Crystal's refused samples are 6.4% of a run, so the
+    mislabel was the larger number.
+
+    Both halves matter: a sample that has a tile but no flag still crosses a
+    battle boundary as far as this can tell, and stays a battle_edge."""
+    blind = trace.decode_samples([("U", [b"", b"", b""]), ("R", [b"", b"", b""])], KEY, FIRERED)
+    d = trace.derive(blind, start_tile=(3, 0, 0, 0), start_in_battle=False)
+    assert d["unclassified"] == 2 and d["battle_edge"] == 0
+    assert sum(d[k] for k in trace.INPUT_BUCKETS) == d["inputs"] == 2
+    # The control: the tile arrived, only the flag byte did not.
+    half = trace.decode_samples([("U", [pos(5, 5), b"", b""])], KEY, FIRERED)
+    e = trace.derive(half, start_tile=(3, 0, 5, 6), start_in_battle=False)
+    assert e["unclassified"] == 0 and e["battle_edge"] == 1
 
 
 def test_moved_inputs_counts_presses_while_overworld_steps_counts_tiles():
