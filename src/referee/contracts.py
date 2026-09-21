@@ -164,6 +164,17 @@ class GameMemory:
     #: the fight it is either zero or, during the intro, the PREVIOUS fight's
     #: result — 35 of 146 FireRed mid-battle states (src/referee/battles.py).
     battle_outcome: Optional[Field] = None
+    #: True when the outcome must be read INSIDE the fight instead, on the LAST
+    #: sample the flag is still set for. Gen 4 needs it and the reason is not a
+    #: preference: the battle heap is FREED when the battle overlay unloads, so
+    #: by the first clear-flag sample the byte's address holds whatever the
+    #: allocator handed those bytes to next (0x78 on Platinum, measured on five
+    #: driven battles). Reading it there is not a stale result, it is a
+    #: different object. The value is written several frames BEFORE the close —
+    #: ``BattleControllerPlayer_CheckBattleOver`` sets it as soon as a side's
+    #: party HP reaches 0 — so there is something to read while the fight is
+    #: still up, which is what makes the rule workable at all.
+    outcome_while_in_battle: bool = False
     #: What ``battle_outcome``'s numbers MEAN, when they are not gen 3's
     #: B_OUTCOME. None keeps ``src/app/route.py``'s B_OUTCOME table, which is
     #: FireRed's and Emerald's. Crystal needs its own and the reason is the
@@ -692,45 +703,75 @@ _PLATINUM_FOE_SPECIES = 0x022C57EC
 #                trainers, three values, stale between them — the behaviour
 #                that separates a field from a constant.
 #
-# WHAT IS NOT HERE: battle_outcome. Gen 4 FREES the battle heap when the
+# battle_outcome, FOUND 2026-09-21, and the thing that had to change was the
+# FRAME rather than the address space. Gen 4 FREES the battle heap when the
 # overlay unloads, so gen 3's rule — read the result on the first sample after
-# the flag goes clear — has nothing left to read. The candidate that survived
-# the corpus was 0x022a64cc, 0x50 past the overlay id and inside a 0x1d8-byte
-# allocation: 1 on two wins, 5 on two escapes, 0 on two losses, 6 for 6. It is
-# WRONG. Every win and every escape in that corpus was a WILD battle and both
-# losses were TRAINER battles, so the outcome classes were confounded with the
-# KIND — and the decoupled control settles it: a trainer battle WON, same
-# address, same frame, reads 0 where a wild win reads 1. The block at that
-# address is a different object in a trainer battle (its header says size 0xec,
-# not 0x1d8). So the outcome is left None, which renders as "unknown", rather
-# than shipped as a number that is right for half the battles.
+# the flag goes clear — reads a different object: that address holds 0x78 on
+# every one of five driven battles. The result is written several frames
+# EARLIER, by BattleControllerPlayer_CheckBattleOver the moment a side's party
+# HP reaches 0, so it is read on the LAST sample the flag is still set for
+# (``outcome_while_in_battle``; src/app/route.py keeps the last non-zero one).
 #
-# STILL None after 2026-09-20, and here is what changed and what a follow-up
-# needs. One obstacle is gone: the backend used to bound every ``*ptr+off``
-# dereference to the GBA's EWRAM window ending at 0x02040000, so NO gen-4 heap
-# pointer could be followed and a pointer chase was not an option anybody had.
-# The window is per console now (``POINTER_WINDOWS``, skyemu.py), and a chase
-# into the DS heap works — demonstrated on gen 5, where it reads the battle
-# setup param through the battle proc's own work.
+# WHERE: BattleSystem struct + 0x2420 = 0x022c1d90. pokeheartgold publishes
+# that offset as ``battleOutcomeFlag`` and pokeplatinum calls the same field
+# ``resultMask`` — but it was MEASURED first, by diffing the whole 0x2494
+# allocation across the single press that ends a battle: 21 bytes moved, three
+# of them to 1, and the other two are inside the 4 KB clientMessage buffer. So
+# the diff narrows it to three and the decomp names one of the three; the
+# corpus below separates them on its own anyway.
 #
-# Nothing here has been re-measured on gen 4, and this comment is not the place
-# to pretend otherwise: what follows is the experiment, not a result. On GEN 5
-# the chase turned out not to reach an outcome, for a reason that may or may not
-# transfer — the caller's param is zeroed or reallocated by the frame the flag
-# clears, and the game acts on the result while the flag is still SET. The
-# follow-up on Platinum is the same three questions in order, each answerable
-# from one driven battle per outcome:
-#   1. does anything at a FIXED address still point into the caller's battle
-#      argument on the first sample after the overlay id leaves 16;
-#   2. does that argument's content CHANGE during the battle, or only at a
-#      teardown no sample sees (gen 5: it never changed);
-#   3. and the corpus condition that is not optional — every outcome class must
-#      contain both a trainer battle and a wild one, because 0x022a64cc scored
-#      6 for 6 on a corpus where it could not. Expect a second confound on top
-#      of that one and CHECK it rather than assume it either way: gen 5 warps a
-#      loser to a Pokemon Center, which makes "lost" and "the scene changed"
-#      the same event and leaves 9,149 graphics bytes looking like an outcome.
-#      Whether gen 4 does the same has not been measured here.
+# THE CORPUS, as the cross-tabulation that the 2026-09-20 candidate never had:
+#
+#            wild                              trainer
+#   won      Starly L3, "gained 24 Exp." = 1   rival Piplup, "got Y500" = 1
+#   lost     "out of usable Pokemon!"   = 2    "Joey blacked out!"      = 2
+#   ran      "Got away safely!"         = 5    CANNOT EXIST (see below)
+#
+# Every label is the SCREEN's, and two of them are wordings only one kind can
+# print: prize money is a trainer battle, "Got away safely!" is a wild one.
+# The two cells that break the confound are trainer-WON and wild-LOST, and each
+# agrees with its same-outcome, other-kind partner — which a byte reading the
+# KIND cannot do. That is what kills 0x022a64cc, 0x50 past the overlay id: it
+# scored 1 on two wins, 5 on two escapes and 0 on two losses, 6 for 6, on a
+# corpus whose wins and escapes were all WILD and whose losses were all
+# TRAINER. A trainer battle WON reads 0 there where a wild win reads 1, because
+# the block at that address is a different object in a trainer battle (header
+# size 0xec, not 0x1d8). Commit a377f67 is the same error one cartridge over.
+#
+# ran x trainer is UNREACHABLE rather than missing: gen 4 does not offer RUN in
+# a trainer battle. The search tool flags the single-kind class anyway, which is
+# correct — it cannot know that — and this is the answer to the flag.
+#
+# TWO CELLS WERE FORCED, and the instrument is controlled. A policy that always
+# wins cannot produce a loss, so the trainer-won and wild-lost battles were
+# driven with a battler's curHP written to 1 (gen4_battle_end.py --nerf). The
+# write does not touch the byte under test — the game derives the result from
+# party HP — and each forced cell has a NATURAL counterpart reading the same
+# value (natural wild win 1, natural trainer loss 2).
+#
+# THE SEARCH BEHIND IT, and what it could not see. The confound-breaking law
+# (constant inside every outcome class, pairwise different between them) run
+# over the two battle allocations at the last in-battle sample leaves 130
+# bytes, and 2 with values small enough to be an enum: this one, and
+# BattleContext+0xb0, which is ``scriptFile`` — which battle SCRIPT is loaded,
+# a CONSEQUENCE of the outcome with no meaning outside the three endings. The
+# search could not see anything OUTSIDE those two blocks, and one thing out
+# there is worth a follow-up: FieldBattleDTO.resultMask (+0x14 of a block the
+# FIELD heap owns) survives the close, and is probably what 0x022a64cc was.
+# Reaching it needs a three-level chase (FieldSystem -> FieldTask -> Encounter
+# -> dto) where the spec grammar expresses one level.
+#
+# THE ONE MEASURED WEAKNESS. A win or a loss leaves the byte readable for 1-4
+# presses, so the last in-battle sample carries it at the referee's own cadence
+# (112 frames per A press). A FLEE leaves about 20 frames: at that cadence the
+# last in-battle sample read 0 and the next sample was already outside the
+# battle, so an escape usually publishes as UNKNOWN. Only 10-frame sampling
+# caught the 5. Unknown rather than wrong is the direction to fail in, and the
+# DTO chase above is what would fix it.
+#
+# Full account, including the four anchors that pin the struct frame and the
+# 0x18 the old "data" base was off by: artifacts/game-map-render/notes/
+# gen4-outcome.md.
 _PLATINUM_BATTLE_SYSTEM = 0x022BF958        # data of the 0x2494 block at 0x022bf950
 _PLATINUM_BATTLE_CONTEXT = 0x022C29D4       # data of the 0x3168 block at 0x022c29cc
 #: Offsets inside those two blocks. Shared with SoulSilver, which is the same
@@ -753,16 +794,53 @@ _G4_FOE_LEN = _G4_BATTLE_MON_LEVEL + 1
 _G4_BSYS_LEN = _G4_TRAINERS + 4 - _G4_BATTLE_TYPE
 _G4_TRAINER_OFF = _G4_TRAINERS + 2 - _G4_BATTLE_TYPE
 
+# --- how a gen-4 battle ENDED (2026-09-21) ------------------------------------
+#
+# The three constants above are offsets from ``header + 8``, which the earlier
+# note called the block's "data". The STRUCT actually begins at ``header +
+# 0x20``, and the two frames differ by exactly 0x18 — which is not a correction
+# so much as a confirmation, because all three land on a pokeplatinum field
+# when you subtract it:
+#
+#   _G4_BATTLE_TYPE  0x44   = BattleSystem.battleType   +0x2c  + 0x18
+#   _G4_TRAINERS     0xB8   = BattleSystem.trainerIDs   +0xa0  + 0x18
+#   _G4_BATTLE_MONS  0x2D58 = BattleContext.battleMons  +0x2d40 + 0x18
+#
+# and the fourth anchor is the game's own pointer: BattleSystem+0x30 (the
+# decomp's ``battleCtx``) reads 0x022c29ec on every Platinum state tried, which
+# is the BattleContext block's header + 0x20 exactly. Four independent ways of
+# saying the same thing, so the frame is pinned rather than assumed.
+_G4_STRUCT_FROM_DATA = 0x18
+#: ``BattleSystem.resultMask`` in pokeplatinum, ``battleOutcomeFlag`` in
+#: pokeheartgold, which publishes it at struct +0x2420 — the offset MEASURED
+#: here, by diffing the whole 0x2494 allocation across the one press that ends
+#: a battle. One byte changed, and it changed to 1 on a win.
+_G4_BATTLE_OUTCOME = 0x2420 + _G4_STRUCT_FROM_DATA
+#: Gen 4's enum, and it is NOT gen 3's B_OUTCOME — the two overlap and
+#: disagree, the hazard Crystal already cost us. 4 is CAUGHT here and "ran"
+#: there; 5 is PLAYER_FLED here and "teleported" there. So a gen-4 flee read
+#: through gen 3's table renders as "teleported" and a caught mon as "ran".
+#: include/constants/battle.h, identical in both decomps:
+#: WIN 1, LOSE 2, DRAW 3, MON_CAUGHT 4, PLAYER_FLED 5, FOE_FLED 6.
+_G4_OUTCOMES = {1: "won", 2: "lost", 3: "drew", 4: "caught", 5: "ran",
+                6: "mon_fled"}
+
 PLATINUM = GameMemory(
     game="platinum-us",
     console="NDS",
     # Sample 2 widens the foe read from 2 bytes to species..level, and sample 3
     # is the BattleSystem pair. Both are RANGES inside one allocation rather
     # than separate entries, which is the same economy the gen-3 block uses.
+    # Sample 4 is one byte and is APPENDED, like samples 2-3 before it: every
+    # recorded run's samples are positions in this tuple, so an index may never
+    # move. It is its own entry rather than a widening of sample 3 because the
+    # outcome sits 0x23c0 further into the same allocation, and reading 9 KB
+    # per button to save a round trip is not a trade.
     spec=(f"{_PLATINUM_LOCATION:#x}:16",
           f"{_PLATINUM_OVERLAY:#x}:4",
           f"{_PLATINUM_FOE_SPECIES:#x}:{_G4_FOE_LEN:#x}",
-          f"{_PLATINUM_BATTLE_SYSTEM + _G4_BATTLE_TYPE:#x}:{_G4_BSYS_LEN:#x}"),
+          f"{_PLATINUM_BATTLE_SYSTEM + _G4_BATTLE_TYPE:#x}:{_G4_BSYS_LEN:#x}",
+          f"{_PLATINUM_BATTLE_SYSTEM + _G4_BATTLE_OUTCOME:#x}:1"),
     map_id=Field(0, 0, "<i"),
     x=Field(0, 8, "<i"),
     y=Field(0, 12, "<i"),
@@ -774,6 +852,9 @@ PLATINUM = GameMemory(
     battle_kind=Field(3, 0, "<I"),
     battle_kind_trainer=_G4_BATTLE_TYPE_TRAINER,
     trainer_id=Field(3, _G4_TRAINER_OFF, "<H"),
+    battle_outcome=Field(4, 0, "<B"),
+    outcome_while_in_battle=True,
+    outcome_names=_G4_OUTCOMES,
     notes=(
         "pret/pokeplatinum struct Location at 0x0227f408: mapHeaderID +0, "
         "warpId +4, x +8, z +12, faceDirection +16, all s32. The map key is a "
@@ -873,19 +954,39 @@ _SOULSILVER_FOE_SPECIES = 0x021D05C8
 _SOULSILVER_BATTLE_SYSTEM = 0x022C01F4      # data of the 0x24a0 block at 0x022c01ec
 _SOULSILVER_BATTLE_CONTEXT = 0x022C32C0     # data of the 0x3168 block at 0x022c32b8
 
-# NOT wired, and the reason is a corpus and not an address. battleType sits at
-# _SOULSILVER_BATTLE_SYSTEM + _G4_BATTLE_TYPE = 0x022c0238, and it reads 0 in
-# all 315 in-battle samples this cartridge has ever produced. That is not
-# evidence: every one of those 8 battles is WILD. HGSS's first trainer is past Cherrygrove
-# and the only SoulSilver run never left Route 29 — its westward corridor dead
-# ends at x=606 in the run's own trace and in about 400 presses of driving it by
-# hand, none of which got through the tree line. A wild-only corpus cannot
-# refute a wild/trainer discriminator (the Emerald false refutation), so wiring
-# this would make every SoulSilver battle claim "wild" on the strength of a
-# structural analogy — which is exactly what commit f03dd4b took out. It stays
-# None, the card says "unknown", and the day a trainer battle is reachable this
-# is a one-line change with a known address to check first.
+# TWO fields NOT wired, and for ONE reason, which is a corpus and not an
+# address. Both are named here so that the day the corpus exists this is two
+# lines and no new search.
+#
+# battleType sits at _SOULSILVER_BATTLE_SYSTEM + _G4_BATTLE_TYPE = 0x022c0238,
+# and it reads 0 in all 315 in-battle samples this cartridge had produced. That
+# is not evidence: every one of those 8 battles is WILD. A 248-turn
+# continuation on 2026-09-21 added 7 more — Pidgey x5 and Sentret x2, all on
+# map 33 at x 642-657, kind null on every one — which takes the cartridge's
+# whole corpus to about 15 battles and leaves it 100% wild. HGSS's first
+# trainer is past Cherrygrove and no run has left the New Bark/Route 29 pocket
+# (maps 33 and 60-66): not in 248 turns, not in the earlier 100, and not in
+# about 400 presses of driving the westward corridor by hand, which dead ends
+# at x=606 in the tree line. A wild-only corpus cannot refute a wild/trainer
+# discriminator (the Emerald false refutation), so wiring this would make every
+# SoulSilver battle claim "wild" on the strength of a structural analogy —
+# exactly what commit f03dd4b took out.
+#
+# battleOutcomeFlag sits at _SOULSILVER_BATTLE_SYSTEM + _G4_BATTLE_OUTCOME =
+# 0x022c262c, the same struct field at the same offset on the same engine, in a
+# block already matched to Platinum's by size (0x24a0), by battleType and by
+# battleMons. The hole is the same one: with no trainer battle, the outcome x
+# kind table is wild-only in every class, which is precisely the shape that let
+# a Platinum candidate score 6 for 6 and be wrong. Note what a wild-only corpus
+# CAN still do here and could not do for the kind — three distinct values
+# across one kind already refute "this is a kind byte" — and what it cannot:
+# rule out a field that means something else in a trainer battle, which is
+# exactly how 0x022a64cc failed. So it stays None.
+#
+# ONE MEASUREMENT unblocks both: a single SoulSilver trainer battle. Not
+# another address, not another search.
 _SOULSILVER_BATTLE_TYPE = _SOULSILVER_BATTLE_SYSTEM + _G4_BATTLE_TYPE
+_SOULSILVER_BATTLE_OUTCOME = _SOULSILVER_BATTLE_SYSTEM + _G4_BATTLE_OUTCOME
 
 SOULSILVER = GameMemory(
     game="soulsilver-us",

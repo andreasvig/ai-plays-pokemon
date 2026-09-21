@@ -172,12 +172,23 @@ def decode_samples(rows: list[tuple[str, list[bytes]]], key: Optional[int] = Non
                                 d["trainer_id"] = contract.trainer_id.read(samples)
                             if contract.trainer_class is not None:
                                 d["trainer_class"] = contract.trainer_class.read(samples)
-                # The outcome is the one battle field read OUTSIDE the flag, and
-                # deliberately: gen 3 writes it as the fight closes and holds it,
-                # so the sample that carries a segment's result is the first one
-                # after the flag goes clear. Read during the fight it is 0, or —
-                # in the intro — the previous fight's result.
-                if contract.battle_outcome is not None:
+                # The outcome is the one battle field gen 3 reads OUTSIDE the
+                # flag, and deliberately: gen 3 writes it as the fight closes
+                # and holds it, so the sample that carries a segment's result
+                # is the first one after the flag goes clear. Read during the
+                # fight it is 0, or — in the intro — the previous fight's
+                # result.
+                #
+                # Gen 4 is the other way round and cannot be talked into this
+                # one: it FREES the battle heap at the close, so the first
+                # clear-flag sample reads whatever the allocator did with those
+                # bytes next — 0x78 on Platinum, which gen 4's enum does not
+                # name but which a wider table would have rendered as a result.
+                # ``outcome_while_in_battle`` puts the read inside the gate, and
+                # ``src/app/route.py`` then takes the LAST in-battle value
+                # rather than the one after.
+                if contract.battle_outcome is not None and (
+                        d["in_battle"] or not contract.outcome_while_in_battle):
                     d["battle_outcome"] = contract.battle_outcome.read(samples)
             else:
                 # No flag located on this cartridge. Treating every press as an

@@ -19,7 +19,10 @@ The three rules that are easy to get wrong, and each has a test:
     intro is the one moment they are unambiguous;
   * the outcome comes from the sample AFTER the flag clears, because that is
     where the game writes it — taken during the fight it is 0 or, in the intro,
-    the PREVIOUS fight's result;
+    the PREVIOUS fight's result. Gen 4 inverts this and the contract says so:
+    it frees the battle heap at the close, so the sample after it reads another
+    object (0x78 on Platinum) and the answer is the last non-zero value from
+    INSIDE the fight;
   * a trainer NAME is FireRed's alone. Trainer 114 is a different person on
     every cartridge.
 """
@@ -263,9 +266,8 @@ def test_crystal_reports_the_trainer_class_and_leaves_the_id_alone():
     assert "trainer_class" not in w and w["outcome"] == "ran"
 
 
-def test_a_gen_4_card_names_the_trainer_and_the_foe_and_never_how_it_ended():
-    """Platinum's samples carry a kind, a trainer id and a foe and NO outcome,
-    which is the whole shape of what gen 4 can honestly say.
+def test_a_gen_4_card_names_the_trainer_the_foe_and_how_it_ended():
+    """Platinum's samples carry a kind, a trainer id, a foe AND an outcome.
 
     The trainer id is real and per cartridge: 852 is the rival on Platinum, 1
     is Youngster Tristan and 3 is Lass Natalie, each matched to the name the
@@ -273,26 +275,98 @@ def test_a_gen_4_card_names_the_trainer_and_the_foe_and_never_how_it_ended():
     roster, and 852 is somebody else there — so `trainer` stays None exactly as
     it does for Emerald.
 
-    The outcome is absent because the battle heap is FREED when gen 4's battle
-    overlay unloads: the sample after the flag goes clear, which is where gen 2
-    and gen 3 keep the answer, is reading memory that has already been handed
-    back. `won` must stay None rather than collapsing to False, because "we do
-    not know" and "they lost" are different rows on a sheet."""
+    The outcome arrives from INSIDE the fight, which is the gen-4 rule: the
+    battle heap is freed when the overlay unloads, so the sample after the flag
+    clears — where gen 2 and gen 3 keep the answer — is already a different
+    object. Here the last in-battle sample says 1 and the one after says 0x78,
+    which is what the freed block actually read on all five driven battles."""
     per_turn = turns(
         (1, [g4(0, 4, 4)]),
-        (2, [g4(0, 4, 4, batt=True, kind="trainer", foe=396, lvl=5, tid=1),
-             g4(1, 4, 4, batt=True, kind="trainer", foe=396, lvl=5, tid=1)]),
-        (3, [g4(0, 4, 4)]),                                # battle_outcome is None
+        (2, [g4(0, 4, 4, batt=True, kind="trainer", foe=396, lvl=5, tid=1, out=0),
+             g4(1, 4, 4, batt=True, kind="trainer", foe=396, lvl=5, tid=1, out=1)]),
+        (3, [g4(0, 4, 4, out=0x78)]),
     )
     b, = R._battles_from_trace(per_turn, game="platinum-us")
     assert b["kind"] == "trainer" and b["trainer_id"] == 1
     assert b["trainer"] is None, "the id travels between cartridges, the name does not"
     assert b["foe"] == {"species": 396, "level": 5}         # Starly, Lv 5
-    assert "outcome" not in b and b["won"] is None
+    assert b["outcome"] == "won" and b["won"] is True
+    assert not any(k.startswith("_") for k in b), "the carrier key must not be published"
     # A gen-4 map id takes the first slot of the tile key and the second stays
     # a constant zero (tests/test_route_multigame.py), so the ambush tile is
     # (map 343, 0, x, y) and not a (group, number) pair.
     assert b["turns"] == 1 and b["tile"] == [343, 0, 4, 4]
+
+
+def test_gen_4_takes_the_outcome_from_inside_the_fight_not_from_after_it():
+    """The mutation this test exists to catch: read the sample AFTER the close,
+    the way every other cartridge does, and Platinum reports nothing at all.
+
+    0x78 is not invented. It is what the byte at the outcome's address read on
+    the first clear-flag sample of every driven battle on 2026-09-21 — the
+    allocator handed the 0x2494 block to something else the moment the battle
+    overlay unloaded. Gen 4's enum has no 4th entry past 6, so the old rule
+    degrades to "no outcome"; a WIDER table would have published a number."""
+    per_turn = turns(
+        (1, [g4(0, 4, 4)]),
+        (2, [g4(0, 4, 4, batt=True, kind="wild", foe=401, lvl=3, out=0),
+             g4(1, 4, 4, batt=True, kind="wild", foe=401, lvl=3, out=5)]),
+        (3, [g4(0, 4, 4, out=0x78)]),
+    )
+    b, = R._battles_from_trace(per_turn, game="platinum-us")
+    assert b["outcome"] == "ran", "5 is PLAYER_FLED on gen 4"
+    assert b["won"] is None, "fleeing is neither winning nor losing"
+
+    # and the control: gen 3, where the same shape MUST read the after-sample.
+    gen3 = turns((1, [s(0, 3, 3)]),
+                 (2, [s(0, 3, 3, batt=True, kind="wild", foe=19, lvl=3, out=0)]),
+                 (3, [s(0, 3, 3, out=1)]))
+    g, = R._battles_from_trace(gen3, game="firered-us")
+    assert g["outcome"] == "won"
+
+
+def test_a_zero_inside_a_gen_4_fight_cannot_erase_a_decision():
+    """The outcome is written a few frames BEFORE the close and holds, so the
+    last non-zero value is the fight's. A zero after it would be "not decided
+    yet", which is never true once it has been decided — and taking the LAST
+    value unconditionally would file a won battle as unknown."""
+    per_turn = turns(
+        (1, [g4(0, 4, 4)]),
+        (2, [g4(0, 4, 4, batt=True, kind="wild", foe=399, lvl=2, out=2),
+             g4(1, 4, 4, batt=True, kind="wild", foe=399, lvl=2, out=0)]),
+        (3, [g4(0, 4, 4, out=0x78)]),
+    )
+    b, = R._battles_from_trace(per_turn, game="platinum-us")
+    assert b["outcome"] == "lost" and b["won"] is False
+
+
+def test_a_gen_4_flee_is_not_a_teleport_and_a_caught_mon_is_not_an_escape():
+    """The enums overlap and disagree, which is Crystal's lesson at a new
+    address. Gen 3's B_OUTCOME reads 4 as RAN and has no 5 but "teleported";
+    gen 4 reads 4 as MON_CAUGHT and 5 as PLAYER_FLED. Published through the
+    wrong table, a Platinum escape becomes a teleport and a capture becomes an
+    escape — every value legal, both wrong."""
+    def outcome_for(raw):
+        per_turn = turns((1, [g4(0, 4, 4)]),
+                         (2, [g4(0, 4, 4, batt=True, kind="wild", foe=399, lvl=2,
+                                 out=raw)]),
+                         (3, [g4(0, 4, 4, out=0x78)]))
+        b, = R._battles_from_trace(per_turn, game="platinum-us")
+        return b.get("outcome")
+    assert outcome_for(4) == "caught" and R._TRACE_OUTCOMES[4] == "ran"
+    assert outcome_for(5) == "ran" and R._TRACE_OUTCOMES[5] == "teleported"
+
+
+def test_a_gen_4_fight_the_run_never_finished_still_claims_nothing():
+    """A run that ends mid-battle has no outcome on any cartridge, and on gen 4
+    the carrier key must not survive into route.json either."""
+    per_turn = turns(
+        (1, [g4(0, 4, 4)]),
+        (2, [g4(0, 4, 4, batt=True, kind="wild", foe=399, lvl=2, out=0)]),
+    )
+    b, = R._battles_from_trace(per_turn, game="platinum-us")
+    assert "outcome" not in b and b["won"] is None and b["closed_turn"] is None
+    assert not any(k.startswith("_") for k in b)
 
 
 def test_a_soulsilver_card_carries_a_levelled_foe_and_no_kind_at_all():

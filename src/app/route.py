@@ -403,9 +403,13 @@ def _battles_from_trace(per_turn: dict[int, dict[str, Any]],
     * ``foe`` from ``foe_species``/``foe_level``.
     * ``outcome`` from ``battle_outcome``, taken at the sample where the flag
       goes CLEAR — that is where the game writes it. Taken during the fight it
-      is 0, or the PREVIOUS fight's result during the intro. What its numbers
-      MEAN is the contract's (``GameMemory.outcome_names``): Crystal's enum
-      overlaps gen 3's B_OUTCOME without agreeing with it.
+      is 0, or the PREVIOUS fight's result during the intro. Gen 4 is the
+      exception and says so in its contract (``outcome_while_in_battle``): it
+      frees the battle heap at the close, so its result is the last NON-ZERO
+      value seen while the flag was still set, and the sample after the close
+      is a different object rather than a stale one. What the numbers MEAN is
+      the contract's (``GameMemory.outcome_names``): Crystal's enum and gen
+      4's each overlap gen 3's B_OUTCOME without agreeing with it.
 
     A run recorded before its game had those fields stores samples without them
     and degrades to exactly the old behaviour, because this reads what is in the
@@ -418,7 +422,11 @@ def _battles_from_trace(per_turn: dict[int, dict[str, Any]],
     Crystal's 17 refused samples inside one 79-sample trainer battle would have
     made eighteen.
     """
-    names = getattr(contract_for(game), "outcome_names", None) or _TRACE_OUTCOMES
+    contract = contract_for(game)
+    names = getattr(contract, "outcome_names", None) or _TRACE_OUTCOMES
+    #: Gen 4 frees its battle heap at the close, so its outcome is read on the
+    #: last sample INSIDE the fight and the one after it is a different object.
+    in_fight = bool(getattr(contract, "outcome_while_in_battle", False))
     out: list[dict[str, Any]] = []
     tile: Optional[Tile] = None
     seg: Optional[dict[str, Any]] = None
@@ -436,19 +444,25 @@ def _battles_from_trace(per_turn: dict[int, dict[str, Any]],
                            "uncounted": False, "tile": list(tile) if tile else None}
                 else:
                     seg["closed_turn"] = turn
-                _fold_battle_sample(seg, s, game)
+                _fold_battle_sample(seg, s, game, in_fight)
             else:
                 if here is not None:
                     tile = here
                 if seg is not None:
                     # The outcome is written as the fight CLOSES, so this
                     # sample — the first with the flag clear — is where it is.
+                    # Unless the cartridge frees the block first (gen 4), in
+                    # which case _fold_battle_sample already kept it.
                     _close_battle(seg, s, names)
                     out.append(seg)
                     seg = None
     if seg is not None:                       # the run ended mid-battle
         seg["turns"] = seg["closed_turn"] - seg["opened_turn"] + 1
         seg["closed_turn"] = None
+        # A fight the run never finished has no result, whichever cartridge it
+        # is on: gen 4's byte is still 0 there. Drop the carrier key so it
+        # cannot reach route.json.
+        seg.pop(_OUTCOME_SEEN, None)
         out.append(seg)
     return out
 
@@ -463,8 +477,15 @@ _TRACE_OUTCOMES = {1: "won", 2: "lost", 3: "drew", 4: "ran", 5: "teleported",
 _OUTCOME_WON = {"won": True, "caught": True, "lost": False, "forfeited": False}
 
 
+#: Where a gen-4 segment carries the outcome it saw INSIDE the fight, until
+#: _close_battle consumes it. Private to this module: it is popped before the
+#: segment is published, so route.json never sees the key.
+_OUTCOME_SEEN = "_outcome_in_fight"
+
+
 def _fold_battle_sample(seg: dict[str, Any], s: dict[str, Any],
-                        game: Optional[str] = None) -> None:
+                        game: Optional[str] = None,
+                        outcome_while_in_battle: bool = False) -> None:
     """Take the kind, the foe and the trainer off one in-battle sample.
 
     FIRST writer wins for the kind and the trainer: the intro of a fight is the
@@ -496,6 +517,12 @@ def _fold_battle_sample(seg: dict[str, Any], s: dict[str, Any],
         if s.get("foe_level"):
             foe["level"] = int(s["foe_level"])
         seg["foe"] = foe
+    if outcome_while_in_battle and s.get("battle_outcome"):
+        # LAST writer wins, and only a NON-ZERO one: gen 4 writes the result a
+        # few frames before it tears the battle down, so the value that belongs
+        # to this fight is the newest one seen while the flag was still set.
+        # Zero is "not decided yet" and must not overwrite a decision.
+        seg[_OUTCOME_SEEN] = int(s["battle_outcome"])
 
 
 def _close_battle(seg: dict[str, Any], after: dict[str, Any],
@@ -508,7 +535,10 @@ def _close_battle(seg: dict[str, Any], after: dict[str, Any],
     and an escape "lost" with nothing to raise on.
     """
     seg["turns"] = seg["closed_turn"] - seg["opened_turn"] + 1
-    raw = after.get("battle_outcome")
+    #: Gen 4 put it here on the way in, because by now its block is freed.
+    raw = seg.pop(_OUTCOME_SEEN, None)
+    if raw is None:
+        raw = after.get("battle_outcome")
     if raw is None:
         # The run never read the byte. Not the same as reading a zero, and the
         # difference only became visible with Crystal: gen 3's table has no

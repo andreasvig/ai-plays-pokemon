@@ -15,6 +15,25 @@ and nobody could tell (commit a377f67, and the gen-4 block in contracts.py).
 
     ./venv/bin/python v2-experiments/gen5_outcome_search.py \\
         --won DIR:kind DIR:kind --lost DIR:kind DIR:kind [--ran DIR:kind]
+
+``--gen4`` reads a gen-4 corpus instead (``gen4_battle_end.py`` output) and
+changes two things, both because gen 4 FREES its battle heap at the close:
+
+* the frame is the LAST sample INSIDE the fight, not the first one after it.
+  After the close the addresses under test belong to whatever the allocator
+  handed them to (0x78 on Platinum), so a search there is a search of somebody
+  else's object.
+* the haystack is the two battle ALLOCATIONS that every sample already
+  carries — BattleSystem 0x2494 and BattleContext 0x3168 — rather than 4 MB.
+  Gen 5's allocator names its blocks in retail and gen 4's does not, so there
+  is no map to place a 4 MB hit into; what the gen-4 corpus can say is "inside
+  these two blocks, at these offsets", and what it CANNOT see is anything
+  outside them. Say so rather than implying a sweep.
+
+    ./venv/bin/python v2-experiments/gen5_outcome_search.py --gen4 \\
+        --won /tmp/g4/wild_won:wild /tmp/g4/trainer_won:trainer \\
+        --lost /tmp/g4/wild_lost:wild /tmp/g4/trainer_lost:trainer \\
+        --ran /tmp/g4/wild_ran:wild
 """
 from __future__ import annotations
 
@@ -31,6 +50,32 @@ sys.path.insert(0, str(ROOT / "v2-experiments"))
 from gen5_heap_map import blocks  # noqa: E402
 
 BASE = 0x02000000
+#: The two gen-4 battle allocations as gen4_battle_end.py captures them:
+#: (region name, allocator header address). The struct begins at header + 0x20.
+GEN4_REGIONS = (("bsys", 0x022BF950), ("bctx", 0x022C29CC))
+GEN4_STRUCT = 0x20
+
+
+def gen4_close(d: Path, after: int = 0) -> tuple[str, np.ndarray, list[tuple]]:
+    """The LAST in-battle sample's two blocks, concatenated, plus their layout.
+
+    ``after`` walks BACKWARD from that sample, because on gen 4 there is no
+    forward direction: the block is gone.
+    """
+    rows = json.loads((d / "samples.json").read_text())
+    inb = [i for i, r in enumerate(rows) if r.get("in_battle")]
+    if not inb:
+        raise SystemExit(f"{d.name}: no in-battle sample")
+    i = inb[-1 - after]
+    r = rows[i]
+    parts, layout, off = [], [], 0
+    for name, hdr in GEN4_REGIONS:
+        blob = bytes.fromhex(r[name])
+        parts.append(blob)
+        layout.append((name, hdr, off, len(blob)))
+        off += len(blob)
+    tag = f"n{r['n']}.{r.get('sub', 0)}"
+    return tag, np.frombuffer(b"".join(parts), dtype=np.uint8), layout
 
 
 def close_dump(d: Path, after: int = 0) -> tuple[int, np.ndarray]:
@@ -56,6 +101,9 @@ def main() -> int:
     ap.add_argument("--ran", nargs="+", default=[])
     ap.add_argument("--after", type=int, default=0)
     ap.add_argument("--show", type=int, default=60)
+    ap.add_argument("--gen4", action="store_true",
+                    help="read a gen-4 corpus at the LAST IN-BATTLE sample, over "
+                         "the two battle allocations. See the module docstring.")
     ap.add_argument("--max-value", type=int, default=0,
                     help="keep only candidates whose values are all below this. An "
                          "OUTCOME is a small enum; a byte that separates the classes "
@@ -67,13 +115,19 @@ def main() -> int:
 
     classes: dict[str, list[tuple[str, np.ndarray]]] = defaultdict(list)
     kinds: dict[str, list[str]] = defaultdict(list)
+    layouts: list[list[tuple]] = []
     for outcome, specs in (("won", args.won), ("lost", args.lost), ("ran", args.ran)):
         for spec in specs:
             path, _, kind = spec.partition(":")
-            n, buf = close_dump(Path(path), args.after)
+            if args.gen4:
+                n, buf, layout = gen4_close(Path(path), args.after)
+                layouts.append(layout)
+            else:
+                n, buf = close_dump(Path(path), args.after)
+                n = f"n{n}"
             classes[outcome].append((Path(path).name, buf))
             kinds[outcome].append(kind)
-            print(f"  {Path(path).name:18s} {outcome:5s} {kind:8s} close+{args.after} = n{n}")
+            print(f"  {Path(path).name:18s} {outcome:5s} {kind:8s} close-{args.after} = {n}")
     print("\ncross-tabulation (outcome x kind):")
     for o, ks in sorted(kinds.items()):
         print(f"  {o:5s} {sorted(ks)}")
@@ -98,6 +152,31 @@ def main() -> int:
     idx = np.flatnonzero(diff)
     print(f"\nbytes constant inside every outcome class and pairwise different "
           f"between them: {len(idx)}")
+
+    if args.gen4:
+        # No 4 MB map to place a hit into: the offset is already relative to a
+        # named allocation, because that allocation is all we read.
+        layout = layouts[0]
+        assert all(l == layout for l in layouts), "the blocks moved between dumps"
+
+        def where(i):
+            for name, hdr, off, n in layout:
+                if off <= i < off + n:
+                    return name, i - off - GEN4_STRUCT, hdr + i - off
+            return None, None, None
+        rows = []
+        for i in idx:
+            name, soff, addr = where(int(i))
+            rows.append((name, soff, addr,
+                         {o: int(reps[o][i]) for o in names}))
+        print(f"of those, inside the two battle allocations: {len(rows)}")
+        if args.max_value:
+            rows = [r for r in rows if all(v < args.max_value for v in r[3].values())]
+            print(f"of those, all values below {args.max_value}: {len(rows)}")
+        for name, soff, addr, vals in sorted(rows)[: args.show]:
+            print(f"  {addr:#010x}  {name} struct+{soff:#x}  " +
+                  "  ".join(f"{o}={v}" for o, v in sorted(vals.items())))
+        return 0
 
     maps = [{(b["data"], b["size"]): b for b in blocks(buf)}
             for members in classes.values() for _, buf in members]

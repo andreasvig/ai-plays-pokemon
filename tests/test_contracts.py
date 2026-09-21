@@ -298,6 +298,9 @@ PLATINUM_FOE_LEVEL = 0x022C5820         # ... + 0x34, 16/16 against the HUD plat
 PLATINUM_PLAYER_LEVEL = 0x022C5760      # battleMons[0].level, the same offset
 PLATINUM_BATTLE_TYPE = 0x022BF99C       # BattleSystem + 0x44, 25/25 battles
 PLATINUM_TRAINER_ID = 0x022BFA12        # BattleSystem + 0xba, trainers[1]
+PLATINUM_OUTCOME = 0x022C1D90           # BattleSystem struct + 0x2420, the one byte
+                                        # that changed on the press that ended a
+                                        # driven battle (2026-09-21, five battles)
 SOULSILVER_PACKED = 0x021D05C8          # foe species low, own active species high;
                                         # the spec samples only the low half, which is
                                         # the flag AND the species
@@ -346,14 +349,15 @@ def gen4_row(contract, name="A", **at):
     return (name, [bytes(b) for b in blobs])
 
 
-def platinum_row(*, overlay=16, kind=0, trainer=0, species=0, level=0):
+def platinum_row(*, overlay=16, kind=0, trainer=0, species=0, level=0, outcome=0):
     return gen4_row(
         PLATINUM,
         **{hex(PLATINUM_OVERLAY): ("<I", overlay),
            hex(PLATINUM_BATTLE_TYPE): ("<I", kind),
            hex(PLATINUM_TRAINER_ID): ("<H", trainer),
            hex(PLATINUM_FOE_SPECIES): ("<H", species),
-           hex(PLATINUM_FOE_LEVEL): ("<B", level)})
+           hex(PLATINUM_FOE_LEVEL): ("<B", level),
+           hex(PLATINUM_OUTCOME): ("<B", outcome)})
 
 
 def test_the_gen_4_battle_fields_are_offsets_into_two_named_heap_blocks():
@@ -391,6 +395,69 @@ def test_the_gen_4_battle_fields_are_offsets_into_two_named_heap_blocks():
     # the same struct — HGSS is the Platinum engine, measured here rather than
     # assumed from the box.
     assert PLATINUM.foe_level.offset == SOULSILVER.foe_level.offset == _G4_BATTLE_MON_LEVEL
+
+
+def test_the_gen_4_outcome_byte_is_the_decomps_field_and_not_a_new_address():
+    """Where the outcome sits, spelled the way the two decomps spell it.
+
+    pokeheartgold publishes ``BattleSystem.battleOutcomeFlag`` at struct
+    +0x2420 and pokeplatinum calls the same field ``resultMask``. The contract
+    keeps its offsets in the OTHER frame — from the allocator header + 8, which
+    an earlier note called the block's "data" — and the two frames differ by
+    0x18, which is not a fudge: subtracting it from each of the three offsets
+    already in the contract lands on a published field, and the game's own
+    BattleSystem->battleCtx pointer reads the BattleContext header + 0x20.
+
+    So this test pins the ARITHMETIC against the address that was measured by
+    diffing the whole allocation across the press that ends a battle. Change
+    either the frame or the offset and it fails."""
+    from src.referee.contracts import (_G4_BATTLE_MONS, _G4_BATTLE_OUTCOME,
+                                       _G4_BATTLE_TYPE, _G4_STRUCT_FROM_DATA,
+                                       _G4_TRAINERS, _PLATINUM_BATTLE_CONTEXT,
+                                       _PLATINUM_BATTLE_SYSTEM)
+    assert _PLATINUM_BATTLE_SYSTEM + _G4_BATTLE_OUTCOME == PLATINUM_OUTCOME
+    # the same 0x18 explains every other gen-4 offset in the module
+    assert _G4_BATTLE_TYPE - _G4_STRUCT_FROM_DATA == 0x2C     # ::battleType
+    assert _G4_TRAINERS - _G4_STRUCT_FROM_DATA == 0xA0        # ::trainerIDs
+    assert _G4_BATTLE_MONS - _G4_STRUCT_FROM_DATA == 0x2D40   # ::battleMons
+    assert _G4_BATTLE_OUTCOME - _G4_STRUCT_FROM_DATA == 0x2420
+    # and the outcome is in the BattleSystem block, not the context one
+    assert _PLATINUM_BATTLE_CONTEXT > PLATINUM_OUTCOME
+
+
+def test_gen_4s_outcome_enum_is_not_gen_3s_and_the_two_disagree():
+    """Reading gen 4's byte through gen 3's B_OUTCOME renames two of the six.
+
+    Gen 3: 4 is RAN, 7 is CAUGHT. Gen 4: 4 is MON_CAUGHT and 5 is PLAYER_FLED,
+    which gen 3's table calls "teleported". So a Platinum run that fled would
+    be published as a teleport and a caught mon as an escape — both legal
+    values, both wrong, nothing to raise on. This is Crystal's lesson applied
+    before it could cost anything."""
+    from src.app.route import _TRACE_OUTCOMES
+    assert PLATINUM.outcome_names is not None, "gen 4 must not inherit B_OUTCOME"
+    assert PLATINUM.outcome_names[5] == "ran" and _TRACE_OUTCOMES[5] == "teleported"
+    assert PLATINUM.outcome_names[4] == "caught" and _TRACE_OUTCOMES[4] == "ran"
+    assert PLATINUM.outcome_names[1] == "won" and PLATINUM.outcome_names[2] == "lost"
+
+
+def test_platinum_reads_its_outcome_only_while_the_battle_is_still_up():
+    """The opposite of gen 3's rule, because gen 4 frees the block.
+
+    Gen 3 writes the outcome as the fight closes and keeps it, so its contract
+    reads the byte OUTSIDE the flag. Gen 4 hands the whole 0x2494 allocation
+    back when the battle overlay unloads, and the address then reads whatever
+    moved in — 0x78 on every one of the five driven battles, which is not a
+    stale outcome but a different object. Ungated it would decode as an outcome
+    byte on every overworld press for the rest of the run."""
+    live = trace.decode_samples([platinum_row(outcome=2, species=396, level=3)],
+                                None, PLATINUM)[0]
+    assert live["in_battle"] is True and live["battle_outcome"] == 2
+
+    freed = trace.decode_samples(
+        [platinum_row(overlay=0xFFFFFFFF, outcome=0x78)], None, PLATINUM)[0]
+    assert freed["in_battle"] is False
+    assert freed["battle_outcome"] is None, \
+        "the block is freed by here; 0x78 is the allocator's, not the game's"
 
 
 def test_platinum_reads_the_kind_the_foe_and_the_trainer_only_while_a_battle_runs():
@@ -490,30 +557,42 @@ def test_soulsilver_reads_its_level_off_the_battle_mon_and_its_flag_off_the_pack
     assert over["foe_species"] is None and over["foe_level"] is None
 
 
-def test_neither_gen_4_cartridge_claims_an_outcome_and_soulsilver_claims_no_kind():
-    """Two absences, each a result rather than an omission.
-
-    THE OUTCOME. Gen 4 frees the battle heap when the overlay unloads, so gen
-    3's rule — read the result on the first sample after the flag goes clear —
-    has nothing left to read. The candidate that survived the corpus was
-    0x022a64cc: 1 on two wins, 5 on two escapes, 0 on two losses, six for six.
-    It is wrong. Every win and escape in that corpus was a WILD battle and both
-    losses were TRAINER battles, so the outcome classes were confounded with
-    the KIND, and the decoupled control settles it — a trainer battle WON reads
-    0 at the same address on the same frame where a wild win reads 1. Commit
-    a377f67, one cartridge later.
+def test_soulsilver_claims_neither_a_kind_nor_an_outcome_and_platinum_claims_both():
+    """Two absences on one cartridge, each a corpus result rather than an
+    omission — and their presence on the other, which is what makes the
+    absences a statement about evidence and not about the engine.
 
     THE KIND ON SOULSILVER. Its battleType is at 0x022c0238 by the same
     structural argument that works on Platinum, and it reads 0 in all 315
-    in-battle samples the cartridge has produced — all 8 battles WILD,
-    because HGSS's first trainer is past Cherrygrove and no run has left Route
-    29. A wild-only corpus cannot refute a wild/trainer discriminator, so
-    wiring it would make every SoulSilver battle claim "wild" on an analogy.
+    in-battle samples the cartridge had produced — all 8 battles WILD, because
+    HGSS's first trainer is past Cherrygrove and no run has left Route 29. A
+    248-turn continuation on 2026-09-21 added 7 more battles and left the
+    corpus at about 15, still 100% wild and still inside maps 33 and 60-66. A
+    wild-only corpus cannot refute a wild/trainer discriminator, so wiring it
+    would make every SoulSilver battle claim "wild" on an analogy — which is
+    what commit f03dd4b took out.
+
+    THE OUTCOME ON SOULSILVER. Same hole, one step further along: the offset
+    is Platinum's measured one and the enum is the shared decomp's, but every
+    battle this cartridge can produce is wild, so the trainer half of the
+    outcome x kind table is empty. On Platinum that exact hole made a candidate
+    score six for six and be wrong (0x022a64cc, commit a377f67). The
+    measurement that unblocks both is one trainer battle, not one more search.
+
+    PLATINUM HAS BOTH, and the outcome was measured with the decoupling
+    controls that corpus lacked: a trainer battle WON and a wild battle LOST,
+    the two cells 0x022a64cc never had.
     """
-    assert PLATINUM.battle_outcome is None and SOULSILVER.battle_outcome is None
-    assert PLATINUM.outcome_names is None and SOULSILVER.outcome_names is None
+    assert SOULSILVER.battle_outcome is None and SOULSILVER.outcome_names is None
     assert SOULSILVER.battle_kind is None
     assert PLATINUM.battle_kind is not None, "Platinum's kind IS measured, 25/25"
+    assert PLATINUM.battle_outcome is not None, "and so is its outcome, 5 driven battles"
+    assert PLATINUM.outcome_while_in_battle is True
+    # Nobody else reads the outcome from inside the fight: gens 1-3 write it at
+    # the close and keep it, and reading THOSE early gets the previous fight's
+    # result on 35 of 146 FireRed states.
+    assert [c.game for c in CONTRACTS.values() if c.outcome_while_in_battle] \
+        == ["platinum-us"]
 
 
 def test_the_gen_4_battle_block_does_not_move_position_or_the_flag():
