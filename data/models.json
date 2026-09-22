@@ -147,6 +147,17 @@
     "released": "2026-07-16"
   },
   {
+    "model": "mimo-v2.6-flash",
+    "openrouter_id": "xiaomi/mimo-v2.6-flash",
+    "vendor": "xiaomi",
+    "reasoning_type": "binary",
+    "thinking_levels": [
+      "thinking",
+      "non-thinking"
+    ],
+    "released": "2026-09-21"
+  },
+  {
     "model": "muse-spark-1.3",
     "openrouter_id": "meta/muse-spark-1.3",
     "vendor": "meta",
