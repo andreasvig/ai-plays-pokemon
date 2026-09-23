@@ -1,5 +1,176 @@
 [
   {
+    "run_id": "2026-09-23_10-04-13_config-5.1__gpt-6-luna-high",
+    "label": null,
+    "kind": "official",
+    "model": "gpt-6-luna(high)",
+    "model_resolved": "openai/gpt-6-luna",
+    "config_stem": "config-5.1",
+    "benchmark": "pokebench-first-badge",
+    "benchmark_version": "pokebench-v1.1",
+    "status": "terminated",
+    "started_at": "2026-09-23T10:04:15",
+    "ended_at": "2026-09-23T10:28:57",
+    "turns": 59,
+    "duration_s": 1481.6,
+    "total_cost_usd": 0.077065,
+    "avg_cost_per_turn_usd": 0.001306186440677966,
+    "endpoint_price_usd_per_m": {
+      "prompt": 0.09999999999999999,
+      "completion": 0.5,
+      "input_cache_read": 0.01,
+      "input_cache_write": 0.125
+    },
+    "list_price_usd_per_m": null,
+    "list_price_cost_usd": null,
+    "list_price_per_turn_usd": null,
+    "avg_s_per_turn": 25.11186440677966,
+    "furthest_gate": "left_bedroom",
+    "furthest_gate_turn": 29,
+    "gates_reached": 1,
+    "total_gates": 12,
+    "gate_turns": {
+      "left_bedroom": 29
+    },
+    "gate_times_s": {
+      "left_bedroom": 643.68
+    },
+    "gate_costs_usd": {
+      "left_bedroom": 0.030703
+    },
+    "gate_list_costs_usd": null,
+    "avg_inputs_per_turn": 5.728813559322034,
+    "input_counts": {
+      "down": 91,
+      "up": 83,
+      "left": 61,
+      "right": 52,
+      "b": 37,
+      "a": 14
+    },
+    "avg_output_tokens_per_turn": 1158.8474576271187,
+    "thinking_share": 0.8519130638272977,
+    "wild_battles": 0,
+    "wild_battle_turns": 0,
+    "trainer_battles": [],
+    "trainer_battle_turns": 0,
+    "battle_turn_share": 0.0,
+    "battle_fidelity": "live",
+    "overworld_steps": 183,
+    "shortest_steps": 10,
+    "movement_efficiency": 0.037037037037037035,
+    "steps_fidelity": "trace",
+    "movement_legs": [
+      {
+        "node_id": "left_bedroom",
+        "d_open": 9,
+        "steps": 96,
+        "walls": 38,
+        "source": "trace",
+        "status": "closed"
+      },
+      {
+        "node_id": "left_house",
+        "d_open": 1,
+        "steps": 87,
+        "walls": 49,
+        "source": "trace",
+        "status": "open"
+      }
+    ],
+    "route_points": 184,
+    "route_coverage": 1.0,
+    "charged_steps": 270,
+    "walls_hit": 87,
+    "wall_rate": 0.257396,
+    "input_breakdown": {
+      "inputs": 338,
+      "overworld_inputs": 338,
+      "overworld_steps": 183,
+      "inputs_lost": 104,
+      "moved_inputs": 183,
+      "battle_inputs": 0,
+      "battle_edge": 0,
+      "walls_hit": 87,
+      "turns_to_face": 14,
+      "blocked_by_actor": 0,
+      "blocked_unknown": 3,
+      "idle_ab": 51,
+      "unclassified": 0,
+      "traced_turns": 59,
+      "wall_rate": 0.257396,
+      "worst_turns": [
+        {
+          "turn": 33,
+          "walls": 14,
+          "inputs": 24
+        },
+        {
+          "turn": 34,
+          "walls": 5,
+          "inputs": 14
+        },
+        {
+          "turn": 59,
+          "walls": 4,
+          "inputs": 10
+        },
+        {
+          "turn": 55,
+          "walls": 4,
+          "inputs": 5
+        },
+        {
+          "turn": 1,
+          "walls": 4,
+          "inputs": 5
+        },
+        {
+          "turn": 32,
+          "walls": 3,
+          "inputs": 9
+        },
+        {
+          "turn": 2,
+          "walls": 3,
+          "inputs": 6
+        },
+        {
+          "turn": 54,
+          "walls": 3,
+          "inputs": 5
+        },
+        {
+          "turn": 49,
+          "walls": 3,
+          "inputs": 5
+        },
+        {
+          "turn": 23,
+          "walls": 3,
+          "inputs": 5
+        }
+      ]
+    },
+    "progress": 1.8888888888888888,
+    "leg_gate": "left_house",
+    "leg_fraction": 0.8888888888888888,
+    "leg_distance_min": 1,
+    "leg_distance_open": 9,
+    "termination_reason": "leg_cap:left_house",
+    "projection_version": 15,
+    "continued_from": null,
+    "resumed": false,
+    "harness": "append_compact",
+    "max_turns": 10000000,
+    "has_recording": true,
+    "video_url": "https://pub-c54bf882c85d4fad83024b5791b99424.r2.dev/runs/2026-09-23_10-04-13_config-5.1__gpt-6-luna-high/recording.mp4",
+    "video_view": "detailed",
+    "screenshots_base_url": null,
+    "trace_published": false,
+    "published_at": "2026-09-23T11:03:33+00:00"
+  },
+  {
     "run_id": "2026-09-23_09-02-37_config-5.1__gpt-6-luna-medium",
     "label": null,
     "kind": "official",
