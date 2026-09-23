@@ -1,5 +1,162 @@
 [
   {
+    "run_id": "2026-09-23_10-28-58_config-5.1__gpt-6-luna-xhigh",
+    "label": null,
+    "kind": "official",
+    "model": "gpt-6-luna(xhigh)",
+    "model_resolved": "openai/gpt-6-luna",
+    "config_stem": "config-5.1",
+    "benchmark": "pokebench-first-badge",
+    "benchmark_version": "pokebench-v1.1",
+    "status": "terminated",
+    "started_at": "2026-09-23T10:28:59",
+    "ended_at": "2026-09-23T10:42:02",
+    "turns": 30,
+    "duration_s": 781.5,
+    "total_cost_usd": 0.040449,
+    "avg_cost_per_turn_usd": 0.0013483,
+    "endpoint_price_usd_per_m": {
+      "prompt": 0.09999999999999999,
+      "completion": 0.5,
+      "input_cache_read": 0.01,
+      "input_cache_write": 0.125
+    },
+    "list_price_usd_per_m": null,
+    "list_price_cost_usd": null,
+    "list_price_per_turn_usd": null,
+    "avg_s_per_turn": 26.05,
+    "furthest_gate": null,
+    "furthest_gate_turn": null,
+    "gates_reached": 0,
+    "total_gates": 12,
+    "gate_turns": {},
+    "gate_times_s": null,
+    "gate_costs_usd": null,
+    "gate_list_costs_usd": null,
+    "avg_inputs_per_turn": 5.166666666666667,
+    "input_counts": {
+      "up": 75,
+      "right": 19,
+      "a": 17,
+      "down": 16,
+      "b": 15,
+      "left": 13
+    },
+    "avg_output_tokens_per_turn": 1173.0333333333333,
+    "thinking_share": 0.8749964479554432,
+    "wild_battles": 0,
+    "wild_battle_turns": 0,
+    "trainer_battles": [],
+    "trainer_battle_turns": 0,
+    "battle_turn_share": 0.0,
+    "battle_fidelity": "live",
+    "overworld_steps": 48,
+    "shortest_steps": 0,
+    "movement_efficiency": 0.0,
+    "steps_fidelity": "trace",
+    "movement_legs": [
+      {
+        "node_id": "left_bedroom",
+        "d_open": 0,
+        "steps": 48,
+        "walls": 64,
+        "source": "trace",
+        "status": "open"
+      }
+    ],
+    "route_points": 49,
+    "route_coverage": 1.0,
+    "charged_steps": 112,
+    "walls_hit": 64,
+    "wall_rate": 0.412903,
+    "input_breakdown": {
+      "inputs": 155,
+      "overworld_inputs": 155,
+      "overworld_steps": 48,
+      "inputs_lost": 75,
+      "moved_inputs": 48,
+      "battle_inputs": 0,
+      "battle_edge": 0,
+      "walls_hit": 64,
+      "turns_to_face": 11,
+      "blocked_by_actor": 0,
+      "blocked_unknown": 0,
+      "idle_ab": 32,
+      "unclassified": 0,
+      "traced_turns": 30,
+      "wall_rate": 0.412903,
+      "worst_turns": [
+        {
+          "turn": 12,
+          "walls": 7,
+          "inputs": 12
+        },
+        {
+          "turn": 14,
+          "walls": 7,
+          "inputs": 11
+        },
+        {
+          "turn": 11,
+          "walls": 7,
+          "inputs": 10
+        },
+        {
+          "turn": 6,
+          "walls": 7,
+          "inputs": 8
+        },
+        {
+          "turn": 10,
+          "walls": 5,
+          "inputs": 9
+        },
+        {
+          "turn": 16,
+          "walls": 5,
+          "inputs": 8
+        },
+        {
+          "turn": 21,
+          "walls": 5,
+          "inputs": 6
+        },
+        {
+          "turn": 29,
+          "walls": 4,
+          "inputs": 7
+        },
+        {
+          "turn": 30,
+          "walls": 4,
+          "inputs": 6
+        },
+        {
+          "turn": 1,
+          "walls": 3,
+          "inputs": 5
+        }
+      ]
+    },
+    "progress": 0.7777777777777778,
+    "leg_gate": "left_bedroom",
+    "leg_fraction": 0.7777777777777778,
+    "leg_distance_min": 2,
+    "leg_distance_open": 9,
+    "termination_reason": "leg_cap:left_bedroom",
+    "projection_version": 15,
+    "continued_from": null,
+    "resumed": false,
+    "harness": "append_compact",
+    "max_turns": 10000000,
+    "has_recording": true,
+    "video_url": "https://pub-c54bf882c85d4fad83024b5791b99424.r2.dev/runs/2026-09-23_10-28-58_config-5.1__gpt-6-luna-xhigh/recording.mp4",
+    "video_view": "detailed",
+    "screenshots_base_url": null,
+    "trace_published": false,
+    "published_at": "2026-09-23T11:03:51+00:00"
+  },
+  {
     "run_id": "2026-09-23_10-04-13_config-5.1__gpt-6-luna-high",
     "label": null,
     "kind": "official",
