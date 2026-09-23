@@ -1,0 +1,595 @@
+{
+  "session": {
+    "llm_alias": "mimo-v2.6-pro(thinking)",
+    "llm_model": "xiaomi/mimo-v2.6-pro",
+    "thinking": {
+      "enabled": true
+    },
+    "fallback_models": [],
+    "task": "Your goal is to earn the Boulder Badge by defeating Brock, the Pewter City Gym Leader, in as few turns as possible — you're measured on fewest player turns.",
+    "total_turns": 152,
+    "player_turns": 152,
+    "task_master_turns": 0,
+    "duration_seconds": 33472.2,
+    "resumed": false,
+    "segment": {
+      "continued_from": null,
+      "resumed_at_turn": null,
+      "prior_duration_s": 0.0,
+      "segment_duration_s": 33472.2,
+      "segment_player_turns": 152
+    },
+    "started_at": "2026-09-22T19:28:58"
+  },
+  "cost": {
+    "total_usd": 2.355989,
+    "llm_usd": 2.315399,
+    "ocr_usd": 0.040589,
+    "task_master_usd": 0.0,
+    "total_input_tokens": 12052996,
+    "total_output_tokens": 909291,
+    "per_turn": []
+  },
+  "agent_type": "append_compact",
+  "conversation": {
+    "segment": 8,
+    "completed_game_turns": 152,
+    "compactions": 7,
+    "cache": {
+      "attempts": 167,
+      "measured_attempts": 165,
+      "cached_tokens": 8620160,
+      "measured_input_tokens": 12052996,
+      "input_read_fraction": 0.7151881573676785,
+      "request_hit_fraction": 0.9515151515151515,
+      "economics": {
+        "verdict": "unknown",
+        "saved_usd": null,
+        "discount_fraction": null
+      }
+    }
+  },
+  "max_turns": 10000000,
+  "referee": {
+    "checkpoints": {
+      "left_bedroom": 2,
+      "left_house": 5,
+      "oaks_lab_entered": 11,
+      "starter_chosen": 18,
+      "rival1_done": 38,
+      "route1_reached": 41,
+      "viridian_reached": 102,
+      "parcel_delivered": null,
+      "pokedex_received": null,
+      "viridian_forest_reached": null,
+      "pewter_reached": null,
+      "brock_defeated": null
+    },
+    "gates": [
+      {
+        "kind": "single",
+        "id": "left_bedroom",
+        "name": "Left the bedroom",
+        "type": "map",
+        "deadline_turn": null,
+        "leg_cap_turns": 30,
+        "leg_turns": 2,
+        "turn": 2,
+        "status": "done"
+      },
+      {
+        "kind": "single",
+        "id": "left_house",
+        "name": "Stepped outside in Pallet Town",
+        "type": "map",
+        "deadline_turn": null,
+        "leg_cap_turns": 30,
+        "leg_turns": 3,
+        "turn": 5,
+        "status": "done"
+      },
+      {
+        "kind": "single",
+        "id": "oaks_lab_entered",
+        "name": "Entered Oak's Lab",
+        "type": "var",
+        "deadline_turn": null,
+        "leg_cap_turns": 30,
+        "leg_turns": 6,
+        "turn": 11,
+        "status": "done"
+      },
+      {
+        "kind": "single",
+        "id": "starter_chosen",
+        "name": "Chose a starter",
+        "type": "flag",
+        "deadline_turn": null,
+        "leg_cap_turns": 30,
+        "leg_turns": 7,
+        "turn": 18,
+        "status": "done"
+      },
+      {
+        "kind": "single",
+        "id": "rival1_done",
+        "name": "First rival battle done",
+        "type": "flag",
+        "deadline_turn": null,
+        "leg_cap_turns": 30,
+        "leg_turns": 20,
+        "turn": 38,
+        "status": "done"
+      },
+      {
+        "kind": "single",
+        "id": "route1_reached",
+        "name": "Reached Route 1",
+        "type": "map",
+        "deadline_turn": null,
+        "leg_cap_turns": 30,
+        "leg_turns": 3,
+        "turn": 41,
+        "status": "done"
+      },
+      {
+        "kind": "single",
+        "id": "viridian_reached",
+        "name": "Reached Viridian City",
+        "type": "map",
+        "deadline_turn": null,
+        "leg_cap_turns": 100,
+        "leg_turns": 61,
+        "turn": 102,
+        "status": "done"
+      },
+      {
+        "kind": "single",
+        "id": "parcel_delivered",
+        "name": "Received Oak's Parcel",
+        "type": "var",
+        "deadline_turn": null,
+        "leg_cap_turns": 50,
+        "leg_turns": 50,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "pokedex_received",
+        "name": "Received the Pokédex",
+        "type": "flag",
+        "deadline_turn": null,
+        "leg_cap_turns": 100,
+        "leg_turns": null,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "viridian_forest_reached",
+        "name": "Entered Viridian Forest",
+        "type": "map",
+        "deadline_turn": null,
+        "leg_cap_turns": 150,
+        "leg_turns": null,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "pewter_reached",
+        "name": "Reached Pewter City",
+        "type": "map",
+        "deadline_turn": null,
+        "leg_cap_turns": 300,
+        "leg_turns": null,
+        "turn": null,
+        "status": "pending"
+      },
+      {
+        "kind": "single",
+        "id": "brock_defeated",
+        "name": "Defeated Brock (Boulder Badge)",
+        "type": "flag",
+        "deadline_turn": null,
+        "leg_cap_turns": 100,
+        "leg_turns": null,
+        "turn": null,
+        "status": "pending"
+      }
+    ],
+    "furthest": "viridian_reached",
+    "first_unmet": "parcel_delivered",
+    "autofilled": [],
+    "termination_reason": "leg_cap:parcel_delivered",
+    "progress": {
+      "progress": 7.142857142857143,
+      "gates_reached": 7,
+      "total_gates": 12,
+      "current_leg": {
+        "index": 7,
+        "node_id": "parcel_delivered",
+        "name": "Received Oak's Parcel",
+        "status": "open",
+        "scored": true,
+        "opened_turn": 102,
+        "closed_turn": null,
+        "d_open": 28,
+        "d_min": 24,
+        "distance_now": 29,
+        "fraction": 0.1428571428571429,
+        "steps_walked": 209,
+        "walls_hit": 171,
+        "charged_steps": 380,
+        "tiles_seen": 27,
+        "off_graph": 0,
+        "efficiency": null,
+        "steps_source": "trace",
+        "traced_turns": 50
+      },
+      "legs": [
+        {
+          "index": 0,
+          "node_id": "left_bedroom",
+          "name": "Left the bedroom",
+          "status": "closed",
+          "scored": true,
+          "opened_turn": 0,
+          "closed_turn": 2,
+          "d_open": 9,
+          "d_min": 1,
+          "distance_now": 1,
+          "fraction": 0.8888888888888888,
+          "steps_walked": 12,
+          "walls_hit": 2,
+          "charged_steps": 14,
+          "tiles_seen": 3,
+          "off_graph": 0,
+          "efficiency": 0.6428571428571429,
+          "steps_source": "trace",
+          "traced_turns": 2
+        },
+        {
+          "index": 1,
+          "node_id": "left_house",
+          "name": "Stepped outside in Pallet Town",
+          "status": "closed",
+          "scored": true,
+          "opened_turn": 2,
+          "closed_turn": 5,
+          "d_open": 11,
+          "d_min": 4,
+          "distance_now": 8,
+          "fraction": 0.6363636363636364,
+          "steps_walked": 48,
+          "walls_hit": 20,
+          "charged_steps": 68,
+          "tiles_seen": 4,
+          "off_graph": 0,
+          "efficiency": 0.16176470588235295,
+          "steps_source": "trace",
+          "traced_turns": 3
+        },
+        {
+          "index": 2,
+          "node_id": "oaks_lab_entered",
+          "name": "Entered Oak's Lab",
+          "status": "closed",
+          "scored": true,
+          "opened_turn": 5,
+          "closed_turn": 11,
+          "d_open": 20,
+          "d_min": 0,
+          "distance_now": 27,
+          "fraction": 1.0,
+          "steps_walked": 59,
+          "walls_hit": 62,
+          "charged_steps": 121,
+          "tiles_seen": 7,
+          "off_graph": 0,
+          "efficiency": 0.1652892561983471,
+          "steps_source": "trace",
+          "traced_turns": 6
+        },
+        {
+          "index": 3,
+          "node_id": "starter_chosen",
+          "name": "Chose a starter",
+          "status": "closed",
+          "scored": true,
+          "opened_turn": 11,
+          "closed_turn": 18,
+          "d_open": 4,
+          "d_min": 0,
+          "distance_now": 0,
+          "fraction": 1.0,
+          "steps_walked": 14,
+          "walls_hit": 3,
+          "charged_steps": 17,
+          "tiles_seen": 4,
+          "off_graph": 0,
+          "efficiency": 0.23529411764705882,
+          "steps_source": "trace",
+          "traced_turns": 7
+        },
+        {
+          "index": 4,
+          "node_id": "rival1_done",
+          "name": "First rival battle done",
+          "status": "closed",
+          "scored": true,
+          "opened_turn": 18,
+          "closed_turn": 38,
+          "d_open": 7,
+          "d_min": 0,
+          "distance_now": 6,
+          "fraction": 1.0,
+          "steps_walked": 48,
+          "walls_hit": 41,
+          "charged_steps": 89,
+          "tiles_seen": 6,
+          "off_graph": 0,
+          "efficiency": 0.07865168539325842,
+          "steps_source": "trace",
+          "traced_turns": 20
+        },
+        {
+          "index": 5,
+          "node_id": "route1_reached",
+          "name": "Reached Route 1",
+          "status": "closed",
+          "scored": true,
+          "opened_turn": 38,
+          "closed_turn": 41,
+          "d_open": 19,
+          "d_min": 3,
+          "distance_now": 3,
+          "fraction": 0.8421052631578947,
+          "steps_walked": 27,
+          "walls_hit": 8,
+          "charged_steps": 35,
+          "tiles_seen": 4,
+          "off_graph": 0,
+          "efficiency": 0.5428571428571428,
+          "steps_source": "trace",
+          "traced_turns": 3
+        },
+        {
+          "index": 6,
+          "node_id": "viridian_reached",
+          "name": "Reached Viridian City",
+          "status": "closed",
+          "scored": true,
+          "opened_turn": 41,
+          "closed_turn": 102,
+          "d_open": 57,
+          "d_min": 6,
+          "distance_now": 6,
+          "fraction": 0.8947368421052632,
+          "steps_walked": 260,
+          "walls_hit": 439,
+          "charged_steps": 699,
+          "tiles_seen": 29,
+          "off_graph": 0,
+          "efficiency": 0.0815450643776824,
+          "steps_source": "trace",
+          "traced_turns": 61
+        },
+        {
+          "index": 7,
+          "node_id": "parcel_delivered",
+          "name": "Received Oak's Parcel",
+          "status": "open",
+          "scored": true,
+          "opened_turn": 102,
+          "closed_turn": null,
+          "d_open": 28,
+          "d_min": 24,
+          "distance_now": 29,
+          "fraction": 0.1428571428571429,
+          "steps_walked": 209,
+          "walls_hit": 171,
+          "charged_steps": 380,
+          "tiles_seen": 27,
+          "off_graph": 0,
+          "efficiency": null,
+          "steps_source": "trace",
+          "traced_turns": 50
+        }
+      ],
+      "graph": {
+        "loaded": true,
+        "source": "pret/pokefirered@c75f352304d529f6ba92d4f74b9cf8b5c3810788",
+        "nodes": 8473
+      },
+      "positions_recorded": 153
+    },
+    "battles": {
+      "available": true,
+      "polls": 153,
+      "battles_total": 4,
+      "wild": {
+        "count": 3,
+        "turns": 3,
+        "segments": 3
+      },
+      "trainer": {
+        "count": 1,
+        "turns": 4,
+        "defeated": [
+          327
+        ]
+      },
+      "trainers": [
+        {
+          "group": "rival_oaks_lab",
+          "id": 327,
+          "name": "Rival (Oak's Lab)",
+          "attempts": 1,
+          "turns": 4,
+          "won": true,
+          "mandatory": true
+        }
+      ],
+      "flags_without_battle": [],
+      "turns_started_in_battle": 7,
+      "turns_polled": 153,
+      "segments": [
+        {
+          "kind": "trainer",
+          "opened_turn": 34,
+          "closed_turn": 38,
+          "turns": 4,
+          "turn_list": [
+            35,
+            36,
+            37,
+            38
+          ],
+          "trainer_id": 327,
+          "won": true,
+          "group": "rival_oaks_lab",
+          "name": "Rival (Oak's Lab)",
+          "outcome": "won",
+          "foe": {
+            "species": 1,
+            "level": 5,
+            "hp": 0,
+            "max_hp": 19
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 46,
+          "closed_turn": 47,
+          "turns": 1,
+          "turn_list": [
+            47
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 19,
+            "level": 3,
+            "hp": 15,
+            "max_hp": 15
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 77,
+          "closed_turn": 78,
+          "turns": 1,
+          "turn_list": [
+            78
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 19,
+            "level": 3,
+            "hp": 15,
+            "max_hp": 15
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 99,
+          "closed_turn": 100,
+          "turns": 1,
+          "turn_list": [
+            100
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 19,
+            "level": 3,
+            "hp": 15,
+            "max_hp": 15
+          }
+        }
+      ]
+    },
+    "inputs": {
+      "inputs": 2312,
+      "overworld_steps": 676,
+      "inputs_lost": 1110,
+      "moved_inputs": 651,
+      "battle_inputs": 82,
+      "battle_edge": 7,
+      "walls_hit": 746,
+      "turns_to_face": 218,
+      "blocked_by_actor": 135,
+      "blocked_unknown": 11,
+      "idle_ab": 462,
+      "unclassified": 0,
+      "traced_turns": 152,
+      "overworld_inputs": 2230,
+      "wall_rate": 0.334529,
+      "worst_turns": [
+        {
+          "turn": 7,
+          "walls": 35,
+          "inputs": 48
+        },
+        {
+          "turn": 107,
+          "walls": 19,
+          "inputs": 42
+        },
+        {
+          "turn": 8,
+          "walls": 19,
+          "inputs": 26
+        },
+        {
+          "turn": 125,
+          "walls": 17,
+          "inputs": 29
+        },
+        {
+          "turn": 31,
+          "walls": 16,
+          "inputs": 25
+        },
+        {
+          "turn": 99,
+          "walls": 15,
+          "inputs": 44
+        },
+        {
+          "turn": 58,
+          "walls": 15,
+          "inputs": 18
+        },
+        {
+          "turn": 3,
+          "walls": 14,
+          "inputs": 48
+        },
+        {
+          "turn": 70,
+          "walls": 14,
+          "inputs": 24
+        },
+        {
+          "turn": 59,
+          "walls": 14,
+          "inputs": 18
+        }
+      ]
+    }
+  },
+  "status": "terminated",
+  "run_id": "2026-09-22_19-28-56_config-5.1__mimo-v2-6-pro-thinking",
+  "kind": "official",
+  "continued_from": null,
+  "benchmark": "pokebench-first-badge",
+  "benchmark_version": "pokebench-v1.1",
+  "ended_at": "2026-09-23T04:46:51"
+}
