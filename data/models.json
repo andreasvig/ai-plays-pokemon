@@ -122,6 +122,21 @@
     "released": "2026-09-04"
   },
   {
+    "model": "gpt-6-luna",
+    "openrouter_id": "openai/gpt-6-luna",
+    "vendor": "openai",
+    "reasoning_type": "effort",
+    "thinking_levels": [
+      "max",
+      "xhigh",
+      "high",
+      "medium",
+      "low",
+      "none"
+    ],
+    "released": "2026-09-22"
+  },
+  {
     "model": "grok-4.6",
     "openrouter_id": "x-ai/grok-4.6",
     "vendor": "x-ai",
