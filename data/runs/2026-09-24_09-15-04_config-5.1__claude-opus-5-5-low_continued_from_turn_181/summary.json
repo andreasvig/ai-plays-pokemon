@@ -1,0 +1,1705 @@
+{
+  "session": {
+    "llm_alias": "claude-opus-5.5(low)",
+    "llm_model": "anthropic/claude-opus-5.5",
+    "thinking": {
+      "effort": "low"
+    },
+    "fallback_models": [],
+    "task": "Your goal is to earn the Boulder Badge by defeating Brock, the Pewter City Gym Leader, in as few turns as possible — you're measured on fewest player turns. A gate only counts once the game has PROCESSED it: while a message box is still open the event has not registered, so closing it is part of the action, not an extra turn.",
+    "total_turns": 319,
+    "player_turns": 319,
+    "task_master_turns": 0,
+    "duration_seconds": 12630.6,
+    "resumed": true,
+    "segment": {
+      "continued_from": "2026-09-23_18-49-49_config-5.1__claude-opus-5-5-low_continued_from_turn_180",
+      "resumed_at_turn": 181,
+      "prior_duration_s": 8860.1,
+      "segment_duration_s": 3770.5,
+      "segment_player_turns": 138
+    },
+    "started_at": "2026-09-24T09:15:13"
+  },
+  "cost": {
+    "total_usd": 7.740919,
+    "llm_usd": 7.553352,
+    "ocr_usd": 0.187566,
+    "task_master_usd": 0.0,
+    "total_input_tokens": 9209736,
+    "total_output_tokens": 89260,
+    "per_turn": []
+  },
+  "agent_type": "append_compact",
+  "conversation": {
+    "segment": 16,
+    "completed_game_turns": 319,
+    "compactions": 15,
+    "cache": {
+      "attempts": 357,
+      "measured_attempts": 352,
+      "cached_tokens": 8377565,
+      "measured_input_tokens": 9179476,
+      "input_read_fraction": 0.9126408740542489,
+      "request_hit_fraction": 0.9517045454545454,
+      "economics": {
+        "verdict": "unknown",
+        "saved_usd": null,
+        "discount_fraction": null
+      }
+    }
+  },
+  "max_turns": 10000000,
+  "referee": {
+    "checkpoints": {
+      "left_bedroom": 3,
+      "left_house": 5,
+      "oaks_lab_entered": 9,
+      "starter_chosen": 12,
+      "rival1_done": 17,
+      "route1_reached": 22,
+      "viridian_reached": 38,
+      "parcel_delivered": 44,
+      "pokedex_received": 62,
+      "viridian_forest_reached": 92,
+      "pewter_reached": 296,
+      "brock_defeated": 319
+    },
+    "gates": [
+      {
+        "kind": "single",
+        "id": "left_bedroom",
+        "name": "Left the bedroom",
+        "type": "map",
+        "deadline_turn": null,
+        "leg_cap_turns": 30,
+        "leg_turns": 3,
+        "turn": 3,
+        "status": "done"
+      },
+      {
+        "kind": "single",
+        "id": "left_house",
+        "name": "Stepped outside in Pallet Town",
+        "type": "map",
+        "deadline_turn": null,
+        "leg_cap_turns": 30,
+        "leg_turns": 2,
+        "turn": 5,
+        "status": "done"
+      },
+      {
+        "kind": "single",
+        "id": "oaks_lab_entered",
+        "name": "Entered Oak's Lab",
+        "type": "var",
+        "deadline_turn": null,
+        "leg_cap_turns": 30,
+        "leg_turns": 4,
+        "turn": 9,
+        "status": "done"
+      },
+      {
+        "kind": "single",
+        "id": "starter_chosen",
+        "name": "Chose a starter",
+        "type": "flag",
+        "deadline_turn": null,
+        "leg_cap_turns": 30,
+        "leg_turns": 3,
+        "turn": 12,
+        "status": "done"
+      },
+      {
+        "kind": "single",
+        "id": "rival1_done",
+        "name": "First rival battle done",
+        "type": "flag",
+        "deadline_turn": null,
+        "leg_cap_turns": 30,
+        "leg_turns": 5,
+        "turn": 17,
+        "status": "done"
+      },
+      {
+        "kind": "single",
+        "id": "route1_reached",
+        "name": "Reached Route 1",
+        "type": "map",
+        "deadline_turn": null,
+        "leg_cap_turns": 30,
+        "leg_turns": 5,
+        "turn": 22,
+        "status": "done"
+      },
+      {
+        "kind": "single",
+        "id": "viridian_reached",
+        "name": "Reached Viridian City",
+        "type": "map",
+        "deadline_turn": null,
+        "leg_cap_turns": 100,
+        "leg_turns": 16,
+        "turn": 38,
+        "status": "done"
+      },
+      {
+        "kind": "single",
+        "id": "parcel_delivered",
+        "name": "Received Oak's Parcel",
+        "type": "var",
+        "deadline_turn": null,
+        "leg_cap_turns": 50,
+        "leg_turns": 6,
+        "turn": 44,
+        "status": "done"
+      },
+      {
+        "kind": "single",
+        "id": "pokedex_received",
+        "name": "Received the Pokédex",
+        "type": "flag",
+        "deadline_turn": null,
+        "leg_cap_turns": 100,
+        "leg_turns": 18,
+        "turn": 62,
+        "status": "done"
+      },
+      {
+        "kind": "single",
+        "id": "viridian_forest_reached",
+        "name": "Entered Viridian Forest",
+        "type": "map",
+        "deadline_turn": null,
+        "leg_cap_turns": 150,
+        "leg_turns": 30,
+        "turn": 92,
+        "status": "done"
+      },
+      {
+        "kind": "single",
+        "id": "pewter_reached",
+        "name": "Reached Pewter City",
+        "type": "map",
+        "deadline_turn": null,
+        "leg_cap_turns": 300,
+        "leg_turns": 204,
+        "turn": 296,
+        "status": "done"
+      },
+      {
+        "kind": "single",
+        "id": "brock_defeated",
+        "name": "Defeated Brock (Boulder Badge)",
+        "type": "flag",
+        "deadline_turn": null,
+        "leg_cap_turns": 100,
+        "leg_turns": 23,
+        "turn": 319,
+        "status": "done"
+      }
+    ],
+    "furthest": "brock_defeated",
+    "first_unmet": null,
+    "autofilled": [],
+    "termination_reason": null,
+    "progress": {
+      "progress": 12.0,
+      "gates_reached": 12,
+      "total_gates": 12,
+      "current_leg": null,
+      "legs": [
+        {
+          "index": 0,
+          "node_id": "left_bedroom",
+          "name": "Left the bedroom",
+          "status": "closed",
+          "scored": true,
+          "opened_turn": 0,
+          "closed_turn": 3,
+          "d_open": 9,
+          "d_min": 0,
+          "distance_now": 0,
+          "fraction": 1.0,
+          "steps_walked": 9,
+          "walls_hit": 0,
+          "charged_steps": 9,
+          "tiles_seen": 3,
+          "off_graph": 0,
+          "efficiency": 1.0,
+          "steps_source": "trace",
+          "traced_turns": 3
+        },
+        {
+          "index": 1,
+          "node_id": "left_house",
+          "name": "Stepped outside in Pallet Town",
+          "status": "closed",
+          "scored": true,
+          "opened_turn": 3,
+          "closed_turn": 5,
+          "d_open": 12,
+          "d_min": 1,
+          "distance_now": 1,
+          "fraction": 0.9166666666666666,
+          "steps_walked": 14,
+          "walls_hit": 1,
+          "charged_steps": 15,
+          "tiles_seen": 3,
+          "off_graph": 0,
+          "efficiency": 0.8,
+          "steps_source": "trace",
+          "traced_turns": 2
+        },
+        {
+          "index": 2,
+          "node_id": "oaks_lab_entered",
+          "name": "Entered Oak's Lab",
+          "status": "closed",
+          "scored": true,
+          "opened_turn": 5,
+          "closed_turn": 9,
+          "d_open": 13,
+          "d_min": 0,
+          "distance_now": 27,
+          "fraction": 1.0,
+          "steps_walked": 42,
+          "walls_hit": 7,
+          "charged_steps": 49,
+          "tiles_seen": 5,
+          "off_graph": 0,
+          "efficiency": 0.2653061224489796,
+          "steps_source": "trace",
+          "traced_turns": 4
+        },
+        {
+          "index": 3,
+          "node_id": "starter_chosen",
+          "name": "Chose a starter",
+          "status": "closed",
+          "scored": true,
+          "opened_turn": 9,
+          "closed_turn": 12,
+          "d_open": 1,
+          "d_min": 0,
+          "distance_now": 0,
+          "fraction": 1.0,
+          "steps_walked": 1,
+          "walls_hit": 0,
+          "charged_steps": 1,
+          "tiles_seen": 2,
+          "off_graph": 0,
+          "efficiency": 1.0,
+          "steps_source": "trace",
+          "traced_turns": 3
+        },
+        {
+          "index": 4,
+          "node_id": "rival1_done",
+          "name": "First rival battle done",
+          "status": "closed",
+          "scored": true,
+          "opened_turn": 12,
+          "closed_turn": 17,
+          "d_open": 4,
+          "d_min": 0,
+          "distance_now": 4,
+          "fraction": 1.0,
+          "steps_walked": 8,
+          "walls_hit": 0,
+          "charged_steps": 8,
+          "tiles_seen": 3,
+          "off_graph": 0,
+          "efficiency": 0.5,
+          "steps_source": "trace",
+          "traced_turns": 5
+        },
+        {
+          "index": 5,
+          "node_id": "route1_reached",
+          "name": "Reached Route 1",
+          "status": "closed",
+          "scored": true,
+          "opened_turn": 17,
+          "closed_turn": 22,
+          "d_open": 21,
+          "d_min": 5,
+          "distance_now": 5,
+          "fraction": 0.7619047619047619,
+          "steps_walked": 40,
+          "walls_hit": 2,
+          "charged_steps": 42,
+          "tiles_seen": 6,
+          "off_graph": 0,
+          "efficiency": 0.5,
+          "steps_source": "trace",
+          "traced_turns": 5
+        },
+        {
+          "index": 6,
+          "node_id": "viridian_reached",
+          "name": "Reached Viridian City",
+          "status": "closed",
+          "scored": true,
+          "opened_turn": 22,
+          "closed_turn": 38,
+          "d_open": 55,
+          "d_min": 6,
+          "distance_now": 6,
+          "fraction": 0.8909090909090909,
+          "steps_walked": 83,
+          "walls_hit": 27,
+          "charged_steps": 110,
+          "tiles_seen": 12,
+          "off_graph": 0,
+          "efficiency": 0.5,
+          "steps_source": "trace",
+          "traced_turns": 16
+        },
+        {
+          "index": 7,
+          "node_id": "parcel_delivered",
+          "name": "Received Oak's Parcel",
+          "status": "closed",
+          "scored": true,
+          "opened_turn": 38,
+          "closed_turn": 44,
+          "d_open": 35,
+          "d_min": 4,
+          "distance_now": 4,
+          "fraction": 0.8857142857142857,
+          "steps_walked": 59,
+          "walls_hit": 0,
+          "charged_steps": 59,
+          "tiles_seen": 7,
+          "off_graph": 0,
+          "efficiency": 0.5932203389830508,
+          "steps_source": "trace",
+          "traced_turns": 6
+        },
+        {
+          "index": 8,
+          "node_id": "pokedex_received",
+          "name": "Received the Pokédex",
+          "status": "closed",
+          "scored": true,
+          "opened_turn": 44,
+          "closed_turn": 62,
+          "d_open": 107,
+          "d_min": 0,
+          "distance_now": 0,
+          "fraction": 1.0,
+          "steps_walked": 111,
+          "walls_hit": 10,
+          "charged_steps": 121,
+          "tiles_seen": 15,
+          "off_graph": 0,
+          "efficiency": 0.8842975206611571,
+          "steps_source": "trace",
+          "traced_turns": 18
+        },
+        {
+          "index": 9,
+          "node_id": "viridian_forest_reached",
+          "name": "Entered Viridian Forest",
+          "status": "closed",
+          "scored": true,
+          "opened_turn": 62,
+          "closed_turn": 92,
+          "d_open": 186,
+          "d_min": 0,
+          "distance_now": 0,
+          "fraction": 1.0,
+          "steps_walked": 225,
+          "walls_hit": 15,
+          "charged_steps": 240,
+          "tiles_seen": 24,
+          "off_graph": 0,
+          "efficiency": 0.775,
+          "steps_source": "trace",
+          "traced_turns": 30
+        },
+        {
+          "index": 10,
+          "node_id": "pewter_reached",
+          "name": "Reached Pewter City",
+          "status": "closed",
+          "scored": true,
+          "opened_turn": 92,
+          "closed_turn": 296,
+          "d_open": 167,
+          "d_min": 4,
+          "distance_now": 4,
+          "fraction": 0.9760479041916168,
+          "steps_walked": 942,
+          "walls_hit": 122,
+          "charged_steps": 1064,
+          "tiles_seen": 113,
+          "off_graph": 0,
+          "efficiency": 0.15695488721804512,
+          "steps_source": "trace",
+          "traced_turns": 204
+        },
+        {
+          "index": 11,
+          "node_id": "brock_defeated",
+          "name": "Defeated Brock (Boulder Badge)",
+          "status": "closed",
+          "scored": true,
+          "opened_turn": 296,
+          "closed_turn": 319,
+          "d_open": 60,
+          "d_min": 0,
+          "distance_now": 0,
+          "fraction": 1.0,
+          "steps_walked": 68,
+          "walls_hit": 10,
+          "charged_steps": 78,
+          "tiles_seen": 10,
+          "off_graph": 0,
+          "efficiency": 0.7692307692307693,
+          "steps_source": "trace",
+          "traced_turns": 23
+        }
+      ],
+      "graph": {
+        "loaded": true,
+        "source": "pret/pokefirered@c75f352304d529f6ba92d4f74b9cf8b5c3810788",
+        "nodes": 8473
+      },
+      "positions_recorded": 320
+    },
+    "battles": {
+      "available": true,
+      "polls": 320,
+      "battles_total": 56,
+      "wild": {
+        "count": 49,
+        "turns": 54,
+        "segments": 49
+      },
+      "trainer": {
+        "count": 7,
+        "turns": 42,
+        "defeated": [
+          102,
+          104,
+          142,
+          328,
+          414,
+          531
+        ]
+      },
+      "trainers": [
+        {
+          "group": "102",
+          "id": 102,
+          "name": "Bug Catcher Rick",
+          "attempts": 1,
+          "turns": 8,
+          "won": true,
+          "mandatory": false
+        },
+        {
+          "group": "104",
+          "id": 104,
+          "name": "Bug Catcher Sammy",
+          "attempts": 1,
+          "turns": 4,
+          "won": true,
+          "mandatory": false
+        },
+        {
+          "group": "142",
+          "id": 142,
+          "name": "Camper Liam",
+          "attempts": 1,
+          "turns": 4,
+          "won": true,
+          "mandatory": false
+        },
+        {
+          "group": "rival_oaks_lab",
+          "id": 328,
+          "name": "Rival (Oak's Lab)",
+          "attempts": 1,
+          "turns": 4,
+          "won": true,
+          "mandatory": true
+        },
+        {
+          "group": "414",
+          "id": 414,
+          "name": "Leader Brock",
+          "attempts": 1,
+          "turns": 9,
+          "won": true,
+          "mandatory": true
+        },
+        {
+          "group": "531",
+          "id": 531,
+          "name": "Bug Catcher Anthony",
+          "attempts": 2,
+          "turns": 13,
+          "won": true,
+          "mandatory": false
+        }
+      ],
+      "flags_without_battle": [],
+      "turns_started_in_battle": 97,
+      "turns_polled": 320,
+      "segments": [
+        {
+          "kind": "trainer",
+          "opened_turn": 13,
+          "closed_turn": 17,
+          "turns": 4,
+          "turn_list": [
+            14,
+            15,
+            16,
+            17
+          ],
+          "trainer_id": 328,
+          "won": true,
+          "group": "rival_oaks_lab",
+          "name": "Rival (Oak's Lab)",
+          "outcome": "won",
+          "foe": {
+            "species": 4,
+            "level": 5,
+            "hp": 0,
+            "max_hp": 18
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 25,
+          "closed_turn": 26,
+          "turns": 1,
+          "turn_list": [
+            26
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "won",
+          "foe": {
+            "species": 16,
+            "level": 3,
+            "hp": 15,
+            "max_hp": 15
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 31,
+          "closed_turn": 34,
+          "turns": 3,
+          "turn_list": [
+            32,
+            33,
+            34
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "won",
+          "foe": {
+            "species": 19,
+            "level": 3,
+            "hp": 0,
+            "max_hp": 15
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 35,
+          "closed_turn": 36,
+          "turns": 1,
+          "turn_list": [
+            36
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "won",
+          "foe": {
+            "species": 16,
+            "level": 3,
+            "hp": 15,
+            "max_hp": 15
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 53,
+          "closed_turn": 56,
+          "turns": 3,
+          "turn_list": [
+            54,
+            55,
+            56
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "won",
+          "foe": {
+            "species": 16,
+            "level": 3,
+            "hp": 4,
+            "max_hp": 15
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 71,
+          "closed_turn": 72,
+          "turns": 1,
+          "turn_list": [
+            72
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "won",
+          "foe": {
+            "species": 16,
+            "level": 3,
+            "hp": 16,
+            "max_hp": 16
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 74,
+          "closed_turn": 75,
+          "turns": 1,
+          "turn_list": [
+            75
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "won",
+          "foe": {
+            "species": 16,
+            "level": 3,
+            "hp": 16,
+            "max_hp": 16
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 89,
+          "closed_turn": 90,
+          "turns": 1,
+          "turn_list": [
+            90
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "won",
+          "foe": {
+            "species": 19,
+            "level": 2,
+            "hp": 13,
+            "max_hp": 13
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 94,
+          "closed_turn": 95,
+          "turns": 1,
+          "turn_list": [
+            95
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "won",
+          "foe": {
+            "species": 10,
+            "level": 4,
+            "hp": 17,
+            "max_hp": 17
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 97,
+          "closed_turn": 98,
+          "turns": 1,
+          "turn_list": [
+            98
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "won",
+          "foe": {
+            "species": 10,
+            "level": 3,
+            "hp": 16,
+            "max_hp": 16
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 101,
+          "closed_turn": 103,
+          "turns": 2,
+          "turn_list": [
+            102,
+            103
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "won",
+          "foe": {
+            "species": 13,
+            "level": 4,
+            "hp": 0,
+            "max_hp": 18
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 104,
+          "closed_turn": 105,
+          "turns": 1,
+          "turn_list": [
+            105
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 13,
+            "level": 4,
+            "hp": 17,
+            "max_hp": 17
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 117,
+          "closed_turn": 118,
+          "turns": 1,
+          "turn_list": [
+            118
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 10,
+            "level": 5,
+            "hp": 19,
+            "max_hp": 19
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 120,
+          "closed_turn": 121,
+          "turns": 1,
+          "turn_list": [
+            121
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 10,
+            "level": 5,
+            "hp": 21,
+            "max_hp": 21
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 123,
+          "closed_turn": 124,
+          "turns": 1,
+          "turn_list": [
+            124
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 10,
+            "level": 4,
+            "hp": 18,
+            "max_hp": 18
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 125,
+          "closed_turn": 126,
+          "turns": 1,
+          "turn_list": [
+            126
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 10,
+            "level": 4,
+            "hp": 18,
+            "max_hp": 18
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 127,
+          "closed_turn": 128,
+          "turns": 1,
+          "turn_list": [
+            128
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 13,
+            "level": 4,
+            "hp": 17,
+            "max_hp": 17
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 130,
+          "closed_turn": 131,
+          "turns": 1,
+          "turn_list": [
+            131
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 14,
+            "level": 5,
+            "hp": 21,
+            "max_hp": 21
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 132,
+          "closed_turn": 133,
+          "turns": 1,
+          "turn_list": [
+            133
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 13,
+            "level": 3,
+            "hp": 15,
+            "max_hp": 15
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 134,
+          "closed_turn": 135,
+          "turns": 1,
+          "turn_list": [
+            135
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 13,
+            "level": 4,
+            "hp": 17,
+            "max_hp": 17
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 136,
+          "closed_turn": 137,
+          "turns": 1,
+          "turn_list": [
+            137
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 10,
+            "level": 3,
+            "hp": 16,
+            "max_hp": 16
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 140,
+          "closed_turn": 141,
+          "turns": 1,
+          "turn_list": [
+            141
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 10,
+            "level": 4,
+            "hp": 18,
+            "max_hp": 18
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 142,
+          "closed_turn": 143,
+          "turns": 1,
+          "turn_list": [
+            143
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 13,
+            "level": 4,
+            "hp": 18,
+            "max_hp": 18
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 146,
+          "closed_turn": 147,
+          "turns": 1,
+          "turn_list": [
+            147
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 10,
+            "level": 3,
+            "hp": 16,
+            "max_hp": 16
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 148,
+          "closed_turn": 149,
+          "turns": 1,
+          "turn_list": [
+            149
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 10,
+            "level": 3,
+            "hp": 16,
+            "max_hp": 16
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 151,
+          "closed_turn": 152,
+          "turns": 1,
+          "turn_list": [
+            152
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 10,
+            "level": 3,
+            "hp": 16,
+            "max_hp": 16
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 153,
+          "closed_turn": 154,
+          "turns": 1,
+          "turn_list": [
+            154
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 13,
+            "level": 5,
+            "hp": 20,
+            "max_hp": 20
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 156,
+          "closed_turn": 157,
+          "turns": 1,
+          "turn_list": [
+            157
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 13,
+            "level": 4,
+            "hp": 17,
+            "max_hp": 17
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 158,
+          "closed_turn": 159,
+          "turns": 1,
+          "turn_list": [
+            159
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 10,
+            "level": 5,
+            "hp": 21,
+            "max_hp": 21
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 161,
+          "closed_turn": 162,
+          "turns": 1,
+          "turn_list": [
+            162
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 10,
+            "level": 4,
+            "hp": 18,
+            "max_hp": 18
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 164,
+          "closed_turn": 165,
+          "turns": 1,
+          "turn_list": [
+            165
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 13,
+            "level": 5,
+            "hp": 20,
+            "max_hp": 20
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 167,
+          "closed_turn": 168,
+          "turns": 1,
+          "turn_list": [
+            168
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 13,
+            "level": 4,
+            "hp": 18,
+            "max_hp": 18
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 169,
+          "closed_turn": 170,
+          "turns": 1,
+          "turn_list": [
+            170
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 13,
+            "level": 5,
+            "hp": 20,
+            "max_hp": 20
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 172,
+          "closed_turn": 173,
+          "turns": 1,
+          "turn_list": [
+            173
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 13,
+            "level": 4,
+            "hp": 18,
+            "max_hp": 18
+          }
+        },
+        {
+          "kind": "trainer",
+          "opened_turn": 175,
+          "closed_turn": 183,
+          "turns": 8,
+          "turn_list": [
+            176,
+            177,
+            178,
+            179,
+            180,
+            181,
+            182,
+            183
+          ],
+          "trainer_id": 102,
+          "won": true,
+          "group": "102",
+          "name": "Bug Catcher Rick",
+          "outcome": "won",
+          "foe": {
+            "species": 10,
+            "level": 6,
+            "hp": 0,
+            "max_hp": 21
+          }
+        },
+        {
+          "kind": "trainer",
+          "opened_turn": 190,
+          "closed_turn": 195,
+          "turns": 5,
+          "turn_list": [
+            191,
+            192,
+            193,
+            194,
+            195
+          ],
+          "trainer_id": 531,
+          "won": false,
+          "group": "531",
+          "name": "Bug Catcher Anthony",
+          "outcome": "lost",
+          "foe": {
+            "species": 10,
+            "level": 8,
+            "hp": 11,
+            "max_hp": 25
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 205,
+          "closed_turn": 206,
+          "turns": 1,
+          "turn_list": [
+            206
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 19,
+            "level": 3,
+            "hp": 15,
+            "max_hp": 15
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 211,
+          "closed_turn": 212,
+          "turns": 1,
+          "turn_list": [
+            212
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 19,
+            "level": 3,
+            "hp": 15,
+            "max_hp": 15
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 231,
+          "closed_turn": 232,
+          "turns": 1,
+          "turn_list": [
+            232
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 25,
+            "level": 3,
+            "hp": 15,
+            "max_hp": 15
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 234,
+          "closed_turn": 235,
+          "turns": 1,
+          "turn_list": [
+            235
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 10,
+            "level": 4,
+            "hp": 18,
+            "max_hp": 18
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 236,
+          "closed_turn": 237,
+          "turns": 1,
+          "turn_list": [
+            237
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 10,
+            "level": 3,
+            "hp": 15,
+            "max_hp": 15
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 238,
+          "closed_turn": 239,
+          "turns": 1,
+          "turn_list": [
+            239
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 10,
+            "level": 3,
+            "hp": 16,
+            "max_hp": 16
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 240,
+          "closed_turn": 241,
+          "turns": 1,
+          "turn_list": [
+            241
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 14,
+            "level": 4,
+            "hp": 18,
+            "max_hp": 18
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 243,
+          "closed_turn": 244,
+          "turns": 1,
+          "turn_list": [
+            244
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 10,
+            "level": 4,
+            "hp": 17,
+            "max_hp": 17
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 246,
+          "closed_turn": 247,
+          "turns": 1,
+          "turn_list": [
+            247
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 10,
+            "level": 4,
+            "hp": 18,
+            "max_hp": 18
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 248,
+          "closed_turn": 249,
+          "turns": 1,
+          "turn_list": [
+            249
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 10,
+            "level": 4,
+            "hp": 18,
+            "max_hp": 18
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 251,
+          "closed_turn": 252,
+          "turns": 1,
+          "turn_list": [
+            252
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 13,
+            "level": 4,
+            "hp": 17,
+            "max_hp": 17
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 255,
+          "closed_turn": 256,
+          "turns": 1,
+          "turn_list": [
+            256
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 14,
+            "level": 4,
+            "hp": 18,
+            "max_hp": 18
+          }
+        },
+        {
+          "kind": "trainer",
+          "opened_turn": 262,
+          "closed_turn": 270,
+          "turns": 8,
+          "turn_list": [
+            263,
+            264,
+            265,
+            266,
+            267,
+            268,
+            269,
+            270
+          ],
+          "trainer_id": 531,
+          "won": true,
+          "group": "531",
+          "name": "Bug Catcher Anthony",
+          "outcome": "won",
+          "foe": {
+            "species": 10,
+            "level": 8,
+            "hp": 0,
+            "max_hp": 25
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 275,
+          "closed_turn": 276,
+          "turns": 1,
+          "turn_list": [
+            276
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 13,
+            "level": 3,
+            "hp": 15,
+            "max_hp": 15
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 281,
+          "closed_turn": 282,
+          "turns": 1,
+          "turn_list": [
+            282
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 10,
+            "level": 4,
+            "hp": 18,
+            "max_hp": 18
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 283,
+          "closed_turn": 284,
+          "turns": 1,
+          "turn_list": [
+            284
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 13,
+            "level": 4,
+            "hp": 17,
+            "max_hp": 17
+          }
+        },
+        {
+          "kind": "wild",
+          "opened_turn": 286,
+          "closed_turn": 287,
+          "turns": 1,
+          "turn_list": [
+            287
+          ],
+          "trainer_id": null,
+          "won": null,
+          "outcome": "ran",
+          "foe": {
+            "species": 25,
+            "level": 3,
+            "hp": 15,
+            "max_hp": 15
+          }
+        },
+        {
+          "kind": "trainer",
+          "opened_turn": 289,
+          "closed_turn": 293,
+          "turns": 4,
+          "turn_list": [
+            290,
+            291,
+            292,
+            293
+          ],
+          "trainer_id": 104,
+          "won": true,
+          "group": "104",
+          "name": "Bug Catcher Sammy",
+          "outcome": "won",
+          "foe": {
+            "species": 13,
+            "level": 9,
+            "hp": 0,
+            "max_hp": 26
+          }
+        },
+        {
+          "kind": "trainer",
+          "opened_turn": 305,
+          "closed_turn": 309,
+          "turns": 4,
+          "turn_list": [
+            306,
+            307,
+            308,
+            309
+          ],
+          "trainer_id": 142,
+          "won": true,
+          "group": "142",
+          "name": "Camper Liam",
+          "outcome": "won",
+          "foe": {
+            "species": 27,
+            "level": 11,
+            "hp": 0,
+            "max_hp": 32
+          }
+        },
+        {
+          "kind": "trainer",
+          "opened_turn": 310,
+          "closed_turn": 319,
+          "turns": 9,
+          "turn_list": [
+            311,
+            312,
+            313,
+            314,
+            315,
+            316,
+            317,
+            318,
+            319
+          ],
+          "trainer_id": 414,
+          "won": true,
+          "group": "414",
+          "name": "Leader Brock",
+          "outcome": "won",
+          "foe": {
+            "species": 95,
+            "level": 14,
+            "hp": 0,
+            "max_hp": 33
+          }
+        }
+      ]
+    },
+    "inputs": {
+      "inputs": 3018,
+      "overworld_steps": 1591,
+      "inputs_lost": 339,
+      "moved_inputs": 1564,
+      "battle_inputs": 784,
+      "battle_edge": 94,
+      "walls_hit": 194,
+      "turns_to_face": 55,
+      "blocked_by_actor": 67,
+      "blocked_unknown": 23,
+      "idle_ab": 237,
+      "unclassified": 0,
+      "traced_turns": 319,
+      "overworld_inputs": 2234,
+      "wall_rate": 0.08684,
+      "worst_turns": [
+        {
+          "turn": 23,
+          "walls": 10,
+          "inputs": 12
+        },
+        {
+          "turn": 100,
+          "walls": 9,
+          "inputs": 11
+        },
+        {
+          "turn": 96,
+          "walls": 7,
+          "inputs": 12
+        },
+        {
+          "turn": 208,
+          "walls": 6,
+          "inputs": 12
+        },
+        {
+          "turn": 300,
+          "walls": 6,
+          "inputs": 10
+        },
+        {
+          "turn": 51,
+          "walls": 6,
+          "inputs": 10
+        },
+        {
+          "turn": 209,
+          "walls": 6,
+          "inputs": 9
+        },
+        {
+          "turn": 30,
+          "walls": 6,
+          "inputs": 8
+        },
+        {
+          "turn": 150,
+          "walls": 5,
+          "inputs": 14
+        },
+        {
+          "turn": 163,
+          "walls": 5,
+          "inputs": 13
+        }
+      ]
+    }
+  },
+  "status": "completed",
+  "recording_splice": [
+    {
+      "file": "recording.mp4",
+      "segment_file": "recording-segment.mp4",
+      "source_run": "2026-09-23_18-49-49_config-5.1__claude-opus-5-5-low_continued_from_turn_180",
+      "resumed_at_turn": 181,
+      "source_s": 2865.4,
+      "segment_s": 2126.53,
+      "total_s": 4991.93
+    }
+  ],
+  "run_id": "2026-09-24_09-15-04_config-5.1__claude-opus-5-5-low_continued_from_turn_181",
+  "kind": "official",
+  "continued_from": "2026-09-23_18-49-49_config-5.1__claude-opus-5-5-low_continued_from_turn_180",
+  "benchmark": "pokebench-first-badge",
+  "benchmark_version": "pokebench-v1.1",
+  "ended_at": "2026-09-24T10:18:08"
+}

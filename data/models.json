@@ -28,6 +28,20 @@
     "released": "2026-07-24"
   },
   {
+    "model": "claude-opus-5.5",
+    "openrouter_id": "anthropic/claude-opus-5.5",
+    "vendor": "anthropic",
+    "reasoning_type": "effort",
+    "thinking_levels": [
+      "max",
+      "xhigh",
+      "high",
+      "medium",
+      "low"
+    ],
+    "released": "2026-09-22"
+  },
+  {
     "model": "deepseek-v4.1-flash",
     "openrouter_id": "deepseek/deepseek-v4.1-flash",
     "vendor": "deepseek",
