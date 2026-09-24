@@ -1,5 +1,346 @@
 [
   {
+    "run_id": "2026-09-24_15-11-06_config-5.1__gpt-6-sol-high",
+    "label": null,
+    "kind": "official",
+    "model": "gpt-6-sol(high)",
+    "model_resolved": "openai/gpt-6-sol",
+    "config_stem": "config-5.1",
+    "benchmark": "pokebench-first-badge",
+    "benchmark_version": "pokebench-v1.1",
+    "status": "completed",
+    "started_at": "2026-09-24T15:11:09",
+    "ended_at": "2026-09-24T18:08:21",
+    "turns": 336,
+    "duration_s": 10625.6,
+    "total_cost_usd": 4.678906,
+    "avg_cost_per_turn_usd": 0.013925315476190475,
+    "endpoint_price_usd_per_m": {
+      "prompt": 2.0,
+      "completion": 10.0,
+      "input_cache_read": 0.19999999999999998,
+      "input_cache_write": 2.5
+    },
+    "list_price_usd_per_m": null,
+    "list_price_cost_usd": null,
+    "list_price_per_turn_usd": null,
+    "avg_s_per_turn": 31.623809523809523,
+    "furthest_gate": "brock_defeated",
+    "furthest_gate_turn": 336,
+    "gates_reached": 12,
+    "total_gates": 12,
+    "gate_turns": {
+      "left_bedroom": 4,
+      "left_house": 6,
+      "oaks_lab_entered": 10,
+      "starter_chosen": 13,
+      "rival1_done": 28,
+      "route1_reached": 31,
+      "viridian_reached": 43,
+      "parcel_delivered": 52,
+      "pokedex_received": 67,
+      "viridian_forest_reached": 104,
+      "pewter_reached": 308,
+      "brock_defeated": 336
+    },
+    "gate_times_s": {
+      "left_bedroom": 49.152,
+      "left_house": 77.493,
+      "oaks_lab_entered": 161.642,
+      "starter_chosen": 225.48,
+      "rival1_done": 1079.434,
+      "route1_reached": 1161.742,
+      "viridian_reached": 1571.161,
+      "parcel_delivered": 1815.807,
+      "pokedex_received": 2315.828,
+      "viridian_forest_reached": 3433.778,
+      "pewter_reached": 9702.232,
+      "brock_defeated": 10625.498
+    },
+    "gate_costs_usd": {
+      "left_bedroom": 0.034214,
+      "left_house": 0.051681,
+      "oaks_lab_entered": 0.091102,
+      "starter_chosen": 0.124544,
+      "rival1_done": 0.296236,
+      "route1_reached": 0.327186,
+      "viridian_reached": 0.506831,
+      "parcel_delivered": 0.593725,
+      "pokedex_received": 0.79051,
+      "viridian_forest_reached": 1.296593,
+      "pewter_reached": 4.127484,
+      "brock_defeated": 4.50927
+    },
+    "gate_list_costs_usd": null,
+    "avg_inputs_per_turn": 9.098214285714286,
+    "input_counts": {
+      "up": 919,
+      "down": 523,
+      "b": 480,
+      "right": 449,
+      "left": 421,
+      "a": 160,
+      "wait": 104,
+      "start": 1
+    },
+    "avg_output_tokens_per_turn": 348.38392857142856,
+    "thinking_share": 0.5176110783635323,
+    "wild_battles": 30,
+    "wild_battle_turns": 38,
+    "trainer_battles": [
+      {
+        "group": "102",
+        "id": 102,
+        "name": "Bug Catcher Rick",
+        "attempts": 2,
+        "turns": 21,
+        "won": true,
+        "mandatory": false
+      },
+      {
+        "group": "104",
+        "id": 104,
+        "name": "Bug Catcher Sammy",
+        "attempts": 1,
+        "turns": 11,
+        "won": true,
+        "mandatory": false
+      },
+      {
+        "group": "142",
+        "id": 142,
+        "name": "Camper Liam",
+        "attempts": 1,
+        "turns": 7,
+        "won": true,
+        "mandatory": false
+      },
+      {
+        "group": "rival_oaks_lab",
+        "id": 328,
+        "name": "Rival (Oak's Lab)",
+        "attempts": 1,
+        "turns": 9,
+        "won": true,
+        "mandatory": true
+      },
+      {
+        "group": "414",
+        "id": 414,
+        "name": "Leader Brock",
+        "attempts": 1,
+        "turns": 6,
+        "won": true,
+        "mandatory": true
+      },
+      {
+        "group": "531",
+        "id": 531,
+        "name": "Bug Catcher Anthony",
+        "attempts": 1,
+        "turns": 8,
+        "won": true,
+        "mandatory": false
+      }
+    ],
+    "trainer_battle_turns": 62,
+    "battle_turn_share": 0.3005952380952381,
+    "battle_fidelity": "live",
+    "overworld_steps": 1726,
+    "shortest_steps": 672,
+    "movement_efficiency": 0.344792201128784,
+    "steps_fidelity": "trace",
+    "movement_legs": [
+      {
+        "node_id": "left_bedroom",
+        "d_open": 9,
+        "steps": 10,
+        "walls": 3,
+        "source": "trace",
+        "status": "closed"
+      },
+      {
+        "node_id": "left_house",
+        "d_open": 11,
+        "steps": 15,
+        "walls": 0,
+        "source": "trace",
+        "status": "closed"
+      },
+      {
+        "node_id": "oaks_lab_entered",
+        "d_open": 13,
+        "steps": 50,
+        "walls": 2,
+        "source": "trace",
+        "status": "closed"
+      },
+      {
+        "node_id": "starter_chosen",
+        "d_open": 3,
+        "steps": 3,
+        "walls": 0,
+        "source": "trace",
+        "status": "closed"
+      },
+      {
+        "node_id": "rival1_done",
+        "d_open": 4,
+        "steps": 5,
+        "walls": 4,
+        "source": "trace",
+        "status": "closed"
+      },
+      {
+        "node_id": "route1_reached",
+        "d_open": 25,
+        "steps": 31,
+        "walls": 0,
+        "source": "trace",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_reached",
+        "d_open": 57,
+        "steps": 77,
+        "walls": 4,
+        "source": "trace",
+        "status": "closed"
+      },
+      {
+        "node_id": "parcel_delivered",
+        "d_open": 32,
+        "steps": 52,
+        "walls": 3,
+        "source": "trace",
+        "status": "closed"
+      },
+      {
+        "node_id": "pokedex_received",
+        "d_open": 107,
+        "steps": 113,
+        "walls": 31,
+        "source": "trace",
+        "status": "closed"
+      },
+      {
+        "node_id": "viridian_forest_reached",
+        "d_open": 186,
+        "steps": 210,
+        "walls": 43,
+        "source": "trace",
+        "status": "closed"
+      },
+      {
+        "node_id": "pewter_reached",
+        "d_open": 167,
+        "steps": 1060,
+        "walls": 130,
+        "source": "trace",
+        "status": "closed"
+      },
+      {
+        "node_id": "brock_defeated",
+        "d_open": 58,
+        "steps": 100,
+        "walls": 3,
+        "source": "trace",
+        "status": "closed"
+      }
+    ],
+    "route_points": 1727,
+    "route_coverage": 1.0,
+    "charged_steps": 1949,
+    "walls_hit": 223,
+    "wall_rate": 0.097125,
+    "input_breakdown": {
+      "inputs": 2952,
+      "overworld_inputs": 2296,
+      "overworld_steps": 1712,
+      "inputs_lost": 343,
+      "moved_inputs": 1686,
+      "battle_inputs": 656,
+      "battle_edge": 67,
+      "walls_hit": 223,
+      "turns_to_face": 36,
+      "blocked_by_actor": 65,
+      "blocked_unknown": 19,
+      "idle_ab": 200,
+      "unclassified": 0,
+      "traced_turns": 336,
+      "wall_rate": 0.097125,
+      "worst_turns": [
+        {
+          "turn": 56,
+          "walls": 15,
+          "inputs": 20
+        },
+        {
+          "turn": 155,
+          "walls": 10,
+          "inputs": 18
+        },
+        {
+          "turn": 150,
+          "walls": 9,
+          "inputs": 20
+        },
+        {
+          "turn": 202,
+          "walls": 9,
+          "inputs": 12
+        },
+        {
+          "turn": 259,
+          "walls": 7,
+          "inputs": 24
+        },
+        {
+          "turn": 54,
+          "walls": 7,
+          "inputs": 20
+        },
+        {
+          "turn": 96,
+          "walls": 7,
+          "inputs": 13
+        },
+        {
+          "turn": 76,
+          "walls": 7,
+          "inputs": 12
+        },
+        {
+          "turn": 257,
+          "walls": 6,
+          "inputs": 25
+        },
+        {
+          "turn": 57,
+          "walls": 6,
+          "inputs": 16
+        }
+      ]
+    },
+    "progress": 12.0,
+    "leg_gate": null,
+    "leg_fraction": null,
+    "leg_distance_min": null,
+    "leg_distance_open": null,
+    "termination_reason": null,
+    "projection_version": 15,
+    "continued_from": null,
+    "resumed": false,
+    "harness": "append_compact",
+    "max_turns": 10000000,
+    "has_recording": true,
+    "video_url": "https://pub-c54bf882c85d4fad83024b5791b99424.r2.dev/runs/2026-09-24_15-11-06_config-5.1__gpt-6-sol-high/recording.mp4",
+    "video_view": "detailed",
+    "screenshots_base_url": null,
+    "trace_published": false,
+    "published_at": "2026-09-24T17:17:05+00:00"
+  },
+  {
     "run_id": "2026-09-24_13-08-47_config-5.1__claude-opus-5-5-high",
     "label": null,
     "kind": "official",
