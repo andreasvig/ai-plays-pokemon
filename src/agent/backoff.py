@@ -125,6 +125,7 @@ def classify(exc: BaseException) -> str:
     """
     from src.agent.append_agent import (  # noqa: WPS433 (lazy on purpose)
         ContinuityError,
+        ProviderRefusal,
         ProviderRequestError,
         ProviderTransportError,
         SpendLimitReached,
@@ -139,6 +140,12 @@ def classify(exc: BaseException) -> str:
             return "transient"
         return "fatal"
     if isinstance(exc, ProviderTransportError):
+        return "transient"
+    # A refusal is the PROVIDER declining, not the model answering badly: there is no
+    # output to correct, and the correction note the output path appends is what turns
+    # one refusal into a permanent one (2026-09-23, claude-opus-5.5). Back off and
+    # re-ask the identical request instead.
+    if isinstance(exc, ProviderRefusal):
         return "transient"
     if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
         return "transient"

@@ -87,6 +87,24 @@ CANDIDATES = [
     ("step-3.7-flash",      "stepfun/step-3.7-flash",       ["high"],               "effort"),
     ("muse-spark-1.1",      "meta/muse-spark-1.1",          ["high"],               "effort"),
     ("inkling",             "thinkingmachines/inkling",     ["high"],               "effort"),
+    # --- 2026-09-22 batch (Andreas's ask). Tiers are the catalogue's own
+    # `reasoning.supported_efforts` for the effort models, so a 400 here means the
+    # advertised ladder is not the served one. The two MiMo v2.6 entries advertise
+    # `reasoning`/`include_reasoning` but NO `reasoning_effort` on their only
+    # endpoint (xiaomi/fp8), the same signature as mimo-v2.5 — hence binary.
+    ("mimo-v2.6-flash",     "xiaomi/mimo-v2.6-flash",       ["thinking", "non-thinking"], "binary"),
+    ("mimo-v2.6-pro",       "xiaomi/mimo-v2.6-pro",         ["thinking", "non-thinking"], "binary"),
+    ("grok-4.7",            "x-ai/grok-4.7",                ["xhigh", "high", "medium", "low"], "effort"),
+    ("ternary-bonsai-2-27b", "prism-ml/ternary-bonsai-2-27b", ["xhigh", "medium"],   "effort"),
+    ("glm-5.3-flashx",      "z-ai/glm-5.3-flashx",          ["max", "high", "low"],  "effort"),
+    # --- 2026-09-23 batch (Andreas's ask): the 2026-09-22 releases. Tiers are
+    # each slug's own catalogue `reasoning.supported_efforts`. Note gpt-6-luna and
+    # gpt-6-sol advertise a `none` rung (reasoning.mandatory false) where the
+    # gpt-6-astra already in the registry does NOT (mandatory true) — so the
+    # ladders are probed per slug, not inherited from the gpt-6 name.
+    ("claude-opus-5.5",     "anthropic/claude-opus-5.5",    ["max", "xhigh", "high", "medium", "low"], "effort"),
+    ("gpt-6-luna",          "openai/gpt-6-luna",            ["max", "xhigh", "high", "medium", "low", "none"], "effort"),
+    ("gpt-6-sol",           "openai/gpt-6-sol",             ["max", "xhigh", "high", "medium", "low", "none"], "effort"),
 ]
 
 

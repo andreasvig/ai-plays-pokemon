@@ -162,6 +162,31 @@ profiles:
     final_turn_text_only: false
     notes: '$2/$12 per M, cache read $0.20, cache write $2.50 on the openai tag. Probed individually (not copied) 2026-09-07: live shape cached 8,155 of 8,158, shortfall 3 -> prefix extends through the final-turn image, final_turn_text_only false. Evidence: cache-hit-probe__openai--gpt-5.6-terra.json.'
 
+  # Added 2026-09-23 — the GPT-6 Luna/Sol pair (released 2026-09-22). The
+  # final_turn_text_only value below is MEASURED per model, not inherited: the
+  # gpt-6-astra note above is the standing warning that the image-prefix rule is
+  # per MODEL and not per endpoint tag, and these two carry the gpt-6 name while
+  # behaving like the gpt-5.6 family.
+  openai/gpt-6-luna:
+    endpoint: openai
+    context_length: 1050000
+    max_completion_tokens: 128000
+    reasoning_efforts: [max, xhigh, high, medium, low, none]
+    reasoning_default: {effort: medium}
+    cache_mode: implicit
+    final_turn_text_only: false
+    notes: 'DISPATCH PROBED 2026-09-23: all six efforts 200 and coherent on a real screenshot, reasoning tokens 516/340/281/218/189/0 down the ladder (monotonic, so the rungs are distinct tiers) at 8.2s down to 2.1s. Reasoning is NOT mandatory on this slug, so the `none` rung is legal and the registry keeps it - unlike gpt-6-astra, same generation, whose mandatory flag is true. CACHE PROBED 2026-09-23 on the openai tag, effort medium, with a real screenshot: the LIVE shape (final turn = user[text, image]) extended the prefix - request A was COLD (9,364 prompt tokens, cached 0, write 9,361) and A+turn cached 9,361 of 11,735, a shortfall of 3 tokens. That is the gpt-5.6 signature, NOT the astra one, so final_turn_text_only is false. CONTROL NOT ESTABLISHED, stated plainly: the same-session gpt-6-astra control did not reproduce its documented poisoning - the first attempt returned a degenerate A+turn (0 prompt tokens, 0 cost) and every retry read a prefix the earlier probes had already warmed (A cached 9,361), while --tail-turns 5 produced a byte-identical 9,364-token prefix instead of a cold one. So the instrument negative-sensitivity check is OUTSTANDING; the luna verdict rests on its own cold-start numbers and on matching the documented shortfall-3 signature exactly. Re-run the astra arm cold before treating this as settled. PRICE: $0.10/$0.50 per M on the openai tag, cache read $0.01, cache write $0.125 - the cheapest OpenAI endpoint here (openai/flex half, openai/fast double). LONG-CONTEXT OVERRIDE above 272,000 prompt tokens: $0.20/$0.75 per M. Evidence: cache-hit-probe__openai--gpt-6-luna.json.'
+
+  openai/gpt-6-sol:
+    endpoint: openai
+    context_length: 1050000
+    max_completion_tokens: 128000
+    reasoning_efforts: [max, xhigh, high, medium, low, none]
+    reasoning_default: {effort: medium}
+    cache_mode: implicit
+    final_turn_text_only: false
+    notes: 'DISPATCH PROBED 2026-09-23: all six efforts 200 and coherent, reasoning tokens 217/158/120/31/21/0 at 5.7s down to 2.2s - markedly TERSER than gpt-6-luna at every rung, so the flagship is the cheaper thinker here. CACHE PROBED 2026-09-23 separately from luna, not copied from it (per the gpt-5.6-sol precedent that these are probed individually): live shape, request A COLD at 9,364 prompt tokens with cached 0 / write 9,361, then A+turn cached 9,361 of 11,735 - shortfall 3, prefix extends through the final-turn image, so final_turn_text_only false. The SAME control caveat as the luna entry above applies and is not restated: the astra negative control was not re-established this session. PRICE: $2/$10 per M on the openai tag, cache read $0.20, cache write $2.50 (openai/flex half, openai/fast double, azure 1.1x) - 20x luna and half of claude-opus-5.5. LONG-CONTEXT OVERRIDE above 272,000 prompt tokens: $4/$15 per M. Evidence: cache-hit-probe__openai--gpt-6-sol.json.'
+
   # --- Anthropic Claude -----------------------------------------------------
   # Family representative: claude-opus-5. All four run on the first-party
   # `anthropic` tag with automatic cache_control, so the segment-level cache and
@@ -244,6 +269,43 @@ profiles:
     cache_mode: automatic
     final_turn_text_only: false
     notes: 'Cache and replay copied from claude-opus-5 (same first-party anthropic tag, same automatic cache_control) and not probed live: the brief only calls for a cache probe if the endpoint tag differs, and it does not. Own survey facts, and they differ sharply from the rest of the family: 200k context / 64k output (not 1M/128k), $1/$5 per M, cache read $0.10 (90% off), cache write $1.25. Reasoning is optional here (catalog reasoning.mandatory false) and this is the only Anthropic entry with no published effort ladder — see the comment above for what was measured and what stays open.'
+
+  # Added 2026-09-23 — Claude Opus 5.5 (released 2026-09-22). Takes the family
+  # copy licensed by the section header above (same first-party `anthropic` tag,
+  # same automatic cache_control, same wire contract), declared through
+  # `probed_as` rather than silently; its ladder, prices and the mandatory flag
+  # are its own.
+  anthropic/claude-opus-5.5:
+    endpoint: anthropic
+    probed_as: anthropic/claude-opus-5
+    context_length: 1000000
+    max_completion_tokens: 128000
+    # CORRECTED 2026-09-23, the same day it was added. This said `native_json` with
+    # `memory_encoding: json_string`, both COPIED from claude-opus-5 under probed_as
+    # and neither verified on this slug — and the copy is what broke it. Two runs
+    # crashed that afternoon with finish_reason content_filter / native_finish_reason
+    # refusal, "reverse engineering or duplicating model outputs", on an ordinary
+    # Caterpie battle screen.
+    # MEASURED on the stored failing request (turn 162 of
+    # local/runs/2026-09-23_13-57-01_config-5.1__claude-opus-5-5-low): WITH
+    # response_format it is refused 5/5, WITHOUT it answered 5/5; stripping the
+    # screenshots instead stays refused 5/5, and every serving tag (anthropic /
+    # google-vertex / azure / claude-on-aws / unpinned) refuses 3/3. So it is the
+    # strict json_schema — not the endpoint, not the game content.
+    # This is the SAME trap already recorded on anthropic/claude-fable-5.1 above
+    # ("STAYS prompted (2026-09-12) ... refuses the turn outright ... even though the
+    # tag advertises structured_outputs"). Advertising structured_outputs does not
+    # mean the classifier tolerates it, and a `probed_as` copy may not carry this
+    # field: a Claude profile goes prompted until a probe of THAT slug says otherwise.
+    # memory_encoding drops back to the default `object` with it — json_string existed
+    # only because a strict schema empties an open memory dict.
+    output_mode: prompted
+    reasoning_mandatory: true
+    reasoning_efforts: [max, xhigh, high, medium, low]
+    reasoning_default: {effort: high}
+    cache_mode: automatic
+    final_turn_text_only: false
+    notes: 'DISPATCH PROBED 2026-09-23: all five efforts 200 and coherent on a real screenshot via the unpinned route (served by Claude Platform on AWS; this profile pins the first-party anthropic tag). reasoning_mandatory TRUE is this slug own catalogue value and differs from claude-opus-5, which reports false - so reasoning cannot be disabled here and there is no `none` rung to add. Reasoning tokens 6,880 (max) / 416 / 288 / 497 / 282 are NOT monotonic and are NOT read as a depth signal: Anthropic returns summary tokens only, as the claude-fable-5.1 registry entry records. The first max probe returned an empty reply at a 4,000-token cap - that measured the cap; re-probed at 12,000 it answered in 84.6s. COST: $4/$20 per M, cache read $0.20 (95 percent off), cache write $5.00, identical across the five cheapest of eleven tags; anthropic/fast is double. ONE probe question at max cost $0.1528, the most expensive single probe taken for this registry. COPIED, NOT PROBED HERE (hence probed_as): output_mode native_json, memory_encoding json_string and cache_mode automatic all come from the claude-opus-5 probes of 2026-09-06/2026-09-12. A 5.5-specific cache and structured-output probe is the outstanding follow-up.'
 
   # --- Google Gemini --------------------------------------------------------
   google/gemini-3.8-flash:
@@ -346,6 +408,22 @@ profiles:
     final_turn_text_only: false
     notes: 'OpenRouter documents xai-responses-v1 normalized encrypted blocks; verify returned payload through chat gateway. Campaign 2026-09-06: 46% cache hits on the xai tag saved $0.11 on one run. $2/$6 per M, cache read $0.50 (75% off), no cache-write price. The ZDR tags price identically but are excluded deliberately.'
 
+  # Added 2026-09-22. Catalogue + live dispatch only: the endpoint facts come
+  # from /api/v1/models/x-ai/grok-4.7/endpoints (2026-09-22) and all four efforts
+  # were dispatched 200 the same day. Cache and replay are NOT probed here.
+  x-ai/grok-4.7:
+    endpoint: xai
+    excluded_endpoints: [xai/zdr, xai/zdr/priority, xai/priority]
+    memory_encoding: json_string
+    context_length: 500000
+    max_completion_tokens: 450000
+    reasoning_mandatory: true
+    reasoning_efforts: [xhigh, high, medium, low]
+    reasoning_default: {effort: high}
+    cache_mode: unknown
+    final_turn_text_only: false
+    notes: 'DISPATCH PROBED 2026-09-22 (scripts/probe_registry_candidates.py, real screenshot + pathfinding prompt): xhigh/high/medium/low all 200 and all coherent, reasoning tokens 6,477 / 6,801 / 3,936 / 3,420 and latencies 104.6s / 115.2s / 65.0s / 56.3s on one question, hence slow: true on the registry entry for every level. Mandatory reasoning, catalogue default effort high. ENDPOINT: four tags serve identical context (500,000 / 450,000) and identical parameters; xai and xai/zdr price at 1.60 / 4.80 per M with cache read 0.40 (75 percent off), while xai/priority and xai/zdr/priority price at exactly double. Pinned to xai and the other three excluded, as on grok-4.6. LONG-CONTEXT OVERRIDE, new since 4.6: above 200,000 prompt tokens the rate doubles to 3.20 / 9.60 per M with cache read 0.80, so a long append run steps up in price mid-run. memory_encoding json_string is INHERITED from the grok-4.6 profile, where arbitrary dictionaries did not survive this route; it is the conservative carry-over and has NOT been re-probed on 4.7. NOT PROBED: cache behaviour (hence cache_mode unknown, not implicit - the listed cache-read price is not an observed hit) and reasoning replay (inherits the default all).'
+
   # --- Z.AI GLM -------------------------------------------------------------
   z-ai/glm-5.3-flash:
     endpoint: z-ai/fp8
@@ -357,6 +435,19 @@ profiles:
     cache_mode: implicit
     final_turn_text_only: false
     notes: 'Tools supported on the direct endpoint. Native clear_thinking:false has no confirmed OpenRouter passthrough; do not claim preserved internal reasoning. Campaign 2026-09-06: 67% hits on z-ai/fp8. $0.075/$0.25 per M, cache read $0.015 (80% off), no cache-write price. NOTE the registry entry declares output_mode: prompted while this profile leaves it at the default `tool`; on a profiled run the profile wins. Flagged for the validator rather than silently changed either way.'
+
+  # Added 2026-09-22 — the high-speed sibling of glm-5.3-flash above, and about
+  # 5x its price. Catalogue + live dispatch only; cache and replay not probed.
+  z-ai/glm-5.3-flashx:
+    endpoint: z-ai/fp8
+    context_length: 1048576
+    max_completion_tokens: 131072
+    reasoning_mandatory: true
+    reasoning_efforts: [max, high, low]
+    reasoning_default: {effort: max}
+    cache_mode: unknown
+    final_turn_text_only: false
+    notes: 'DISPATCH PROBED 2026-09-22: max/high/low all 200 and coherent on a real screenshot, reasoning tokens 469 / 122 / 16 and latencies 8.6s / 3.6s / 5.4s - the fastest of the five models added that day, and the reason its registry entry carries no slow flag. Mandatory reasoning, catalogue default effort max (taken as reasoning_default here rather than the high that glm-5.3-flash uses, because max is what this model advertises as its default). SOLE endpoint z-ai/fp8, 1,048,576 context / 131,072 output, 0.37 / 1.25 per M with cache read 0.075 (80 percent off) - against glm-5.3-flash at 0.075 / 0.25, so FlashX buys speed at roughly 5x the sibling price. OUTPUT MODE stays the default tool: the endpoint advertises tools and tool_choice, and the prompted output_mode on the glm-5.3-flash REGISTRY entry is a 2026-09-06 finding about the LEGACY pydantic-ai path on a different slug, not re-probed here and deliberately not copied. NOT PROBED: cache behaviour (cache_mode unknown) and reasoning replay (default all).'
 
   # --- MiniMax --------------------------------------------------------------
   minimax/minimax-m3:
@@ -441,3 +532,59 @@ profiles:
     final_turn_text_only: false
     sampling: {temperature: 0.3, top_p: 0.95}
     notes: 'PROBED LIVE 2026-09-07 on gmicloud/fp8, both probes. CACHE: implicit caching hits the whole prefix with no marker — A+turn cached 8,704 of 8,767 (shortfall 63) in the live shape and 8,768 of 8,789 in the split shape, so cache_mode implicit and final_turn_text_only false. REPLAY: consumed — harness/details_only/reasoning_only/reasoning_content each added 36 prompt tokens and both padded variants added 1,116, so reasoning_replay stays `all`. `consumed_by_endpoint` means BILLED, not proof of internal use. Note the endpoint misreports usage: turn 1 returned 163 characters of reasoning while reporting reasoning_tokens 0. ENDPOINT CHOICE: Xiaomi serves no first-party endpoint, so the cheapest cache read wins — gmicloud/fp8 at $0.0026 read on $0.119 prompt (98% off) with 1,050,000 context / 945,000 output, against deepinfra/fp8 at $0.026 read on $0.13 prompt with only 262,144 context. gmicloud/fp8 advertises no response_format or structured_outputs, so output_mode stays the default `tool` (tools and tool_choice ARE advertised). BINARY reasoning axis. Sampling 0.3/0.95 moved here from the registry. Evidence: cache-hit-probe__xiaomi--mimo-v2.5.json, reasoning-replay-probe__xiaomi--mimo-v2.5.json.'
+
+  # Added 2026-09-22 — MiMo v2.6, Flash and Pro, released the same day and
+  # served on the same FIRST-PARTY tag. That is the one thing that changed since
+  # the v2.5 profile above, whose endpoint choice turns on Xiaomi serving no
+  # first-party endpoint; do not read that reasoning forward.
+  xiaomi/mimo-v2.6-flash:
+    endpoint: xiaomi/fp8
+    context_length: 1048576
+    max_completion_tokens: 131072
+    reasoning_efforts: [thinking, non-thinking]
+    reasoning_default: {enabled: true}
+    cache_mode: implicit
+    final_turn_text_only: false
+    notes: 'DISPATCH PROBED 2026-09-22: thinking and non-thinking both 200 and coherent on a real screenshot. BINARY axis, measured not assumed - the endpoint advertises reasoning and include_reasoning but NOT reasoning_effort, and the catalogue lists no supported_efforts. Thinking spent 5,458 reasoning tokens over 78.6s against 1.6s for non-thinking, hence slow on the thinking level only in the registry. The first thinking attempt returned an EMPTY reply at a 1,200-token output cap; that measured the cap, and a re-probe at 6,000 answered. ENDPOINT: sole first-party xiaomi/fp8, 1,048,576 context / 131,072 output, 0.14 / 0.28 per M with cache read 0.0028 (98 percent off) - the cheapest prompt price in this file. It advertises tools and tool_choice, so output_mode stays the default tool. NO sampling block: the 0.3 / 0.95 on the v2.5 profile came from that model registry entry and there is no basis to carry it here. CACHE - CORRECTED 2026-09-22, this said unknown until the first real run. The dispatch probe could not see caching (one small request), so unknown was the honest value that morning; the official run local/runs/2026-09-22_11-17-04_config-5.1__mimo-v2-6-flash-thinking is the stronger measurement and says implicit: 186 measured attempts, 10,287,488 of 14,108,456 input tokens read from cache (73 percent) with a 93.5 percent request hit rate, and NO cache markers sent (only automatic and system_breakpoint touch the request body, so nothing on the wire changes with this edit - it is the claim being made honest, not a behaviour change). REPLAY still not probed (default all).'
+
+  xiaomi/mimo-v2.6-pro:
+    endpoint: xiaomi/fp8
+    context_length: 1048576
+    max_completion_tokens: 131072
+    reasoning_efforts: [thinking, non-thinking]
+    reasoning_default: {enabled: true}
+    cache_mode: implicit
+    final_turn_text_only: false
+    notes: 'DISPATCH PROBED 2026-09-22: thinking and non-thinking both 200 and coherent on a real screenshot. Same binary signature and same sole endpoint as the Flash above (xiaomi/fp8, 1,048,576 context / 131,072 output), at 0.435 / 0.87 per M with cache read 0.0036 (99 percent off), about 3x the Flash. Thinking took 315 reasoning tokens in 23.7s and non-thinking 14.0s, so the 1T-parameter Pro thinks SHORTER than the 309B Flash on the same question and carries no slow flag - n=1, revisit after a real run. CACHE - CORRECTED 2026-09-23 to implicit. This said unknown on purpose while no run of the Pro existed: the Flash shares the xiaomi/fp8 TAG but caching is measured per MODEL, and inheriting the sibling result would have been a claim nothing measured. The Pro now has its own measurement and it agrees - 167 attempts over local/runs/2026-09-22_19-28-56_config-5.1__mimo-v2-6-pro-thinking, 71.5 percent of input tokens read from cache at a 95.2 percent request hit rate with NO markers sent (the non-thinking run adds 40 attempts at 70.5 percent read / 92.5 percent hit). No wire change; the claim is now measured rather than inherited. REPLAY still not probed (default all).'
+
+  # --- Unbiased (announced 2026-09-18; played cloaked as stealth/union-alpha) --
+  # The only NO-REASONING profile here, and the reason `reasoning_default: null`
+  # exists. Same failure mode as sakana/fugu-ultra's second blocker, from the
+  # opposite direction: there the endpoint does not advertise a parameter the
+  # harness always sends (max_tokens); here it does not advertise `reasoning`,
+  # which the harness sent on every request until this profile could say not to.
+  # `require_parameters: true` turns either into HTTP 404 "Filter by Parameters"
+  # rather than a silently dropped field.
+  unbiased/pareto:
+    endpoint: unbiased
+    context_length: 262144
+    max_completion_tokens: 131072
+    reasoning_efforts: []
+    reasoning_default: null
+    reasoning_use: not_supported_by_endpoint
+    cache_mode: implicit
+    final_turn_text_only: false
+    notes: 'PROBED LIVE 2026-09-16 against the cloaked listing stealth/union-alpha, re-pointed 2026-09-18 when the model was announced as unbiased/pareto (same context, same max output, same modality, same advertised parameters; the stealth listing also advertised response_format, which this one does not — inert here, output_mode is tool). REASONING: the endpoint advertises exactly max_tokens/temperature/top_p/tools/tool_choice. Sending a `reasoning` block against the pinned route returns HTTP 404 with routing_funnel failed_routing_step "Filter by Parameters" (arm A); the identical request without it answered 200 with a well-formed gameplay tool call (arm B), as did an unpinned control (arm C). Hence reasoning_default null and reasoning_efforts empty — the registry entry is reasoning_type none, so there is no ladder for the empty list to hide. The replies carry no `reasoning` and report reasoning_tokens 0, so reasoning_replay is inert here and stays at the default `all`. CACHE: implicit — CORRECTED 2026-09-18, it said `none` until then. The 2026-09-16 probe read supports_implicit_caching false off the endpoint metadata and was billed cached_tokens 0, but that probe was one 697-token request, far too small to hit any prefix. The full run of 2026-09-16 is the stronger measurement and says the opposite: 183 responses reporting cached_tokens with cache_write_tokens 0 throughout, 2,411,925 of 3,758,611 prompt tokens read from cache — a 64% read fraction with no markers sent, which is what implicit means. No wire change either way (only `automatic` and `system_breakpoint` touch the request body), so this is the claim being made honest, not a behaviour change. The reveal priced it: the stealth listing served free, unbiased/pareto lists $2.50 prompt / $7.50 completion / $0.25 cache read per M, so the discount those cached tokens earn is now real money. OUTPUT: tools with tool_choice auto; the endpoint supports only `auto` (supports_tool_choice required and function are both false), so a `named` or `required` profile would 404 the same way. CONTEXT: 262,144 / 131,072 output — the smallest context in this file, a quarter of the 1M entries, so compaction fires far sooner on this model than on any other. Evidence: three-arm probe 2026-09-16; the run at local/runs/2026-09-16_21-08-49_config-5.1__union-alpha for the cache correction.'
+
+  # --- PrismML ---------------------------------------------------------------
+  # Added 2026-09-22. Two rungs, one endpoint, no cache price, and a live rate
+  # limit - read the notes before queueing a long run on it.
+  prism-ml/ternary-bonsai-2-27b:
+    endpoint: darkbloom/int4
+    context_length: 262144
+    max_completion_tokens: 32768
+    reasoning_efforts: [xhigh, medium]
+    reasoning_default: {effort: xhigh}
+    cache_mode: unknown
+    final_turn_text_only: false
+    notes: 'DISPATCH PROBED 2026-09-22: xhigh and medium both 200 and coherent on a real screenshot, reasoning tokens 881 / 755 and latencies 51.6s / 38.3s, hence slow: true in the registry. TWO RUNGS ONLY - the catalogue supported_efforts are exactly xhigh and medium, with no high and no low, so the registry ladder cannot be widened without a probe that says otherwise. Reasoning is not mandatory here (catalogue mandatory false), but the harness always sends a level, so the default stays the catalogue default xhigh. SOLE endpoint darkbloom/int4 (int4 quantization), 262,144 context / 32,768 output at 0.075 / 0.50 per M. NO CACHE-READ PRICE IS LISTED AT ALL, so every prompt token is billed at full rate and the append agent endpoint check will warn no cache-read price on every run - on an append harness that, not the headline 0.075, is the cost that matters. RATE LIMITED: the single endpoint answered HTTP 429 temporarily rate-limited upstream on 2 of 6 probe attempts on 2026-09-22; both tiers answered 200 on retry, so it is a throughput limit rather than a refusal, but a gameplay run will meet it. Its 262,144 context is the second smallest here after unbiased/pareto, so compaction fires far sooner than on the 1M entries; its 32,768 output ceiling is the smallest in this file and still four times the config-5.x authored transport budget. NOT PROBED: cache behaviour (cache_mode unknown) and reasoning replay (default all).'

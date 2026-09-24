@@ -405,8 +405,8 @@ def test_routes_503_when_unconfigured():
 # These pin the edge behaviour that replaced it.
 
 
-def test_casual_enqueue_without_config_gets_config_5_1(client):
-    """The defaulted config is config-5.1 (since 2026-09-08), and all three default sites agree.
+def test_casual_enqueue_without_config_gets_the_newest_config(client):
+    """The defaulted config is config-5.2 (since 2026-09-23), and all three default sites agree.
 
     Renamed + strengthened 2026-09-07. The old assertion was
     ``== list_configs()[-1]``, which is self-referential: it proved the route
@@ -421,8 +421,8 @@ def test_casual_enqueue_without_config_gets_config_5_1(client):
     tc = client["tc"]
     r = tc.post("/api/queue", json={"kind": "casual", "model": _some_alias()})
     assert r.status_code == 201
-    assert r.json()["config"] == "config-5.1"
-    assert list_configs()[-1] == "config-5.1" == default_config_stem()
+    assert r.json()["config"] == "config-5.2"
+    assert list_configs()[-1] == "config-5.2" == default_config_stem()
 
 
 def test_casual_enqueue_with_unknown_config_is_rejected(client):
@@ -562,6 +562,40 @@ def test_continue_default_degrades_without_a_recorder(client, monkeypatch):
     # …but an explicit ask is still refused up front, like a fresh enqueue
     r = tc.post("/api/runs/2026-09-08_src4_config-5.0__claude/continue", json={"record": {"view": "simple"}})
     assert r.status_code == 400
+
+
+def test_from_turn_rides_the_continue_body_onto_the_queue_item(client):
+    """2026-09-23: `from_turn` picks an EARLIER savepoint than the last one.
+
+    Why the field exists: an append continue restores the CONVERSATION with the
+    checkpoint, so the final savepoint replays whatever the model had most recently
+    convinced itself of. gpt-6-sol(low) idled five turns believing it had already won
+    the badge; resumed from its last savepoint it read those five turns back and
+    idled again on the first resumed turn. Rewinding behind the stretch is the fix.
+
+    The route validates the SHAPE only — whether that savepoint exists is the
+    resolver's call at dispatch, which can name the ones that do. Omitting the field
+    must keep the old behaviour (latest savepoint), which is the control here.
+    """
+    tc = client["tc"]
+    runs_root = client["runs_root"]
+    index = client["index"]
+    source_id = "2026-09-23_src_config-5.1__gpt-6-sol-low"
+    source_dir = runs_root / source_id
+    for turn in (370, 380, 384):
+        (source_dir / "savepoints" / f"turn_{turn}").mkdir(parents=True)
+    with open(source_dir / "run_summary.json", "w") as f:
+        json.dump({"session": {"llm_alias": "gpt-6-sol(low)", "llm_model": "openai/gpt-6-sol"}}, f)
+    index.rebuild_from_scan()
+
+    r = tc.post(f"/api/runs/{source_id}/continue", json={"from_turn": 370})
+    assert r.status_code == 201 and r.json()["continue_from_turn"] == 370
+    # Control: absent means "latest", not 0 — the pre-2026-09-23 behaviour.
+    r = tc.post(f"/api/runs/{source_id}/continue", json={})
+    assert r.status_code == 201 and r.json()["continue_from_turn"] is None
+    for bad in (0, -5, "370", True):
+        r = tc.post(f"/api/runs/{source_id}/continue", json={"from_turn": bad})
+        assert r.status_code == 400 and "positive integer" in r.json()["detail"], bad
 
 
 def test_rebase_contract_is_a_continue_only_opt_in(client):

@@ -390,6 +390,12 @@ class QueuedRun(BaseModel):
     # mGBA — so the documented Gemma A/B was control-center-unreachable.
     provider_profile: str | None = None
     continue_from: str | None = None
+    # Continue-only (2026-09-23): resume an EARLIER savepoint than the last one.
+    # An append continue restores the conversation with the checkpoint, so the
+    # final savepoint can carry a stretch the run needs to escape — gpt-6-sol(low)
+    # idled five turns convinced it had won, and resuming turn 384 replayed that
+    # conviction and idled again. None keeps the old behaviour (latest savepoint).
+    continue_from_turn: int | None = None
     # Continue-only, explicit opt-in (2026-09-12): let the resumed conversation
     # pick up today's provider profile and wire shape even though they differ
     # from the checkpoint's. Without it an append continue is refused at the

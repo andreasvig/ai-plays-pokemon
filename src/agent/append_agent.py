@@ -202,6 +202,33 @@ class EmptyInputs(ValueError):
         super().__init__("Empty inputs: every gameplay turn must return at least one input")
 
 
+class ProviderRefusal(ValueError):
+    """The provider refused the request itself — a 200 whose choice carries no output.
+
+    Distinct from an output defect: the model produced nothing to be wrong. Anthropic
+    answers `finish_reason: content_filter` / `native_finish_reason: refusal` with a
+    `message.refusal` string, and on 2026-09-23 it did so for
+    "reverse engineering or duplicating model outputs" on ordinary FireRed gameplay —
+    a Caterpie battle screen. Re-asking with a correction note appended made it
+    PERMANENT (see the note-persistence comment in ``play``), so this is transient
+    and is retried untouched.
+    """
+
+    def __init__(self, reason: str, refusal: str | None = None):
+        super().__init__(f"Provider refused the request ({reason})"
+                         + (f": {refusal[:200]}" if refusal else ""))
+        self.refusal = refusal
+
+
+class NoOpInputs(ValueError):
+    """Too many consecutive do-nothing turns — an output defect, retried with a note."""
+
+    def __init__(self, count: int):
+        super().__init__(
+            f"No-op turn: {count} consecutive turns returned only `wait` and changed nothing"
+        )
+
+
 class MissingToolCall(ValueError):
     """Tool mode got a reply that is not exactly one call to the phase's tool.
 
@@ -338,6 +365,42 @@ EMPTY_INPUTS_NOTE = (
     "Progress is judged from the game's memory, not from what the screen says: an event only counts "
     "once the game has processed it, and an open message box means it has not been processed yet. "
     "Close dialogue with A or B and keep playing; never return an empty list."
+)
+
+
+# Consecutive gameplay turns whose inputs are ONLY `wait` before the turn is
+# refused. `wait` presses nothing (config guidelines: "a special input that
+# presses nothing and pauses for ~5 seconds"), so a run of them is the model
+# deciding to stop playing while still satisfying EmptyInputs, which only bans
+# the empty LIST.
+#
+# WHY THIS EXISTS, and why the number is 3. gpt-6-sol(low), 2026-09-23
+# (local/runs/2026-09-23_11-04-19_config-5.1__gpt-6-sol-low): it beat Brock, read
+# "Player received the BOULDER BADGE from BROCK!" off the screen and then returned
+# ['wait'] every turn until it was cancelled — 11 of 12 gates, one B press short of
+# the twelfth, because the badge flag only sets once that box is dismissed. Its own
+# words at turn 384: "The top goal is complete, and advancing would add unnecessary
+# actions." That is the SAME failure as gpt-6-astra's 80 empty turns on 2026-09-11;
+# the EmptyInputs guard added then fixed the SHAPE and the behaviour moved to a
+# legal no-op.
+#
+# 3, not 2: a long cutscene or battle animation can legitimately need a couple of
+# pure-wait turns in a row, and this refuses a turn rather than warning. 3 pure
+# no-ops is ~15s of game time with nothing pressed, which no legitimate sequence
+# needs. A turn that mixes `wait` with any real press is NOT a no-op and resets
+# the counter — that is the common battle idiom ([b, b, wait]) and it must stay free.
+_NOOP_TURN_LIMIT = 3
+
+# Appended to the retry after a NoOpInputs defect. Deliberately near-identical to
+# EMPTY_INPUTS_NOTE: the correction the model needs is the same one, and the 2026-09-23
+# run proved it never reached the model because the old guard did not fire.
+NOOP_INPUTS_NOTE = (
+    "Your last turns pressed nothing at all — only `wait`. Waiting does not advance the game "
+    "and does not finish the run. Progress is judged from the game's memory, not from what the "
+    "screen says: an event only counts once the game has processed it, and an open message box "
+    "means it has NOT been processed yet, however clearly the text announces it. If a box is on "
+    "screen, close it with A or B. Reaching your goal on screen is not the same as the game "
+    "recording it — keep playing until the game moves on by itself."
 )
 
 
@@ -632,7 +695,7 @@ class AppendAgent:
                       "segment": 1, "completed_turn": 0, "segment_turns": 0,
                       "messages": [], "handover": {"continuation_summary": "", "memory": {}},
                       "observation_turn": None, "last_action": None, "recent_grades": [],
-                      "last_input_tokens": 0, "attempts": []}
+                      "last_input_tokens": 0, "attempts": [], "noop_turns": 0}
         if self.profile:
             self.state["provider_profile"] = deepcopy(self.profile)
         self.checkpoint = deepcopy(self.state)
@@ -950,6 +1013,15 @@ class AppendAgent:
         output_budget = self.options["max_retries"] if phase == "compaction" else self.config["transport"]["max_retries"]
         policy = self.retry_policy
         output_failures = transient_failures = attempt = 0
+        # Correction notes appended for a RETRY, tracked so they can be dropped from
+        # the accepted history (2026-09-23). They used to stay in the conversation
+        # forever: the note sat in front of the reply it fixed and was resent on every
+        # later turn. That is how one stochastic Anthropic refusal became a wall —
+        # replaying the stored turn-162 request of claude-opus-5.5(low) refused 15/15
+        # with the note present and passed 7/7 with it removed, nothing else changed.
+        # The note still does its job (the retry that carries it is not a byte-identical
+        # re-ask); it just stops being permanent.
+        retry_notes: list[str] = []
         retry_started = time.monotonic()
         while True:
             attempt += 1
@@ -1050,6 +1122,13 @@ class AppendAgent:
                 native = choice.get("native_finish_reason")
                 if native in ("network_error", "error") or choice.get("finish_reason") == "error":
                     raise ProviderTransportError(f"Provider returned no completion ({native or choice.get('finish_reason')})")
+                refusal = (choice.get("message") or {}).get("refusal")
+                if choice.get("finish_reason") == "content_filter" or refusal:
+                    # Checked BEFORE the generic finish_reason branch, which would
+                    # otherwise raise a bare ValueError that classify() reads as an
+                    # output defect — the exact path that killed the 2026-09-23
+                    # claude-opus-5.5(low) runs.
+                    raise ProviderRefusal(choice.get("native_finish_reason") or choice.get("finish_reason"), refusal)
                 if choice.get("finish_reason") not in ("stop", "tool_calls"):
                     raise ValueError(f"Incomplete model output: {choice.get('finish_reason')}")
                 message = deepcopy(choice["message"])
@@ -1094,9 +1173,26 @@ class AppendAgent:
                     # as `min_length=1` on the schema so the tool JSON schema — part
                     # of the wire contract every continue re-verifies — is unchanged.
                     raise EmptyInputs()
+                if phase == "gameplay":
+                    # A turn that presses nothing is legal ONCE — see _NOOP_TURN_LIMIT
+                    # for the run that made this necessary. Counted on the RESOLVED
+                    # output, so a retry that presses something clears it, and read
+                    # with .get() because a checkpoint written before this key existed
+                    # restores without it.
+                    if all(str(i).lower() == "wait" for i in output["inputs"]):
+                        streak = self.state.get("noop_turns", 0) + 1
+                        if streak >= _NOOP_TURN_LIMIT:
+                            raise NoOpInputs(streak)
+                    elif self.state.get("noop_turns"):
+                        self.state["noop_turns"] = 0
                 if phase == "compaction" and len(json.dumps(output)) > self.options["max_handover_chars"]:
                     raise ValueError("Handover exceeds configured size limit")
-                accepted = messages + [message]
+                # The retry notes come OUT of the accepted history: they exist to make
+                # one re-ask different, not to become permanent conversation. Leaving
+                # them in is what made an Anthropic refusal unrecoverable — see
+                # `retry_notes` above.
+                kept = [m for m in messages if m.get("content") not in retry_notes] if retry_notes else messages
+                accepted = kept + [message]
                 for call in calls:
                     accepted.append({"role": "tool", "tool_call_id": call["id"], "content": "Accepted."})
                 trace = display_messages(outbound["messages"] + [message])
@@ -1108,6 +1204,12 @@ class AppendAgent:
                         self.emit("llm_thinking" if phase == "gameplay" else "compaction_thinking", {"turn": turn, "content": item["content"]})
                 if phase == "gameplay":
                     self.emit("llm_output", {"turn": turn, "tool": "final_result", "args": output})
+                    # Committed only on acceptance: a refused no-op must not also
+                    # count toward the streak that refused it.
+                    self.state["noop_turns"] = (
+                        self.state.get("noop_turns", 0) + 1
+                        if all(str(i).lower() == "wait" for i in output["inputs"]) else 0
+                    )
                 return output, accepted
             except asyncio.CancelledError:
                 self.emit("llm_request_error", {**meta, "error": "cancelled; provider cost may be unknown"})
@@ -1132,12 +1234,27 @@ class AppendAgent:
                 # the tool arguments, a schema miss, an unexpected finish_reason): that
                 # is the model's output, not the provider — unless the body itself
                 # carried a provider error, which classify() already recognises.
-                if kind == "transient" and raw is not None and not isinstance(exc, (ProviderRequestError, ProviderTransportError)) \
+                if kind == "transient" and raw is not None and not isinstance(exc, (ProviderRequestError, ProviderTransportError, ProviderRefusal)) \
                         and not raw.get("error"):
+                    # ProviderRefusal is exempt: a refusal IS a 200 with a body, so
+                    # without naming it here this downgrade would send every refusal
+                    # back down the output path that appends a note and makes it stick.
                     kind = "output"
                 if kind == "fatal":
                     raise
                 if kind == "transient":
+                    if isinstance(exc, ProviderRefusal) and retry_notes:
+                        # A refusal is re-asked unchanged — EXCEPT for correction notes
+                        # an earlier output defect added to THIS turn. Measured
+                        # 2026-09-23 on the live prompted-mode request of
+                        # claude-opus-5.5(low): refused 3/3 with the note present,
+                        # answered 3/3 with it dropped. Re-asking byte-identically
+                        # therefore re-sends the thing being refused, and the turn
+                        # loops until the budget dies — which is exactly what the
+                        # first version of this fix did. The note has already had its
+                        # attempt; the refusal supersedes it.
+                        messages = [m for m in messages if m.get("content") not in retry_notes]
+                        retry_notes.clear()
                     transient_failures += 1
                     waited = time.monotonic() - retry_started
                     wait = policy.wait_s(transient_failures - 1, getattr(exc, "retry_after_s", None))
@@ -1171,6 +1288,13 @@ class AppendAgent:
                     # part of the conversation like any other user turn.
                     if not any(m.get("content") == EMPTY_INPUTS_NOTE for m in messages):
                         messages = messages + [{"role": "user", "content": EMPTY_INPUTS_NOTE}]
+                        retry_notes.append(EMPTY_INPUTS_NOTE)
+                elif isinstance(exc, NoOpInputs):
+                    # Same mechanism as EmptyInputs above: an identical re-ask would
+                    # reproduce the identical no-op, so the correction rides the retry.
+                    if not any(m.get("content") == NOOP_INPUTS_NOTE for m in messages):
+                        messages = messages + [{"role": "user", "content": NOOP_INPUTS_NOTE}]
+                        retry_notes.append(NOOP_INPUTS_NOTE)
                 elif isinstance(exc, MissingToolCall):
                     # Same shape for a text reply in tool mode. For compaction the
                     # accepted history is discarded anyway (compact() replaces it
@@ -1178,11 +1302,13 @@ class AppendAgent:
                     note = tool_call_note(phase)
                     if not any(m.get("content") == note for m in messages):
                         messages = messages + [{"role": "user", "content": note}]
+                        retry_notes.append(note)
                 else:
                     # Every other output defect carries the error it caused, once per
                     # distinct error, so the retry is never a byte-identical re-ask.
                     note = output_defect_note(phase, mode, exc)
                     if not any(m.get("content") == note for m in messages):
+                        retry_notes.append(note)
                         messages = messages + [{"role": "user", "content": note}]
                 # Failed requests are archived, not appended to accepted history.
                 # Retry identical context without switching models or stripping state.

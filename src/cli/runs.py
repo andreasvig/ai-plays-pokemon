@@ -83,6 +83,8 @@ def _cmd_continue(args) -> int:
         body["record"] = False
     if args.rebase_contract:
         body["rebase_contract"] = True
+    if args.from_turn is not None:
+        body["from_turn"] = args.from_turn
     status, data = api(
         "POST", f"/api/runs/{args.run_id}/continue", port=args.port, body=body
     )
@@ -192,6 +194,12 @@ the leaderboard).
     p_cont = sub.add_parser("continue", parents=[common], help="Enqueue a casual continue from a run's savepoint.")
     p_cont.add_argument("run_id", help="Source run_id.")
     p_cont.add_argument("--max-turns", type=int, dest="max_turns", help="Max turns for the continue.")
+    p_cont.add_argument("--from-turn", type=int, dest="from_turn",
+                        help="Resume this savepoint instead of the latest, e.g. 370. Use it to "
+                             "rewind behind a stretch the run has to escape: an append continue "
+                             "restores the CONVERSATION with the checkpoint, so the last savepoint "
+                             "replays whatever the model had most recently convinced itself of. "
+                             "An unknown turn is rejected with the list of savepoints that exist.")
     p_cont.add_argument("--no-record", dest="no_record", action="store_true",
                         help="Don't record. Default: record like the source run (its view and speed) and splice the new footage onto its video.")
     p_cont.add_argument("--rebase-contract", dest="rebase_contract", action="store_true",

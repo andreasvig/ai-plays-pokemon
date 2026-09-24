@@ -662,6 +662,361 @@ muse-spark-1.3:
     minimal:
       sample_turns: 0
 
+# Unbiased "Pareto" (unbiased/pareto, canonical unbiased/pareto-20260917). This
+# is the model that played the board on 2026-09-16 as the cloaked stealth listing
+# "Union Alpha": announced on 2026-09-18, at which point OpenRouter retired
+# `stealth/union-alpha` — there is no `stealth/*` slug in the catalogue any more,
+# so the old id resolves to nothing and `former:` below carries the identity claim.
+# The reveal is corroborated, not assumed: context (262,144), max output (131,072),
+# modality (text+image -> text) and the advertised parameter set all match the
+# 2026-09-16 probe of the stealth endpoint exactly. Only `response_format` differs
+# — the stealth endpoint advertised it, the Unbiased one does not, which costs us
+# nothing because the profile's output_mode is `tool`.
+# What DID change is the price: free while cloaked, $2.50 / $7.50 per M with cache
+# reads at $0.25 now. The one run of it was billed nothing and that stays true in
+# its record; the board shows what it would have cost at this price, derived and
+# labelled as derived (src/app/projection.py token_cost).
+# reasoning_type NONE, and for once that is measured rather than assumed absent: the endpoint's `supported_parameters` are exactly max_tokens/temperature/top_p/tools/tool_choice, with no `reasoning` and no `include_reasoning`. Because the provider profile pins `require_parameters: true`, sending one anyway is not ignored — the router has no endpoint left and answers HTTP 404 "Filter by Parameters" (probe 2026-09-16: pinned + reasoning 404, pinned without it 200, unpinned 200). So this entry has no thinking_levels and its run identity is the bare `pareto`, with the profile's `reasoning_default: null` making the omission a contract instead of a coincidence.
+# 262K ctx / 131K output is the SMALLEST context in this registry, so config-5.1
+# compacts far earlier here than on the 1M-context entries.
+pareto:
+  openrouter_id: unbiased/pareto
+  reasoning_type: none
+  # Renamed out from under a run that already played it, so the board can show
+  # the model by the name it has now without rewriting what went on the wire
+  # (src/config.py renamed_models).
+  former:
+    - alias: union-alpha
+      openrouter_id: stealth/union-alpha
+  observed:
+    # `_` is the type-none key: with no thinking levels there is one telemetry
+    # block, and src/app/catalog.py reads it from "_" to build the picker headline.
+    _:
+      sample_turns: 0
+
+
+# ----------------------------------------------------------------------------
+# Added 2026-09-22 on Andreas's ask — five models for the next round of
+# experiments. Nothing below is copied from a sibling entry: the ladders,
+# context windows, modalities, prices and release dates come from OpenRouter's
+# /api/v1/models and /api/v1/models/<slug>/endpoints, fetched 2026-09-22, and
+# every (model, level) pair was dispatched live the same day through
+# scripts/probe_registry_candidates.py — a real FireRed screenshot plus the
+# pathfinding prompt, so a 200 there means the level is SERVED and the model
+# read the image, not just that the catalogue advertises it. The candidate rows
+# are in that script, so the probe is repeatable.
+#
+# What is NOT probed yet on any of the five: prompt-cache behaviour and
+# reasoning replay. Their profiles therefore carry `cache_mode: unknown` — a
+# listed cache-read price is not an observed hit (the fugu-ultra precedent) —
+# and inherit `reasoning_replay: all`. Latencies quoted below are that one
+# probe, n=1; they are the whole basis for each `slow` flag and nothing more.
+# `observed` starts at sample_turns 0 everywhere — none of them has played yet.
+# ----------------------------------------------------------------------------
+
+# Xiaomi MiMo-V2.6-Flash (released 2026-09-21) — 309B MoE, 15B active per token.
+# Binary thinking, multimodal (text+image+audio+video), 1,048,576 ctx / 131,072
+# output on the sole `xiaomi/fp8` endpoint, $0.14/$0.28 per M with cache read
+# $0.0028 (98% off) — the cheapest model in this registry by prompt price.
+# One thing did NOT carry over from mimo-v2.5: Xiaomi now serves a FIRST-PARTY
+# endpoint, so the v2.5 profile's "Xiaomi serves no first-party endpoint, the
+# cheapest cache read wins" endpoint hunt does not apply here.
+# BINARY is measured, not assumed: the endpoint advertises `reasoning` and
+# `include_reasoning` but NO `reasoning_effort`, and the catalogue lists no
+# `supported_efforts` — the same signature as mimo-v2.5.
+mimo-v2.6-flash:
+  openrouter_id: xiaomi/mimo-v2.6-flash
+  reasoning_type: binary
+  thinking_levels:
+  - thinking
+  - non-thinking
+  # Probe 2026-09-22: `thinking` spent 5,458 reasoning tokens over 78.6s on one
+  # question; `non-thinking` answered the same one in 1.6s. The FIRST attempt at
+  # thinking looked like a failure — coherent=False, empty reply — and was not:
+  # it ran into the probe's own 1,200-token output cap (reasoning=1,200,
+  # out=1,200, nothing left for the answer). Re-probed at 6,000 and it answered.
+  # A capped reply measures the cap, so the flag comes from the 78.6s, not from
+  # that first row.
+  slow:
+    thinking: true
+  observed:
+    thinking:
+      sample_turns: 0
+    non-thinking:
+      sample_turns: 0
+
+# Xiaomi MiMo-V2.6-Pro (released 2026-09-21) — the 1T-parameter flagship beside
+# the Flash above, same day, same sole `xiaomi/fp8` endpoint, same shape
+# (1,048,576 ctx / 131,072 output, text+image+audio+video, binary reasoning,
+# no `reasoning_effort` advertised). It costs about 3x the Flash: $0.435/$0.87
+# per M, cache read $0.0036 (99% off).
+mimo-v2.6-pro:
+  openrouter_id: xiaomi/mimo-v2.6-pro
+  reasoning_type: binary
+  thinking_levels:
+  - thinking
+  - non-thinking
+  # CORRECTED 2026-09-23 — the probe was wrong about this model, in the
+  # direction that matters. On 2026-09-22 this entry said "the bigger model
+  # thinks SHORTER here" and carried no slow flag, on the strength of one probe
+  # question: 315 reasoning tokens in 23.7s, against the Flash's 5,458 in 78.6s.
+  # The first real run (165 attempts, local/runs/2026-09-22_19-28-56_config-5.1__mimo-v2-6-pro-thinking)
+  # says the opposite: median 3,575 reasoning tokens and a 46,996-token turn that
+  # took 1,498.6s, against the Flash run's median 94.1s / max 731.6s. Median
+  # latency 134.6s vs the Flash's 94.1s — the Pro is the SLOWER of the two in
+  # real play. A one-line pathfinding question does not predict a game screen.
+  # NOTE the flag is documentation only on config-5.x: `slow` is read in
+  # src/agent/turn.py (legacy) and nowhere in src/agent/append_agent.py, so it
+  # buys the append harness no extra patience. It still describes the model.
+  slow:
+    thinking: true
+  observed:
+    thinking:
+      sample_turns: 0
+    non-thinking:
+      sample_turns: 0
+
+# Grok 4.7 (released 2026-09-21; catalogue vendor label reads "SpaceXAI"),
+# succeeding grok-4.6 — effort-tiered with MANDATORY reasoning, multimodal
+# (text+image+file), 500,000 ctx / 450,000 output, catalogue default effort
+# `high`. Four endpoint tags, all serving the same context and parameters:
+# `xai` and `xai/zdr` at $1.60/$4.80 per M (cache read $0.40, 75% off), and the
+# two `/priority` tags at exactly double that. The profile pins `xai` and
+# excludes the other three, as grok-4.6's does.
+# COST HAZARD grok-4.6 does not have: the pricing carries a long-context
+# OVERRIDE — above 200,000 prompt tokens the rate doubles to $3.20/$9.60 per M
+# with cache read $0.80. On a 500K-context model with an append harness, a long
+# run crosses that line and the per-turn cost steps up mid-run.
+grok-4.7:
+  openrouter_id: x-ai/grok-4.7
+  reasoning_type: effort
+  thinking_levels:
+  - xhigh
+  - high
+  - medium
+  - low
+  # All four probed 200 and coherent 2026-09-22, and all four were SLOW on a
+  # single question: xhigh 104.6s / 6,477 reasoning tokens, high 115.2s / 6,801,
+  # medium 65.0s / 3,936, low 56.3s / 3,420. `slow: true` is the whole-model
+  # form because no level came in under a minute — note `low` is not a fast
+  # tier here, it is a slightly shorter think.
+  slow: true
+  observed:
+    xhigh:
+      sample_turns: 0
+    high:
+      sample_turns: 0
+    medium:
+      sample_turns: 0
+    low:
+      sample_turns: 0
+
+# PrismML Ternary Bonsai 2 27B (released 2026-09-18) — a 27B reasoning model
+# derived from Qwen3.8-27B, ternary-compressed, multimodal (text+image),
+# 262,144 ctx / 32,768 output on its sole `darkbloom/int4` endpoint at
+# $0.075/$0.50 per M.
+# TWO things make it unlike everything else here. (1) Its ladder has exactly TWO
+# rungs — the catalogue's supported_efforts are `xhigh` and `medium`, with no
+# high and no low, so those are the only two levels this entry may offer.
+# (2) Its endpoint lists NO cache-read price at all, so the append agent's
+# endpoint check will warn "no cache-read price" on every run and every prompt
+# token is billed at full rate — on an append harness that is the expensive
+# shape, and it is the reason the headline $0.075 is not the real number.
+# Its 32,768 output ceiling is also the smallest in this registry (config-5.x
+# authors 8,192 transport / 12,288 compaction, so it fits with room to spare).
+# RATE LIMITS: the single endpoint returned HTTP 429 "temporarily rate-limited
+# upstream" on 2 of 6 probe attempts on 2026-09-22. It is not a 400 and not a
+# refusal of the tier — both tiers answered 200 on a retry — but a gameplay run
+# will meet it, so expect retries rather than a clean run.
+ternary-bonsai-2-27b:
+  openrouter_id: prism-ml/ternary-bonsai-2-27b
+  reasoning_type: effort
+  thinking_levels:
+  - xhigh
+  - medium
+  # Probe 2026-09-22: xhigh 51.6s / 881 reasoning tokens, medium 38.3s / 755,
+  # both coherent on the screenshot. Slow for a 27B model on one question, so
+  # the flag is on; a later xhigh attempt also ran into the probe's 1,200-token
+  # cap, which is the cap and not a defect.
+  slow: true
+  observed:
+    xhigh:
+      sample_turns: 0
+    medium:
+      sample_turns: 0
+
+# Z.AI GLM-5.3-FlashX (released 2026-09-18) — the high-speed variant of
+# glm-5.3-flash, same hybrid sparse/linear attention family, effort-tiered with
+# MANDATORY reasoning (max/high/low, catalogue default `max`), multimodal
+# (text+image+video), 1,048,576 ctx / 131,072 output on the sole `z-ai/fp8`
+# endpoint, $0.37/$1.25 per M with cache read $0.075 (80% off).
+# It is NOT a cheaper flash: glm-5.3-flash serves at $0.075/$0.25 per M, so
+# FlashX costs about 5x its sibling for its speed.
+# Deliberately NO `output_mode: prompted` here, unlike glm-5.3-flash. That
+# entry's `prompted` is a 2026-09-06 finding about the LEGACY (pydantic-ai)
+# path on a DIFFERENT slug, and it has not been re-probed for FlashX — copying
+# it would assert a probe nobody ran. config-5.x reads the provider profile
+# anyway, and this model's profile leaves output_mode at the default `tool`
+# (the endpoint advertises tools and tool_choice).
+glm-5.3-flashx:
+  openrouter_id: z-ai/glm-5.3-flashx
+  reasoning_type: effort
+  thinking_levels:
+  - max
+  - high
+  - low
+  # All three probed 200 and coherent 2026-09-22, and it is genuinely fast:
+  # max 8.6s / 469 reasoning tokens, high 3.6s / 122, low 5.4s / 16. No `slow`
+  # flag — the fastest of the five added today by an order of magnitude.
+  observed:
+    max:
+      sample_turns: 0
+    high:
+      sample_turns: 0
+    low:
+      sample_turns: 0
+
+
+# ----------------------------------------------------------------------------
+# Added 2026-09-23 on Andreas's ask — the three flagship releases of 2026-09-22.
+# Same method as the 2026-09-22 batch above: ladders, context, prices and
+# release dates from OpenRouter's /api/v1/models and /endpoints (fetched
+# 2026-09-23), and every tier dispatched live the same day through
+# scripts/probe_registry_candidates.py against a real FireRed screenshot. All 17
+# (model, tier) pairs returned 200 and coherent.
+#
+# NOT added, and deliberately: the `-pro` slugs (gpt-6-luna-pro, gpt-6-sol-pro)
+# and every `:batch` slug. The 2026-09-07 prune removed gpt-5.6-{luna,sol,terra}-pro
+# by name and gpt-6-astra is in this registry without its own -pro, so "newest
+# version per family, one slug each" is the standing keep-list rule and this
+# batch follows it rather than quietly widening it. `:batch` is an async
+# completion API and cannot serve a turn loop at all. Say the word and the three
+# -pro entries are a small follow-up.
+# ----------------------------------------------------------------------------
+
+# Anthropic Claude Opus 5.5 (released 2026-09-22) — effort-tiered with MANDATORY
+# reasoning (catalogue `reasoning.mandatory` is true here, where claude-opus-5
+# reports false), multimodal (text+image+file), 1,000,000 ctx / 128,000 output,
+# $4/$20 per M with cache read $0.20 (95% off) and cache write $5.00. Eleven
+# endpoint tags all serve the same context and ladder; the profile pins the
+# first-party `anthropic` tag as the rest of the Claude family does.
+# LADDER: max/xhigh/high/medium/low, and NO `minimal` — same trap the opus-5 and
+# sonnet-5 entries document, where a Claude `minimal` returns 200 but is clamped
+# and becomes a second benchmark identity secretly duplicating `low`.
+# COST WARNING, measured not estimated: ONE probe question at `max` cost $0.1528
+# (6,880 reasoning tokens, 84.6s). That is the most expensive single probe in
+# this registry's history — treat max as a deliberate ceiling test, not a
+# routine pick, and read the gpt-6-sol entry below for the cheap comparison.
+claude-opus-5.5:
+  openrouter_id: anthropic/claude-opus-5.5
+  reasoning_type: effort
+  thinking_levels:
+  - max
+  - xhigh
+  - high
+  - medium
+  - low
+  # `prompted` for the LEGACY path only, copied from claude-opus-5 and for the
+  # same documented reason: forced tool_choice suppresses Anthropic thinking.
+  # config-5.x ignores this and reads the profile, which is native_json.
+  output_mode: prompted
+  # Probed 2026-09-23, all five tiers 200 and coherent on the screenshot.
+  # Reasoning tokens were 6,880 (max) / 416 (xhigh) / 288 (high) / 497 (medium)
+  # / 282 (low) — NOT monotonic, and deliberately NOT read as a depth signal:
+  # Anthropic returns summary tokens only, never the raw chain, exactly as the
+  # claude-fable-5.1 entry above records. Only `max` visibly changes the shape.
+  # The first max probe returned an EMPTY reply at a 4,000-token cap; that
+  # measured the cap, and a re-probe at 12,000 answered.
+  observed:
+    max:
+      sample_turns: 0
+    xhigh:
+      sample_turns: 0
+    high:
+      sample_turns: 0
+    medium:
+      sample_turns: 0
+    low:
+      sample_turns: 0
+
+# OpenAI GPT-6 Luna (released 2026-09-22) — the cheap/fast tier of the GPT-6
+# line, effort-tiered, reasoning NOT mandatory so the ladder keeps its `none`
+# rung, multimodal (text+image+file), 1,050,000 ctx / 128,000 output.
+# $0.10/$0.50 per M on the `openai` tag with cache read $0.01 (90% off) and
+# cache write $0.125 — the cheapest OpenAI entry in this registry, an order of
+# magnitude below gpt-5.6-luna's $0.20/$1.20.
+# LADDER NOTE: gpt-6-luna and gpt-6-sol advertise `none`, where gpt-6-astra —
+# already here, same generation — does NOT (its `reasoning.mandatory` is true).
+# The rung is per slug, so it was taken from each slug's own catalogue entry and
+# then dispatched: `none` returned 200 with reasoning_tokens 0 on both.
+# COST HAZARD, shared with sol: the pricing carries a long-context OVERRIDE —
+# above 272,000 prompt tokens the rate doubles to $0.20/$0.75 per M. On a 1M
+# context with an append harness, a long run crosses that line mid-run.
+gpt-6-luna:
+  openrouter_id: openai/gpt-6-luna
+  reasoning_type: effort
+  thinking_levels:
+  - max
+  - xhigh
+  - high
+  - medium
+  - low
+  - none
+  reasoning_summary: auto
+  # Probed 2026-09-23, all six tiers 200 and coherent: reasoning tokens 516 /
+  # 340 / 281 / 218 / 189 / 0 down the ladder — monotonic, so the rungs are real
+  # tiers and not aliases of each other. Latency 8.2s at max down to 2.1s at
+  # none, so no slow flag.
+  observed:
+    max:
+      sample_turns: 0
+    xhigh:
+      sample_turns: 0
+    high:
+      sample_turns: 0
+    medium:
+      sample_turns: 0
+    low:
+      sample_turns: 0
+    none:
+      sample_turns: 0
+
+# OpenAI GPT-6 Sol (released 2026-09-22) — the flagship tier of the GPT-6 line,
+# same shape as Luna above (effort ladder incl. `none`, text+image+file,
+# 1,050,000 ctx / 128,000 output, same `openai` tag) at $2/$10 per M with cache
+# read $0.20 (90% off) and cache write $2.50, and the same long-context override
+# above 272,000 prompt tokens ($4/$15). That is 20x Luna's rate card and half of
+# claude-opus-5.5's — the natural flagship comparison for this batch.
+gpt-6-sol:
+  openrouter_id: openai/gpt-6-sol
+  reasoning_type: effort
+  thinking_levels:
+  - max
+  - xhigh
+  - high
+  - medium
+  - low
+  - none
+  reasoning_summary: auto
+  # Probed 2026-09-23, all six tiers 200 and coherent, and it is TERSE: reasoning
+  # tokens 217 / 158 / 120 / 31 / 21 / 0 down the ladder against Luna's 516..0,
+  # with every tier answering in 2.2-5.7s. The flagship thinks LESS than the
+  # cheap tier on this question — the opposite of the mimo v2.6 pair, and a
+  # reason to expect a cheap-per-turn run rather than a slow one. No slow flag.
+  observed:
+    max:
+      sample_turns: 0
+    xhigh:
+      sample_turns: 0
+    high:
+      sample_turns: 0
+    medium:
+      sample_turns: 0
+    low:
+      sample_turns: 0
+    none:
+      sample_turns: 0
+
 # ============================================================================
 # RETIRED ENTRIES — resolvable, not runnable, and not for the picker
 # ============================================================================
