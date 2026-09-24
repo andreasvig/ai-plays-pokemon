@@ -91,6 +91,14 @@
   --maxw: 90vw;   /* was 1080px; Andreas 2026-09-12: "use more screen width like 90%" */
 }
 
+/* Phone. 90vw leaves 5vw of margin on each side, which is free on a desktop and
+   ~39px of chart on a 390px screen; the components pair this with a 10px gutter
+   in place of 24px (Andreas 2026-09-17: "we can use way more width for the
+   bars"). */
+@media (max-width: 720px) {
+  :root { --maxw: 100vw; }
+}
+
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 body {

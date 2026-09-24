@@ -68,10 +68,19 @@ def test_every_map_the_graph_places_in_the_world_is_placed_here_too(atlas, graph
 # below are the transitions; everything else is a place worth opening.
 
 CORRIDORS = {
-    "Route2_ViridianForest_NorthEntrance",   # Route 2 <-> the forest
-    "Route2_ViridianForest_SouthEntrance",   # the same, at the other end
     "Route22_NorthEntrance",                 # Route 22 <-> Route 23, which we do not render
     "Route2_EastBuilding",                   # Route 2 on both sides, a cliff between them
+}
+# The two forest gates were corridors by the same rule until 2026-09-16, when
+# Andreas asked for the forest and its gates to open together as one place:
+# "i would actually like viridian forest to be a separate room, such that when
+# you click the gate openings you see the gate houses and the forest in a popup
+# stacked on top of each other." They are still transitions — a COMPLEX is the
+# statement that a transition plus what it transitions to is worth opening.
+COMPLEX_MEMBERS = {
+    "Route2_ViridianForest_NorthEntrance",
+    "ViridianForest",
+    "Route2_ViridianForest_SouthEntrance",
 }
 BUILDINGS = {
     "PalletTown_PlayersHouse", "PalletTown_RivalsHouse", "PalletTown_ProfessorOaksLab",
@@ -79,20 +88,37 @@ BUILDINGS = {
     "ViridianCity_PokemonCenter", "Route2_House", "PewterCity_Museum", "PewterCity_Gym",
     "PewterCity_Mart", "PewterCity_House1", "PewterCity_House2", "PewterCity_PokemonCenter",
 }
+COMPLEXES = {"ViridianForest"}
 
 
 def marked(atlas) -> set[str]:
     return {d["building"] for m in atlas["maps"].values() for d in m.get("doors", [])}
 
 
-def test_every_building_has_exactly_one_door_marker(atlas):
-    assert marked(atlas) == BUILDINGS
+def doors_of(atlas, building) -> list[dict]:
+    return [d for m in atlas["maps"].values() for d in m.get("doors", []) if d["building"] == building]
 
 
-def test_no_transition_room_is_marked(atlas):
+def test_every_building_and_complex_has_a_door_marker_and_no_one_else_does(atlas):
+    assert marked(atlas) == BUILDINGS | COMPLEXES
+
+
+def test_a_building_gets_ONE_marker_and_a_complex_one_per_way_in(atlas):
+    for b in BUILDINGS:
+        assert len(doors_of(atlas, b)) == 1, b
+    # Route 2 meets the forest at two gates a long way apart; a marker on only
+    # one leaves the other opening looking like scenery. One per WAY IN, not per
+    # warp — a gate is two tiles wide and carries a warp on each.
+    forest = doors_of(atlas, "ViridianForest")
+    assert len(forest) == 2, forest
+    assert len({d["to"] for d in forest}) == 2, "two gates, not two tiles of one gate"
+
+
+def test_no_transition_room_is_marked_unless_it_belongs_to_a_complex(atlas):
     names = {k: m["name"] for k, m in atlas["maps"].items()}
     entered = {names[d["to"]] for m in atlas["maps"].values() for d in m.get("doors", [])}
     assert entered & CORRIDORS == set()
+    assert entered & COMPLEX_MEMBERS, "the forest gates are the way into the complex"
 
 
 def test_a_door_points_at_an_indoor_map_on_its_own_outdoor_map(atlas):
@@ -113,8 +139,90 @@ def test_a_multi_floor_building_lists_all_its_floors_in_order(atlas):
     multi = {b: ks for b, ks in by_building.items() if len(ks) > 1}
     assert "PalletTown_PlayersHouse" in multi and "PewterCity_PokemonCenter" in multi
     for b, keys in multi.items():
+        if b in COMPLEXES:
+            continue                      # geographic order, asserted below
         for k in keys:
             assert atlas["maps"][k]["floors"] == sorted(keys, key=lambda x: atlas["maps"][x]["name"]), b
+
+
+def test_a_complex_stacks_geographically_and_stays_off_the_world_frame(atlas):
+    names = {k: m["name"] for k, m in atlas["maps"].items()}
+    forest = [k for k, m in atlas["maps"].items() if m.get("building") == "ViridianForest"]
+    assert {names[k] for k in forest} == COMPLEX_MEMBERS
+    for k in forest:
+        m = atlas["maps"][k]
+        # north at the top, south at the bottom — NOT sorted, which would put
+        # the forest beside a gate rather than between the two
+        assert [names[f] for f in m["floors"]] == [
+            "Route2_ViridianForest_NorthEntrance",
+            "ViridianForest",
+            "Route2_ViridianForest_SouthEntrance",
+        ], k
+        assert m["complex"] is True, k
+        # the flag the world frame reads. The forest is a ROUTE, so the old
+        # `type == MAP_TYPE_INDOOR` spelling would have left it on the world.
+        assert m["popup"] is True, k
+    assert atlas["maps"]["1:0"]["type"] == "MAP_TYPE_ROUTE", "the forest is still a route"
+
+
+def test_every_map_drawn_on_the_world_frame_says_so(atlas):
+    # The converse, so `popup` cannot quietly spread: only a building floor or a
+    # complex member carries it.
+    for key, m in atlas["maps"].items():
+        assert bool(m.get("popup")) == bool(m.get("building")), key
+
+
+# -- the way back out (2026-09-16) --------------------------------------------
+# The map walks INTO a building now rather than opening one over itself, so the
+# way back has to be a thing on the map. Andreas: "the whole map should change
+# to that sub-map with an arrow to go back, or the ability to just press on the
+# door to get back out."
+
+
+def test_every_cluster_has_a_way_out_and_it_leaves_the_cluster(atlas):
+    maps = atlas["maps"]
+    names = {k: m["name"] for k, m in maps.items()}
+    by_building: dict[str, list[str]] = {}
+    for key, m in maps.items():
+        if m.get("building"):
+            by_building.setdefault(m["building"], []).append(key)
+
+    for building, keys in by_building.items():
+        exits = [(k, e) for k in keys for e in maps[k].get("exits", [])]
+        assert exits, f"{building} has no way out"
+        for k, e in exits:
+            # An exit into your own cluster is a STAIR, not a way out. Without
+            # this the forest hands you two doors back to its own gate houses
+            # and the 2F of every Centre offers its staircase as an exit.
+            assert maps[e["to"]].get("building") != building, (building, names[k], names[e["to"]])
+            assert 0 <= e["x"] < maps[k]["width"] and 0 <= e["y"] < maps[k]["height"], (k, e)
+
+
+def test_the_forest_leaves_through_its_gates_not_by_itself(atlas):
+    maps = atlas["maps"]
+    assert maps["1:0"].get("exits", []) == [], "the forest's only neighbours are its own gates"
+    for gate in ("15:0", "15:3"):
+        outs = maps[gate]["exits"]
+        assert len(outs) == 1, gate
+        assert maps[outs[0]["to"]]["name"] == "Route2", gate
+
+
+def test_a_three_tile_doorway_is_ONE_way_out(atlas):
+    # Every FireRed doorway is three tiles wide and carries a warp on each.
+    # Compared pairwise against only the doors already kept, the third tile
+    # starts a second door of its own — which is what it did.
+    gym = atlas["maps"]["6:2"]
+    assert gym["name"] == "PewterCity_Gym"
+    assert len(gym["exits"]) == 1, gym["exits"]
+    # and a building with two REAL doors still gets two
+    museum = next(m for m in atlas["maps"].values() if m["name"] == "PewterCity_Museum_1F")
+    assert len(museum["exits"]) == 2, museum["exits"]
+
+
+def test_only_a_map_drawn_in_a_cluster_carries_exits(atlas):
+    for key, m in atlas["maps"].items():
+        if m.get("exits"):
+            assert m.get("popup"), key
 
 
 # -- trimmed edges (2026-09-15) ------------------------------------------------

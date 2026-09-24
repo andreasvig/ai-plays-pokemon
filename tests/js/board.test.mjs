@@ -11,8 +11,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   baseModel, collapseBest, vendorOf, headlineSeries, secondarySeries, battleSeries, trainerTypicals, trainerMatrix, MIN_BATTLE_OBSERVATIONS, turnsPerMinute, costPer10, fmtTokens, PERF_LINE,
-  legTurns, typicalTurnsPerLeg, projectRun, perTaskSeries, estimationMatrix, PROJECT_FROM_GATE, fmtMinutes,
-  ofModel, levelOf, modelField, levelRows, runGateRows,
+  legTurns, typicalTurnsPerLeg, projectRun, perTaskSeries, estimationMatrix, PROJECT_FROM_GATE, projectionCutoff, fmtMinutes,
+  ofModel, levelOf, modelField, levelRows, runGateRows, isFree, costOf, costCell, LIST_NOTE, NO_PRICE,
 } from '../../src/dashboard/web/src/lib/board.js'
 
 const GATES = ['left_bedroom', 'left_house', 'oaks_lab_entered', 'starter_chosen', 'rival1_done', 'route1_reached',
@@ -142,6 +142,24 @@ test('performance bars: partials scale to the 100% line, clears rise above it by
   assert.equal(byModel['glm-5.3-flash(high)'].label, '87%')
   assert.equal(byModel['gpt-6-astra(medium)'].complete, true)
   assert.deepEqual(performance.map((s) => s.row.model), collapseBest(RANKED).map((r) => r.model))
+})
+
+// Every card PRINTS this cut-off ("cleared fewer than 6 of the 12 tasks"), so
+// the number has to come from the ladder rather than a copywriter's memory. The
+// gate is Route 1, the 6th of 12 — exactly half, which is what makes "half the
+// ladder" a true sentence rather than a rounded one (Andreas 2026-09-16).
+test('projectionCutoff names the task the per-task cards refuse to project below', () => {
+  const cut = projectionCutoff(GATES)
+  assert.equal(GATES[cut.no - 1], PROJECT_FROM_GATE)   // the sentence names the right task
+  assert.deepEqual(cut, { no: 6, of: 12, pct: 50 })
+  // A run stopped one task short is genuinely under that percent, and one that
+  // reached it is not — the claim the copy makes.
+  assert.ok(Math.floor((5 / 12) * 100) < cut.pct)
+  assert.ok(Math.floor((6 / 12) * 100) >= cut.pct)
+  // A shorter ladder moves the number; an absent task has nothing to say.
+  assert.deepEqual(projectionCutoff(GATES.slice(0, 8)), { no: 6, of: 8, pct: 75 })
+  assert.equal(projectionCutoff(GATES.slice(0, 5)), null)
+  assert.equal(projectionCutoff([]), null)
 })
 
 test('time and cost cards: per task, cheapest first, projected bars flagged, ineligible rows last with no bar', () => {
@@ -284,7 +302,7 @@ test('battle series: rule-A turn costs, means over ≥4 fights, unfought trainer
 test('empty board yields empty series without dividing by zero', () => {
   assert.deepEqual(headlineSeries([], GATES), { performance: [], time: [], cost: [] })
   assert.deepEqual(secondarySeries([], GATES), { speed: [], cost10: [], turnsPerTask: [], inputsPerTurn: [], outputTokens: [] })
-  assert.deepEqual(battleSeries([]), { movement: [], walls: [], wildTurns: [], trainerTurns: [] })
+  assert.deepEqual(battleSeries([]), { movement: [], wildTurns: [], trainerTurns: [] })
 })
 
 test('estimationMatrix: every run, every leg, ratios to the typical leg, estimates that sum to the projection', () => {
@@ -388,30 +406,6 @@ test('runGateRows: stamps, time and cost at the stamp, the failed leg from the t
   assert.deepEqual([bare[0].timeS, bare[0].costUsd, bare[0].efficiency], [null, null, null])
 })
 
-test('the wall card omits a run that has no per-input trace, and never draws it as zero', () => {
-  // artifacts/wasted-inputs/plan.md W7: 23 of the 25 rows published on
-  // 2026-09-15 predate the trace. A 0% bar would claim they hit no walls.
-  const traced = { model: 'a', wallRate: 0.2, wallsHit: 40, overworldSteps: 100, chargedSteps: 140 }
-  const untraced = { model: 'b', wallRate: null, wallsHit: null }
-  const { walls } = battleSeries([traced, untraced])
-  const on = walls.filter((s) => s.eligible)
-  assert.equal(on.length, 1)
-  assert.equal(on[0].row.model, 'a')
-  assert.equal(on[0].label, '20%')
-  const off = walls.filter((s) => !s.eligible)
-  assert.equal(off.length, 1)
-  assert.equal(off[0].value, null)     // not 0
-  assert.equal(off[0].label, '—')
-})
-
-test('the wall card ranks fewest walls first', () => {
-  const { walls } = battleSeries([
-    { model: 'sloppy', wallRate: 0.3, wallsHit: 30 },
-    { model: 'tidy', wallRate: 0.05, wallsHit: 5 },
-  ])
-  assert.deepEqual(walls.filter((s) => s.eligible).map((s) => s.row.model), ['tidy', 'sloppy'])
-})
-
 test("the gate table's walk % charges wall presses, like the run-level efficiency", () => {
   // 2026-09-15: the run-level figure charged them and this one did not, so the
   // same run read 13% on its Oak's-lab leg and was scored at 9%.
@@ -450,4 +444,180 @@ test('walls is null, not 0, on a leg that never measured them', () => {
   const [leg] = runGateRows(row, gates)
   assert.equal(leg.legWalls, null)
   assert.ok(Math.abs(leg.efficiency - 12 / 18) < 1e-9)
+})
+
+// ── Free models carry no price (Andreas 2026-09-16) ───────────────────────────
+//
+// A model served at $0/$0 is UNPRICED, not cheap. Left on a cost axis it takes
+// the price frontier at x=0, wins every cheapest-model card by construction, and
+// cannot be drawn on the log scale the cost plot uses. So its cost figures are
+// null and its speed/turns figures are untouched — that split is what these pin.
+//
+// The fixture is FULL_C's leg turns (a real full clear) so the free row is
+// eligible and projectable: if it were dropped for any other reason these tests
+// would pass without the rule existing.
+const freeRow = (model, price) => ({ ...row(model, 'stealth/' + model, 100, 140, 150, 20.0, 0.0, FULL_C), pricePerM: price })
+const FREE = freeRow('cloaked-beta', { prompt: 0, completion: 0 })
+const PAID = { ...RANKED[0], pricePerM: { prompt: 10, completion: 50 } }
+const MIXED = [PAID, RANKED[1], FREE]
+
+test('isFree needs two explicit zeroes — absent, partial and paid are all priced', () => {
+  assert.equal(isFree(FREE), true)
+  assert.equal(isFree(PAID), false)
+  // Absent is the pre-2026-09-16 run and the un-nameable endpoint. It must read
+  // as PRICED: showing a paid model as unpriced is the failure worth preventing.
+  assert.equal(isFree(RANKED[1]), false)
+  assert.equal(isFree({ pricePerM: null }), false)
+  assert.equal(isFree({}), false)
+  assert.equal(isFree(undefined), false)
+  // A half-zero is a real (very cheap) price, not a free model.
+  assert.equal(isFree({ pricePerM: { prompt: 0, completion: 2 } }), false)
+  assert.equal(isFree({ pricePerM: { prompt: 0.3, completion: 0 } }), false)
+})
+
+test('a free run loses its cost projection and keeps every other one', () => {
+  const [, , free] = perTaskSeries(MIXED, GATES, MIXED)
+  assert.equal(free.row.model, 'cloaked-beta')
+  assert.ok(free.eligible, 'the fixture clears the ladder, so nothing else can be dropping it')
+  assert.equal(free.costToFinish, null)
+  assert.equal(free.costPerTask, null)
+  // The half that is still a measurement. Asserted with real numbers rather than
+  // "not null", so a change that nulls the whole row fails here.
+  assert.ok(free.minutesPerTask > 0, `minutes survive, got ${free.minutesPerTask}`)
+  assert.ok(free.turnsPerTask > 0, `turns survive, got ${free.turnsPerTask}`)
+  // And the control: the same shape of row WITH a price keeps its cost.
+  const [paid] = perTaskSeries(MIXED, GATES, MIXED)
+  assert.ok(paid.costPerTask > 0, 'a priced row is untouched')
+})
+
+test('the cost cards leave a free model off; the speed cards keep it', () => {
+  const head = headlineSeries(MIXED, GATES, MIXED)
+  const onCost = head.cost.find((s) => s.row.model === 'cloaked-beta')
+  assert.equal(onCost.value, null, 'no value, so the card filters it out')
+  // It is NOT dropped from the series (the card counts it to say why), and it is
+  // still on the two cards that measure something real.
+  assert.ok(head.time.find((s) => s.row.model === 'cloaked-beta').value > 0)
+  assert.ok(head.performance.find((s) => s.row.model === 'cloaked-beta').value > 0)
+
+  const sec = secondarySeries(MIXED, GATES, MIXED)
+  const on10 = sec.cost10.find((s) => s.row.model === 'cloaked-beta')
+  assert.equal(on10.eligible, false)
+  assert.equal(on10.value, null)
+  assert.equal(on10.label, NO_PRICE)
+  assert.equal(on10.height, 0)
+  // Every priced row is still eligible, so the flag means "free", not "missing".
+  assert.equal(sec.cost10.filter((s) => !s.eligible).length, 1)
+  // Turns per minute is a pure rate: the free row keeps it.
+  assert.ok(sec.speed.find((s) => s.row.model === 'cloaked-beta').value > 0)
+})
+
+// ── A cloaked model, once it is announced (Andreas 2026-09-18) ───────────────
+//
+// stealth/union-alpha played the board free on 2026-09-16 and was announced as
+// unbiased/pareto two days later. Its BILL was and stays $0; what changed is
+// that the same tokens now have a price. `costOf` is where that distinction is
+// made, and these pin both halves: the derived figure is used, and it never
+// stops being marked as derived.
+//
+// The numbers are the real ones: 175 turns, $5.583 at $2.50/$7.50/$0.25 per M.
+const REVEALED = {
+  ...freeRow('pareto', { prompt: 0, completion: 0 }),
+  modelResolved: 'unbiased/pareto',
+  listPricePerM: { prompt: 2.5, completion: 7.5, input_cache_read: 0.25 },
+  listCostUsd: 5.583, listCostPerTurn: 5.583 / 175,
+}
+const REVEALED_MIX = [PAID, RANKED[1], REVEALED]
+
+test('costOf names the basis: billed, list, or none', () => {
+  assert.equal(costOf(PAID).basis, 'billed')
+  assert.equal(costOf(PAID).total, PAID.totalCostUsd)
+  // Free with nothing to stand in for it — the 2026-09-16 rule, unchanged.
+  assert.equal(costOf(FREE).basis, 'none')
+  assert.equal(costOf(FREE).total, null)
+  assert.equal(costOf(FREE).perTurn, null)
+  // Free, but the model has a price now.
+  assert.equal(costOf(REVEALED).basis, 'list')
+  assert.equal(costOf(REVEALED).total, 5.583)
+  // A row that was BILLED keeps its bill even if a list price is also present:
+  // the derived figure only ever stands in where there is no bill to show.
+  assert.equal(costOf({ ...PAID, listCostUsd: 999 }).basis, 'billed')
+  assert.equal(costOf({ ...PAID, listCostUsd: 999 }).total, PAID.totalCostUsd)
+})
+
+test('a derived figure prints like any other cost; only the note differs', () => {
+  // Andreas 2026-09-18, on the live board: "remove the ≈ uncertainty symbol,
+  // this is acceptable". The figure is not an estimate — it is the run's tokens
+  // at a published price — so nothing decorates it. What survives is the note,
+  // which a surface hangs on a tooltip.
+  const fmt = (v) => '$' + v.toFixed(2)
+  assert.equal(costCell(REVEALED, fmt).total, '$5.58', 'no marker on the value')
+  assert.equal(costCell(PAID, fmt).total, fmt(PAID.totalCostUsd))
+  assert.equal(costCell(FREE, fmt).total, NO_PRICE)
+  // The note is the ONLY thing that distinguishes them on the page.
+  assert.equal(costCell(REVEALED, fmt).note, LIST_NOTE)
+  assert.equal(costCell(PAID, fmt).note, null)
+  assert.equal(costCell(FREE, fmt).note, null)
+  // And no stray marker anywhere a value is rendered.
+  for (const row of [REVEALED, PAID, FREE]) {
+    const c = costCell(row, fmt)
+    assert.ok(!/≈/.test(c.total + (c.perTurn ?? '')), `marker leaked: ${c.total}`)
+  }
+})
+
+test('a revealed model places on the cost cards, at its derived cost', () => {
+  const head = headlineSeries(REVEALED_MIX, GATES, REVEALED_MIX)
+  const onCost = head.cost.find((s) => s.row.model === 'pareto')
+  assert.ok(onCost.value > 0, `it has a cost now, got ${onCost.value}`)
+  assert.ok(!/≈/.test(onCost.label), `no marker on the bar, got ${onCost.label}`)
+
+  const sec = secondarySeries(REVEALED_MIX, GATES, REVEALED_MIX)
+  const on10 = sec.cost10.find((s) => s.row.model === 'pareto')
+  assert.equal(on10.eligible, true)
+  assert.ok(!/≈/.test(on10.label), `no marker on the strip, got ${on10.label}`)
+  // The value is the DERIVED per-turn rate times ten, not the billed $0 — the
+  // whole point, and with the marker gone this is the only thing asserting it.
+  assert.ok(Math.abs(on10.value - (5.583 / 175) * 10) < 1e-9, `got ${on10.value}`)
+})
+
+test('the derived cost is not a free pass: it sorts on its real value', () => {
+  // PAID is $0.02/turn → $0.20 per 10; the revealed row is $0.0319/turn → $0.32.
+  // So it must sort BEHIND the paid row, which is what a $0 row could never do.
+  const sec = secondarySeries(REVEALED_MIX, GATES, REVEALED_MIX)
+  const shown = sec.cost10.filter((s) => s.eligible).map((s) => s.row.model)
+  assert.ok(shown.includes('pareto'), 'it is on the card')
+  assert.ok(shown.indexOf('pareto') > 0, `not cheapest by construction — order was ${shown}`)
+})
+
+test('the field is what carries it: strip listCostUsd and the row is free again', () => {
+  // The pair above could in principle be passing on some other property of the
+  // fixture. This names the single field the behaviour hangs on — remove it and
+  // the row falls all the way back to the 2026-09-16 rule, card and label both.
+  // (Checked from the other side too: deleting the `list` branch of costOf fails
+  // three of the tests here.)
+  const { listCostUsd, listCostPerTurn, ...stripped } = REVEALED
+  assert.equal(costOf(stripped).basis, 'none')
+  const sec = secondarySeries([PAID, RANKED[1], stripped], GATES, [PAID, RANKED[1], stripped])
+  const on10 = sec.cost10.find((s) => s.row.model === 'pareto')
+  assert.equal(on10.eligible, false)
+  assert.equal(on10.label, NO_PRICE)
+})
+
+test('Unbiased is its own vendor row, and Stealth still catches a cloaked one', () => {
+  assert.equal(vendorOf({ model: 'pareto', modelResolved: 'unbiased/pareto' }).label, 'Unbiased')
+  // The retired row has to keep working for the NEXT cloaked listing.
+  assert.equal(vendorOf({ model: 'union-alpha', modelResolved: 'stealth/union-alpha' }).label, 'Stealth')
+  // Different colours: two labs reading as one on a chart is the bug here.
+  assert.notEqual(vendorOf({ modelResolved: 'unbiased/pareto' }).color,
+                  vendorOf({ modelResolved: 'stealth/whatever-next' }).color)
+})
+
+test('a free model cannot be the cheapest: it is absent from the cost ordering', () => {
+  const sec = secondarySeries(MIXED, GATES, MIXED)
+  // The card renders the eligible half. Were the free row priced at 0 it would
+  // sort FIRST — this asserts it is not merely last, but not in the list at all.
+  const shown = sec.cost10.filter((s) => s.eligible).map((s) => s.row.model)
+  assert.ok(!shown.includes('cloaked-beta'))
+  assert.ok(shown.length === 2 && shown.every((m) => m !== 'cloaked-beta'))
+  // The cheapest shown row is a real price, not a zero.
+  assert.ok(sec.cost10.filter((s) => s.eligible)[0].value > 0)
 })

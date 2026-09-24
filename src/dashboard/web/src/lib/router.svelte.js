@@ -4,8 +4,8 @@
 //   /history                   run list
 //   /history/<slug>            run detail (report)         (both local only since 2026-09-14)
 //   /models/<model>            one model, every thinking level (the public run view)
-//   /about                     about
-//   /methods                   estimation methods (runs × legs matrix)
+//   /methods                   methodology (benchmark, harness, projections)
+//   /contact                   contact + the two open asks
 //
 // Routes are RELATIVE to Vite's base path. Locally that is '/', so nothing
 // changes; the published site lives under '/ai-plays-pokemon/' on GitHub Pages,

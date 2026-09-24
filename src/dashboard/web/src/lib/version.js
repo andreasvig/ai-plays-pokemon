@@ -10,7 +10,40 @@ export const BENCH_LABEL = 'PokeBench v1.1'
 // Newest first. `version` is the season marker runs carry; `date` is when the
 // change went live on the public site. Keep entries to what a reader of the
 // board needs to compare rows across versions — not a commit log.
+//
+// A version can have SEVERAL entries: a change that sharpens what is measured
+// without moving the scoring rules does not bump the season marker, so entries
+// are keyed by date, not by version, and the newest entry carrying
+// BENCH_VERSION is the one marked current.
 export const CHANGELOG = [
+  {
+    version: 'pokebench-v1.1',
+    label: 'v1.1',
+    date: '2026-09-16',
+    title: 'In-depth logging: sharper efficiency scores, and a map of every run',
+    items: [
+      {
+        head: 'Every button press is now traced, not just every turn.',
+        body: 'The referee records where the player stood before and after each individual input. Steps used to be bounded between one poll a turn, which could only ever give a lower bound; they are now counted exactly. Movement efficiency — shortest walk ÷ steps actually taken — is measured against that count, so it is a real number rather than an upper estimate.',
+      },
+      {
+        head: 'Walking into a wall costs a step.',
+        body: 'A press into scenery the player is already facing, where the map has no way through, burns the same frames as a real step and gains no ground — so it is charged like one. That makes efficiency slightly harsher for traced runs than for runs recorded before the trace went live on Sep 14, which are scored on walked steps alone and read a little high. The card marks which runs are which, so the two are never silently compared.',
+      },
+      {
+        head: 'Where every press went.',
+        body: 'Each run now breaks its inputs into buckets that divide them exactly: moved the player, pressed in a battle, walked into a wall, turned to face, eaten by a textbox or an NPC, A or B with nothing moving. It is the clearest single view of how much of a run was real play and how much was fumbling.',
+      },
+      {
+        head: 'The route map.',
+        body: 'Every run draws the path it actually walked on the game\'s own artwork: one line per visit with its colour turning as the run covers ground, arrows moving along it, and buildings and Viridian Forest as places you can walk into and back out of. Battles are marked where they happened.',
+      },
+      {
+        head: 'Battles are read from the game.',
+        body: 'A wild encounter now records the species, its level and how the fight ended — won, ran, caught, lost. A trainer fight carries the trainer and the roster the game gives them. Runs from before Sep 15 have neither and say so rather than guessing an outcome.',
+      },
+    ],
+  },
   {
     version: 'pokebench-v1.1',
     label: 'v1.1',

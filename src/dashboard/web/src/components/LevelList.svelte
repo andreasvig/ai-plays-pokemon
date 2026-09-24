@@ -5,7 +5,7 @@
   // cost, when and on which config — and "(not benchmarked yet)" greyed for a
   // level nobody ran. Expanding a level shows its run (LevelDetail). `open` is
   // the set of expanded levels, owned by the page so a bar click can open one.
-  import { levelLabel } from '../lib/board.js'
+  import { levelLabel, costCell } from '../lib/board.js'
   import { dateShort, dur, usd, legLabel } from '../lib/format.js'
   import LevelDetail from './LevelDetail.svelte'
   let { levels = [], open = new Set(), ontoggle = () => {}, benchmarks = [], onreport = null } = $props()
@@ -32,7 +32,7 @@
             </span>
             <span class="tnum r"><b>{r.turns}</b></span>
             <span class="tnum r"><b>{dur(r.durationS)}</b></span>
-            <span class="tnum r"><b>{usd(r.totalCostUsd)}</b></span>
+            <span class="tnum r" title={costCell(r, usd).note}><b>{costCell(r, usd).total}</b></span>
             <span class="meta faint r">{dateShort(r.startedAt)} · <span class="mono">{r.config}</span>{#if r.continuedFrom} · ↪{/if}</span>
           {:else}
             <span class="comp faint">—</span><span class="r faint">—</span><span class="r faint">—</span><span class="r faint">—</span><span class="r faint"></span>
@@ -77,5 +77,17 @@
     .lhead { display: none; }
     .lhead, .row { grid-template-columns: 18px minmax(100px, 1fr) minmax(120px, 1.2fr) 60px 80px; }
     .row > :nth-child(6), .row > :nth-child(7) { display: none; }
+  }
+  /* Phone (Andreas 2026-09-17). The five tablet columns had a 426px minimum
+     before padding, so the model page scrolled sideways on a 390px screen —
+     the grid's own track minimums, not anything inside a cell. Same five
+     columns, sized to fit. */
+  @media (max-width: 720px) {
+    .lhead, .row { grid-template-columns: 13px minmax(62px, 1fr) minmax(80px, 1.1fr) 40px 50px; gap: 7px; }
+    .row { padding: 10px 9px; }
+    .lname { font-size: 12.5px; }
+    .row b { font-size: 12px; }
+    .track { max-width: none; }
+    .level :global(.detail) { padding: 0 9px 12px; }
   }
 </style>

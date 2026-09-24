@@ -22,12 +22,26 @@ import sys
 from src.cli.ctl_client import api
 
 
-def _fmt_cost(v) -> str:
-    """`$0.51`, or `—` when there is nothing to show."""
+def _fmt_cost(row: dict) -> str:
+    """`$0.51`, `N/A` for a free model, `—` when there is nothing to show.
+
+    A free endpoint's run really did cost $0, but printing that next to paid runs
+    reads as "cheapest" rather than "unpriced" — the same reason the board shows
+    N/A (Andreas 2026-09-16). Takes the whole row, not the number, because the
+    price lives in a different field than the bill.
+    """
+    if is_free_run(row):
+        return "N/A"
     try:
-        return f"${float(v):.2f}"
+        return f"${float(row.get('total_cost_usd')):.2f}"
     except (TypeError, ValueError):
         return "—"
+
+
+def is_free_run(row: dict) -> bool:
+    """The serving endpoint lists $0 for both halves. Absent price = priced."""
+    price = (row or {}).get("endpoint_price_usd_per_m")
+    return bool(price) and price.get("prompt") == 0 and price.get("completion") == 0
 
 
 def _fmt_dur(seconds) -> str:
@@ -80,7 +94,7 @@ def _print_active(emu: dict, runs: list) -> None:
     if row:
         print(
             f"                 {row.get('kind', '?')} · {row.get('model', '?')} · "
-            f"turn {row.get('turns', 0)} · {_fmt_cost(row.get('total_cost_usd'))} · "
+            f"turn {row.get('turns', 0)} · {_fmt_cost(row)} · "
             f"{_fmt_dur(row.get('duration_s'))}"
         )
 
@@ -116,7 +130,7 @@ def _print_runs(runs: list, limit: int) -> None:
     for r in runs[:limit]:
         print(
             f"  {str(r.get('status', '?')):<11} {r.get('turns', 0):>5} "
-            f"{_fmt_cost(r.get('total_cost_usd')):>8}  "
+            f"{_fmt_cost(r):>8}  "
             f"{str(r.get('model', '?')):<26} {r.get('run_id', '')}"
         )
 

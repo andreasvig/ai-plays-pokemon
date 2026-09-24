@@ -1,0 +1,4 @@
+# Run output — screenshots, turn logs, emulator logs. Reproduced by rerunning
+# harness/play.py; the frames worth keeping get copied into ../shots/.
+*
+!.gitignore

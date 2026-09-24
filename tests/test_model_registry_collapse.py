@@ -10,11 +10,17 @@ Re-pointed 2026-09-07 when the registry was pruned to the config-5.0 keep list
 (43 entries -> 21). The fixtures below used gpt-5.5 / grok-4.3 / gemini-3-flash /
 gpt-5.4-nano / grok-build-0.1 / gpt-5.5-pro / gemini-3.5-flash, all of which left
 the registry, so each was re-pointed at a kept model with the SAME shape. Two
-claims could not be re-pointed and are asserted as absences instead, with the
-reason named: the registry no longer contains a `reasoning_type: none` model at
-all (test_always_on_type_none), and it no longer contains a `provider:` block on
-any entry (test_provider_and_output_mode_hoisted) because decision D3 gave the
-provider profile sole ownership of the endpoint.
+claims could not be re-pointed and were asserted as absences instead, with the
+reason named: the registry contained no `reasoning_type: none` model at all
+(test_always_on_type_none), and no `provider:` block on any entry
+(test_provider_and_output_mode_hoisted) because decision D3 gave the provider
+profile sole ownership of the endpoint.
+
+The FIRST of those two absences ended on 2026-09-16, when stealth/union-alpha was
+added: its endpoint advertises no `reasoning` parameter at all, so it is genuinely
+type none rather than an always-on model whose level is simply not selectable.
+Every assertion that read "no entry is type none today" is now an assertion about
+TYPE_NONE, the real set — which is what those comments asked for by name.
 """
 
 import pytest
@@ -41,10 +47,15 @@ REG = _load_models_registry()
 RETIRED = {n for n, e in REG.items() if e.get("retired")}
 ACTIVE = {n: e for n, e in REG.items() if n not in RETIRED}
 
-# A `reasoning_type: none` (always-on, no levels) entry, kept synthetic because the
-# real registry has none since the 2026-09-07 prune. The code path is still live in
-# _reasoning_for_level / resolve_model_selection / list_competitor_aliases, so it is
-# still tested — just not against real data.
+# The real `reasoning_type: none` entries. Since 2026-09-16 this is non-empty
+# (union-alpha), so the branch is exercised against real data and the synthetic
+# fixture below is kept only for the one property no real entry carries.
+TYPE_NONE = {n: e for n, e in ACTIVE.items() if e.get("reasoning_type", "none") == "none"}
+
+# A synthetic type-none entry that is ALSO `slow`. Real data covers the no-levels
+# projection now; what it cannot cover is the slow flag on a model with no level
+# to key it to, because `_slow_for_level` reads a bool or a per-level map and the
+# bool branch has no real example. That is the whole reason this survives.
 ALWAYS_ON = {"openrouter_id": "vendor/always-on-1", "reasoning_type": "none", "slow": True}
 
 
@@ -98,11 +109,18 @@ def test_always_on_type_none():
     # a level on a type-none model is rejected
     with pytest.raises(ValueError):
         resolve_model_selection("always-on-1(high)", registry)
-    # And the absence this test used to cover with grok-4.3: after the 2026-09-07
-    # prune NO real entry is type none, so the branch above is unreachable from
-    # configs/models.yaml. Stated rather than implied — if a type-none model is ever
-    # added back, this assert fires and the fixture above should be dropped for it.
-    assert [n for n, e in REG.items() if e.get("reasoning_type", "none") == "none"] == []
+    # And the same branch against REAL data, which is what the absence assertion
+    # here used to stand in for. A type-none entry must resolve to a bare alias with
+    # no reasoning block and no level — and must be refused a level, because
+    # "pareto(high)" would otherwise look like a legal identity in the picker,
+    # the queue and a run name while sending nothing that differs from the bare one.
+    assert TYPE_NONE, "no real type-none entry — re-point this test or restore the absence claim"
+    for name in TYPE_NONE:
+        real = resolve_model_selection(name, REG)
+        assert real["reasoning"] is None and real["_level"] is None and real["_alias"] == name
+        assert model_thinking_levels(REG[name]) == []
+        with pytest.raises(ValueError):
+            resolve_model_selection(f"{name}(high)", REG)
 
 
 def test_ladder_corrections_of_the_2026_09_07_prune():
@@ -147,6 +165,21 @@ def test_registry_levels_are_a_subset_of_the_profile_reasoning_efforts():
         # not read as "illegal". Its comment says an empty list can never mean
         # "profiled but unchecked" *because this test forbids it* — so assert it
         # here, or that reasoning becomes self-satisfying.
+        # The one legitimate empty list: a profile whose `reasoning_default` is null
+        # says the endpoint takes NO reasoning parameter, so there is no effort to
+        # check and no ladder for an empty list to hide. Assert the exemption both
+        # ways — a null default demands an empty registry ladder and vice versa —
+        # so it cannot be used to silence the check for a model that does reason.
+        no_reasoning = profiles[model].get("reasoning_default", {}) is None
+        assert no_reasoning == (model_thinking_levels(entry) == []), (
+            f"{name} ({model}): `reasoning_default: null` and an empty `thinking_levels` "
+            f"are the same claim and must agree"
+        )
+        if no_reasoning:
+            assert profiles[model]["reasoning_efforts"] == [], (
+                f"{name} ({model}) sends no reasoning at all, so it can have no legal efforts"
+            )
+            continue
         assert profiles[model]["reasoning_efforts"], (
             f"{name} ({model}) is profiled with an EMPTY reasoning_efforts, which makes "
             f"resolve_provider_profile skip the effort check for it"
@@ -243,10 +276,17 @@ def test_catalog_picker_shape():
     assert [lv["level"] for lv in gf["levels"]] == ["high", "medium", "low", "minimal"]
     # binary → the two level names, not an effort ladder
     assert [lv["level"] for lv in rows["mimo-v2.5"]["levels"]] == ["thinking", "non-thinking"]
-    # Every row has levels after the 2026-09-07 prune, because no entry is type none.
-    # The empty-levels/None-default projection is exercised in test_always_on_type_none.
-    assert all(r["levels"] for r in rows.values())
-    assert all(r["default_level"] is not None for r in rows.values())
+    # Levels and a default level iff the entry has a reasoning axis. Split by
+    # TYPE_NONE rather than waved through with `any`, so a model that LOSES its
+    # ladder by accident still fails here instead of joining the exempt side.
+    for name, r in rows.items():
+        if name in TYPE_NONE:
+            assert r["levels"] == [] and r["default_level"] is None, name
+        else:
+            assert r["levels"] and r["default_level"] is not None, name
+    # A type-none row still carries its headline telemetry, read from the "_" block
+    # — the one place the picker projection differs from a levelled model.
+    assert all("observed" in rows[name] for name in TYPE_NONE)
     # default_level is always the first (highest) listed level
     for r in rows.values():
         if r["levels"]:

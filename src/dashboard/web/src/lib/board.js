@@ -47,6 +47,14 @@ const VENDORS = [
   ['minimax', /^minimax\//, /^minimax/, 'MiniMax', '#6b5a94'],
   ['xiaomi', /^xiaomi\//, /^mimo/, 'Xiaomi', '#a75f34'],
   ['sakana', /^sakana\//, /^fugu/, 'Sakana', '#7c5c8a'],
+  ['unbiased', /^unbiased\//, /^pareto/, 'Unbiased', '#3e7a7a'],
+  // A cloaked listing, so the "vendor" is the listing itself — OpenRouter names
+  // the provider only as Stealth. Kept BELOW the named labs and after Unbiased,
+  // which is where its one occupant went: stealth/union-alpha was announced as
+  // unbiased/pareto on 2026-09-18 and the projection now renames the run onto
+  // the row above. This row stays for the next cloaked model, which there will
+  // be — without it every future one falls into Other together.
+  ['stealth', /^stealth\//, /^union/, 'Stealth', '#5f6f6f'],
 ]
 const UNKNOWN = { key: 'other', label: 'Other', color: '#9a9184' }
 
@@ -60,6 +68,77 @@ export function vendorOf(row) {
     if (byAlias.test(alias)) return { key, label, color }
   }
   return UNKNOWN
+}
+
+/**
+ * A run served by an endpoint that lists $0 for both prompt and completion —
+ * a free model (today: the stealth listings, free while under evaluation).
+ *
+ * Its bill is real and its speed and performance are real, so it stays on the
+ * board; what it has no business doing is placing on a COST axis. $0.00 is not
+ * the cheapest price, it is the absence of one, and a row at x=0 takes the whole
+ * price frontier, wins every cheapest-model card by construction, and cannot be
+ * drawn on the log scale the cost plot uses. So every cost figure for it reads
+ * N/A and every cost ranking leaves it out (Andreas 2026-09-16).
+ *
+ * `pricePerM` absent means the serving endpoint could not be named, NOT that it
+ * was free — an unpriced-looking paid model is the failure worth avoiding, so
+ * anything short of two explicit zeroes is treated as priced.
+ */
+export function isFree(row) {
+  const p = row?.pricePerM
+  return !!p && p.prompt === 0 && p.completion === 0
+}
+
+/** What a cost surface prints for a run that has no list price. */
+export const NO_PRICE = 'N/A'
+
+/**
+ * The cost figures to print for a run, and — the point of the helper — WHAT
+ * THEY ARE. One place decides, so no surface can show a derived number as a
+ * bill by forgetting to ask (Andreas 2026-09-18).
+ *
+ *   billed — the run was charged this. The ordinary case.
+ *   list   — the run was charged NOTHING, because it played under a cloaked
+ *            listing that served free, and the model has a price now. This is
+ *            what those same tokens cost at that price. Nobody paid it, so it
+ *            prints behind an ≈ and says so on hover.
+ *   none   — free, and no list price to stand in. Cost surfaces read N/A and
+ *            cost rankings leave the run out, exactly as before.
+ *
+ * The `none` shape is two nulls, which is what every call site here already
+ * handled as "this run has no cost" — so the basis is additive and the rule it
+ * replaces still holds for the runs it was written for.
+ */
+export function costOf(row) {
+  if (!isFree(row)) return { total: row?.totalCostUsd ?? null, perTurn: row?.avgCostPerTurn ?? null, basis: 'billed' }
+  if (row?.listCostUsd != null) return { total: row.listCostUsd, perTurn: row.listCostPerTurn ?? null, basis: 'list' }
+  return { total: null, perTurn: null, basis: 'none' }
+}
+
+/**
+ * Where a `list` figure comes from. It prints like any other cost — Andreas
+ * 2026-09-18, on seeing it live: "remove the ≈ uncertainty symbol, this is
+ * acceptable" — because it is not an estimate. It is the run's own token counts
+ * at a published price, and that arithmetic reproduces the billed total of
+ * every paid run on the board (tests/test_projection_list_cost.py). So the
+ * provenance lives on hover and in the run's own footnote, not in the number.
+ */
+export const LIST_NOTE = 'this run played free under a cloaked listing and was billed nothing — the figure is its own tokens at the price the model lists today'
+
+/**
+ * A run's cost cell, formatted: the total, the per-turn rate, the basis and the
+ * note. `fmt` is passed in because board.js imports nothing (lib/format.js
+ * `usd` at every call site today).
+ */
+export function costCell(row, fmt) {
+  const c = costOf(row)
+  return {
+    basis: c.basis,
+    total: c.total == null ? NO_PRICE : fmt(c.total),
+    perTurn: c.perTurn == null ? null : fmt(c.perTurn),
+    note: c.basis === 'list' ? LIST_NOTE : null,
+  }
 }
 
 /** Where the 100% line sits in the performance card, as a fraction of the plot height. */
@@ -85,13 +164,38 @@ export function costPer10(avgCostPerTurn) {
 // the turns it already burned there (the floor — an estimate below what was
 // spent would be a lie). Cost and time to finish are the run's own totals plus
 // the estimated extra turns at its own per-turn rates. Only a run that reached
-// PROJECT_FROM_GATE is projected: the six gates before it cost cents for every
-// model and say nothing about pace.
+// PROJECT_FROM_GATE is projected: before it the legs are indoors, scripted and
+// near-identical for every model, so they say nothing about pace.
+//
+// That gate is Route 1 — task 6, exactly half the ladder. It was Viridian City
+// (task 7) until Andreas unified it on 2026-09-16: the battle and efficiency
+// cards already used Route 1 as their floor, and one board should have ONE
+// eligibility rule. The move made exactly one more run projectable.
 
 /** A run counts on the per-task cards once it has reached this gate. */
-export const PROJECT_FROM_GATE = 'viridian_reached'
+export const PROJECT_FROM_GATE = 'route1_reached'
+/**
+ * The board's ONE eligibility test: did this run clear the task every card
+ * needs before its numbers say anything? Read through PROJECT_FROM_GATE so the
+ * projection rule and the battle/efficiency floors can never drift apart.
+ */
+export const reachedFloor = (row) => row?.gateTurns != null && row.gateTurns[PROJECT_FROM_GATE] != null
+
 /** A leg has a typical value once this many runs cleared it. */
 export const MIN_CLEARS_FOR_TYPICAL = 3
+
+/**
+ * Where the projection cut-off sits on the ladder the board is playing, so
+ * every card can SAY it in the same words: {no, of, pct} — gate `no` of `of`,
+ * which is `pct`% completion. A run that stops short of it is left off the
+ * per-task cards entirely. Null when the ladder does not contain the gate.
+ * Takes the ids rather than importing the ladder: board.js stays import-free.
+ */
+export function projectionCutoff(gateIds) {
+  const i = (gateIds || []).indexOf(PROJECT_FROM_GATE)
+  if (i < 0 || !gateIds.length) return null
+  return { no: i + 1, of: gateIds.length, pct: Math.floor(((i + 1) / gateIds.length) * 100) }
+}
 
 /** Turns spent on each cleared leg, in ladder order (stops at the first uncleared gate). */
 export function legTurns(row, gateIds) {
@@ -165,9 +269,16 @@ export function perTaskSeries(rows, gateIds, pool = rows) {
   return rows.map((r) => {
     const p = projectRun(r, typical, gateIds)
     if (!p.eligible) return { row: r, ...p, costToFinish: null, minutesToFinish: null, costPerTask: null, minutesPerTask: null, turnsPerTask: null }
-    const costToFinish = (r.totalCostUsd ?? 0) + p.estimated * (r.avgCostPerTurn ?? 0)
+    // A run with no cost at all projects to $0 whatever its pace, so the cost
+    // half is null and only the cost half — its minutes and turns are ordinary
+    // measurements. A run played free under a cloaked listing HAS a cost now
+    // (costOf, basis `list`) and projects like any other.
+    const c = costOf(r)
+    const costToFinish = c.total == null ? null : c.total + p.estimated * (c.perTurn ?? 0)
     const minutesToFinish = ((r.durationS ?? 0) + p.estimated * (r.avgSPerTurn ?? 0)) / 60
-    return { row: r, ...p, costToFinish, minutesToFinish, costPerTask: costToFinish / n, minutesPerTask: minutesToFinish / n, turnsPerTask: p.projected / n }
+    return { row: r, ...p, costToFinish, minutesToFinish,
+             costPerTask: costToFinish == null ? null : costToFinish / n,
+             minutesPerTask: minutesToFinish / n, turnsPerTask: p.projected / n }
   })
 }
 
@@ -221,10 +332,15 @@ export function secondarySeries(rows, gateIds = [], pool = rows) {
   const speedMax = speedVals.length ? Math.max(...speedVals.map((s) => s.value)) || 1 : 1
   const speed = speedVals.map((s) => ({ ...s, height: s.value / speedMax, label: fmtTpm(s.value) }))
 
-  const costVals = rows.map((r) => ({ row: r, value: costPer10(r.avgCostPerTurn), eligible: true, complete: true }))
-    .sort((a, b) => a.value - b.value)
-  const costMax = costVals.length ? Math.max(...costVals.map((c) => c.value)) || 1 : 1
-  const cost10 = costVals.map((c) => ({ ...c, height: c.value / costMax, label: fmtUsd(c.value) }))
+  // Cost per 10 turns shows every run that HAS a cost; one with none is marked
+  // ineligible rather than dropped here, so the card can count it and say why.
+  const costVals = rows.map((r) => {
+    const c = costOf(r)
+    return { row: r, value: c.perTurn == null ? null : costPer10(c.perTurn), eligible: c.perTurn != null, complete: true }
+  }).sort((a, b) => (a.value ?? Infinity) - (b.value ?? Infinity))
+  const costMax = costVals.length ? Math.max(...costVals.map((c) => c.value ?? 0)) || 1 : 1
+  const cost10 = costVals.map((c) => ({ ...c, height: c.value == null ? 0 : c.value / costMax,
+                                        label: c.value == null ? NO_PRICE : fmtUsd(c.value) }))
 
   const turnsPerTask = lowerIsBetter(perTaskSeries(rows, gateIds, pool), (s) => s.turnsPerTask, (v) => v.toFixed(1))
 
@@ -248,7 +364,7 @@ export function secondarySeries(rows, gateIds = [], pool = rows) {
 }
 
 /**
- * The runs × legs matrix behind the projections, for the Estimation methods
+ * The runs × legs matrix behind the projections, for the Methodology
  * page: every run of `pool` (all thinking levels, not collapsed), each leg's
  * actual turns and ratio to the typical value, the estimated turns for each leg
  * the run never cleared (failed leg floored at turns burned), and the per-run
@@ -278,7 +394,8 @@ export function estimationMatrix(pool, gateIds) {
           return { gate: g, turns, ratio: turns / typical[g], floored: i === 0 && p.floored }
         })
       : []
-    const costToFinish = p.eligible ? (r.totalCostUsd ?? 0) + p.estimated * (r.avgCostPerTurn ?? 0) : null
+    const c = costOf(r)
+    const costToFinish = p.eligible && c.total != null ? c.total + p.estimated * (c.perTurn ?? 0) : null
     const minutesToFinish = p.eligible ? ((r.durationS ?? 0) + p.estimated * (r.avgSPerTurn ?? 0)) / 60 : null
     return {
       row: r, legs, tail, estimates, ...p,
@@ -301,7 +418,6 @@ export function fmtTpm(v) {
 /**
  * Battles + movement (2026-09-14, artifacts/battle-and-movement-fidelity/plan.md).
  * movement — shortest path ÷ overworld steps over every leg with a shortest path, best first.
- * walls — direction presses into a wall ÷ presses made outside a battle, fewest first.
  * wildTurns — turns per wild battle (rule A: turns that STARTED in one), fewest
  *   first; only runs that cleared Route 1 — before that no wild grass is
  *   reachable and a run has nothing to say (Andreas 2026-09-14).
@@ -345,7 +461,7 @@ const hasPerTurn = (r) => r.battleFidelity === 'live' || r.battleFidelity === 'b
  * so every run is scored on the same roster (Andreas 2026-09-14) — is
  * projected as one fight at pace × typical; a fight against a trainer whose
  * column is not usable is shown but left out of the average. The
- * Estimation methods page renders it; battleSeries().trainerTurns is built
+ * Methodology page renders it; battleSeries().trainerTurns is built
  * from the same numbers.
  */
 export function trainerMatrix(pool, rows = pool) {
@@ -426,15 +542,7 @@ export function battleSeries(rows, pool = rows) {
     (v) => Math.round(v * 100) + '%', { desc: true })
     .concat(rows.filter((r) => r.movementEfficiency == null).map(OFF))
 
-  // Presses into a wall as a share of every press made outside a battle. Lower
-  // is better, and only a run with a per-input trace is eligible — a run that
-  // never measured it is OFF, so the card shows no bar and says how many.
-  const walls = rank(rows.filter((r) => r.wallRate != null)
-    .map((r) => ({ row: r, value: r.wallRate, eligible: true, complete: true })),
-    (v) => Math.round(v * 100) + '%')
-    .concat(rows.filter((r) => r.wallRate == null).map(OFF))
-
-  const wildOk = (r) => r.wildBattles > 0 && r.wildBattleTurns != null && r.gateTurns != null && r.gateTurns.route1_reached != null
+  const wildOk = (r) => r.wildBattles > 0 && r.wildBattleTurns != null && reachedFloor(r)
   const wildTurns = rank(rows.filter(wildOk)
     .map((r) => ({ row: r, value: r.wildBattleTurns / r.wildBattles, eligible: true, complete: true })),
     (v) => v.toFixed(1))
@@ -456,7 +564,7 @@ export function battleSeries(rows, pool = rows) {
       eligible: true, complete: m.complete })
   }
   const trainerTurns = rank(trainerVals, (v) => v.toFixed(1)).concat(trainerOff)
-  return { movement, walls, wildTurns, trainerTurns }
+  return { movement, wildTurns, trainerTurns }
 }
 
 // ───────────── model pages (2026-09-14, artifacts/model-pages/plan.md) ─────────────
@@ -528,7 +636,13 @@ const legCharged = (leg) => (leg?.steps ?? 0) + (leg?.walls ?? 0)
 export function runGateRows(row, gates) {
   const stamps = row?.gateTurns || {}
   const times = row?.gateTimesS || {}
-  const costs = row?.gateCostsUsd || {}
+  // The ladder shows the SAME basis as the run's header (costOf): a run billed
+  // nothing shows what its calls cost at the model's list price, not twelve
+  // zeroes under a $5.58 total. `costBasis` travels out on every row so the
+  // table can put the provenance on the column's tooltip once, rather than
+  // repeating it per cell.
+  const basis = costOf(row).basis
+  const costs = (basis === 'list' ? row?.gateListCostsUsd : row?.gateCostsUsd) || {}
   const legs = new Map((row?.movementLegs || []).map((l) => [l.node_id, l]))
   const named = String(row?.terminationReason ?? '').split(':')[1] || null
   let prev = 0, chain = true
@@ -543,7 +657,7 @@ export function runGateRows(row, gates) {
     }
     const leg = legs.get(g.id)
     const out = {
-      id: g.id, name: g.name, status, turn, legTurns, cap: g.cap ?? null,
+      id: g.id, name: g.name, status, turn, legTurns, cap: g.cap ?? null, costBasis: basis,
       timeS: turn != null && typeof times[g.id] === 'number' ? times[g.id] : null,
       costUsd: turn != null && typeof costs[g.id] === 'number' ? costs[g.id] : null,
       // Charged, not walked: the run-level efficiency pays for presses into a

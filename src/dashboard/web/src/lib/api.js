@@ -83,6 +83,19 @@ export function toRun(s) {
     durationS: s.duration_s ?? 0,
     totalCostUsd: s.total_cost_usd ?? 0,
     avgCostPerTurn: s.avg_cost_per_turn_usd ?? 0,
+    // The Player endpoint's LIST price, USD per million {prompt, completion}
+    // (2026-09-16). Carried RAW so `isFree` in board.js is the one place that
+    // turns it into a verdict; null means the serving endpoint could not be
+    // named, which reads as priced, never as free.
+    pricePerM: s.endpoint_price_usd_per_m ?? null,
+    // What the run would cost at the model's price TODAY, for a run that played
+    // under a cloaked listing and so was billed nothing (2026-09-18). Also raw:
+    // `costOf` in board.js is the one place that decides whether a surface shows
+    // the bill or this, and it is the only thing that can label it as derived.
+    // Null on every ordinary run — there the bill is the answer.
+    listPricePerM: s.list_price_usd_per_m ?? null,
+    listCostUsd: s.list_price_cost_usd ?? null,
+    listCostPerTurn: s.list_price_per_turn_usd ?? null,
     avgSPerTurn: s.avg_s_per_turn ?? 0,
     furthestGate,
     furthestGateName: furthestGate && GATE_INDEX[furthestGate] != null ? gate(furthestGate).name : null,
@@ -95,6 +108,9 @@ export function toRun(s) {
     // movement_efficiency (2026-09-14, model pages: the expanded level's table).
     gateTimesS: s.gate_times_s ?? null,
     gateCostsUsd: s.gate_costs_usd ?? null,
+    // The ladder at list price, for a run that was billed nothing. Raw, like
+    // the pair above; board.js runGateRows picks which one the table shows.
+    gateListCostsUsd: s.gate_list_costs_usd ?? null,
     movementLegs: s.movement_legs ?? null,
     avgInputsPerTurn: s.avg_inputs_per_turn ?? null,
     inputCounts: s.input_counts ?? null,
@@ -112,7 +128,6 @@ export function toRun(s) {
     movementEfficiency: s.movement_efficiency ?? null,
     // Wasted inputs (2026-09-15, artifacts/wasted-inputs/plan.md). null on a run
     // played before the per-input trace went live — NOT zero: it never measured.
-    wallRate: s.wall_rate ?? null,
     wallsHit: s.walls_hit ?? null,
     chargedSteps: s.charged_steps ?? null,
     // The eight-bucket census, on the row so the model page needs no fetch.

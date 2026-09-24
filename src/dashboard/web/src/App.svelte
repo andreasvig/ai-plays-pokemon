@@ -9,8 +9,8 @@
   import Spectate from './components/Spectate.svelte'
   import Report from './components/Report.svelte'
   import Changelog from './components/Changelog.svelte'
-  import EstimationMethods from './components/EstimationMethods.svelte'
-  import { BENCH_VERSION } from './lib/version.js'
+  import Methodology from './components/Methodology.svelte'
+  import Contact from './components/Contact.svelte'
   import AddRunDialog from './components/AddRunDialog.svelte'
   import { router } from './lib/router.svelte.js'
   import { recording, recordRun, forcedSimple, forcedShow } from './lib/record.js'
@@ -24,9 +24,9 @@
   // 2026-09-14); the published site reads a run on its model's page.
   const view = $derived(
     parts[0] === 'spectate' ? (STATIC ? 'home' : 'spectate')
-    : parts[0] === 'about' ? 'about'
     : parts[0] === 'changelog' ? 'changelog'
     : parts[0] === 'methods' ? 'methods'
+    : parts[0] === 'contact' ? 'contact'
     : parts[0] === 'models' && parts[1] ? 'model'
     : parts[0] === 'history' ? (STATIC ? 'home' : parts[1] ? 'report' : 'history')
     : 'home'
@@ -310,23 +310,12 @@
       {recording} {forcedSimple} {forcedShow} />
   {:else if view === 'report'}
     <Report run={selectedRun} {benchmarks} focusTurn={reportTurn} onback={() => go('/history')} oncontinue={openContinue} />
-  {:else if view === 'about'}
-    <section class="about">
-      <h2>About PokeBench</h2>
-      <p>PokeBench measures whether a language model can <em>play Pokémon FireRed at pace</em>.
-        Every official run uses the same harness, the same frozen config, the same ROM, and the
-        same starting save — the model is the only variable.</p>
-      <p>A <b>deterministic referee</b> reads the game's memory out-of-band (the playing agent never
-        sees it) and stamps story checkpoints. A <b>progressive gate ladder</b> attaches a turn
-        deadline to each checkpoint, and each leg between checkpoints has its own turn cap; a run
-        that falls behind pace, or spends a whole leg's budget on one section, is terminated. A model is scored
-        first on how much of the ladder it clears, then — among full clears — on how few turns it took.</p>
-      <p class="faint">{BENCH_VERSION} · see the <button class="link" onclick={() => go('/changelog')}>changelog</button> for what changed between versions.</p>
-    </section>
   {:else if view === 'methods'}
-    <EstimationMethods rows={leaderboard} oninspect={inspect} />
+    <Methodology rows={leaderboard} {benchmarks} oninspect={inspect} onchangelog={() => go('/changelog')} />
   {:else if view === 'changelog'}
     <Changelog />
+  {:else if view === 'contact'}
+    <Contact />
   {/if}
 </main>
 
@@ -336,10 +325,4 @@
 <style>
   main { min-height: calc(100vh - 57px); }
   main.kiosk { height: 100vh; min-height: 0; overflow: hidden; }
-  .about { max-width: 680px; margin: 0 auto; padding: 48px 24px; }
-  .about h2 { font-size: 26px; font-weight: 780; letter-spacing: -.02em; margin: 0 0 16px; }
-  .about p { font-size: 15px; line-height: 1.65; color: var(--muted); }
-  .about em { font-style: italic; color: var(--text); }
-  .about b { color: var(--text); }
-  .about .link { border: none; background: none; padding: 0; color: var(--accent); font: inherit; text-decoration: underline; cursor: pointer; }
 </style>

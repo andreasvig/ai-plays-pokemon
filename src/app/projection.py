@@ -19,9 +19,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from src.app import battle_stats, replay, route
 from src.app.models import RunKind, RunStatus, RunSummary
+from src.config import _load_models_registry, renamed_models
 from src.referee.progress import OPEN_LEG_FRACTION_CAP
 
 # Benchmark legacy official runs (a benchmark_version but no benchmark id) map to.
@@ -38,7 +40,7 @@ _DEFAULT_LADDER = Path("configs/checkpoints-firered-v1.yaml")
 #   1 — 2026-09-09: error / crash (why a crashed run ended).
 #   2 — 2026-09-09: record (the spec the run was recorded with, for continues).
 #   3 — 2026-09-11: open-leg fraction capped at OPEN_LEG_FRACTION_CAP.
-PROJECTION_VERSION = 13  # 13 (2026-09-15): wall presses charged against movement_efficiency + the per-run input breakdown (artifacts/wasted-inputs/plan.md); 12 (2026-09-15): legs + battles replayed from events.jsonl (src/app/replay.py), so a rule change needs no back-fill; 11: route_points / route_coverage; 10 (2026-09-14): starter leg re-scored to the ball taken (score_to reached) in every run_summary; 9: Oak's Parcel leg re-scored (scripts/backfill_parcel_leg.py); 8: gate_times_s / gate_costs_usd / movement_legs
+PROJECTION_VERSION = 15  # 15 (2026-09-18): list_price_* — what a run played under a cloaked (free) listing would cost at the model's price once the lab announced it, plus the `former:` rename so the row carries the name the model has today; 14 (2026-09-16): endpoint_price_usd_per_m — the serving endpoint's LIST price, so the board can tell a free model from a cheap one; 13 (2026-09-15): wall presses charged against movement_efficiency + the per-run input breakdown (artifacts/wasted-inputs/plan.md); 12 (2026-09-15): legs + battles replayed from events.jsonl (src/app/replay.py), so a rule change needs no back-fill; 11: route_points / route_coverage; 10 (2026-09-14): starter leg re-scored to the ball taken (score_to reached) in every run_summary; 9: Oak's Parcel leg re-scored (scripts/backfill_parcel_leg.py); 8: gate_times_s / gate_costs_usd / movement_legs
 
 # Status values the report treats as "cleared" for a gate (mirror report.py).
 _CLEARED_STATUSES = ("done", "auto")
@@ -133,6 +135,176 @@ def _input_stats(run_dir: Path) -> tuple[float | None, dict[str, int] | None]:
     return total / len(per_turn), dict(sorted(counts.items(), key=lambda kv: -kv[1]))
 
 
+def _endpoint_price(run_dir: Path) -> dict[str, float] | None:
+    """The Player endpoint's LIST price, USD per million prompt/completion tokens.
+
+    Raw, not a verdict. The board derives "this model is free" from a pair of
+    zeroes and shows N/A instead of $0.00 for it — a free model is not the
+    cheapest model, it is an unpriced one, and letting it place on a cost axis
+    would hand it the whole price frontier at x=0 (Andreas 2026-09-16).
+
+    The source is conversation/endpoint-pricing.json, which the append agent
+    snapshots once per run from OpenRouter. So this is what the PLAYER's endpoint
+    charged — deliberately not the run's total, which also carries OCR (a paid
+    model: gpt-oss-120b), and would therefore be non-zero on a free run and give
+    the opposite answer.
+
+    None when the file is missing (every pre-append run) or the serving endpoint
+    cannot be identified. None must read as UNKNOWN downstream, never as free:
+    the failure that matters here is a paid model quietly shown as unpriced, so
+    the ambiguous cases all fall on the priced side.
+    """
+    pricing = _load_json(run_dir / "conversation" / "endpoint-pricing.json")
+    endpoints = (pricing or {}).get("endpoints") or []
+    if not endpoints:
+        return None
+    # A profiled run pins one tag, and the resolved profile is saved with the run
+    # config — NOT in run_summary.json, which carries no endpoint at all. With
+    # exactly one served endpoint there is nothing to disambiguate. Anything else
+    # (an unprofiled run, several tags, a renamed tag) is a run whose endpoint
+    # cannot be named from here, and it stays unknown rather than guessing the
+    # cheapest or the first.
+    pinned = (_load_json(run_dir / "config.json") or {}).get("_provider_profile", {}).get("endpoint")
+    if pinned:
+        # A pinned tag is an exact claim. If it is not among the served endpoints
+        # the run's routing and this file disagree, and the lone-endpoint shortcut
+        # below must NOT paper over it — that is how a $0 endpoint would get
+        # attributed to a run that was pinned somewhere else entirely.
+        match = [e for e in endpoints if e.get("tag") == pinned]
+    else:
+        # Nothing pinned (an unprofiled run). One served endpoint is not a guess;
+        # several are.
+        match = endpoints
+    if len(match) != 1:
+        return None
+    return _per_million(match[0].get("pricing"))
+
+
+def _per_million(prices: Any) -> dict[str, float] | None:
+    """One endpoint's ``pricing`` block in USD per MILLION tokens.
+
+    ``prompt`` and ``completion`` are required — an endpoint missing either is
+    not priced. The two cache rates are optional and absent means something
+    different for each, which is measured rather than assumed (2026-09-18, over
+    all 27 published runs):
+
+    * no ``input_cache_read`` → cache reads cost NOTHING. Checked against the
+      billed total on glm, deepseek, kimi, grok and muse, which list no read
+      price and whose bills come out exact only when cached tokens are free.
+      Pricing them at the prompt rate instead overstates every one of them.
+    * no ``input_cache_write`` → a cache write is an ordinary prompt token, at
+      the prompt rate. OpenAI, Anthropic and Google all list one and all charge
+      a premium; the bills only reconcile when it is applied.
+    """
+    if not isinstance(prices, dict):
+        return None
+    try:
+        # OpenRouter quotes USD per TOKEN as a string; per million is the readable unit.
+        out = {"prompt": float(prices["prompt"]) * 1_000_000,
+               "completion": float(prices["completion"]) * 1_000_000}
+    except (KeyError, TypeError, ValueError):
+        return None
+    for key in ("input_cache_read", "input_cache_write"):
+        raw = prices.get(key)
+        if raw is None:
+            continue
+        try:
+            out[key] = float(raw) * 1_000_000
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _list_price(run_dir: Path) -> dict[str, float] | None:
+    """Today's list price for a model the run played under a CLOAKED listing.
+
+    ``conversation/endpoint-pricing-revealed.json`` exists only where the two
+    differ: a stealth listing serves free, and the same weights get a name and
+    a price when the lab announces them. The run-time snapshot stays the record
+    of what was charged; this is the price the model carries now, written by
+    ``scripts/snapshot_revealed_pricing.py``.
+
+    One endpoint or none — a revealed model that serves from several is a run
+    whose rate cannot be named, and an unnameable rate must stay None rather
+    than pick the cheapest.
+    """
+    revealed = _load_json(run_dir / "conversation" / "endpoint-pricing-revealed.json")
+    endpoints = (revealed or {}).get("endpoints") or []
+    if len(endpoints) != 1:
+        return None
+    return _per_million(endpoints[0].get("pricing"))
+
+
+def token_usage(run_dir: Path) -> dict[str, int] | None:
+    """Every token the Player was billed for, from the ``llm_request_usage`` events.
+
+    The events are the one accumulator that is internally consistent: prompt,
+    cached, written and completion all come off the same provider usage block,
+    call by call. ``run_summary.json``'s ``cost.total_*_tokens`` is a separate
+    count and the two DISAGREE on at least one run (2026-09-11 gpt-6-astra-low:
+    3,416,654 against the events' 5,290,213), which is why this does not read it.
+
+    None when the run has no usage events at all.
+    """
+    keys = {"prompt": "request_tokens", "cached": "cached_tokens",
+            "written": "cache_write_tokens", "completion": "response_tokens"}
+    # A run logs the same call under BOTH names — `llm_request_usage` and the
+    # legacy `turn_usage` — so these are summed apart and the newer one wins,
+    # exactly as ``_gate_clock`` does with the billed cost. Adding them together
+    # doubles every token the run spent.
+    totals = {"llm_request_usage": dict.fromkeys(keys, 0), "turn_usage": dict.fromkeys(keys, 0)}
+    seen = set()
+    path = run_dir / "events.jsonl"
+    if not path.is_file():
+        return None
+    try:
+        with path.open() as fh:
+            for line in fh:
+                if '"llm_request_usage"' not in line and '"turn_usage"' not in line:
+                    continue
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                kind = event.get("type")
+                if kind not in totals:
+                    continue
+                seen.add(kind)
+                for name, field in keys.items():
+                    value = event.get(field)
+                    if isinstance(value, (int, float)):
+                        totals[kind][name] += int(value)
+    except OSError:
+        return None
+    for kind in ("llm_request_usage", "turn_usage"):
+        if kind in seen:
+            return totals[kind]
+    return None
+
+
+def token_cost(usage: dict[str, int] | None, price_per_m: dict[str, float] | None) -> float | None:
+    """What those tokens cost at that list price, in USD. None if either is absent.
+
+    THE formula, in one place, because the only thing that makes the number
+    trustworthy is that it reproduces bills nobody derived: run it over the
+    published corpus against each run's billed ``llm_usd`` and 22 of 27 land
+    EXACTLY, to the cent (tests/test_projection_list_cost.py). The five that do
+    not are four continued runs, whose bill and whose events cover different
+    spans, and the one run whose own token counters disagree with its events.
+
+    Cached and written tokens are SUBSETS of the prompt count, each billed at
+    its own rate instead of the prompt rate — not extras to be added on top.
+    """
+    if not usage or not price_per_m:
+        return None
+    prompt = price_per_m["prompt"]
+    fresh = usage["prompt"] - usage["cached"] - usage["written"]
+    return (fresh * prompt
+            + usage["cached"] * price_per_m.get("input_cache_read", 0.0)
+            + usage["written"] * price_per_m.get("input_cache_write", prompt)
+            + usage["completion"] * price_per_m["completion"]) / 1_000_000
+
+
 def _output_token_stats(run_dir: Path, turns: int, cost: dict) -> tuple[float | None, float | None]:
     """Mean output tokens per turn — thinking plus the reply, every call the run
     made (gameplay and compaction, retries included, like cost per turn) — and
@@ -179,7 +351,7 @@ def _output_token_stats(run_dir: Path, turns: int, cost: dict) -> tuple[float | 
     return out / turns, (reasoning / out if saw_reasoning else None)
 
 
-def _gate_clock(run_dir: Path, gate_turns: dict[str, int] | None) -> tuple[dict[str, float] | None, dict[str, float] | None]:
+def _gate_clock(run_dir: Path, gate_turns: dict[str, int] | None, list_price: dict[str, float] | None = None):
     """Wall time and money at each cleared gate, from ``events.jsonl``.
 
     A gate stamped at turn T is reached when turn T's inputs have settled, which
@@ -192,15 +364,27 @@ def _gate_clock(run_dir: Path, gate_turns: dict[str, int] | None) -> tuple[dict[
     turn T (``turn_usage`` is the same event under its older name — read only
     when the newer one is absent, never both). None without an events file or
     without gate stamps.
+
+    With a ``list_price`` a THIRD dict comes back: the same running total priced
+    at that rate instead of at what was charged. It exists for the one kind of
+    run whose charged column is twelve zeroes that mean nothing — a model played
+    under a cloaked free listing — so the ladder can show the same basis as the
+    header above it. Without a price it is None and the ladder shows the bill.
     """
     if not gate_turns:
-        return None, None
+        return None, None, None
     path = run_dir / "events.jsonl"
     if not path.is_file():
-        return None, None
+        return None, None, None
     start_at: dict[int, float] = {}          # turn → elapsed seconds at its first turn_start
     cost_new: dict[int, float] = {}          # turn → Σ cost_usd (llm_request_usage)
     cost_old: dict[int, float] = {}          # turn → Σ cost_usd (turn_usage, legacy name)
+    # Per event NAME, like the pair above: a run carries the same call under both
+    # `llm_request_usage` and the legacy `turn_usage`, so summing across the two
+    # doubles it. That is not hypothetical — it is what this did on its first
+    # run, and the ladder came out at $11.17 against a $5.58 header.
+    list_new: dict[int, float] = {}
+    list_old: dict[int, float] = {}
     elapsed = 0.0
     seg_start: float | None = None
     last_ts: float | None = None
@@ -222,6 +406,16 @@ def _gate_clock(run_dir: Path, gate_turns: dict[str, int] | None) -> tuple[dict[
                     if isinstance(c, (int, float)) and isinstance(turn, int):
                         bucket = cost_new if kind == "llm_request_usage" else cost_old
                         bucket[turn] = bucket.get(turn, 0.0) + float(c)
+                    if list_price and isinstance(turn, int):
+                        # Same call, priced at the list rate. `token_cost` is the
+                        # one formula, so the ladder and the row cannot drift.
+                        one = token_cost({"prompt": e.get("request_tokens") or 0,
+                                          "cached": e.get("cached_tokens") or 0,
+                                          "written": e.get("cache_write_tokens") or 0,
+                                          "completion": e.get("response_tokens") or 0}, list_price)
+                        if one is not None:
+                            side = list_new if kind == "llm_request_usage" else list_old
+                            side[turn] = side.get(turn, 0.0) + one
                     continue
                 if not isinstance(ts, (int, float)):
                     continue
@@ -237,14 +431,16 @@ def _gate_clock(run_dir: Path, gate_turns: dict[str, int] | None) -> tuple[dict[
                     start_at[turn] = elapsed + (max(0.0, ts - seg_start) if seg_start is not None else 0.0)
                 last_ts = float(ts)
     except OSError:
-        return None, None
+        return None, None, None
     if seg_start is not None and last_ts is not None:
         elapsed += max(0.0, last_ts - seg_start)
     if not start_at:
-        return None, None
+        return None, None, None
     costs = cost_new or cost_old
+    cost_list = list_new or list_old
     times: dict[str, float] = {}
     money: dict[str, float] = {}
+    listed: dict[str, float] = {}
     last_turn = max(start_at)
     for gate, t in gate_turns.items():
         if not isinstance(t, int):
@@ -255,7 +451,9 @@ def _gate_clock(run_dir: Path, gate_turns: dict[str, int] | None) -> tuple[dict[
             times[gate] = round(elapsed - start_at[min(start_at)], 3)
         if costs:
             money[gate] = round(sum(v for k, v in costs.items() if k <= t), 6)
-    return (times or None), (money or None)
+        if cost_list:
+            listed[gate] = round(sum(v for k, v in cost_list.items() if k <= t), 6)
+    return (times or None), (money or None), (listed or None)
 
 
 def _input_breakdown(referee: dict | None) -> dict | None:
@@ -355,14 +553,30 @@ def project_run_dir(run_dir: Path) -> RunSummary | None:
     referee = replay.referee_view(run_dir, summary.get("referee")) or None
 
     # --- nested → flat (always present in the nested writer) ---
+    # The name the model has TODAY, not the one it had the night it played: a
+    # cloaked listing is renamed out from under its own runs (see
+    # config.renamed_models). Both halves move together or the board would show
+    # `pareto` sitting on a `stealth/` id and pick the wrong vendor row.
+    renamed_aliases, renamed_ids = renamed_models(_load_models_registry())
     model = session.get("llm_alias") or session.get("llm_model") or "unknown"
+    model = renamed_aliases.get(model, model)
     model_resolved = session.get("llm_model")
+    model_resolved = renamed_ids.get(model_resolved, model_resolved)
     turns = session.get("total_turns") or 0
     duration_s = session.get("duration_seconds") or 0.0
     started_at = session.get("started_at")
     total_cost_usd = cost.get("total_usd") or 0.0
 
     avg_cost_per_turn_usd = _safe_div(total_cost_usd, turns)
+    endpoint_price_usd_per_m = _endpoint_price(run_dir)
+    # What the run would have cost at the model's CURRENT list price — set only
+    # where that differs from what it was billed, i.e. a run played free under a
+    # cloaked listing. Derived at read time from the run's own token counts and
+    # today's snapshot; neither of those is a figure anybody wrote down as a
+    # dollar amount, and the billed total above is left exactly as it was.
+    list_price_usd_per_m = _list_price(run_dir)
+    list_price_cost_usd = token_cost(token_usage(run_dir), list_price_usd_per_m)
+    list_price_per_turn_usd = _safe_div(list_price_cost_usd, turns) if list_price_cost_usd else None
     avg_s_per_turn = _safe_div(duration_s, turns)
     avg_inputs_per_turn, input_counts = _input_stats(run_dir)
     avg_output_tokens_per_turn, thinking_share = _output_token_stats(run_dir, turns, cost)
@@ -446,7 +660,7 @@ def project_run_dir(run_dir: Path) -> RunSummary | None:
                 if g.get("id") == furthest_gate:
                     furthest_gate_turn = g.get("turn")
                     break
-    gate_times_s, gate_costs_usd = _gate_clock(run_dir, gate_turns)
+    gate_times_s, gate_costs_usd, gate_list_costs_usd = _gate_clock(run_dir, gate_turns, list_price_usd_per_m)
 
     # Between-gate progress — ``referee.progress`` is the ProgressTracker's
     # summary (src/referee/progress.py). Absent on every run before 2026-09-09
@@ -491,6 +705,10 @@ def project_run_dir(run_dir: Path) -> RunSummary | None:
         duration_s=duration_s,
         total_cost_usd=total_cost_usd,
         avg_cost_per_turn_usd=avg_cost_per_turn_usd,
+        endpoint_price_usd_per_m=endpoint_price_usd_per_m,
+        list_price_usd_per_m=list_price_usd_per_m,
+        list_price_cost_usd=list_price_cost_usd,
+        list_price_per_turn_usd=list_price_per_turn_usd,
         avg_s_per_turn=avg_s_per_turn,
         furthest_gate=furthest_gate,
         furthest_gate_turn=furthest_gate_turn,
@@ -499,6 +717,7 @@ def project_run_dir(run_dir: Path) -> RunSummary | None:
         gate_turns=gate_turns,
         gate_times_s=gate_times_s,
         gate_costs_usd=gate_costs_usd,
+        gate_list_costs_usd=gate_list_costs_usd,
         avg_inputs_per_turn=avg_inputs_per_turn,
         input_counts=input_counts,
         avg_output_tokens_per_turn=avg_output_tokens_per_turn,

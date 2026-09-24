@@ -136,6 +136,37 @@ class RunSummary(BaseModel):
     duration_s: float = 0.0
     total_cost_usd: float = 0.0
     avg_cost_per_turn_usd: float = 0.0
+    # The Player endpoint's LIST price in USD per MILLION tokens, {prompt,
+    # completion}, from conversation/endpoint-pricing.json (2026-09-16). Raw,
+    # not a verdict: the board derives "free" from a pair of zeroes and prints
+    # N/A rather than $0.00, because a free model is an UNPRICED one, not the
+    # cheapest one — left on a cost axis it takes the whole price frontier at
+    # x=0 and wins every cheapest-model card by construction.
+    #
+    # Deliberately the Player's price and not the run's bill: the bill also
+    # carries OCR, which runs on a paid model, so a free Player run has a small
+    # non-zero total and the total would say the opposite of the truth.
+    #
+    # None on any run whose serving endpoint cannot be named (no pricing file,
+    # an unprofiled run, several candidate tags). None means UNKNOWN and must be
+    # read as priced — the failure worth preventing is a paid model shown as
+    # unpriced, so every ambiguous case falls on the priced side.
+    endpoint_price_usd_per_m: dict[str, float] | None = None
+    # A run played under a CLOAKED listing (2026-09-18). OpenRouter serves an
+    # unannounced model free behind a `stealth/*` slug and retires the slug the
+    # day the lab announces it; the weights do not change, the price appears.
+    # The two fields above stay the record of what happened — billed $0, listed
+    # $0/$0 — and these three answer the only question that record cannot: what
+    # the run would have cost at the price the model carries now. Set ONLY where
+    # a `conversation/endpoint-pricing-revealed.json` says the two differ, so
+    # None on every ordinary run, where the bill already IS the answer.
+    #
+    # Derived, and it must stay legible as derived wherever it prints: nobody
+    # was charged this. The board prints it with a ≈ and names the basis
+    # (board.js costOf) rather than letting it pass as a bill.
+    list_price_usd_per_m: dict[str, float] | None = None
+    list_price_cost_usd: float | None = None
+    list_price_per_turn_usd: float | None = None
     avg_s_per_turn: float = 0.0
     furthest_gate: str | None = None
     furthest_gate_turn: int | None = None
@@ -155,6 +186,13 @@ class RunSummary(BaseModel):
     # llm_request_usage cost_usd); None without the events, like gate_turns.
     gate_times_s: dict[str, float] | None = None
     gate_costs_usd: dict[str, float] | None = None
+    # The same running total at the model's CURRENT list price, for a run
+    # played under a cloaked free listing (2026-09-18). Without it the ladder
+    # printed twelve $0.0000 under a header that already said ≈$5.58 — the
+    # two halves of one run disagreeing on the same screen. Set only where
+    # list_price_usd_per_m is, and the table shows one basis or the other,
+    # never a mix.
+    gate_list_costs_usd: dict[str, float] | None = None
     # Efficiency · inputs per turn (2026-09-14): mean game inputs (buttons,
     # waits) per accepted turn and the button mix, from turn_explanation events.
     # None for a run without them (older harness) — the board leaves it off.

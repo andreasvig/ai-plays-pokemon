@@ -6,6 +6,7 @@
   // player handback. (Round 9 E.) This IS the run report; the old standalone
   // HTML report (src/cli/report.py) was retired in favour of this view.
   import { GATES } from '../lib/gates.js'
+  import { costCell, NO_PRICE } from '../lib/board.js'
   import { usd, dur, perTurn, dateShort, coerceHandback, errorShort, errorLabel } from '../lib/format.js'
   import { mdToHtml } from '../lib/md.js'
   import * as api from '../lib/api.js'
@@ -21,6 +22,11 @@
   // it was clicked on (Andreas, 2026-09-15: "each movement and fight linked to a
   // turn number, such that we can show the trace for that specific turn").
   let { run = null, onback, oncontinue, benchmarks = [], focusTurn = null } = $props()
+  // The run's cost, and whether it is a bill or a figure derived from the
+  // model's list price (board.js costCell). A run played under a cloaked
+  // listing was billed nothing, so the header says "at list" and both rows
+  // carry the ≈ and the explanation on hover.
+  const rc = $derived(costCell(run, usd))
   // The CURRENT per-leg caps of this run's benchmark, from the shared list the
   // ladder YAML feeds (/api/benchmarks, data/benchmarks.json when published).
   // Caps apply retroactively (Andreas, 2026-09-10: "make it true retroactively,
@@ -133,7 +139,7 @@
 
   const verdict = $derived(() => {
     if (!summary) return ''
-    if (totalN > 0 && reachedN >= totalN) return 'All gates cleared — full ladder'
+    if (totalN > 0 && reachedN >= totalN) return 'All tasks cleared — full ladder'
     if (termination && termination.startsWith('missed_gate:')) {
       const missed = gates.find((g) => g.status === 'missed' || g.status === 'failed')
         || gates.find((g) => g.id === termination.split(':')[1])
@@ -149,7 +155,7 @@
     }
     const furthest = summary?.referee?.furthest
     const fg = gates.find((g) => g.id === furthest)
-    return fg ? `Furthest: ${fg.name}` : `${reachedN}/${totalN} gates`  // gate names are sentences ("Reached Route 1"), so no "Reached" prefix
+    return fg ? `Furthest: ${fg.name}` : `${reachedN}/${totalN} tasks`  // gate names are sentences ("Reached Route 1"), so no "Reached" prefix
   })
   // `auto` is a CLEARED status (the projection counts it), so it gets the tick —
   // a gate inside the header's "N/M cleared" must not draw a pending dot.
@@ -442,8 +448,8 @@ where: {crash.where.join(' ← ')}{/if}</pre>
           {/if}
         </div>
         <div class="k"><span class="kl">Turns</span><span class="kv tnum">{run.turns}{#if run.maxTurns}<span class="faint"> / {run.maxTurns}</span>{/if}</span></div>
-        <div class="k"><span class="kl">Total cost</span><span class="kv tnum">{usd(run.totalCostUsd)}</span></div>
-        <div class="k"><span class="kl">Cost / turn</span><span class="kv tnum">{usd(run.avgCostPerTurn)}</span></div>
+        <div class="k" title={rc.note}><span class="kl">Total cost</span><span class="kv tnum">{rc.total}</span></div>
+        <div class="k" title={rc.note}><span class="kl">Cost / turn</span><span class="kv tnum">{rc.perTurn ?? NO_PRICE}</span></div>
         <div class="k"><span class="kl">Duration</span><span class="kv tnum">{dur(run.durationS)}</span></div>
         <div class="k"><span class="kl">Sec / turn</span><span class="kv tnum">{perTurn(run.avgSPerTurn)}</span></div>
       </div>
@@ -460,11 +466,11 @@ where: {crash.where.join(' ← ')}{/if}</pre>
          the run was judged against, and an observe-only run was judged against
          nothing. It still reached rungs, so say how far it got instead. -->
     {#if gates.length && !gatesEnforced}
-      <p class="observed faint">Gates observed, not enforced — the referee scored the ladder but armed no deadline{#if furthestGate}&nbsp;· furthest: {furthestGate}{/if}</p>
+      <p class="observed faint">Tasks observed, not enforced — the referee scored the ladder but armed no deadline{#if furthestGate}&nbsp;· furthest: {furthestGate}{/if}</p>
     {:else if gates.length}
       <section class="score">
         <div class="score-head">
-          <h3>Benchmark gates</h3>
+          <h3>Benchmark tasks</h3>
           <span class="cleared">{reachedN}/{totalN} cleared</span>
           <span class="verdict" class:fail={termination && (termination.startsWith('missed_gate:') || termination.startsWith('leg_cap:'))} class:win={reachedN >= totalN && totalN > 0}>{verdict()}</span>
         </div>
@@ -481,7 +487,7 @@ where: {crash.where.join(' ← ')}{/if}</pre>
                walls, so 100% means no wasted step AND no press into scenery. -->
           <div class="legs">
             <div class="legs-head">
-              <span>Between gates</span>
+              <span>Between tasks</span>
               {#if currentLeg?.fraction != null}<span class="faint">stopped {pctOf(currentLeg.fraction)} of the way to {currentLeg.name}{#if currentLeg.d_min != null}&nbsp;· {currentLeg.d_min} steps short{/if}</span>{/if}
               {#if progress?.graph && !progress.graph.loaded}<span class="faint">no walk graph — positions recorded, not scored</span>{/if}
             </div>
@@ -521,7 +527,7 @@ where: {crash.where.join(' ← ')}{/if}</pre>
           <span class="faint">every tile, on the game's own map — click one for its turn</span>
         </button>
         {#if mapOpen}
-          <RouteMap runId={run.runId} height={560} onturn={(t) => { focused = null; mapTurn = t }} />
+          <RouteMap runId={run.runId} onturn={(t) => { focused = null; mapTurn = t }} />
         {/if}
       </section>
     {/if}

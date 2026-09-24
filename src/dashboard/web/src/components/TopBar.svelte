@@ -52,9 +52,9 @@
     {#if !STATIC}
       <button class="btn ghost" class:active={view === 'history' || view === 'report'} onclick={() => onnav('/history')}>History</button>
     {/if}
-    <button class="btn ghost" class:active={view === 'methods'} onclick={() => onnav('/methods')}>Estimation methods</button>
+    <button class="btn ghost" class:active={view === 'methods'} onclick={() => onnav('/methods')}>Methodology</button>
     <button class="btn ghost" class:active={view === 'changelog'} onclick={() => onnav('/changelog')}>Changelog</button>
-    <button class="btn ghost" class:active={view === 'about'} onclick={() => onnav('/about')}>About</button>
+    <button class="btn ghost" class:active={view === 'contact'} onclick={() => onnav('/contact')}>Contact</button>
   </nav>
 </header>
 
@@ -91,4 +91,17 @@
   .mute.muted { opacity: .55; }
 
   .romnote { font-size: 10.5px; font-weight: 650; color: var(--accent); white-space: nowrap; }
+
+  /* Phone (Andreas 2026-09-17). Brand plus four nav buttons measured 561px on a
+     390px screen, so the WHOLE PAGE scrolled sideways — every section under it
+     inherited the overflow. The nav takes its own row, and the bar stops being
+     sticky: two stacked sticky strips (this and the board's section menu) ate a
+     third of the viewport, so the board's menu is the one that pins. */
+  @media (max-width: 720px) {
+    .topbar { position: static; flex-wrap: wrap; gap: 6px 10px; padding: 10px 10px 0; }
+    .center { flex: 0 1 auto; }
+    .right { flex: 1 0 100%; justify-content: flex-start; gap: 2px; overflow-x: auto; padding-bottom: 2px; }
+    .right .btn { padding: 6px 9px; font-size: 12.5px; white-space: nowrap; }
+    .name { font-size: 14px; }
+  }
 </style>

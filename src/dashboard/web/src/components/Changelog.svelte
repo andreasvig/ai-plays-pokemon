@@ -1,16 +1,20 @@
 <script>
   import { CHANGELOG, BENCH_VERSION } from '../lib/version.js'
+  // A version can carry several dated entries, so "current" is the NEWEST entry
+  // of the current version, not every entry that names it — and the key has to
+  // be the date, or two v1.1 entries collide in the keyed each.
+  const current = CHANGELOG.find((e) => e.version === BENCH_VERSION) ?? null
 </script>
 
 <section class="changelog">
   <h2>Changelog</h2>
   <p class="intro faint">What changed in the benchmark between versions, and how rows from different versions compare.</p>
-  {#each CHANGELOG as entry (entry.version)}
-    <article class="entry" class:current={entry.version === BENCH_VERSION}>
+  {#each CHANGELOG as entry (entry.date + entry.version)}
+    <article class="entry" class:current={entry === current}>
       <header>
         <span class="ver mono">{entry.label}</span>
         <span class="date mono faint">{entry.date}</span>
-        {#if entry.version === BENCH_VERSION}<span class="now">current</span>{/if}
+        {#if entry === current}<span class="now">current</span>{/if}
       </header>
       <h3>{entry.title}</h3>
       <ul>
@@ -24,6 +28,7 @@
 
 <style>
   .changelog { max-width: 680px; margin: 0 auto; padding: 48px 24px; }
+  @media (max-width: 720px) { .changelog { padding: 24px 12px 40px; } }
   .changelog h2 { font-size: 26px; font-weight: 780; letter-spacing: -.02em; margin: 0 0 6px; }
   .intro { font-size: 14px; margin: 0 0 28px; }
   .entry { padding: 22px 0 26px; border-top: 1px solid var(--border); }

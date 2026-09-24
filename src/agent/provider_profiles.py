@@ -117,32 +117,51 @@ def resolve_provider_profile(config):
     profile["version"] = catalog["version"]
     profile["reviewed"] = catalog["reviewed"]
     resolved = config.get("_llm_resolved") or {}
-    reasoning = deepcopy(resolved.get("reasoning") or config.get("thinking") or profile["reasoning_default"])
-    effort = reasoning.get("effort")
-    # `reasoning_efforts` is the PROBED legality list for one endpoint. An empty
-    # list means "not probed" (it is the `defaults:` value), which every
-    # unprofiled model now inherits — so checking against it would reject every
-    # effort-tiered model in the registry, not just the illegal combinations.
-    # Absence of evidence is not evidence of illegality, so an empty list waves
-    # the request through. That is not a hole for PROFILED models: a companion
-    # test asserts every profiled effort-tiered model lists a non-empty
-    # `reasoning_efforts` that covers its registry `thinking_levels`, so an
-    # empty list can never mean "profiled but unchecked".
-    if effort and profile["reasoning_efforts"] and effort not in profile["reasoning_efforts"]:
-        raise ValueError(f"{model}: unsupported reasoning effort {effort!r}; supported: {profile['reasoning_efforts']}")
-    if profile["reasoning_mandatory"] and (reasoning.get("enabled") is False or effort == "none"):
-        raise ValueError(f"{model}: reasoning cannot be disabled on this profile")
-    if reasoning.get("exclude"):
-        raise ValueError("Append provider profiles require returned reasoning (exclude must be false)")
-    reasoning["exclude"] = False
-    profile["reasoning"] = reasoning
+    requested = resolved.get("reasoning") or config.get("thinking")
+    # `reasoning_default: null` is a POSITIVE claim about one endpoint — it accepts
+    # no `reasoning` parameter at all — and is NOT the "not probed" of an
+    # unprofiled model, which inherits the `defaults:` value {enabled: true}. It
+    # has to be expressible because a profile pins `require_parameters: true`, so
+    # an unsupported parameter is NOT quietly ignored: the router drops the only
+    # endpoint that could serve the model and answers HTTP 404 "Filter by
+    # Parameters". stealth/union-alpha did exactly that (probe 2026-09-16, three
+    # arms: pinned + reasoning -> 404, pinned without it -> 200, unpinned -> 200),
+    # so this is a routing contract, not a note worth leaving in `notes`.
+    if profile["reasoning_default"] is None:
+        if requested:
+            raise ValueError(f"{model}: this endpoint accepts no reasoning parameter, "
+                             f"so no thinking level can be sent for it")
+        profile["reasoning"] = None
+    else:
+        reasoning = deepcopy(requested or profile["reasoning_default"])
+        effort = reasoning.get("effort")
+        # `reasoning_efforts` is the PROBED legality list for one endpoint. An empty
+        # list means "not probed" (it is the `defaults:` value), which every
+        # unprofiled model now inherits — so checking against it would reject every
+        # effort-tiered model in the registry, not just the illegal combinations.
+        # Absence of evidence is not evidence of illegality, so an empty list waves
+        # the request through. That is not a hole for PROFILED models: a companion
+        # test asserts every profiled effort-tiered model lists a non-empty
+        # `reasoning_efforts` that covers its registry `thinking_levels`, so an
+        # empty list can never mean "profiled but unchecked".
+        if effort and profile["reasoning_efforts"] and effort not in profile["reasoning_efforts"]:
+            raise ValueError(f"{model}: unsupported reasoning effort {effort!r}; supported: {profile['reasoning_efforts']}")
+        if profile["reasoning_mandatory"] and (reasoning.get("enabled") is False or effort == "none"):
+            raise ValueError(f"{model}: reasoning cannot be disabled on this profile")
+        if reasoning.get("exclude"):
+            raise ValueError("Append provider profiles require returned reasoning (exclude must be false)")
+        reasoning["exclude"] = False
+        profile["reasoning"] = reasoning
     if profile["output_mode"] not in ("tool", "native_json", "prompted"):
         raise ValueError("Invalid provider profile output_mode")
     if profile["tool_choice"] not in ("auto", "required", "named", "omit"):
         raise ValueError("Invalid provider profile tool_choice")
     if profile["reasoning_replay"] not in ("all", "omit_prior"):
         raise ValueError("Invalid provider profile reasoning_replay")
-    if profile["cache_mode"] not in ("implicit", "automatic", "system_breakpoint", "unknown"):
+    # `none` = probed and there is no cache here, as distinct from `unknown` =
+    # not probed. Behaviourally both send no marker; the difference is what the
+    # trace and the profile card are allowed to claim.
+    if profile["cache_mode"] not in ("implicit", "automatic", "system_breakpoint", "none", "unknown"):
         raise ValueError("Invalid provider profile cache_mode")
     if profile["memory_encoding"] not in ("object", "json_string"):
         raise ValueError("Invalid provider profile memory_encoding")
