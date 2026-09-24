@@ -3,10 +3,10 @@
   // reached = number of gates stamped; furthest = gate id
   let { reached = 0, furthest = null, accent = 'var(--accent)' } = $props()
   const segs = GATES
-  const name = $derived(furthest ? gate(furthest).name : 'No gates reached')
+  const name = $derived(furthest ? gate(furthest).name : 'No tasks reached')
 </script>
 
-<div class="gatebar" title={`${reached}/${TOTAL_GATES} gates — furthest: ${name}`}>
+<div class="gatebar" title={`${reached}/${TOTAL_GATES} tasks — furthest: ${name}`}>
   <div class="track">
     {#each segs as g, i}
       <span class="seg" class:on={i < reached} class:badge={g.badge}

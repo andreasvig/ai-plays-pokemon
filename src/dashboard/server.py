@@ -961,6 +961,15 @@ _ENQUEUE_KEYS = frozenset({
 })
 
 
+def _validate_from_turn(value):
+    """`from_turn` on a continue: a positive int, or None for the latest savepoint."""
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise HTTPException(status_code=400, detail="from_turn must be a positive integer")
+    return value
+
+
 def _validate_rebase_contract(raw: Any, *, is_continue: bool) -> bool:
     """``rebase_contract`` is a continue-only boolean (see QueuedRun).
 
@@ -1538,6 +1547,11 @@ async def api_run_continue(run_id: str, body: dict | None = None):
         record=_continue_record(body, executor.runs_root / run_id, spec["kind"]),
         # Explicit opt-in to take today's profile/wire shape (QueuedRun.rebase_contract).
         rebase_contract=_validate_rebase_contract(body.get("rebase_contract"), is_continue=True),
+        # Resume an EARLIER savepoint than the last (QueuedRun.continue_from_turn).
+        # Validated here only as "a positive integer"; whether that savepoint
+        # EXISTS is the resolver's call at dispatch, which can name the ones that
+        # do — this route has no business re-listing the source run's directory.
+        continue_from_turn=_validate_from_turn(body.get("from_turn")),
     )
     notify_control()
     return JSONResponse(item.model_dump(mode="json"), status_code=201)

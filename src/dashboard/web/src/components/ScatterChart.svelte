@@ -1,25 +1,66 @@
 <script>
   import { gateShort } from '../lib/format.js'
-  // points: [{label, x, y, openSource, completed, slug, completion, furthestGateName, turns, avgCostPerTurn, avgSPerTurn}]
-  // `left`: models with no x value at all ({label, slug, openSource}), listed
-  // beside the plot rather than drawn (no ghost markers). `tip`: per-point
-  // [label, value] rows for the tooltip, supplied by the caller. `projected`
-  // draws a hollow marker.
-  let { points = [], left = [], leftTitle = "Didn't clear checkpoint 1", xLabel = '', xFormat = (v) => v, xLog = false, onpick } = $props()
+  import { placeLabels, edgePoint } from '../lib/labels.js'
+  // points: [{label, x, y, color, completed, slug, completion, furthestGateName, …}]
+  // `left`: models with no x value at all ({label, slug, color}), listed beside
+  // the plot rather than drawn (no ghost markers). `tip`: per-point
+  // [label, value] rows for the tooltip, supplied by the caller. `left` is
+  // COUNTED, never drawn — the card's legend says how many were left off
+  // (Andreas 2026-09-16: the list beside the plot is gone). `projected`
+  // shows in the tooltip only — every marker is drawn solid (Andreas
+  // 2026-09-16: "remove the hollow notation, all should be full").
+  //
+  // A dot carries its MODEL's colour — the same vendor colour its bar has on
+  // every card (Andreas 2026-09-16: "same color as the model bar used
+  // elsewhere"), so proprietary-vs-open-source is no longer a colour at all.
+  let { points = [], xLabel = '', xFormat = (v) => v, xLog = false, onpick } = $props()
 
-  const W = 760, H = 360
-  const ML = 60, MR = 124, MT = 26, MB = 46
-  const PW = W - ML - MR, PH = H - MT - MB
+  // The plot is drawn at its REAL pixel size rather than at a fixed 760×410
+  // scaled down to fit (Andreas 2026-09-17: "the graphs look very bad, they
+  // should in general be dynamic both to chosen models, and to resizing"). A
+  // fixed viewBox squeezed into a 300px phone card shrank every tick, axis and
+  // name to ~4px — unreadable for exactly the reason a screenshot is unreadable
+  // when you halve it. `cw` is the container's own width (bind:clientWidth, a
+  // ResizeObserver underneath), so one viewBox unit is one CSS pixel at EVERY
+  // width and the type stays the size it is set in.
+  let cw = $state(0)
+  const W = $derived(Math.max(300, Math.round(cw) || 760))
+  const narrowW = $derived(W < 560)
+  // ABOVE 560 nothing changes. A fixed 760×410 viewBox stretched to fill a card
+  // is arithmetically the same as scaling every length by cardWidth/760, so `k`
+  // IS the old behaviour, written out — on a 1071px card the type still renders
+  // at 1.41× the size it is set in, exactly as it did before. Below 760 the
+  // scale stops at 1 rather than continuing down, because that downward half is
+  // what produced 4px axis labels on a phone.
+  const k = $derived(Math.max(W / 760, 1))
+  // A phone gets a TALLER box instead. The points have to spread somewhere, and
+  // height is the axis a phone has to spare.
+  const H = $derived(Math.round(narrowW ? Math.min(W * 1.2, 470) : 410 * k))
+  // MR is a parking lane for the names belonging to right-hand points. A phone
+  // has no width to park in, so the lane goes and placeLabels keeps those names
+  // inside the plot instead — 22px is just the clearance the last x tick label
+  // needs, since an SVG clips to its viewBox.
+  const ML = $derived(narrowW ? 34 : 60 * k)
+  const MR = $derived(narrowW ? 22 : 118 * k)
+  const MT = $derived(narrowW ? 30 : 26 * k)
+  const MB = $derived(narrowW ? 42 : 46 * k)
+  // Label text: the app is monospace throughout, so an advance of 0.6em per
+  // character is the real width — no measuring pass needed.
+  const FS = $derived(narrowW ? 8 : 9 * k)
+  const LH = $derived(FS + 3)
+  const CHAR = $derived(FS * 0.6)
+  const TICK_FS = $derived(narrowW ? 9 : 10.5 * k)
+  const ZONE_FS = $derived(narrowW ? 9 : 10 * k)
+  const PW = $derived(W - ML - MR)
+  const PH = $derived(H - MT - MB)
   const lg = (v) => Math.log10(Math.max(v, 1e-9))
 
-  // A model that cleared at least the first checkpoint has completion > 0. The
-  // ones that never cleared checkpoint 1 all pin to the 0% floor and pile up /
-  // overlap along the bottom axis — so they're pulled OUT of the scatter and
-  // shown as a compact list to the left (see markup), and the plot + domains +
-  // frontier only consider the points that actually scored.
+  // A model that cleared at least the first task has completion > 0. The ones
+  // that never did pin to the 0% floor and pile up along the bottom axis, so
+  // they are left out of the plot entirely; the domains and the frontier only
+  // consider the points that actually scored.
   const cleared = (p) => (p.completion ?? p.y) > 0
   const plotted = $derived(points.filter(cleared))
-  const notCleared = $derived([...left, ...points.filter((p) => !cleared(p))])
 
   // --- domains auto-fit to the plotted points (mode/filter aware) ---
   const xd = $derived((() => {
@@ -61,9 +102,12 @@
     return mid - Math.min((y - 100) / (ydSupMax - 100), 1) * (PH / 2)
   }
 
-  const xticks = $derived(Array.from({ length: 5 }, (_, i) =>
-    xLog ? Math.pow(10, lg(xd.min) + (lg(xd.max) - lg(xd.min)) * i / 4)
-         : xd.min + (xd.max - xd.min) * i / 4))
+  // Four ticks on a phone, five otherwise: the labels are $0.048-wide and five
+  // of them touch below ~420px of plot.
+  const nx = $derived(narrowW ? 4 : 5)
+  const xticks = $derived(Array.from({ length: nx }, (_, i) =>
+    xLog ? Math.pow(10, lg(xd.min) + (lg(xd.max) - lg(xd.min)) * i / (nx - 1))
+         : xd.min + (xd.max - xd.min) * i / (nx - 1)))
   // Band shown → fixed bottom-half ticks (0/50%); the 100% divider is drawn
   // separately. Otherwise the usual 4 evenly-spaced ticks over the domain.
   const yticks = $derived(bandVisible
@@ -81,66 +125,49 @@
   const frontierPath = $derived(frontier.map((p) => `${xs(p.x)},${ys(p.y)}`).join(' '))
   const onFrontier = (p) => frontier.includes(p)
 
-  // Show the thinking/effort tier in the label: a model alias carries it as a
-  // parenthesised suffix, e.g. "kimi-k3(high)" → "kimi-k3 · high". An alias with
-  // NO parenthesised tier — a `reasoning_type: none` model, whose run identity
-  // is the bare model name — is left untouched. Regex, not a name list: rows
-  // come from finished runs, so a label here may name a model the registry no
-  // longer offers.
-  const fmtLabel = (s) => s.replace(/\(([^)]*)\)/, ' · $1')
+  // The alias is printed exactly as the bar cards print it — "gpt-6-astra(low)",
+  // not "gpt-6-astra · low" (Andreas 2026-09-16: "the current thinking levels
+  // are too disconnected").
+  const fmtLabel = (s) => s
 
-  // Which side of its dot a label sits on (mirrors the per-point render below).
+  // Which side of its dot a label would sit on if nothing were in the way.
   const isRight = (p) => xs(p.x) > ML + PW * 0.6
 
-  // Label repel: dots cluster in y (esp. near the frontier), so naive labels at
-  // a fixed dot offset overlap. Per side (left/right anchored), sort by y and
-  // push any label that's within LABEL_GAP of the one above it downward; if the
-  // column then overflows the plot, shift it back up and re-spread. Result: a
-  // collision-free vertical column of labels, each connected to its dot by a
-  // faint leader when it had to move. Keyed by label → baseline y.
-  const LABEL_GAP = 11.5
-  const labelY = $derived.by(() => {
-    const map = new Map()
-    const top = MT + 9, bottom = MT + PH + 11
-    for (const side of [true, false]) {
-      const col = plotted
-        .filter((p) => isRight(p) === side)
-        .map((p) => ({ label: p.label, y: ys(p.y) + 3.3 }))
-        .sort((a, b) => a.y - b.y)
-      if (!col.length) continue
-      for (let i = 1; i < col.length; i++)
-        if (col[i].y - col[i - 1].y < LABEL_GAP) col[i].y = col[i - 1].y + LABEL_GAP
-      const overflow = col[col.length - 1].y - bottom
-      if (overflow > 0)
-        for (const c of col) c.y = Math.max(top, c.y - overflow)
-      for (let i = col.length - 2; i >= 0; i--)
-        if (col[i + 1].y - col[i].y < LABEL_GAP) col[i].y = col[i + 1].y - LABEL_GAP
-      for (const c of col) map.set(c.label, c.y)
-    }
-    return map
+  // Dot radii: the frontier's points read a touch heavier than the rest.
+  const rOf = (p) => (onFrontier(p) ? 4.2 : 3.2)
+
+  // Placement (lib/labels.js): every label is pushed clear of every other label,
+  // every dot and the frontier polyline, then springs back toward its dot.
+  const boxes = $derived.by(() => {
+    if (!plotted.length) return new Map()
+    const dots = plotted.map((p) => ({ x: xs(p.x), y: ys(p.y), r: rOf(p) }))
+    const segments = []
+    for (let i = 1; i < frontier.length; i++)
+      segments.push([xs(frontier[i - 1].x), ys(frontier[i - 1].y), xs(frontier[i].x), ys(frontier[i].y)])
+    // The 100% divider is as heavy a line as the frontier — a name laid across
+    // it reads as struck through, so it repels labels too.
+    if (bandVisible) segments.push([ML, ys(100), W - MR, ys(100)])
+    return placeLabels(
+      plotted.map((p) => ({
+        key: p.label, ax: xs(p.x), ay: ys(p.y), side: isRight(p) ? 'left' : 'right',
+        w: fmtLabel(p.label).length * CHAR, h: LH,
+      })),
+      { dots, segments, bounds: { x0: ML + 2, y0: MT + 2, x1: W - 3, y1: MT + PH + 15 } },
+    )
   })
+  const boxOf = (p) => boxes.get(p.label)
+    ?? { x: xs(p.x) + 7, y: ys(p.y) - LH / 2, w: fmtLabel(p.label).length * CHAR, h: LH, moved: false }
 
   let hovered = $state(null)
 </script>
 
 <div class="wrap">
-  {#if notCleared.length}
-    <aside class="nolist">
-      <div class="nolist-h">{leftTitle}</div>
-      <div class="nolist-items">
-        {#each notCleared as p (p.label)}
-          <button class="nolist-item" class:oss={p.openSource}
-                  onclick={() => onpick && onpick(p.slug)}
-                  title={`${p.label} — click to open run`}>{fmtLabel(p.label)}</button>
-        {/each}
-      </div>
-    </aside>
-  {/if}
-  <div class="chartcol">
-  <svg viewBox={`0 0 ${W} ${H}`} class="chart" role="img" aria-label={xLabel}>
+  <div class="chartcol" bind:clientWidth={cw}>
+  <svg viewBox={`0 0 ${W} ${H}`} class="chart" role="img" aria-label={xLabel}
+       style={`--plfs:${FS}px; --tkfs:${TICK_FS}px; --zlfs:${ZONE_FS}px`}>
     {#if bandVisible}
       <rect x={ML} y={MT} width={PW} height={ys(100) - MT} class="zone" />
-      <text x={ML + 6} y={MT + 13} class="zonelabel" text-anchor="start">100% clears · ↑ fewest turns to complete</text>
+      <text x={ML + 6} y={MT + 13} class="zonelabel" text-anchor="start">{narrowW ? '100% clears · ↑ fewer turns' : '100% clears · ↑ fewest turns to complete'}</text>
     {/if}
 
     {#each yticks as t}
@@ -158,26 +185,33 @@
       <text x={xs(t)} y={MT + PH + 18} class="xtick" text-anchor="middle">{xFormat(t)}</text>
     {/each}
     <text x={ML + PW / 2} y={H - 5} class="axislabel" text-anchor="middle">{xLabel}{xLog ? ' (log)' : ''}  →</text>
-    <text transform={`translate(14 ${MT + PH / 2}) rotate(-90)`} class="axislabel" text-anchor="middle">performance ↑</text>
+    <!-- The rotated y title is dropped on a phone: it and the "100%" tick both
+         want the same 34px of left margin and were printed over each other. The
+         legend under the plot already says what the y axis is, in words. -->
+    {#if !narrowW}
+      <text transform={`translate(14 ${MT + PH / 2}) rotate(-90)`} class="axislabel" text-anchor="middle">performance ↑</text>
+    {/if}
 
     {#if frontier.length > 1}<polyline points={frontierPath} class="frontier" />{/if}
 
+    <!-- Leaders first, so every line runs UNDER the dots and the names. A label
+         that never left its dot needs no line. -->
     {#each plotted as p (p.label)}
-      {@const rightSide = isRight(p)}
-      {@const cx = xs(p.x)}
-      {@const cy = ys(p.y)}
-      {@const lx = rightSide ? cx - 9 : cx + 9}
-      {@const ly = labelY.get(p.label) ?? cy + 3.3}
-      {@const s = onFrontier(p) ? 11 : 9}
-      <g class="pt" class:oss={p.openSource} class:front={onFrontier(p)} class:hot={hovered === p} class:est={p.projected} class:faded={p.faded}
+      {@const b = boxOf(p)}
+      {#if b.moved}
+        {@const e = edgePoint(b, xs(p.x), ys(p.y))}
+        <line x1={xs(p.x)} y1={ys(p.y)} x2={e[0]} y2={e[1]} class="leader" class:faded={p.faded} style={`--c:${p.color}`} />
+      {/if}
+    {/each}
+
+    {#each plotted as p (p.label)}
+      {@const b = boxOf(p)}
+      <g class="pt" class:front={onFrontier(p)} class:hot={hovered === p} class:faded={p.faded}
+         style={`--c:${p.color}`}
          onmouseenter={() => hovered = p} onmouseleave={() => hovered = null}
          onclick={() => onpick && onpick(p.slug)} onkeydown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && onpick) { e.preventDefault(); onpick(p.slug) } }} role="button" tabindex="0">
-        {#if Math.abs(ly - (cy + 3.3)) > 4}
-          <line x1={rightSide ? cx - 6 : cx + 6} y1={cy} x2={lx} y2={ly - 3.3} class="leader" />
-        {/if}
-        <rect x={cx - s / 2} y={cy - s / 2} width={s} height={s} shape-rendering="crispEdges" />
-        <text x={lx} y={ly}
-              class="plabel" text-anchor={rightSide ? 'end' : 'start'}>{fmtLabel(p.label)}</text>
+        <circle cx={xs(p.x)} cy={ys(p.y)} r={rOf(p)} />
+        <text x={b.x} y={b.y + LH - 3} class="plabel">{fmtLabel(p.label)}</text>
       </g>
     {/each}
   </svg>
@@ -189,7 +223,7 @@
       {#if hovered.completion < 100}<div class="tip-row"><span>last gate</span><b>{gateShort(hovered.furthestGateName)}</b></div>{/if}
       {#if hovered.completion < 100 && hovered.legGateName && hovered.legFraction != null}<div class="tip-row"><span>next gate</span><b>{Math.round(hovered.legFraction * 100)}% to {gateShort(hovered.legGateName)}</b></div>{/if}
       {#each hovered.tip ?? [] as [k, v]}<div class="tip-row"><span>{k}</span><b class="tnum">{v}</b></div>{/each}
-      {#if hovered.projected}<div class="tip-note">projected from the gates it cleared, at its own pace and rates</div>{/if}
+      {#if hovered.projected}<div class="tip-note">projected from the tasks it cleared, at its own pace and rates</div>{/if}
       <div class="tip-go">click to open run →</div>
     </div>
   {/if}
@@ -199,38 +233,27 @@
 <style>
   .wrap { position: relative; display: flex; align-items: stretch; gap: 12px; }
   .chartcol { position: relative; flex: 1 1 auto; min-width: 0; }
-  .nolist { flex: 0 0 118px; align-self: center; display: flex; flex-direction: column; gap: 6px; padding: 6px 0; }
-  .nolist-h { font-size: 9px; font-weight: 700; color: var(--faint); text-transform: uppercase; letter-spacing: .04em; line-height: 1.3; }
-  .nolist-items { display: flex; flex-direction: column; gap: 3px; }
-  .nolist-item { text-align: left; border: none; background: none; padding: 0; font-size: 9.5px; font-weight: 600; color: var(--muted); cursor: pointer; line-height: 1.25; white-space: normal; }
-  .nolist-item:hover { color: var(--text); text-decoration: underline; }
-  .nolist-item.oss { color: var(--oss); }
   .chart { width: 100%; height: auto; display: block; }
-  .leader { stroke: var(--border-2); stroke-width: 1; opacity: .8; }
+  /* The leader carries the dot's own colour so a name that had to travel is
+     still visibly tied to its marker. */
+  .leader { stroke: var(--c, var(--border-2)); stroke-width: 1.2; opacity: .55; }
+  .leader.faded { opacity: .15; }
   .zone { fill: var(--accent-soft); opacity: .45; }
-  .zonelabel { fill: var(--accent); font-size: 10px; font-weight: 700; }
+  .zonelabel { fill: var(--accent); font-size: var(--zlfs, 10px); font-weight: 700; }
   .grid { stroke: var(--border-2); stroke-width: 1; }
   .grid.divider { stroke: var(--accent); stroke-dasharray: 4 3; opacity: .55; }
   .axis { stroke: var(--border); stroke-width: 1; }
-  .ytick, .xtick { fill: var(--faint); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+  .ytick, .xtick { fill: var(--faint); font-size: var(--tkfs, 10.5px); font-variant-numeric: tabular-nums; }
   .ytick.acc { fill: var(--accent); font-weight: 700; }
-  .axislabel { fill: var(--muted); font-size: 10.5px; font-weight: 600; }
+  .axislabel { fill: var(--muted); font-size: var(--tkfs, 10.5px); font-weight: 600; }
   .frontier { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 6 4;
     stroke-linecap: butt; stroke-linejoin: miter; opacity: .8; }
   .pt { cursor: pointer; }
-  .pt rect { fill: var(--accent); stroke: var(--bg); stroke-width: 1.5; }
-  .pt .plabel { fill: var(--muted); font-size: 8.5px; font-weight: 600; }
-  .pt.oss rect { fill: var(--oss); }
-  .pt.oss .plabel { fill: var(--oss); }
-  .pt.front rect { stroke: var(--accent); stroke-width: 2; }
-  /* No radius to grow on a rect, so a hot marker gains a printed halo
-     instead — a second square drawn by the stroke. */
-  .pt.hot rect { stroke: var(--text); stroke-width: 3; }
-  /* A projected point is hollow: the plot's own ground, edged in the marker colour. */
-  .pt.est rect { fill: var(--surface); stroke: var(--accent); stroke-width: 2; }
-  .pt.est.oss rect { stroke: var(--oss); }
-  .pt.est.hot rect { stroke: var(--text); stroke-width: 3; }
-  .pt.hot .plabel { fill: var(--text); font-weight: 700; }
+  .pt circle { fill: var(--c); stroke: var(--bg); stroke-width: 1; }
+  .pt .plabel { fill: var(--c); font-size: var(--plfs, 9px); font-weight: 650; }
+  .pt.front circle { stroke: var(--c); stroke-width: 1.5; }
+  .pt.hot circle { stroke: var(--text); stroke-width: 2; }
+  .pt.hot .plabel { fill: var(--text); font-weight: 750; }
   /* Faded: the field behind a model page's own points (2026-09-14). */
   .pt.faded { opacity: .3; }
   .pt.faded.hot { opacity: 1; }

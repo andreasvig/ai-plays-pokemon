@@ -31,14 +31,14 @@
          (the tiebreak) counts game turns PLUS TaskMaster invocations on that
          harness and game turns only on this one. -->
     <p class="tagline">Can a language model play Pokémon FireRed <em>at pace</em>? A deterministic
-      referee reads game memory out-of-band and stamps story gates; a turn cap on every leg
-      between gates ends runs that get stuck on one section. Every run here is the same frozen append-and-compact harness
+      referee reads game memory out-of-band and stamps the story tasks; a turn cap on every leg
+      between tasks ends runs that get stuck on one section. Every run here is the same frozen append-and-compact harness
       (config-5.x), the same first-badge ladder and the same ROM — the model is the only variable.</p>
   {/if}
 </section>
 
 <!-- The ranked table that used to sit here is gone (Andreas 2026-09-14, "1a"):
-     the cards and plots ARE the board, and the Estimation methods page is the
+     the cards and plots ARE the board, and the Methodology page is the
      table view. What survives of the old section is the benchmark picker,
      local only (the public site publishes a single benchmark). -->
 {#if benchmarks.length && !STATIC}
@@ -68,4 +68,13 @@
   }
   .bench-tabs button.on { background: var(--surface); color: var(--accent-ink); box-shadow: inset 0 0 0 1px var(--border); }
   .bench-goal { margin: 10px 2px 0; font-size: 13px; line-height: 1.5; color: var(--muted); max-width: 680px; }
+
+  @media (max-width: 720px) {
+    .hero { padding: 22px 10px 4px; }
+    h1 { font-size: 24px; }
+    .tagline { font-size: 14px; }
+    .bench { margin-top: 14px; padding: 0 10px; }
+    .bench-tabs { display: flex; flex-wrap: wrap; }
+    .bench-tabs button { padding: 7px 12px; font-size: 12.5px; }
+  }
 </style>

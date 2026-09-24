@@ -15,17 +15,33 @@
   // (gBattleMons, gBattleOutcome — src/referee/battles.py). A run from before
   // that carries neither, and the card says the run did not look rather than
   // calling the outcome unknown: absent is not "we could not tell".
-  import { trainerSpriteUrl } from '../lib/mapatlas.js'
+  import { trainerSpriteUrl, pokemonSpriteUrl } from '../lib/mapatlas.js'
 
   let { battle, trainers = null } = $props()
 
   const t = $derived(battle?.trainer_id != null ? trainers?.trainers?.[String(battle.trainer_id)] ?? null : null)
-  const span = $derived(battle.closed_turn != null && battle.opened_turn != null
-    ? (battle.closed_turn === battle.opened_turn ? `turn ${battle.opened_turn}` : `turns ${battle.opened_turn}–${battle.closed_turn}`)
-    : `turn ${battle.opened_turn}`)
-  const cost = $derived(battle.turns === 0 ? 'over inside one turn' : `${battle.turns} turn${battle.turns === 1 ? '' : 's'} in the battle`)
+  // ONE line about turns, and it has to agree with itself (Andreas 2026-09-16).
+  // `turns` counts the turns that STARTED inside the fight, so the turn the
+  // player walked INTO it (opened_turn) is not one of them: printing "turns
+  // 43–47" beside "4 turns" showed a 5-turn range for a 4-turn number. The range
+  // printed is the charged turns, opened+1…closed, and only when the two agree —
+  // a gap in the per-turn poll would break that, and then the count stands alone.
+  const charged = $derived(
+    battle.turns > 0 && battle.closed_turn != null && battle.opened_turn != null
+      && battle.closed_turn - battle.opened_turn === battle.turns
+      ? (battle.turns === 1 ? `T${battle.closed_turn}` : `T${battle.opened_turn + 1}–T${battle.closed_turn}`)
+      : null)
+  const cost = $derived(battle.turns === 0
+    ? `over inside turn ${battle.opened_turn}`
+    : `${battle.turns} turn${battle.turns === 1 ? '' : 's'} in the battle${charged ? ` · ${charged}` : ` from T${battle.opened_turn + 1}`}`)
   const foe = $derived(battle.foe ?? null)
   const foeName = $derived(foe ? (trainers?.species?.[String(foe.species)] ?? `#${foe.species}`) : null)
+  // Andreas, 2026-09-16: "for the battle I would like Pokemon sprites on the
+  // hover, for both trainer Pokemon and wild Pokemon." The file is named by
+  // species id, so a party member needs its id — added to the roster in
+  // scripts/extract_trainers.py (index version 3). A roster from the older
+  // index has no `id` and simply shows no sprite rather than a broken one.
+  const hide = (e) => { e.currentTarget.style.display = 'none' }
   // The words the game's own outcome byte maps to, said the way a reader would.
   const OUTCOME = {
     won: ['won', 'win'], lost: ['lost', 'loss'], ran: ['ran', ''], caught: ['caught', 'win'],
@@ -43,7 +59,11 @@
 
 <div class="card" class:trainer={battle.kind === 'trainer'}>
   <div class="head">
-    {#if t?.pic}<img src={trainerSpriteUrl(t.pic)} alt="" width="48" height="48" />{/if}
+    {#if t?.pic}
+      <img src={trainerSpriteUrl(t.pic)} alt="" width="48" height="48" onerror={hide} />
+    {:else if battle.kind === 'wild' && foe?.species}
+      <img class="mon" src={pokemonSpriteUrl(foe.species)} alt="" width="48" height="48" onerror={hide} />
+    {/if}
     <div class="who">
       <b>{battle.kind === 'trainer' ? (t?.label ?? battle.trainer ?? 'Trainer battle') : 'Wild battle'}</b>
       {#if battle.kind === 'trainer'}
@@ -65,14 +85,14 @@
   {#if t?.party?.length}
     <ul class="party">
       {#each t.party as m, i (i)}
-        <li><span class="sp">{m.species}</span><span class="lv">Lv {m.level}</span></li>
+        <li>
+          {#if m.id}<img class="mon" src={pokemonSpriteUrl(m.id)} alt="" width="28" height="28" onerror={hide} />{/if}
+          <span class="sp">{m.species}</span><span class="lv">Lv {m.level}</span>
+        </li>
       {/each}
     </ul>
-    <p class="roster">the roster the ROM gives this trainer — not necessarily what was sent out</p>
   {/if}
   <div class="foot">
-    <span>{span}</span>
-    <span class="dot">·</span>
     <span>{cost}</span>
     {#if battle.uncounted}<span class="dot">·</span><span class="warn">flag only — no battle counted</span>{/if}
   </div>
@@ -92,7 +112,11 @@
   .verdict.win { color: #6fd98a; }
   .verdict.loss { color: #ff8b7a; }
   .party { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-  .party li { display: flex; gap: 8px; justify-content: space-between; }
+  .party li { display: flex; gap: 7px; align-items: center; }
+  .party .sp { flex: 1; }
+  .mon { image-rendering: pixelated; flex: none; }
+  /* The pic is 64 px of mostly air; crop the dead margin so a 28 px row reads. */
+  .party .mon { margin: -4px -2px; }
   .lv { color: #9aa2b2; font-variant-numeric: tabular-nums; }
   .roster { margin: 0; font-size: 10px; color: #7f8798; line-height: 1.45; }
   .foot { display: flex; gap: 5px; flex-wrap: wrap; color: #c4cad6; }

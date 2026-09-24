@@ -226,19 +226,21 @@ def test_stream_assembly_retains_encrypted_data_and_calls():
         assembly.add({"choices": [{"delta": {"reasoning_details": [{"data": "no identity"}]}}]})
 
 
-def test_config_5_1_is_the_default_config(config):
-    """The append harness IS the default (2026-09-07 flip), and since 2026-09-08
-    the highest of its configs is config-5.1 (plain output, self_grade false).
+def test_config_5_2_is_the_default_config(config):
+    """The append harness IS the default (2026-09-07 flip), and since 2026-09-23
+    the highest of its configs is config-5.2 (the "an event only counts once the
+    game has processed it" rule on top of 5.1).
 
     The ordinary "highest config-X.Y" rule picks it with no special case, so
-    all three default sites have to agree on it — and config-5.0 must still be
-    listed, because it is the frozen official config and legacy runs continue on it.
+    all three default sites have to agree on it — and the EARLIER config-5.x
+    files must still be listed, because 5.1 is the frozen official config and
+    5.0/legacy runs continue on theirs.
     """
-    assert "config-5.0" in list_configs() and "config-5.1" in list_configs()
-    assert list_configs()[-1] == "config-5.1"
-    assert find_latest_config().name == "config-5.1.yaml"
+    assert {"config-5.0", "config-5.1", "config-5.2"} <= set(list_configs())
+    assert list_configs()[-1] == "config-5.2"
+    assert find_latest_config().name == "config-5.2.yaml"
     # The one prose site allowed to NAME the default, so nothing else has to.
-    assert default_config_stem() == "config-5.1"
+    assert default_config_stem() == "config-5.2"
     # config-append must not be resurrected by a stray copy of the old file.
     assert "config-append" not in list_configs()
     assert "memory_updates" not in config["system_prompt"]
@@ -985,9 +987,16 @@ def test_short_turn_cap_warns_that_the_run_will_never_compact(config, capsys):
 
 
 def test_official_config_is_config_5_1_and_the_casual_default_matches():
-    """One constant for official, one rule for casual — and since 2026-09-08 they
-    deliberately name DIFFERENT files: official stays on the frozen config-5.0
-    while casual runs default to config-5.1, which Andreas is prompt-engineering.
+    """One constant for official, one rule for casual — and they deliberately name
+    DIFFERENT files: official stays on the FROZEN config-5.1 while casual runs
+    default to config-5.2, which is where prompt work happens.
+
+    The two converged for a fortnight (2026-09-09 to 2026-09-23) because 5.1 was
+    both the newest config and the promoted one. config-5.2 (2026-09-23, the
+    "an event only counts once the game has processed it" rule) splits them
+    again, which is the state this test was written for: a newer config becomes
+    the casual default by existing, and is promoted to official only by editing
+    OFFICIAL_CONFIG.
 
     Both must be config-5.x, or the leaderboard's config-5.x partition would
     split from the runs actually being queued. The official path additionally
@@ -1000,7 +1009,7 @@ def test_official_config_is_config_5_1_and_the_casual_default_matches():
 
     stem = _Path(OFFICIAL_CONFIG).stem
     assert stem == "config-5.1"  # promoted from 5.0 on 2026-09-09 (Andreas: "promote 5.1 to be official")
-    assert default_config_stem() == list_configs()[-1] == "config-5.1"
+    assert default_config_stem() == list_configs()[-1] == "config-5.2"  # 5.2 added 2026-09-23; official stays 5.1
     assert _re.fullmatch(r"config-5\.\d+", stem) and _re.fullmatch(r"config-5\.\d+", default_config_stem())
     official = load_config(str(ROOT / OFFICIAL_CONFIG), llm_alias="gpt-6-astra(medium)")
     assert official["agent_type"] == "append_compact"
@@ -1051,9 +1060,17 @@ def test_empty_inputs_are_retried_once_with_a_correction_note(config, tmp_path):
     schema = gameplay[1]["tools"][0]["function"]["parameters"]["properties"]["inputs"]
     assert "minItems" not in schema and "min_length" not in json.dumps(schema)
     assert [e for e in events if e["type"] == "output_retry"][0]["content"].startswith("Empty inputs")
-    assert any(m.get("content") == EMPTY_INPUTS_NOTE for m in agent.pending[1]), "the note is part of the accepted history"
+    # REVERSED 2026-09-23. This used to assert the note STAYED in the accepted
+    # history. It must not: the note sat in front of the reply it corrected and was
+    # resent on every later turn, and on Anthropic that turned one stochastic refusal
+    # into a permanent one — the stored claude-opus-5.5(low) turn-162 request refused
+    # 15/15 with a note present and passed 7/7 with it removed. The note still makes
+    # the retry a non-identical re-ask (asserted above); it is dropped on acceptance.
+    assert not any(m.get("content") == EMPTY_INPUTS_NOTE for m in agent.pending[1]), "the note is NOT kept in the accepted history"
     agent.commit_action(1)
-    assert any(m.get("content") == EMPTY_INPUTS_NOTE for m in agent.state["messages"]), "…and of the retained conversation"
+    assert not any(m.get("content") == EMPTY_INPUTS_NOTE for m in agent.state["messages"]), "…nor in the retained conversation"
+    # The turn itself still landed, so dropping the note did not drop the reply.
+    assert agent.state["messages"][-1]["role"] in ("assistant", "tool")
 
 
 def test_persistent_empty_inputs_exhaust_the_output_budget(config, tmp_path):
@@ -1075,6 +1092,219 @@ def test_persistent_empty_inputs_exhaust_the_output_budget(config, tmp_path):
         asyncio.run(agent.play(1, "badge text on screen", IMAGE))
     assert len(provider.requests) == 3
     assert sum(1 for r in provider.requests for m in r["messages"] if m.get("content") == EMPTY_INPUTS_NOTE) == 2, "note appended once, carried on the later retry"
+
+
+def test_a_refusal_after_an_output_defect_drops_the_correction_note(config, tmp_path):
+    """The second half of the refusal fix, and the bug the FIRST half shipped with.
+
+    Re-asking a refusal byte-identically is right — unless an earlier output defect in
+    the same turn already appended a correction note, because the note is itself a
+    refusal contributor. Live 2026-09-23, claude-opus-5.5(low) in prompted mode: the
+    first request was fine, the reply opened with prose, the harness appended a note,
+    and from that instant EVERY attempt was refused (8 in a row until the run was
+    stopped). Replaying that exact request: 3/3 refused with the note, 3/3 answered
+    without it. So a refusal must drop the notes before backing off.
+    """
+    class ProseThenRefuseThenPlay(FakeProvider):
+        """Defect, then a refusal, then a normal answer — the live sequence."""
+
+        async def __call__(self, body, key, timeout, on_chunk):
+            result = await super().__call__(body, key, timeout, on_chunk)
+            n = len(self.requests)
+            if n == 1:  # output defect -> the harness appends a note
+                msg = result["choices"][0]["message"]
+                msg["tool_calls"][0]["function"]["arguments"] = "{not json"
+            elif n == 2:  # then the provider refuses
+                result["choices"][0] = {
+                    "index": 0, "finish_reason": "content_filter", "native_finish_reason": "refusal",
+                    "message": {"role": "assistant", "content": None,
+                                "refusal": "blocked: reverse engineering or duplicating model outputs"},
+                }
+            return result
+
+    config["transport"]["max_retries"] = 3
+    agent, provider, events = engine(config, tmp_path, ProseThenRefuseThenPlay())
+    assert asyncio.run(agent.play(1, "", IMAGE)).inputs == ["a"]
+    assert len(provider.requests) == 3
+    first, retry, after_refusal = (r["messages"] for r in provider.requests)
+    assert len(retry) == len(first) + 1, "the output defect added its note"
+    assert any(str(m.get("content", "")).startswith("Your last reply was not accepted") for m in retry)
+    # THE assertion: the post-refusal re-ask carries no note at all.
+    assert not [m for m in after_refusal if str(m.get("content", "")).startswith("Your last reply was not accepted")], \
+        "the refusal re-asked with the note still attached — the loop that hung the live run"
+    assert after_refusal == first, "and is otherwise the original request, unchanged"
+
+
+# ───────────── a provider refusal is transient, not an output defect (2026-09-23) ─────────────
+
+
+class _RefuseOnce(FakeProvider):
+    """Anthropic's refusal shape: HTTP 200, no content, finish_reason content_filter."""
+
+    def __init__(self, times=1):
+        super().__init__()
+        self.times = times
+        self.refused = 0
+
+    async def __call__(self, body, key, timeout, on_chunk):
+        result = await super().__call__(body, key, timeout, on_chunk)
+        if self.refused < self.times:
+            self.refused += 1
+            result["choices"][0] = {
+                "index": 0,
+                "finish_reason": "content_filter",
+                "native_finish_reason": "refusal",
+                "message": {"role": "assistant", "content": None, "refusal":
+                            "This request was blocked as it seems to violate Anthropic's Terms of "
+                            "Service restrictions on reverse engineering or duplicating model outputs."},
+            }
+        return result
+
+
+def test_a_provider_refusal_retries_untouched_instead_of_appending_a_note(config, tmp_path):
+    """claude-opus-5.5(low), 2026-09-23: two runs crashed at turn 162 on an ordinary
+    Caterpie battle screen. The body was a 200 with finish_reason content_filter and
+    a refusal about "reverse engineering or duplicating model outputs" — the provider
+    declining, with no model output to correct.
+
+    It was classified as an OUTPUT defect, so the harness appended a correction note
+    and re-asked. Replaying the stored request showed what that cost: 15/15 refusals
+    with the note present, 7/7 successes with it removed. So a refusal must be
+    transient — backed off and re-asked BYTE-IDENTICALLY, with no note appended.
+    """
+    from src.agent.append_agent import ProviderRefusal
+    from src.agent.backoff import classify
+
+    assert classify(ProviderRefusal("refusal", "blocked")) == "transient"
+
+    config["transport"]["max_retries"] = 1
+    agent, provider, events = engine(config, tmp_path, _RefuseOnce())
+    action = asyncio.run(agent.play(1, "", IMAGE))
+    assert action.inputs == ["a"], "the re-ask succeeded"
+    assert len(provider.requests) == 2
+    # THE assertion: the retry is byte-identical, i.e. no note rode along.
+    assert provider.requests[1]["messages"] == provider.requests[0]["messages"], \
+        "a refusal must be re-asked unchanged — a correction note is what makes it stick"
+    assert not [e for e in events if e["type"] == "output_retry"], "not an output defect"
+    err = [e for e in events if e["type"] == "llm_request_error"]
+    assert agent.sleeps, "a refusal backs off before re-asking"
+    assert err and "Provider refused" in str(err[0]["error"])
+    assert "reverse engineering" in str(err[0]["error"]), "the provider's own reason is preserved"
+
+
+def test_a_refusal_is_not_downgraded_to_an_output_defect_by_the_200_body(config, tmp_path):
+    """The trap this had to clear: a refusal IS a 200 with a body, and ``play`` turns a
+    transient back into an output defect whenever ``raw is not None``. Without naming
+    ProviderRefusal in that exemption the fix above is silently undone, so assert the
+    consequence — the retry stays byte-identical across SEVERAL refusals, which is the
+    transient path (the output path would have appended a note on the first one).
+    """
+    config["transport"]["max_retries"] = 1
+    config["retry_policy"] = {"transient_retries": 4, "backoff_base_seconds": 0,
+                              "backoff_factor": 1, "backoff_cap_seconds": 0, "budget_seconds": 600}
+    agent, provider, events = engine(config, tmp_path, _RefuseOnce(times=3))
+    assert asyncio.run(agent.play(1, "", IMAGE)).inputs == ["a"]
+    assert len(agent.sleeps) == 3, "each refusal backed off — the transient path, not the output path"
+    assert len(provider.requests) == 4
+    for i in range(1, 4):
+        assert provider.requests[i]["messages"] == provider.requests[0]["messages"], f"request {i} was mutated"
+    assert not [e for e in events if e["type"] == "output_retry"]
+
+
+# ───────────── a do-nothing turn is an output defect too (2026-09-23) ─────────────
+
+
+class _Inputs(FakeProvider):
+    """Replays a scripted `inputs` list onto each gameplay answer, in order."""
+
+    def __init__(self, script):
+        super().__init__()
+        self.script = list(script)
+
+    async def __call__(self, body, key, timeout, on_chunk):
+        result = await super().__call__(body, key, timeout, on_chunk)
+        msg = result["choices"][0]["message"]
+        if msg.get("tool_calls") and msg["tool_calls"][0]["function"]["name"] == "gameplay" and self.script:
+            args = json.loads(msg["tool_calls"][0]["function"]["arguments"])
+            args["inputs"] = self.script.pop(0)
+            msg["tool_calls"][0]["function"]["arguments"] = json.dumps(args)
+        return result
+
+
+def _play(agent, turn):
+    return asyncio.run(agent.play(turn, "badge text on screen", IMAGE))
+
+
+def test_a_third_consecutive_wait_only_turn_is_refused_and_retried_with_a_note(config, tmp_path):
+    """gpt-6-sol(low) on 2026-09-23 beat Brock, read the badge text and then returned
+    ['wait'] every turn until it was cancelled — 11 of 12 gates, one B press short.
+
+    EmptyInputs (2026-09-11, the astra case) bans the empty LIST, and `wait` presses
+    nothing while still being a non-empty list, so the identical behaviour walked
+    straight through it. The FIRST two no-ops are allowed — a long animation can need
+    them — and the third is refused with the correction appended to the retry.
+    """
+    from src.agent.append_agent import NOOP_INPUTS_NOTE
+
+    config["transport"]["max_retries"] = 1
+    # wait, wait, then a third wait that must be refused and retried into a real press.
+    agent, provider, events = engine(config, tmp_path, _Inputs([["wait"], ["wait"], ["wait"], ["b"]]))
+    assert _play(agent, 1).inputs == ["wait"]
+    agent.commit_action(1)
+    assert _play(agent, 2).inputs == ["wait"]
+    agent.commit_action(2)
+    assert agent.state["noop_turns"] == 2, "two allowed no-ops are counted, not refused"
+
+    action = _play(agent, 3)
+    assert action.inputs == ["b"], "the refused no-op was retried into a real press"
+    gameplay = [r for r in provider.requests if any(t["function"]["name"] == "gameplay" for t in r.get("tools", []))]
+    assert gameplay[-1]["messages"][-1] == {"role": "user", "content": NOOP_INPUTS_NOTE}
+    assert [e for e in events if e["type"] == "output_retry"][-1]["content"].startswith("No-op turn")
+    agent.commit_action(3)
+    assert agent.state["noop_turns"] == 0, "a real press clears the streak"
+
+
+def test_wait_mixed_with_a_real_press_is_never_a_no_op(config, tmp_path):
+    """The control, and the reason the threshold counts PURE waits only.
+
+    [b, b, wait] is the documented battle idiom — chain `wait` after a move so the
+    animation resolves. If that counted, the guard would refuse ordinary battle play
+    within three turns and this fix would be worse than the defect it replaces. Runs
+    the same length of turns as the test above, which DOES trip at three.
+    """
+    config["transport"]["max_retries"] = 1
+    agent, _, events = engine(config, tmp_path, _Inputs([["b", "wait"], ["a", "wait"], ["b", "b", "wait"], ["b", "wait"]]))
+    for turn in (1, 2, 3, 4):
+        assert _play(agent, turn).inputs[-1] == "wait"
+        agent.commit_action(turn)
+        assert agent.state["noop_turns"] == 0, f"turn {turn} pressed a real button and must not count"
+    assert not [e for e in events if e["type"] == "output_retry"], "no turn was refused"
+
+
+def test_the_noop_streak_survives_a_checkpoint_restore(config, tmp_path):
+    """The sol case was a CONTINUE, so a streak that resets on resume would let the
+    loop restart every time — and an OLD checkpoint, written before this key existed,
+    must still restore instead of raising KeyError.
+
+    Restored into the SAME conversation store the checkpoint was written from, which
+    is what a real continue does (it copies the source run dir before resuming).
+    """
+    config["transport"]["max_retries"] = 1
+    agent, _, _ = engine(config, tmp_path, _Inputs([["wait"], ["wait"]]))
+    assert _play(agent, 1).inputs == ["wait"]
+    agent.commit_action(1)
+    packed = agent.export_checkpoint()
+
+    resumed, _, _ = engine(config, tmp_path, _Inputs([["b"]]))
+    resumed.restore(packed, 1)
+    assert resumed.state["noop_turns"] == 1, "the streak came back with the conversation"
+
+    legacy = resumed.store.unpack(packed)
+    legacy.pop("noop_turns")
+    older, _, _ = engine(config, tmp_path, _Inputs([["b"]]))
+    older.restore(older.store.pack(legacy), 1)
+    assert older.state.get("noop_turns", 0) == 0, "a pre-2026-09-23 checkpoint restores without the key"
+    assert _play(older, 2).inputs == ["b"]
 
 
 # ───────────── a text reply in tool mode is an output defect, retried with a note (2026-09-12) ─────────────
@@ -1166,7 +1396,8 @@ def test_persistent_text_replies_exhaust_the_compaction_budget(config, tmp_path)
 def test_output_defect_retry_carries_the_error_and_the_required_shape(config, tmp_path):
     """Andreas 2026-09-12: "in the retry feed the model with the error message of
     what it has to do". Unparsable tool arguments on turn 1: the retry's last message
-    quotes the JSON error and names the required shape; the accepted history keeps it."""
+    quotes the JSON error and names the required shape. The accepted history does NOT
+    keep it (reversed 2026-09-23 — a persistent note is an Anthropic refusal trap)."""
     from src.agent.append_agent import MalformedJSON, describe_json_error, output_defect_note
 
     config["transport"]["max_retries"] = 1
@@ -1186,7 +1417,10 @@ def test_output_defect_retry_carries_the_error_and_the_required_shape(config, tm
     exc = json.JSONDecodeError("Expecting property name enclosed in double quotes", "{not json", 1)
     assert note["content"] == output_defect_note("gameplay", "tool", MalformedJSON(describe_json_error("{not json", exc)))
     agent.commit_action(1)
-    assert any(m.get("content") == note["content"] for m in agent.state["messages"])
+    # REVERSED 2026-09-23 (see the EmptyInputs test above): the note is retry-only.
+    # It reached the model on the retry — which is the whole point, asserted above —
+    # and is dropped from the conversation once the turn is accepted.
+    assert not any(m.get("content") == note["content"] for m in agent.state["messages"])
 
 
 def test_truncated_output_retry_says_to_shorten(config, tmp_path):

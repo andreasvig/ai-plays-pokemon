@@ -5,7 +5,7 @@
   // from the board row (lib/board.js runGateRows), no summary fetch — and the
   // recording. The public site's only run view; locally the full report is a
   // click away.
-  import { runGateRows } from '../lib/board.js'
+  import { runGateRows, costCell } from '../lib/board.js'
   import { GATES } from '../lib/gates.js'
   import { dateShort, dur, usd } from '../lib/format.js'
   import { STATIC } from '../lib/static.js'
@@ -31,7 +31,7 @@
   const gates = $derived(runGateRows(row, ladder))
   const cleared = $derived(gates.filter((g) => g.status === 'done').length)
   const failed = $derived(gates.find((g) => g.status === 'failed') ?? null)
-  const verdict = $derived(cleared >= gates.length && gates.length ? 'All gates cleared' : failed ? `Ended on the leg to ${failed.name}` : '')
+  const verdict = $derived(cleared >= gates.length && gates.length ? 'All tasks cleared' : failed ? `Ended on the leg to ${failed.name}` : '')
   const hasTimes = $derived(gates.some((g) => g.timeS != null))
   const hasCosts = $derived(gates.some((g) => g.costUsd != null))
   const hasEff = $derived(gates.some((g) => g.efficiency != null))
@@ -42,14 +42,16 @@
   <div class="cols">
     <section class="score">
       <div class="score-head">
-        <h4>Gates</h4>
+        <h4>Tasks</h4>
         <span class="cleared">{cleared}/{gates.length} cleared</span>
         <span class="verdict" class:win={cleared >= gates.length && gates.length} class:fail={!!failed}>{verdict}</span>
       </div>
       <GateTable rows={gates} time={hasTimes} cost={hasCosts} efficiency={hasEff} />
       <p class="foot faint">
-        {row.turns} turns · {dur(row.durationS)} · {usd(row.totalCostUsd)} · started {dateShort(row.startedAt)} on <span class="mono">{row.config}</span>{#if row.continuedFrom} · continued from an earlier run{/if}
-        {#if hasTimes}· time and cost are cumulative at each gate{/if}{#if hasEff}· walk = shortest path ÷ steps charged, a press into a wall counting as one step{/if}
+        {row.turns} turns · {dur(row.durationS)} · <span title={costCell(row, usd).note}>{costCell(row, usd).total}</span> · started {dateShort(row.startedAt)} on <span class="mono">{row.config}</span>{#if row.continuedFrom} · continued from an earlier run{/if}
+        {#if hasTimes}· time and cost are cumulative at each gate{/if}
+        {#if costCell(row, usd).basis === 'list'}· this run was billed nothing — it played under a cloaked listing, so every cost here is its own calls at the price the model lists today{/if}
+        {#if hasEff}· walk = shortest path ÷ steps charged, a press into a wall counting as one step{/if}
       </p>
       {#if !STATIC && onreport}
         <button class="btn ghost report" onclick={() => onreport(row)}><Icon name="report" size={13} /> Open the full report</button>
@@ -71,7 +73,7 @@
           <span class="cleared">every tile, on the game's own map</span>
         </button>
         {#if mapOpen}
-          <RouteMap runId={row.runId} height={560}
+          <RouteMap runId={row.runId}
             onturn={onreport ? (turn) => onreport(row, turn) : null} />
         {/if}
       </section>
@@ -82,10 +84,6 @@
 <style>
   .detail { padding: 4px 0 14px; }
   .cols { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 18px; align-items: start; }
-  @media (max-width: 960px) {
-    .cols { grid-template-columns: minmax(0, 1fr); }
-    .video { grid-column: auto; grid-row: auto; }
-  }
   .score { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow); min-width: 0; }
   .score-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
   h4 { font-size: 14px; font-weight: 750; margin: 0; }
@@ -101,4 +99,27 @@
      then the map — so the map, the heaviest thing here, is last and closed. */
   .video { grid-column: 2; grid-row: 1; border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); border: 1px solid var(--border); background: var(--dark); min-width: 0; }
   .census, .map { grid-column: 1 / -1; }
+
+  /* One column below 960 — and this block has to come AFTER `.video`'s
+     placement above, not before it (Andreas 2026-09-17). It used to sit up by
+     `.cols`, where the later `grid-column: 2` outranked the reset on equal
+     specificity: the video stayed pinned to a column 2 that the template no
+     longer declared, so the grid grew an IMPLICIT 332px track sized to the
+     player and handed the explicit `minmax(0, 1fr)` column 0px. Everything in
+     the left column — the task ladder, the census — was then laid out in a
+     card with no content width, which is what made a phone unreadable. */
+  @media (max-width: 960px) {
+    .cols { grid-template-columns: minmax(0, 1fr); }
+    .video { grid-column: auto; grid-row: auto; }
+  }
+  @media (max-width: 720px) {
+    .score { padding: 12px 11px; }
+    .score-head { gap: 8px; margin-bottom: 8px; }
+    .cols { gap: 12px; }
+    .verdict { margin-left: 0; flex: 1 0 100%; }
+    .foot { font-size: 10.5px; }
+    /* The map's caption goes under its title rather than squeezing it. */
+    .maphead { flex-wrap: wrap; gap: 8px; }
+    .maphead .cleared { flex: 1 0 100%; margin-left: 18px; }
+  }
 </style>

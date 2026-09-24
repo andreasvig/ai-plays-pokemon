@@ -72,7 +72,7 @@
     <section class="block">
       <header class="sechead">
         <h2>Against the field</h2>
-        <p class="faint">The board's sections with this model's levels in colour and every other model faded at its best level; the picker on each card changes the field, this model's levels stay. A level that has not reached far enough for a reliable figure is left off a card here exactly as on the board — see <button class="link" onclick={() => onmethods()}>Estimation methods</button>.</p>
+        <p class="faint">The board's sections with this model's levels in colour and every other model faded at its best level; the picker on each card changes the field, this model's levels stay. A level that has not reached far enough for a reliable figure is left off a card here exactly as on the board — see <button class="link" onclick={() => onmethods()}>Methodology</button>.</p>
       </header>
     </section>
     <!-- The whole board, not the collapsed field: the picker must offer every
@@ -95,4 +95,14 @@
   .sechead p { font-size: 14px; margin: 6px 0 0; max-width: 760px; line-height: 1.5; }
   .link { border: none; background: none; padding: 0; color: var(--accent); font: inherit; text-decoration: underline; cursor: pointer; }
   .page :global(.body) { margin-top: 18px; }
+
+  @media (max-width: 720px) {
+    .bar { padding: 12px 10px 0; }
+    .mhead { padding: 12px 10px 0; gap: 12px; }
+    h1 { font-size: 22px; }
+    .none, .block { padding: 0 10px; }
+    .block { margin-top: 28px; gap: 12px; }
+    .sechead h2 { font-size: 19px; }
+    .sechead p { font-size: 13px; }
+  }
 </style>

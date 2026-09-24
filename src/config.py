@@ -150,6 +150,40 @@ def _alias_to_openrouter_id(alias: str, registry: dict[str, Any]) -> str:
     return resolve_model_selection(alias, registry)["openrouter_id"]
 
 
+def renamed_models(registry: dict[str, Any]) -> Tuple[dict[str, str], dict[str, str]]:
+    """``({old alias: alias}, {old openrouter id: openrouter id})`` from ``former:``.
+
+    A model can be renamed UNDER runs that already played it. OpenRouter lists
+    an unannounced model behind a cloaked `stealth/*` slug and retires that slug
+    the day the lab announces it; the weights do not change, the name does. The
+    run dir keeps what went on the wire — it is the record of what happened —
+    and this is how a board built from those run dirs shows the model under the
+    name it has today.
+
+    Declared on the entry that inherited the name, so one place says both halves
+    of the identity claim:
+
+        pareto:
+          openrouter_id: unbiased/pareto
+          former:
+            - alias: union-alpha
+              openrouter_id: stealth/union-alpha
+    """
+    aliases: dict[str, str] = {}
+    ids: dict[str, str] = {}
+    for base, entry in registry.items():
+        if not isinstance(entry, dict):
+            continue
+        for old in entry.get("former") or []:
+            if not isinstance(old, dict):
+                continue
+            if old.get("alias"):
+                aliases[str(old["alias"])] = base
+            if old.get("openrouter_id") and entry.get("openrouter_id"):
+                ids[str(old["openrouter_id"])] = str(entry["openrouter_id"])
+    return aliases, ids
+
+
 def list_competitor_aliases(registry: dict[str, Any]) -> list[str]:
     """Every benchmarkable ``model(level)`` identity (bare ``model`` for type none)."""
     out: list[str] = []

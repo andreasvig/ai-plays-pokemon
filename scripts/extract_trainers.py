@@ -52,6 +52,8 @@ PARTIES = "src/data/trainer_parties.h"
 PIC_TABLE = "src/data/trainer_graphics/front_pic_tables.h"
 GFX = "src/data/graphics/trainers.h"
 SPECIES_NAMES = "src/data/text/species_names.h"
+MON_PIC_TABLE = "src/data/pokemon_graphics/front_pic_table.h"
+MON_GFX = "src/data/graphics/pokemon.h"
 
 
 def text(path: str, *, offline: bool, ref: str) -> str:
@@ -124,6 +126,35 @@ def pic_paths(pic_table: str, gfx: str) -> dict[str, str]:
     return out
 
 
+def mon_pic_paths(pic_table: str, gfx: str) -> dict[str, str]:
+    """SPECIES_<NAME> -> its front-pic PNG in the pret tree.
+
+    Same two-hop shape as the trainer pics: the table names a symbol, the
+    graphics header says which file that symbol was INCBIN'd from.
+    """
+    symbol_path = dict(re.findall(r"(gMonFrontPic_\w+)\[\]\s*=\s*INCBIN_U32\(\"([^\"]+)\"\)", gfx))
+    out = {}
+    for name, symbol in re.findall(r"SPECIES_SPRITE\((\w+),\s*(gMonFrontPic_\w+)", pic_table):
+        path = symbol_path.get(symbol)
+        if path:
+            out[f"SPECIES_{name}"] = re.sub(r"\.4bpp\.lz$", ".png", path)
+    return out
+
+
+def mon_sprite(raw: bytes, out: Path) -> None:
+    """Save a mon's front pic KEEPING pret's 4bpp palette, index 0 transparent.
+
+    Not `sprite()`'s RGBA: a mon pic is 16 colours, and flattening 410 of them
+    to RGBA tripled the set to 1.6 MB for no visible difference. A PNG
+    `transparency` chunk pointing at index 0 says the same thing in 610 bytes.
+    """
+    img = Image.open(__import__("io").BytesIO(raw))
+    if img.mode != "P":
+        img.convert("RGBA").save(out, optimize=True)
+        return
+    img.save(out, optimize=True, transparency=0)
+
+
 def sprite(raw: bytes) -> Image.Image:
     """The front pic as RGBA, colour index 0 — the GBA's transparent one — cut out."""
     img = Image.open_bytes = Image.open(__import__("io").BytesIO(raw))
@@ -147,6 +178,7 @@ def main() -> int:
     ref = pinned_sha()
     rd = lambda p: text(p, offline=args.offline, ref=ref)  # noqa: E731
 
+    sp_ids = species_ids(rd(SPECIES_IDS))
     ids = trainer_ids(rd(OPPONENTS))
     by_key = trainers(rd(TRAINERS))
     party_of = parties(rd(PARTIES))
@@ -165,7 +197,11 @@ def main() -> int:
             missing.append(tid)
             continue
         roster = [{"species": species.get(m["species"], m["species"].removeprefix("SPECIES_").title()),
-                   "level": m["level"]} for m in party_of.get(t["party"], [])]
+                   "level": m["level"],
+                   # the id too, because the card draws the mon's own sprite and
+                   # the file is named by id — the name would need a second map
+                   "id": sp_ids.get(m["species"])}
+                  for m in party_of.get(t["party"], [])]
         pic = (t["pic"] or "").lower()
         if t["pic"] in pics:
             wanted_pics.add(t["pic"])
@@ -184,10 +220,42 @@ def main() -> int:
         sprite(raw).save(args.out / f"{pic.lower()}.png", optimize=True)
         print(f"{pic.lower():28s} {(args.out / f'{pic.lower()}.png').stat().st_size // 1024:3d} KB")
 
-    ids = species_ids(rd(SPECIES_IDS))
-    by_id = {str(i): species[key] for key, i in ids.items() if key in species and i > 0}
+    by_id = {str(i): species[key] for key, i in sp_ids.items() if key in species and i > 0}
+
+    # Every mon's front pic, named by species id (Andreas, 2026-09-16: "for the
+    # battle I would like Pokemon sprites on the hover, for both trainer Pokemon
+    # and wild Pokemon"). All of them rather than only the ones a first-badge
+    # run can meet: it is 250 KB in the repo, a viewer downloads only the one
+    # they hover, and a sprite that is missing only for an unusual encounter is
+    # the kind of gap nobody finds until it is on the public site.
+    mon_dir = args.out.parent / "pokemon"
+    mon_dir.mkdir(parents=True, exist_ok=True)
+    mon_pics = mon_pic_paths(rd(MON_PIC_TABLE), rd(MON_GFX))
+    drawn = 0
+    no_pic: list[str] = []
+    for key, i in sorted(sp_ids.items(), key=lambda kv: kv[1]):
+        path = mon_pics.get(key)
+        if not path or i <= 0 or str(i) not in by_id:
+            continue
+        out = mon_dir / f"{i}.png"
+        if not out.exists():
+            try:
+                raw = fetch(path, offline=args.offline, ref=ref)
+            except SystemExit:
+                # A handful of species keep their front pic somewhere else —
+                # Castform's is per-form. Named rather than silently dropped:
+                # a missing sprite should be a line here, not a broken image on
+                # the public site.
+                no_pic.append(key.removeprefix("SPECIES_").title())
+                continue
+            mon_sprite(raw, out)
+        drawn += 1
+    if no_pic:
+        print(f"no front pic at the expected path for {len(no_pic)}: {', '.join(no_pic)}")
+
     (args.out / "index.json").write_text(json.dumps(
-        {"version": 2, "pret_sha": ref, "trainers": index, "species": by_id}, indent=1) + "\n")
+        {"version": 3, "pret_sha": ref, "trainers": index, "species": by_id}, indent=1) + "\n")
+    print(f"{drawn} Pokemon sprites in {mon_dir}")
     if missing:
         raise SystemExit(f"no pret entry for trainer ids {missing} — the referee names them but the ROM does not")
     print(f"{len(index)} trainers, {len(wanted_pics)} sprites")

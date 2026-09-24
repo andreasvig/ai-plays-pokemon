@@ -8,11 +8,12 @@ import yaml
 
 from src.agent.append_agent import AppendAgent, ContinuityError
 from src.agent.provider_profiles import PROFILE_PATH, resolve_provider_profile, router_diagnostics, output_json_text
-from src.config import load_config
+from src.config import _load_models_registry, load_config
 from test_append_agent import ROOT, IMAGE, FakeProvider
 
 
-MODELS = list(yaml.safe_load(PROFILE_PATH.read_text())["profiles"])
+PROFILES = yaml.safe_load(PROFILE_PATH.read_text())["profiles"]
+MODELS = list(PROFILES)
 
 
 @pytest.mark.parametrize("model,variant", [(model, None) for model in MODELS] + [
@@ -49,7 +50,18 @@ def test_profile_roundtrip_and_fresh_segment(model, variant, tmp_path):
             route["ignore"] = profile["excluded_endpoints"]
         assert request["provider"] == route
         assert request["transforms"] == []
-        assert request["reasoning"]["exclude"] is False
+        # A profile with `reasoning_default: null` must send NO reasoning block: its
+        # endpoint does not advertise the parameter, and with require_parameters
+        # pinned the router answers 404 rather than dropping it (stealth/union-alpha,
+        # probe 2026-09-16). The branch is taken from the YAML, NOT from the resolved
+        # `profile["reasoning"]`: resolution is the thing under test, so keying the
+        # expectation on its own output makes the assertion follow the bug. Breaking
+        # resolve_provider_profile to emit a block anyway leaves this line unchanged,
+        # and it fails — which is the whole point of reading the file here.
+        if PROFILES[model].get("reasoning_default", {}) is None:
+            assert "reasoning" not in request
+        else:
+            assert request["reasoning"]["exclude"] is False
         # No harness budget: output may run to the endpoint's own ceiling.
         assert request["max_tokens"] == profile["max_completion_tokens"]
     assert config["compaction"]["context_token_limit"] == profile["context_length"]
@@ -95,6 +107,42 @@ def test_profile_rejects_incompatible_effort_limits_and_resume(tmp_path):
     changed["_provider_profile"]["endpoint"] = "different/host"
     with pytest.raises(ContinuityError, match="profile changed"):
         AppendAgent(changed, tmp_path, lambda *args: None).restore(packed, 0)
+
+
+def test_no_reasoning_profile_refuses_a_thinking_level_at_load():
+    """`reasoning_default: null` is the ONLY place this rule lives, so it must bite.
+
+    The append agent's `_body` has no second lock, and does not need one:
+    `config["thinking"]` is set from the registry resolution, which returns None for
+    a `reasoning_type: none` model, so the request builder cannot re-add a block on
+    its own. That makes THIS the guard — and it has to fail at config load rather
+    than mid-run, because the endpoint does not ignore an unsupported parameter:
+    with the profile's pinned `require_parameters: true` the router finds no
+    endpoint left and answers HTTP 404 "Filter by Parameters" (stealth/union-alpha,
+    probe 2026-09-16).
+
+    Driven through the ALIAS, not the raw OpenRouter id the parametrized test above
+    uses: `_resolve_model` returns early on a raw id, so a raw-id config never sets
+    `thinking` at all and would pass this test without the guard existing.
+    """
+    registry = _load_models_registry()
+    aliases = [n for n, e in registry.items()
+               if PROFILES.get(e["openrouter_id"], {}).get("reasoning_default", {}) is None]
+    assert aliases, "no registry model is profiled `reasoning_default: null` — re-point this test"
+    for alias in aliases:
+        config = load_config(str(ROOT / "configs/config-5.0.yaml"), llm_alias=alias)
+        # The clean path first, so the failures below cannot pass for the wrong reason.
+        assert config["_provider_profile"]["reasoning"] is None
+        assert config["thinking"] is None
+        for asked in ({"effort": "medium"}, {"enabled": True}, {"enabled": False}):
+            with pytest.raises(ValueError, match="no reasoning parameter"):
+                resolve_provider_profile({**deepcopy(config), "thinking": asked})
+        # And the way a person would actually ask for it: a level on the alias. This
+        # one is stopped a door EARLIER, by the registry's own ladder check — named
+        # so the two guards are not mistaken for one, and asserted here because this
+        # is the door a person reaches first.
+        with pytest.raises(ValueError, match="no thinking levels"):
+            load_config(str(ROOT / "configs/config-5.0.yaml"), llm_alias=f"{alias}(medium)")
 
 
 def test_router_compression_stops_and_preserves_raw_metadata(tmp_path):

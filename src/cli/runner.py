@@ -1004,11 +1004,23 @@ def cleanup_handle(handle: dict) -> None:
         caffeinate_proc.terminate()
 
 
-def _find_latest_savepoint(run_dir: Path) -> tuple[Path, int]:
-    """Find the highest-numbered savepoint in <run_dir>/savepoints/.
+def _find_latest_savepoint(run_dir: Path, at_turn: int | None = None) -> tuple[Path, int]:
+    """Find a savepoint in <run_dir>/savepoints/ — the highest, or an exact turn.
 
     Returns (savepoint_dir, turn_number). Raises FileNotFoundError if no
     savepoint exists or the run dir is missing.
+
+    ``at_turn`` resumes from an EARLIER checkpoint than the last one, which is
+    not a convenience: an append run restores its conversation with the
+    checkpoint, so resuming the final savepoint replays whatever the model had
+    most recently talked itself into. gpt-6-sol(low) on 2026-09-23 idled on
+    ['wait'] for five turns believing it had already won; continued from its
+    last savepoint (turn 384) it read its own five "the goal is complete"
+    turns back into context and idled again on the first resumed turn, with the
+    corrected goal in front of it. Rewinding behind the bad stretch is the way
+    out. An unknown turn lists what IS available rather than silently taking
+    the nearest, because "nearest" would quietly resume a different game state
+    than the one asked for.
     """
     sp_root = run_dir / "savepoints"
     if not sp_root.is_dir():
@@ -1026,13 +1038,23 @@ def _find_latest_savepoint(run_dir: Path) -> tuple[Path, int]:
     if not candidates:
         raise FileNotFoundError(f"No turn_<N>/ savepoints found in {sp_root}")
     candidates.sort(key=lambda x: x[0])
-    return candidates[-1][1], candidates[-1][0]
+    if at_turn is None:
+        return candidates[-1][1], candidates[-1][0]
+    for turn, path in candidates:
+        if turn == at_turn:
+            return path, turn
+    raise FileNotFoundError(
+        f"No savepoint at turn {at_turn} in {sp_root}. Available: "
+        + ", ".join(str(t) for t, _ in candidates)
+    )
 
 
-def continue_from_run(source_run_dir: str) -> tuple[dict, Path]:
+def continue_from_run(source_run_dir: str, at_turn: int | None = None) -> tuple[dict, Path]:
     """Set up a continuation of a prior run.
 
-    - Locates the latest savepoint inside <source_run_dir>/savepoints/.
+    - Locates a savepoint inside <source_run_dir>/savepoints/: the latest, or the
+      one at ``at_turn`` when given (see ``_find_latest_savepoint`` for why an
+      earlier one is sometimes the only way to resume usefully).
     - Reads the source run's config.json to recover model alias + all settings.
     - Creates a new run dir at local/runs/<ts>_<run_name>_continued_from_turn_<N>/
       and copies events.jsonl + screenshots/ + ocr/ + terminal.log over verbatim.
@@ -1046,7 +1068,7 @@ def continue_from_run(source_run_dir: str) -> tuple[dict, Path]:
     if not source.is_dir():
         sys.exit(f"ERROR: --continue path is not a directory: {source}")
 
-    savepoint_dir, sp_turn = _find_latest_savepoint(source)
+    savepoint_dir, sp_turn = _find_latest_savepoint(source, at_turn)
 
     config_path = source / "config.json"
     if not config_path.exists():

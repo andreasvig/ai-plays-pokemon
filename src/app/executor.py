@@ -242,7 +242,15 @@ class RunExecutor:
             # must get the FULL run dir under runs_root — NOT the bare id, which
             # would resolve against CWD and fail "not a directory".
             source_dir = self.runs_root / item.continue_from
-            cfg, savepoint_dir = self._resolve_continue_fn()(str(source_dir))
+            # Called with ONE argument unless a turn was asked for: the
+            # ``continue_fn`` seam is documented as Callable[[str], ...] and the
+            # test fakes take a single positional, so the optional turn is only
+            # passed when it is actually set.
+            resolve = self._resolve_continue_fn()
+            cfg, savepoint_dir = (
+                resolve(str(source_dir), at_turn=item.continue_from_turn)
+                if item.continue_from_turn is not None else resolve(str(source_dir))
+            )
             if item.rebase_contract:
                 # Explicit opt-in (see QueuedRun.rebase_contract): the resumed
                 # conversation may take today's provider profile and wire shape.

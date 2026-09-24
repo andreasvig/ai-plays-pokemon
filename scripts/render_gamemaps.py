@@ -144,8 +144,36 @@ def tileset_dir(kind: str, gname: str) -> str:
 
 # ---------------------------------------------------------------- buildings
 
+# A COMPLEX: maps that open together behind one marker, in the order they stack
+# in the popup — top of the list is the top of the stack, which here is north.
+#
+# Andreas, 2026-09-16: "i would actually like viridian forest to be a separate
+# room, such that when you click the gate openings you see the gate houses and
+# the forest in a popup stacked on top of each other."
+#
+# Curated, not derived. Viridian Forest is a MAP_TYPE_ROUTE with no world
+# position, reached only through two gate houses that are each corridors on
+# their own — no rule over the map data says those three are one place, and a
+# rule invented to say it would be a rule about this one case wearing a
+# general-looking coat. The list is the honest form of the same knowledge.
+COMPLEXES: dict[str, list[str]] = {
+    "ViridianForest": [
+        "Route2_ViridianForest_NorthEntrance",
+        "ViridianForest",
+        "Route2_ViridianForest_SouthEntrance",
+    ],
+}
+COMPLEX_OF = {m: b for b, members in COMPLEXES.items() for m in members}
+
+
 def building_of(name: str) -> str:
-    """'PewterCity_PokemonCenter_2F' -> 'PewterCity_PokemonCenter' (1F stays 1F's own)."""
+    """'PewterCity_PokemonCenter_2F' -> 'PewterCity_PokemonCenter' (1F stays 1F's own).
+
+    A member of a COMPLEX answers with the complex instead, which is what makes
+    its gates and its forest one marker and one popup.
+    """
+    if name in COMPLEX_OF:
+        return COMPLEX_OF[name]
     return FLOOR_RE.sub("", name)
 
 
@@ -212,6 +240,12 @@ def door_index(map_json: dict[str, dict], names: dict[str, str], graph: dict,
         b = building_of(n)
         if b in corridor:
             continue
+        if b in COMPLEXES:
+            # A gate house on its own is a corridor by both tests — that is what
+            # a gate is. The complex it belongs to is a place, and the corridor
+            # rule has nothing to say about it.
+            corridor[b] = False
+            continue
         maps = set(floors.get(b, [n]))
         two_maps = len({d for f in maps for d, _w in reach.get(f, ())}) >= 2
         corridor[b] = two_maps or bool(_corridor_by_graph(graph, maps, key_of))
@@ -220,7 +254,7 @@ def door_index(map_json: dict[str, dict], names: dict[str, str], graph: dict,
     for n, mj in map_json.items():
         if n in indoor:
             continue
-        seen: set[str] = set()
+        seen: set = set()
         for w in mj.get("warp_events") or []:
             dest = names.get(str(w.get("dest_map")))
             if dest is None or dest not in indoor:
@@ -228,11 +262,77 @@ def door_index(map_json: dict[str, dict], names: dict[str, str], graph: dict,
             b = building_of(dest)
             if corridor[b]:
                 continue
-            if b in seen:
-                continue           # one marker per building, its first door
-            seen.add(b)
+            # A door from inside a complex to another of its own members is not
+            # a door: Viridian Forest is a ROUTE, so it reads as outdoor here
+            # and was handing itself two markers that reopened the popup it is
+            # already in.
+            if COMPLEX_OF.get(n) == b:
+                continue
+            # One marker per building, at its first door — except a complex,
+            # which gets one per WAY IN: Route 2 meets Viridian Forest at two
+            # gates a long way apart, and a marker on only one of them leaves
+            # the other opening looking like scenery. Per way in, not per warp:
+            # a gate is two tiles wide and has a warp on each.
+            mark = (b, dest) if b in COMPLEXES else b
+            if mark in seen:
+                continue
+            seen.add(mark)
             doors.setdefault(n, []).append({"x": int(w["x"]), "y": int(w["y"]), "to": dest, "building": b})
     return doors
+
+
+def exit_index(map_json: dict, names: dict[str, str], key_of: dict[str, str]) -> dict[str, list[dict]]:
+    """Popup map name -> the tiles that LEAVE its building or cluster.
+
+    The door index read the other way round. A run's map used to open a
+    building in a modal; since 2026-09-16 the map itself walks into it, so the
+    way back has to be a thing you can click (Andreas: "the whole map should
+    change to that sub-map with an arrow to go back, or the ability to just
+    press on the door to get back out").
+
+    A warp to another floor of the same building, or to another member of the
+    same cluster — the forest to its gate houses — is NOT an exit: it is a
+    stair inside the place you are already in. So the forest has none, and the
+    two gate houses carry the cluster's only ways out, which is also where you
+    would walk to.
+
+    A FireRed doorway is three tiles wide and carries a warp on each, so the
+    tiles are grouped into touching runs and the marker goes on the middle of
+    each — one door, one marker, in the middle of the mat. Grouped, not merged
+    pairwise: comparing each warp only against the ones already KEPT let the
+    third tile of a 3-wide door start a second door of its own. Two genuinely
+    separate doors onto the same route stay two.
+    """
+    out: dict[str, list[dict]] = {}
+    for n, mj in map_json.items():
+        if mj.get("map_type") != MAP_TYPE_INDOOR and n not in COMPLEX_OF:
+            continue
+        b = building_of(n)
+        by_dest: dict[str, list[tuple[int, int]]] = {}
+        for w in mj.get("warp_events") or []:
+            dest = names.get(str(w.get("dest_map")))
+            if dest is None or dest not in key_of or building_of(dest) == b:
+                continue
+            by_dest.setdefault(dest, []).append((int(w["x"]), int(w["y"])))
+        doors: list[dict] = []
+        for dest, tiles in sorted(by_dest.items()):
+            todo = sorted(tiles)
+            while todo:
+                group = [todo.pop(0)]
+                grew = True
+                while grew:
+                    grew = False
+                    for t in list(todo):
+                        if any(abs(t[0] - g[0]) <= 1 and abs(t[1] - g[1]) <= 1 for g in group):
+                            group.append(t)
+                            todo.remove(t)
+                            grew = True
+                group.sort()
+                mid = group[len(group) // 2]
+                doors.append({"x": mid[0], "y": mid[1], "to": dest})
+        if doors:
+            out[n] = doors
+    return out
 
 
 # ---------------------------------------------------------------- tilesets
@@ -388,8 +488,15 @@ def main() -> int:
     key_of = {m["name"]: k for k, m in graph["maps"].items()}
     floors: dict[str, list[str]] = {}
     for name in sorted(map_json):
-        if map_json[name].get("map_type") == MAP_TYPE_INDOOR:
+        if map_json[name].get("map_type") == MAP_TYPE_INDOOR and name not in COMPLEX_OF:
             floors.setdefault(building_of(name), []).append(name)
+    # A complex keeps the order it was DECLARED in — north to south, the way you
+    # walk it — where a building's floors are sorted (1F, 2F). Sorting a complex
+    # would stack the forest between its gates by alphabet, which is luck.
+    for b, members in COMPLEXES.items():
+        present = [m for m in members if m in map_json]
+        if present:
+            floors[b] = present
     # map_type for a destination outside the rendered set, fetched once and
     # cached like everything else; unknown counts as NOT indoor, which is the
     # conservative read (an unknown exit makes a room a corridor).
@@ -406,7 +513,9 @@ def main() -> int:
             return False
         return mj.get("map_type") == MAP_TYPE_INDOOR
 
-    doors = door_index(map_json, {camel_to_const(n): n for n in map_json}, graph, key_of, floors, is_indoor)
+    const_names = {camel_to_const(n): n for n in map_json}
+    doors = door_index(map_json, const_names, graph, key_of, floors, is_indoor)
+    exits = exit_index(map_json, const_names, key_of)
 
     for key, m in sorted(graph["maps"].items()):
         name = m["name"]
@@ -432,20 +541,34 @@ def main() -> int:
             entry["trim"] = {k: v for k, v in trim.items() if v}
         if isinstance(m.get("world"), list):
             entry["world"] = m["world"]
-        if mj.get("map_type") == MAP_TYPE_INDOOR:
+        if mj.get("map_type") == MAP_TYPE_INDOOR or name in COMPLEX_OF:
             b = building_of(name)
             entry["building"] = b
             # the other floors of this building, as map keys, 1F first; a floor
-            # outside the rendered set is dropped rather than left dangling.
-            entry["floors"] = [key_of[f] for f in sorted(floors.get(b, [])) if f in key_of]
+            # outside the rendered set is dropped rather than left dangling. A
+            # complex is already in its own order and is not re-sorted.
+            order = floors.get(b, []) if b in COMPLEXES else sorted(floors.get(b, []))
+            entry["floors"] = [key_of[f] for f in order if f in key_of]
+            # The one flag the world frame reads: this map is drawn in a popup,
+            # not on the world. It used to be spelled `type == MAP_TYPE_INDOOR`,
+            # which was true until Viridian Forest — a ROUTE — moved indoors.
+            entry["popup"] = True
+            if b in COMPLEXES:
+                # A complex is laid out GEOGRAPHICALLY — its members stack in
+                # the order declared, north at the top. A building's floors are
+                # laid out side by side, 1F first, because stacking 1F above 2F
+                # would put the building upside down.
+                entry["complex"] = True
         if name in doors:
             entry["doors"] = [{**d, "to": key_of[d["to"]]} for d in doors[name] if d["to"] in key_of]
+        if name in exits:
+            entry["exits"] = [{**d, "to": key_of[d["to"]]} for d in exits[name] if d["to"] in key_of]
         index[key] = entry
         print(f"{name:42s} {w:3d}x{h:<3d} {entry['bytes'] // 1024:4d} KB")
 
     if not args.only:
         (args.out / "index.json").write_text(json.dumps({
-            "version": 1,
+            "version": 2,
             "tile_px": 16,
             "graph_source": graph.get("source"),
             "graph_version": graph.get("version"),

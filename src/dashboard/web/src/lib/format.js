@@ -5,11 +5,16 @@ export function usd(n) {
 }
 export function dur(s) {
   if (s == null) return '—'
-  const h = Math.floor(s / 3600)
-  const m = Math.floor((s % 3600) / 60)
+  // Round to whole seconds ONCE, up front (Andreas 2026-09-17): flooring the
+  // minutes off the raw value and rounding the remainder separately printed
+  // "31m 60s" for a 1919.6-second leg, because 59.6s rounds up into a minute
+  // that the minute term had already been floored past.
+  const t = Math.round(s)
+  const h = Math.floor(t / 3600)
+  const m = Math.floor((t % 3600) / 60)
   if (h > 0) return `${h}h ${m}m`
-  if (m > 0) return `${m}m ${Math.round(s % 60)}s`
-  return `${Math.round(s)}s`
+  if (m > 0) return `${m}m ${t % 60}s`
+  return `${t}s`
 }
 export function perTurn(s) {
   if (s == null) return '—'

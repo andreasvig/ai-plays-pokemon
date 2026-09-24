@@ -1,5 +1,6 @@
 <script>
   import { usd, dur, perTurn, ago, dateShort, statusLabel, statusClass, legLabel, errorShort } from '../lib/format.js'
+  import { costOf, costCell } from '../lib/board.js'
   import Icon from './Icon.svelte'
   import { STATIC } from '../lib/static.js'
   import { BENCH_VERSION } from '../lib/version.js'
@@ -53,7 +54,9 @@
       .filter((r) => !query || r.model.toLowerCase().includes(query.toLowerCase()))
       .sort((a, b) => {
         if (sort === 'completion') return ((b.kind === 'official' ? b.completion : 0) - (a.kind === 'official' ? a.completion : 0)) || a.turns - b.turns
-        if (sort === 'cost') return b.totalCostUsd - a.totalCostUsd
+        // A free run has no price, so it sorts to the BOTTOM of a cost sort
+        // rather than tying with the dearest at 0 (the sort is descending).
+        if (sort === 'cost') return (costOf(b).total ?? -1) - (costOf(a).total ?? -1)
         if (sort === 'duration') return b.durationS - a.durationS
         return Date.parse(b.startedAt) - Date.parse(a.startedAt)
       })
@@ -133,7 +136,7 @@
         </span>
         <span class="c-turns tnum r"><b>{r.turns}</b>{#if r.maxTurns}<span class="sub">/{r.maxTurns}</span>{/if}</span>
         <span class="c-time tnum r"><b>{dur(r.durationS)}</b><span class="sub">{perTurn(r.avgSPerTurn)}/t</span></span>
-        <span class="c-cost tnum r"><b>{usd(r.totalCostUsd)}</b><span class="sub">{usd(r.avgCostPerTurn)}/t</span></span>
+<span class="c-cost tnum r" title={costCell(r, usd).note}><b>{costCell(r, usd).total}</b><span class="sub">{costCell(r, usd).perTurn ? costCell(r, usd).perTurn + '/t' : 'free'}</span></span>
         {#if !STATIC}<span class="c-status r"><span class="status {statusClass(r.status)}">{statusLabel(r.status)}</span></span>{/if}
         <span class="c-act">
           {#if r.hasRecording}
