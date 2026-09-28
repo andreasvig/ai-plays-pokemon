@@ -14,12 +14,18 @@
   import InputCensus from './InputCensus.svelte'
   import RouteMap from './RouteMap.svelte'
   import Icon from './Icon.svelte'
+  import { untrack } from 'svelte'
+  import { turnRanges } from '../lib/turnrange.svelte.js'
   // `onreport(row, turn)` is local-only: the published site passes null, so the
   // report button and the map's turn links are absent there rather than broken.
   let { row, benchmarks = [], onreport = null } = $props()
   // The map is the heaviest thing on the page, so it is collapsed by default —
   // which also means its PNGs are not fetched until someone asks for it (M13).
-  let mapOpen = $state(false)
+  // A link that names a turn range for THIS run is someone asking for it: the
+  // range only means anything on the map, so the section opens with the page
+  // (read once, at creation — not an effect, or clearing the range would fold
+  // the map away under whoever cleared it).
+  let mapOpen = $state(untrack(() => turnRanges.get(row.model) != null))
 
   // The ladder this run played, with today's per-leg caps from the shared
   // benchmark list; the flattened GATES ladder when the registry has no entry.
@@ -29,6 +35,15 @@
     return gs.map((g) => ({ id: g.id, name: g.name, cap: g.leg_cap_turns ?? null }))
   })())
   const gates = $derived(runGateRows(row, ladder))
+  // The key the turn range is stored under: the board alias, `model(level)`.
+  const levelKey = $derived(row.model)
+  // Milestones to notch on the range bar, with what the hover card says about
+  // each. Only the gates this run actually stamped have a turn — a gate it
+  // never reached has nothing to point at. `index` counts down the LADDER, so a
+  // run that stopped at task 10 still calls it task 10 of 12.
+  const gateTicks = $derived(gates
+    .map((g, i) => ({ turn: g.turn, name: g.name, index: i + 1, total: gates.length, legTurns: g.legTurns }))
+    .filter((g) => g.turn != null))
   const cleared = $derived(gates.filter((g) => g.status === 'done').length)
   const failed = $derived(gates.find((g) => g.status === 'failed') ?? null)
   const verdict = $derived(cleared >= gates.length && gates.length ? 'All tasks cleared' : failed ? `Ended on the leg to ${failed.name}` : '')
@@ -73,8 +88,14 @@
           <span class="cleared">every tile, on the game's own map</span>
         </button>
         {#if mapOpen}
+          <!-- The range lives in `?turns=<level>:<from>-<to>`, keyed by the
+               thinking level this panel is, so a slice can be linked and two
+               expanded levels can show different stretches at once. -->
           <RouteMap runId={row.runId}
-            onturn={onreport ? (turn) => onreport(row, turn) : null} />
+            onturn={onreport ? (turn) => onreport(row, turn) : null}
+            range={turnRanges.get(levelKey)}
+            onrange={(next) => turnRanges.set(levelKey, next)}
+            ticks={gateTicks} />
         {/if}
       </section>
     {/if}

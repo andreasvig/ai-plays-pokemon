@@ -1226,6 +1226,91 @@ export function battlesFor(layout, route) {
   return out
 }
 
+// ───────────── turn range (Andreas 2026-09-28) ─────────────
+//
+// "I only want to see the graph from turn 100-150." Every visit carries its
+// turn as element 0 (src/app/route.py: [turn, i, group, num, x, y, in_battle]),
+// so slicing is client-side over the array a run already publishes — no
+// republish, no schema change.
+
+/** The turns a route spans, [first, last]; null when it has no visits. */
+export function routeTurnSpan(route) {
+  const visits = route?.visits ?? []
+  if (!visits.length) return null
+  let lo = Infinity, hi = -Infinity
+  for (const v of visits) { if (v[0] < lo) lo = v[0]; if (v[0] > hi) hi = v[0] }
+  return [lo, hi]
+}
+
+/**
+ * The route as it was between two turns, inclusive, in the same shape.
+ *
+ * Three fields need more than a filter:
+ *
+ * - `fills` is keyed by INDEX INTO `visits` (the interpolated tiles between
+ *   visit i and visit i+1), so a slice has to re-key by the offset or the
+ *   in-between segments draw against the wrong pair. A fill whose far end falls
+ *   outside the slice is dropped rather than left dangling.
+ * - `battles` are kept when they OVERLAP the window, not when they start in it:
+ *   a fight that opened on turn 98 and closed on 104 is part of what happened at
+ *   turn 100.
+ * - `maps` is left whole ON PURPOSE. It is what the world layout is built from,
+ *   and the layout is what the camera is framed against; rebuilding it per range
+ *   would move the map under the handles while you drag them, which is exactly
+ *   what Andreas asked not to happen (2026-09-28, "hold the camera still").
+ *
+ * `tiles_moved`, `coverage` and `turns` are carried through unchanged: they
+ * describe the whole run and nothing on the page reads them.
+ */
+export function sliceRoute(route, from, to) {
+  const visits = route?.visits ?? []
+  if (!visits.length) return route
+  const lo = Math.min(from, to), hi = Math.max(from, to)
+  let start = -1, end = -1
+  for (let i = 0; i < visits.length; i++) {
+    const t = visits[i][0]
+    if (t < lo || t > hi) continue
+    if (start < 0) start = i
+    end = i
+  }
+  // Battles are filtered BEFORE the empty-visit exit: a window can hold a fight
+  // and no tile at all — the run stood still inside a battle for those turns —
+  // and the fight is the very thing that explains the gap.
+  const battles = (route.battles ?? []).filter((b) => {
+    const open = b.opened_turn ?? b.closed_turn
+    const close = b.closed_turn ?? b.opened_turn
+    return open != null && open <= hi && close >= lo
+  })
+  if (start < 0) return { ...route, visits: [], fills: {}, battles }
+  const fills = {}
+  for (const [k, v] of Object.entries(route.fills ?? {})) {
+    const i = Number(k)
+    if (i >= start && i < end) fills[String(i - start)] = v
+  }
+  return { ...route, visits: visits.slice(start, end + 1), fills, battles }
+}
+
+/**
+ * The bounding box of a route's placeable visits, in LAYOUT TILES — the same
+ * units `place` works in, so the caller can frame a view on it. Null when no
+ * visit of this route sits on the layout (every tile of the slice is indoors,
+ * say, and this is the world frame).
+ */
+export function visitBounds(layout, route) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
+  for (const v of route?.visits ?? []) {
+    const p = layout?.at[`${v[2]}:${v[3]}`]
+    if (!p) continue
+    const x = p.x + v[4] - p.win.x, y = p.y + v[5] - p.win.y
+    if (x < x0) x0 = x
+    if (x > x1) x1 = x
+    if (y < y0) y0 = y
+    if (y > y1) y1 = y
+  }
+  if (x0 === Infinity) return null
+  return { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 }
+}
+
 /** The visit nearest a canvas point, for the hover readout. `null` beyond `within` px. */
 export function visitAt(route, place, px, py, within) {
   let best = null

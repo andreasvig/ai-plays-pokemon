@@ -8,6 +8,7 @@
   // board section over the same field, this model highlighted, eligibility
   // rules unchanged.
   import { baseModel, modelField, levelRows, ofModel, levelOf, vendorOf } from '../lib/board.js'
+  import { parseRanges } from '../lib/turnrange.js'
   import { dateShort } from '../lib/format.js'
   import HeadlineCards from './HeadlineCards.svelte'
   import LevelList from './LevelList.svelte'
@@ -27,8 +28,22 @@
 
   // Expanded levels: all closed to begin with (Andreas 2026-09-14); a click on
   // a level row or on one of this model's own bars opens that level.
+  //
+  // Except when the link names one. `?turns=gpt-6-sol(high):100-150` is a link
+  // to a slice of the walk map, and the map lives inside an expanded level, so
+  // the levels the parameter names open with the page — otherwise the link
+  // lands on a closed panel and shows nothing (2026-09-28).
+  //
+  // Read off `location.search` and NOT off the turnRanges store, deliberately:
+  // an effect that reads the store re-runs every time a handle moves, and this
+  // one assigns `open`. It would collapse a level the moment you dragged its
+  // range back to the whole run, and close any other level you had expanded by
+  // hand. The URL is the same information without the subscription.
+  const linked = (model) => Object.keys(parseRanges(typeof location === 'undefined' ? '' : location.search))
+    .filter((alias) => baseModel(alias) === model)
+    .map((alias) => levelOf(alias) ?? '_')
   let open = $state(new Set())
-  $effect(() => { base; open = new Set() })   // a new model → everything closed again
+  $effect(() => { open = new Set(linked(base)) })   // a new model → only what the URL asks for
   function toggle(k) { const next = new Set(open); if (next.has(k)) next.delete(k); else next.add(k); open = next }
   function inspect(r) {
     if (!highlight(r)) return oninspect(r)

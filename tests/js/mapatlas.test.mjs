@@ -6,7 +6,7 @@
 // `drawRoute` is handed a recording stub in place of a canvas context.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { TILE, CABLE_GAP, MAX_LANES, COLOUR_LOOP_TILES, ARROW_EVERY_TILES, ARROW_SPEED_TILES, worldLayout, clusterLayout, exitsFor, floorsFor, markersFor, battlesFor, buildingLabel, drawRoute, drawArrows, routePolylines, solveLanes, drawSize, drawWindow, laneSteps, cableColour, wheelColour, visitTimes, visitAt } from '../../src/dashboard/web/src/lib/mapatlas.js'
+import { TILE, CABLE_GAP, MAX_LANES, COLOUR_LOOP_TILES, ARROW_EVERY_TILES, ARROW_SPEED_TILES, worldLayout, clusterLayout, exitsFor, floorsFor, markersFor, battlesFor, buildingLabel, drawRoute, drawArrows, routePolylines, solveLanes, drawSize, drawWindow, laneSteps, cableColour, wheelColour, visitTimes, visitAt, sliceRoute, routeTurnSpan, visitBounds } from '../../src/dashboard/web/src/lib/mapatlas.js'
 
 // Pallet Town at the world origin, Route 1 above it, the Viridian Forest
 // COMPLEX (its two gates and the forest itself, all `popup`), the player's two
@@ -780,4 +780,89 @@ test('a door marker and a battle are both placed through the drawn window', () =
 test('a cluster that is not in the atlas lays out nothing rather than half of one', () => {
   assert.equal(clusterLayout('NoSuchBuilding', ATLAS), null)
   assert.equal(clusterLayout(null, ATLAS), null)
+})
+
+// ───────────── turn range (2026-09-28) ─────────────
+
+// Six visits over turns 0-9 in Pallet Town, two fills and two fights. `fills`
+// is keyed by index into `visits`, which is the whole reason slicing needs a
+// function rather than a filter.
+const SPANNED = route(['3:0'], [
+  visit(0, 3, 0, 1, 1), visit(1, 3, 0, 2, 1), visit(4, 3, 0, 3, 1),
+  visit(5, 3, 0, 4, 1), visit(8, 3, 0, 5, 1), visit(9, 3, 0, 6, 1),
+], {
+  fills: { '1': [[3, 0, 20, 20]], '3': [[3, 0, 30, 30]] },
+  battles: [{ kind: 'wild', opened_turn: 4, closed_turn: 6, tile: [3, 0, 3, 1] },
+            { kind: 'trainer', opened_turn: 20, closed_turn: 21, tile: [3, 0, 9, 9] }],
+  tiles_moved: 6,
+})
+
+test('routeTurnSpan reports the first and last turn, and nothing for an empty route', () => {
+  assert.deepEqual(routeTurnSpan(SPANNED), [0, 9])
+  assert.equal(routeTurnSpan(route(['3:0'])), null)
+  assert.equal(routeTurnSpan(null), null)
+})
+
+test('sliceRoute keeps the visits inside the window, inclusive at both ends', () => {
+  assert.deepEqual(sliceRoute(SPANNED, 4, 8).visits.map((v) => v[0]), [4, 5, 8])
+  assert.deepEqual(sliceRoute(SPANNED, 0, 9).visits.map((v) => v[0]), [0, 1, 4, 5, 8, 9])
+  // A window between two visits keeps nothing, and says so with an empty route
+  // rather than the whole one — the map draws a bare frame there.
+  assert.deepEqual(sliceRoute(SPANNED, 6, 7).visits, [])
+  assert.deepEqual(sliceRoute(SPANNED, 6, 7).fills, {})
+  // Handles crossed: the window is still the window.
+  assert.deepEqual(sliceRoute(SPANNED, 8, 4).visits.map((v) => v[0]), [4, 5, 8])
+})
+
+test('sliceRoute re-keys the fills, and drops the one whose far end falls outside', () => {
+  // Fill '1' bridges visits[1] → visits[2] (turns 1 → 4); in a slice starting at
+  // index 1 it becomes '0'. Fill '3' bridges visits[3] → visits[4] (5 → 8),
+  // outside a window that ends at turn 5, so it goes rather than dangling.
+  const s = sliceRoute(SPANNED, 1, 5)
+  assert.deepEqual(Object.keys(s.fills), ['0'])
+  assert.deepEqual(s.fills['0'], [[3, 0, 20, 20]])
+  // Widen by one visit and the second fill survives, re-keyed the same way.
+  const wide = sliceRoute(SPANNED, 1, 8)
+  assert.deepEqual(Object.keys(wide.fills).sort(), ['0', '2'])
+  assert.deepEqual(wide.fills['2'], [[3, 0, 30, 30]])
+  // The mutation control: an UNSLICED route keeps its original keys, so the
+  // re-keying above is the slice's doing and not the helper rewriting always.
+  assert.deepEqual(Object.keys(sliceRoute(SPANNED, 0, 9).fills).sort(), ['1', '3'])
+})
+
+test('a battle is kept when it OVERLAPS the window, not when it starts in it', () => {
+  // Opened on 4, closed on 6: part of what happened at turn 5, and at turn 6.
+  assert.equal(sliceRoute(SPANNED, 5, 5).battles.length, 1)
+  assert.equal(sliceRoute(SPANNED, 7, 9).battles.length, 0)
+  // Turn 6 traced no tile — the run was standing still in that fight — so the
+  // window keeps the battle and no visits. Dropping it with the visits would
+  // hide the one thing that explains the gap.
+  const midFight = sliceRoute(SPANNED, 6, 6)
+  assert.deepEqual(midFight.visits, [])
+  assert.equal(midFight.battles.length, 1)
+  // The far fight (turns 20-21) is outside every window this run has.
+  assert.ok(sliceRoute(SPANNED, 0, 9).battles.every((b) => b.opened_turn !== 20))
+})
+
+test('slicing leaves the maps and the run totals alone — the camera is framed off them', () => {
+  const s = sliceRoute(SPANNED, 4, 5)
+  assert.deepEqual(Object.keys(s.maps), Object.keys(SPANNED.maps))
+  assert.equal(s.tiles_moved, 6, 'a whole-run total is carried through, not recomputed')
+  // And the original is untouched: the map keeps drawing the full route behind
+  // a slice only because nothing here mutates in place.
+  assert.equal(SPANNED.visits.length, 6)
+  assert.deepEqual(Object.keys(SPANNED.fills).sort(), ['1', '3'])
+})
+
+test('visitBounds boxes the placed tiles in layout units, and is null when none are placed', () => {
+  const L = worldLayout(SPANNED, ATLAS)
+  const all = visitBounds(L, SPANNED)
+  const part = visitBounds(L, sliceRoute(SPANNED, 4, 5))
+  assert.equal(all.w, 6, 'x 1..6')
+  assert.equal(part.w, 2, 'x 3..4 — the slice is narrower, which is what `fit` frames')
+  assert.equal(part.x, L.at['3:0'].x + 3)
+  assert.equal(part.h, 1)
+  // A slice whose tiles are all on a map this layout does not hold has no box.
+  assert.equal(visitBounds(L, route(['3:0'], [visit(1, 9, 9, 2, 2)])), null)
+  assert.equal(visitBounds(null, SPANNED), null)
 })

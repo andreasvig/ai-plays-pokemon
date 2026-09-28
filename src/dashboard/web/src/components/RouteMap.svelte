@@ -20,7 +20,9 @@
   // than a corridor gets a marker on its door tile, and the marker opens the
   // building — all its floors — over the map (M10-M12).
   import { fetchRunRoute } from '../lib/api.js'
-  import { TILE, loadAtlas, loadTrainers, loadMapImage, worldLayout, clusterLayout, markersFor, exitsFor, floorsFor, battlesFor, drawRoute, drawArrows, buildingLabel, visitAt } from '../lib/mapatlas.js'
+  import { TILE, loadAtlas, loadTrainers, loadMapImage, worldLayout, clusterLayout, markersFor, exitsFor, floorsFor, battlesFor, drawRoute, drawArrows, buildingLabel, visitAt, sliceRoute, routeTurnSpan, visitBounds } from '../lib/mapatlas.js'
+  import TurnRange from './TurnRange.svelte'
+  import { normalizeRange } from '../lib/turnrange.js'
   import { motionClock } from '../lib/motion.js'
   import BattleCard from './BattleCard.svelte'
 
@@ -35,7 +37,13 @@
   // grows past the screen. Both dimensions are MEASURED rather than assumed —
   // they change with the window, and a stale one paints the canvas at a size
   // the frame does not have.
-  let { runId = null, onturn = null } = $props()
+  // `range` is [firstTurn, lastTurn] or null for the whole run, and `onrange`
+  // is how the panel above stores it (in the URL, keyed by thinking level).
+  // Pass neither and the map behaves exactly as it did before the range bar
+  // existed — the local run detail and the published model page both use it,
+  // and only the second needs the control.
+  // `ticks` are the milestones to notch on the bar: [{turn, name}].
+  let { runId = null, onturn = null, range = null, onrange = null, ticks = [] } = $props()
 
   // The journey Pallet → Pewter is a 224-tile-tall strip, so a floor of 0.4×
   // made the `fit` button a lie: it clamped there and left most of the route
@@ -83,14 +91,23 @@
       .finally(() => { loading = false })
   })
 
+  // WHAT IS DRAWN is the slice; WHERE IT IS DRAWN comes from the whole run.
+  // The world layout is built from `route` and never from `shown`, so the maps
+  // keep their positions and the camera does not move while the handles do
+  // (Andreas 2026-09-28: hold the camera still, `fit` re-frames on demand).
+  const span = $derived(routeTurnSpan(route))
+  // Clamped against the run's own span, so a hand-edited or stale `?turns=`
+  // degrades to the whole route instead of drawing an empty map.
+  const clamped = $derived(span && range ? normalizeRange(range, span[0], span[1]) : null)
+  const shown = $derived(clamped && route ? sliceRoute(route, clamped[0], clamped[1]) : route)
   const world = $derived(worldLayout(route, atlas))
   const layout = $derived(inside ? clusterLayout(inside.building, atlas) : world)
-  const markers = $derived(!inside && layout && route && atlas ? markersFor(layout, route, atlas) : [])
+  const markers = $derived(!inside && layout && shown && atlas ? markersFor(layout, shown, atlas) : [])
   const exits = $derived(inside && layout ? exitsFor(layout, atlas) : [])
   const floors = $derived(inside && layout ? floorsFor(layout, atlas) : [])
   // Fights on the maps this canvas draws. One inside a building is drawn in
   // that building's popup instead, where its tile actually is.
-  const battles = $derived(layout && route ? battlesFor(layout, route) : [])
+  const battles = $derived(layout && shown ? battlesFor(layout, shown) : [])
 
   /** Tile → viewport pixel; the same function the canvas and the markers use. */
   function place(g, m, x, y) {
@@ -111,6 +128,18 @@
   }
   function fit() {
     if (!layout) return
+    // With a turn range on, `fit` frames THE SELECTION — that is the button's
+    // job while a slice is showing, and the only way back to the slice after
+    // panning away from it. A slice with no tile on this frame (all indoors,
+    // say) falls through to the whole route rather than framing nothing.
+    const b = clamped ? visitBounds(layout, shown) : null
+    if (b) {
+      const pad = 3
+      const w = (b.w + pad * 2) * TILE, h = (b.h + pad * 2) * TILE
+      const z = Math.max(MIN_Z, Math.min(MAX_Z, vw / w, vh / h))
+      view = { z, x: vw / 2 - (b.x + b.w / 2) * TILE * z, y: vh / 2 - (b.y + b.h / 2) * TILE * z }
+      return
+    }
     // The whole route, edge to edge — the button's only claim.
     const z = Math.max(MIN_Z, Math.min(MAX_Z, vw / (layout.w * TILE), vh / (layout.h * TILE)))
     view = { z, x: (vw - layout.w * TILE * z) / 2, y: (vh - layout.h * TILE * z) / 2 }
@@ -184,8 +213,11 @@
   let last = 0
 
   function bake() {
-    const L = layout, r = route, el = canvas
-    if (!el || !L || !r?.visits?.length) { still = null; return }
+    const L = layout, r = shown, el = canvas
+    // An empty slice still bakes: the artwork is drawn and the cables are not,
+    // so dragging a handle into a gap shows the map with nothing on it rather
+    // than the last frame that had something.
+    if (!el || !L || !r) { still = null; return }
     const dpr = Math.min(2, (typeof devicePixelRatio === 'number' ? devicePixelRatio : 1) || 1)
     el.width = Math.ceil(vw * dpr)
     el.height = Math.ceil(vh * dpr)
@@ -209,7 +241,7 @@
       if (!img) continue
       c.drawImage(img, win.x * TILE, win.y * TILE, dw * TILE, dh * TILE, sx, sy, dw * s, dh * s)
     }
-    still = { off, dpr, s, lines: drawRoute(c, r, place, { scale: s }), tiles: r.visits.length }
+    still = { off, dpr, s, lines: drawRoute(c, r, place, { scale: s }), tiles: Math.max(1, r.visits?.length ?? 0) }
   }
 
   function drawFrame(now) {
@@ -241,7 +273,7 @@
   })
 
   $effect(() => {
-    ready; vw; vh; view; layout; route; canvas
+    ready; vw; vh; view; layout; route; shown; canvas
     bake()
     drawFrame(last)
   })
@@ -287,7 +319,7 @@
       hover = null
       return
     }
-    const v = visitAt(route, place, x, y, TILE * view.z * 0.7)
+    const v = visitAt(shown, place, x, y, TILE * view.z * 0.7)
     // Flip the readout near an edge so it cannot hang off the panel (2026-09-15).
     hover = v ? { cx: e.clientX, cy: e.clientY, turn: v[0], key: `${v[2]}:${v[3]}`,
                   tile: `${v[4]},${v[5]}`, battle: !!v[6],
@@ -414,6 +446,15 @@
       </div>
     </div>
 
+    {#if onrange && span && span[1] > span[0]}
+      <TurnRange min={span[0]} max={span[1]} {ticks}
+        value={clamped ?? [span[0], span[1]]}
+        onchange={(next) => onrange(next)} />
+      {#if clamped && !shown?.visits?.length}
+        <p class="faint small empty">No tile was traced between turns {clamped[0]} and {clamped[1]} — the run was indoors, in a battle, or standing still.</p>
+      {/if}
+    {/if}
+
     {#if hover}
       <div class="tip" class:flip-x={hover.flipX} class:flip-y={hover.flipY}
         style={`left:${hover.cx}px;top:${hover.cy}px`}>
@@ -429,6 +470,7 @@
 
 <style>
   .routemap { margin: 0; }
+  .empty { margin: 6px 2px 0; }
   .frame {
     position: relative;
     /* Square, and as tall as the screen allows. `min()` rather than a media

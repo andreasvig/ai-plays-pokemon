@@ -2,17 +2,19 @@
 // "picking at one would affect the other picker"). Picked aliases live in the
 // URL (?models=a,b) so a view can be linked; null means the default, the best
 // level per model. The three headline cards ignore it on purpose.
-import { applySelection, parsePicked, serializePicked } from './selection.js'
+import { applySelection, parsePicked, URL_KEY } from './selection.js'
+import { setParam } from './query.js'
 
 const read = () => (typeof location !== 'undefined' ? parsePicked(location.search) : null)
 
 export const selection = (() => {
   let picked = $state(read())
-  const write = () => {
-    if (typeof history === 'undefined') return
-    const qs = serializePicked(picked)
-    history.replaceState(history.state, '', location.pathname + (qs ? '?' + qs : '') + location.hash)
-  }
+  // Through `setParam`, not by rebuilding the URL: this writer used to replace
+  // the whole query string with its own key, which deleted `?turns=` (and any
+  // future parameter) the first time anyone touched the model picker.
+  // The raw aliases: URLSearchParams does the escaping, and pre-encoding here
+  // would land `%2528high%2529` in the bar.
+  const write = () => setParam(URL_KEY, picked == null ? null : picked.join(','))
   if (typeof window !== 'undefined') window.addEventListener('popstate', () => { picked = read() })
   return {
     get picked() { return picked },
