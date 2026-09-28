@@ -379,6 +379,17 @@ profiles:
     sampling: {temperature: 0.3, top_p: 0.95}
     notes: 'Copied from qwen3.8-flash and NOT probed: the survey settled it — qwen3.7-plus has exactly ONE endpoint, `alibaba`, the same tag the representative was probed on, with the same supported-parameter set. So the implicit-cache-no-markers rule and the prompted-JSON contract carry over. Own survey facts: $0.32/$1.28 per M, cache read $0.064, cache write $0.40, same 1M/131k limits, BINARY reasoning. Sampling 0.3/0.95 moved here from the registry (alibaba advertises temperature and top_p).'
 
+  qwen/qwen3.8-omni-flash:
+    endpoint: alibaba
+    context_length: 1000000
+    max_completion_tokens: 131072
+    output_mode: prompted
+    reasoning_efforts: [thinking, non-thinking]
+    reasoning_default: {enabled: true}
+    cache_mode: unknown
+    final_turn_text_only: false
+    notes: 'PROBED 2026-09-25. PROMPTED JSON IS MANDATORY ON THE THINKING RUNG, and measured here rather than copied from qwen3.8-flash: tool_choice required WITH reasoning enabled returns HTTP 400 invalid_parameter_error "The tool_choice parameter does not support being set to required or object in thinking mode", 2 of 2 attempts, while three controls answer 200 — tools at choice auto, required with thinking OFF, and thinking with no tools. That is the qwen3.7-plus failure exactly. NO JSON LENIENCIES CARRIED OVER: three prompted replies came back as bare objects with no markdown fence and no missing closer, so allow_json_fence and close_unbalanced_json both stay off; qwen3.8-flash needs them because its OWN defect was measured, and neither has been seen here. REASONING: binary, because the endpoint advertises reasoning and include_reasoning but not reasoning_effort. Thinking spent 1,879 reasoning tokens in 44.6s (101.3s on the longer output-mode prompt) against 0 in 11.9s for non-thinking, hence slow on the thinking level in the registry. ENDPOINT: sole first-party alibaba tag, 1,000,000 context / 131,072 output, $0.15/$0.47 per M with cache read $0.016 (89% off) — the same tag, limits and price shape as qwen3.8-flash. CACHE: UNKNOWN, deliberately. The qwen3.7-plus precedent would let this inherit qwen3.8-flash 98% implicit reading (one endpoint, the same alibaba tag the representative was probed on, the same advertised parameter set), but the dispatch probe here billed 0 of 16,278 input tokens as reads across 4 requests, so an inherited implicit would be a claim this model own numbers contradict. Four requests is far too small to be a negative — ember-1 and space-bunny DID show reads at the same size, which is what makes this worth recording rather than ignoring. Correct it from the first run, as the mimo pair were. REPLAY not probed (default all).'
+
   # --- Moonshot Kimi --------------------------------------------------------
   moonshotai/kimi-k3:
     endpoint: moonshotai/mxfp4
@@ -420,7 +431,7 @@ profiles:
     reasoning_mandatory: true
     reasoning_efforts: [xhigh, high, medium, low]
     reasoning_default: {effort: high}
-    cache_mode: unknown
+    cache_mode: implicit
     final_turn_text_only: false
     notes: 'DISPATCH PROBED 2026-09-22 (scripts/probe_registry_candidates.py, real screenshot + pathfinding prompt): xhigh/high/medium/low all 200 and all coherent, reasoning tokens 6,477 / 6,801 / 3,936 / 3,420 and latencies 104.6s / 115.2s / 65.0s / 56.3s on one question, hence slow: true on the registry entry for every level. Mandatory reasoning, catalogue default effort high. ENDPOINT: four tags serve identical context (500,000 / 450,000) and identical parameters; xai and xai/zdr price at 1.60 / 4.80 per M with cache read 0.40 (75 percent off), while xai/priority and xai/zdr/priority price at exactly double. Pinned to xai and the other three excluded, as on grok-4.6. LONG-CONTEXT OVERRIDE, new since 4.6: above 200,000 prompt tokens the rate doubles to 3.20 / 9.60 per M with cache read 0.80, so a long append run steps up in price mid-run. memory_encoding json_string is INHERITED from the grok-4.6 profile, where arbitrary dictionaries did not survive this route; it is the conservative carry-over and has NOT been re-probed on 4.7. NOT PROBED: cache behaviour (hence cache_mode unknown, not implicit - the listed cache-read price is not an observed hit) and reasoning replay (inherits the default all).'
 
@@ -588,3 +599,42 @@ profiles:
     cache_mode: unknown
     final_turn_text_only: false
     notes: 'DISPATCH PROBED 2026-09-22: xhigh and medium both 200 and coherent on a real screenshot, reasoning tokens 881 / 755 and latencies 51.6s / 38.3s, hence slow: true in the registry. TWO RUNGS ONLY - the catalogue supported_efforts are exactly xhigh and medium, with no high and no low, so the registry ladder cannot be widened without a probe that says otherwise. Reasoning is not mandatory here (catalogue mandatory false), but the harness always sends a level, so the default stays the catalogue default xhigh. SOLE endpoint darkbloom/int4 (int4 quantization), 262,144 context / 32,768 output at 0.075 / 0.50 per M. NO CACHE-READ PRICE IS LISTED AT ALL, so every prompt token is billed at full rate and the append agent endpoint check will warn no cache-read price on every run - on an append harness that, not the headline 0.075, is the cost that matters. RATE LIMITED: the single endpoint answered HTTP 429 temporarily rate-limited upstream on 2 of 6 probe attempts on 2026-09-22; both tiers answered 200 on retry, so it is a throughput limit rather than a refusal, but a gameplay run will meet it. Its 262,144 context is the second smallest here after unbiased/pareto, so compaction fires far sooner than on the 1M entries; its 32,768 output ceiling is the smallest in this file and still four times the config-5.x authored transport budget. NOT PROBED: cache behaviour (cache_mode unknown) and reasoning replay (default all).'
+
+  # --- Fireworks -------------------------------------------------------------
+  # Added 2026-09-25. First Fireworks entry. Ember-1 is Kimi K3 retrained for
+  # shorter reasoning traces, so moonshotai/kimi-k3 above is its natural control.
+  fireworks/ember-1:
+    endpoint: fireworks
+    context_length: 1048576
+    max_completion_tokens: 943718
+    reasoning_efforts: [max, xhigh, high, medium, low, minimal]
+    reasoning_default: {effort: high}
+    cache_mode: implicit
+    final_turn_text_only: false
+    notes: 'PROBED 2026-09-25: all six rungs 200 and coherent on a real screenshot, reasoning tokens 30 (minimal) / 168 (low) / 186 (medium) / 517 (high) / 1,190 (xhigh) at 3.7s to 24.7s, and a tools request with tool_choice required answered with a well-formed final_result call, so output_mode stays the default tool. THE TOKEN TREND IS THE EVIDENCE FOR THE LADDER, NOT THE STATUS CODES: a junk effort value comes back 400 "Invalid option: expected one of max|xhigh|high|medium|low|minimal|none" for EVERY slug tested, including cohere/command-a-plus and qwen/qwen3.8-omni-flash whose endpoints take no reasoning_effort at all — that enum is OpenRouter own validator, so a 200 on a rung proves only that the string was allowed through. max returned 621 reasoning tokens, BELOW xhigh, at n=1; it may be an alias of xhigh and a run will say. reasoning_default is high rather than the registry top rung because no catalogue default is advertised for this slug and the harness always sends a level anyway. ENDPOINT: sole fireworks tag, 1,048,576 context / 943,718 output (the largest output ceiling in this file) at $3.00/$15.00 per M with cache read $0.30 (90% off). CACHE: implicit, and this one is MEASURED rather than assumed — the dispatch probe billed 8,806 of 20,751 input tokens as reads (42%) on 2 of its 4 requests with NO cache markers sent, and a read with no marker is what implicit means. Four requests is a thin sample for the RATE, so treat 42% as existence proof and not as the number; a real run will give the figure, as it did for the mimo pair.'
+
+  # --- Cohere ------------------------------------------------------------------
+  # Added 2026-09-25. First Cohere entry, and the smallest context in the file.
+  cohere/command-a-plus:
+    endpoint: cohere
+    context_length: 192000
+    max_completion_tokens: 64000
+    output_mode: prompted
+    reasoning_efforts: [thinking, non-thinking]
+    reasoning_default: {enabled: true}
+    cache_mode: unknown
+    final_turn_text_only: false
+    notes: 'PROBED 2026-09-25, and the OUTPUT MODE TOOK THREE ARMS TO SETTLE — a raw curl is not enough here, because the harness pins the endpoint with require_parameters and that changes which requests are even routed. TOOL (the default) is UNUSABLE: the endpoint advertises tools but NOT tool_choice, so the pinned route answers HTTP 404 "No endpoints found that can handle the requested parameters", failed_routing_step "Filter by Parameters", before the model sees anything — while the identical unpinned request with tool_choice required answers 200, which is exactly the trap. Dropping the field (tool_choice omit) clears the 404 but not the protocol: with nothing forcing the call, compaction came back "Expected exactly one compaction call". NATIVE_JSON is refused by the provider: HTTP 400 "response_format validation: invalid json_schema provided: error at properties.result: error at properties.reasoning: received non-supported constraint for type string. constraint: minLength" — Cohere structured outputs reject the minLength the harness schema carries. PROMPTED passes the full dispatch probe: 3 turns, 4 requests, a checkpoint export/restore between turns 1 and 2 and a compaction at turn 2, $0.013. REASONING: binary, measured — the endpoint advertises reasoning and include_reasoning but not reasoning_effort. Both rungs 200 and coherent on a real screenshot, thinking 2,071 reasoning tokens in 14.6s against 0 in 2.2s for non-thinking; the first thinking probe returned an EMPTY reply at a 3,000-token cap, which measured the cap, and it answered at 20,000. ENDPOINT: sole cohere tag, 192,000 context / 64,000 output at $0.30/$1.50 per M with cache read $0.15 — only 50 percent off, the WEAKEST cache discount in this file, and on an append harness the cache-read rate is the price that matters more than the headline. 192,000 context is the SMALLEST here, below unbiased/pareto, so compaction fires sooner on this model than on any other. CACHE: unknown until a run measures a hit rate. REPLAY not probed (default all).'
+
+  # --- Stealth (cloaked listings) ----------------------------------------------
+  # Added 2026-09-25. The second cloaked listing to be benchmarked; the first,
+  # stealth/union-alpha, was announced as unbiased/pareto two days into its run.
+  stealth/space-bunny-alpha:
+    endpoint: stealth
+    context_length: 1000000
+    max_completion_tokens: 524288
+    reasoning_efforts: []
+    reasoning_default: null
+    cache_mode: implicit
+    final_turn_text_only: false
+    notes: 'PROBED 2026-09-25. NO REASONING BLOCK IS SENT, which is a deliberate call against the listing: the endpoint DOES advertise reasoning_effort and the blurb promises adjustable effort, but nothing observable moves with it. All six rungs answer 200; every reply reports reasoning_tokens 0 with the field PRESENT beside image_tokens and audio_tokens, so that is a reported zero and not a provider omitting the count; and at n=3 per arm on a hard puzzle minimal and max overlap on latency (30.1-95.1s against 52.8-69.4s) and on output length (2,941-8,000 against 3,943-5,633 tokens). The OpenRouter 400 for a junk effort value proves nothing here — the same enum error comes back for models whose endpoints take no effort at all. A request with NO reasoning block answers 200, so reasoning_default null costs nothing, and the registry entry is reasoning_type none to match. Unlike unbiased/pareto this endpoint does not REJECT the block, so if a de-cloaked listing or a run shows the tiers biting, the ladder can simply be filled in. OUTPUT: tools with tool_choice required answered 200 with a well-formed final_result call, so the default tool mode stands. ENDPOINT: sole stealth tag, 1,000,000 context / 524,288 output, FREE while cloaked ($0 prompt and completion, no cache-read price listed) — so every cost surface will read N/A for it (board.js isFree) and the append agent no-cache-price warning will fire on every run. CACHE: implicit, measured — the dispatch probe billed 2,051 of 23,862 input tokens as reads with NO markers sent, and all 4 requests reported a hit. The FRACTION is low (8.6%) and four requests is a thin sample, so that is existence, not a rate. A free listing bills nothing either way today; pareto proves the reveal can turn those tokens into real money.'

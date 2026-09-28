@@ -43,7 +43,7 @@ async def main(args):
     output.mkdir(parents=True, exist_ok=True)
     results = []
     spent = 0.0
-    snapshot = json.loads(Path("artifacts/provider-compatibility/snapshot-summary.json").read_text())
+    snapshot = json.loads(Path(args.snapshot).read_text())
     for model in models:
         config = load_config(append_config_path(), llm_alias=model, provider_profile=args.provider_profile)
         if not config.get("openrouter_api_key"):
@@ -128,6 +128,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image", required=True)
     parser.add_argument("--model", action="append")
+    # The committed snapshot is the 2026-09-06 survey and covers the ten models
+    # of that sweep; a model added since has no entry, and the endpoint lookup
+    # below raises StopIteration on it. Point this at a fresher capture (same
+    # shape, from /api/v1/models/<slug>/endpoints) to probe a new profile
+    # without rewriting the shared artifact.
+    parser.add_argument("--snapshot", default="artifacts/provider-compatibility/snapshot-summary.json")
     parser.add_argument("--provider-profile")
     parser.add_argument("--output", default="local/provider-profile-probes")
     parser.add_argument("--max-output", type=int, default=4096)

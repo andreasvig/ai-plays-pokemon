@@ -105,6 +105,17 @@ CANDIDATES = [
     ("claude-opus-5.5",     "anthropic/claude-opus-5.5",    ["max", "xhigh", "high", "medium", "low"], "effort"),
     ("gpt-6-luna",          "openai/gpt-6-luna",            ["max", "xhigh", "high", "medium", "low", "none"], "effort"),
     ("gpt-6-sol",           "openai/gpt-6-sol",             ["max", "xhigh", "high", "medium", "low", "none"], "effort"),
+    # --- 2026-09-25 batch (Andreas's ask, from the fortnight's OpenRouter
+    # releases). NONE of the four advertises `reasoning.supported_efforts`, so
+    # the style comes from the endpoint's `supported_parameters` instead:
+    # ember-1 and space-bunny list `reasoning_effort` (effort — the ladder is
+    # unknown, so the full one is probed and a 400 names the rungs that do not
+    # exist), command-a-plus and qwen3.8-omni-flash list `reasoning` /
+    # `include_reasoning` WITHOUT it (binary, the mimo signature).
+    ("ember-1",             "fireworks/ember-1",            ["max", "xhigh", "high", "medium", "low", "minimal"], "effort"),
+    ("space-bunny-alpha",   "stealth/space-bunny-alpha",    ["max", "xhigh", "high", "medium", "low", "minimal"], "effort"),
+    ("command-a-plus",      "cohere/command-a-plus",        ["thinking", "non-thinking"], "binary"),
+    ("qwen3.8-omni-flash",  "qwen/qwen3.8-omni-flash",      ["thinking", "non-thinking"], "binary"),
 ]
 
 

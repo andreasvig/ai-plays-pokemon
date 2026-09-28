@@ -140,6 +140,13 @@ DEFAULT_CASES = [
     ("gpt-5.5",          "openai/gpt-5.5",             "high",     "effort", ""),
     ("inkling",          "thinkingmachines/inkling",   "high",     "effort", ""),
     ("gemma-4-31b",      "google/gemma-4-31b-it",      "thinking", "binary", ""),
+    # --- 2026-09-25 batch, before they go into the registry. command-a-plus is
+    # the one to watch: its only endpoint advertises `tools` but NOT
+    # `tool_choice`, which is the shape that made qwen3.7-plus prompted-only.
+    ("ember-1",          "fireworks/ember-1",          "high",     "effort", ""),
+    ("space-bunny-alpha", "stealth/space-bunny-alpha", "high",     "effort", ""),
+    ("command-a-plus",   "cohere/command-a-plus",      "thinking", "binary", ""),
+    ("qwen3.8-omni-flash", "qwen/qwen3.8-omni-flash",  "thinking", "binary", ""),
 ]
 
 

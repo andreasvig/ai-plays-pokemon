@@ -1017,6 +1017,126 @@ gpt-6-sol:
     none:
       sample_turns: 0
 
+# Fireworks Ember-1 (released 2026-09-24) — the first FIREWORKS entry here, and
+# the reason to run it is what it is for: it is Kimi K3 retrained to spend fewer
+# reasoning tokens ("roughly 40%" shorter traces), and kimi-k3 is already on the
+# board as the control. Effort-tiered, text+image, 1,048,576 ctx / 943,718
+# output on the sole `fireworks` endpoint at $3.00/$15.00 per M, cache read
+# $0.30 (90% off).
+ember-1:
+  openrouter_id: fireworks/ember-1
+  reasoning_type: effort
+  thinking_levels:
+  - max
+  - xhigh
+  - high
+  - medium
+  - low
+  - minimal
+  # Probed 2026-09-25 on a real screenshot: all six rungs 200 and coherent, and
+  # the ladder BITES — reasoning tokens 30 (minimal) / 168 / 186 / 517 / 1190
+  # (xhigh) at 3.7s to 24.7s. That trend is the evidence, not the 200s: a junk
+  # effort value is rejected by OPENROUTER's own enum for every model in this
+  # file, including the two below whose endpoints take no effort at all, so a
+  # status code says nothing about whether the provider honours the tier.
+  # `max` returned 621, BELOW xhigh, at n=1 — it may be an alias of xhigh, and a
+  # run will say. No slow flag: nothing here took longer than 25s.
+  observed:
+    max:
+      sample_turns: 0
+    xhigh:
+      sample_turns: 0
+    high:
+      sample_turns: 0
+    medium:
+      sample_turns: 0
+    low:
+      sample_turns: 0
+    minimal:
+      sample_turns: 0
+
+# Space Bunny Alpha (cloaked listing, appeared 2026-09-23) — anonymous, FREE
+# while under evaluation, text+image+video, 1,000,000 ctx / 524,288 output on
+# the sole `stealth` endpoint. The same shape as the union-alpha listing that
+# was later announced as unbiased/pareto, so expect it to be renamed under a
+# run (see `former:` on pareto for how that is handled).
+space-bunny-alpha:
+  openrouter_id: stealth/space-bunny-alpha
+  # NONE, though the listing says otherwise — the one judgement call in this
+  # batch. The endpoint advertises `reasoning_effort` and the blurb promises
+  # "adjustable reasoning effort", but nothing observable moves with it: all six
+  # rungs answer 200, every reply reports reasoning_tokens 0 — the field is
+  # PRESENT beside image_tokens/audio_tokens, so this is a reported zero and not
+  # a provider omitting the count — and at n=3 per arm on a hard puzzle
+  # `minimal` and `max` overlap on both latency (30-95s vs 53-69s) and output
+  # length (2941-8000 vs 3943-5633 tokens). A request with no reasoning block at
+  # all, which is what this type sends, answers 200. One row until a de-cloaked
+  # listing or a run says otherwise: levels can be added later, but a fictional
+  # ladder cannot be taken back off the board.
+  reasoning_type: none
+  observed:
+    _:
+      sample_turns: 0
+
+# Cohere Command A+ (released 2026-09-22) — the first COHERE entry in this
+# registry, so it is a lab the board has never had. Binary thinking, text+image,
+# 192,000 ctx / 64,000 output on the sole `cohere` endpoint at $0.30/$1.50 per M
+# with cache read $0.15 — only 50% off, the weakest cache discount in this file,
+# which on an append harness matters more than the headline price. Its 192K
+# context is the SMALLEST here, so compaction fires sooner than on the 1M
+# entries.
+command-a-plus:
+  openrouter_id: cohere/command-a-plus
+  reasoning_type: binary
+  thinking_levels:
+  - thinking
+  - non-thinking
+  # Probed 2026-09-25: both rungs 200 and coherent on a real screenshot,
+  # thinking 2,071 reasoning tokens in 14.6s against 0 in 2.2s for
+  # non-thinking. BINARY measured, not assumed — the endpoint advertises
+  # reasoning and include_reasoning but NOT reasoning_effort, the mimo
+  # signature. The first thinking probe returned an EMPTY reply at a
+  # 3,000-token cap; that measured the cap, and it answered at 20,000. No slow
+  # flag at n=2. PROMPTED JSON, not the default tool mode: the endpoint
+  # advertises `tools` but not `tool_choice`, so the harness pinned route 404s
+  # on any tool_choice and the model will not reliably call the tool without
+  # one, and Cohere structured outputs reject the schema's minLength — three
+  # arms, all in the provider profile.
+  observed:
+    thinking:
+      sample_turns: 0
+    non-thinking:
+      sample_turns: 0
+
+# Alibaba Qwen3.8 Omni Flash (released 2026-09-21) — binary thinking, omni-modal
+# (text+image+audio+video in), 1,000,000 ctx / 131,072 output on the sole
+# `alibaba` endpoint at $0.15/$0.47 per M with cache read $0.016 (89% off): the
+# same tag, price shape and parameter set as qwen3.8-flash already here, and a
+# second CLASS for Qwen rather than a newer generation of the flash line.
+qwen3.8-omni-flash:
+  openrouter_id: qwen/qwen3.8-omni-flash
+  reasoning_type: binary
+  thinking_levels:
+  - thinking
+  - non-thinking
+  # Probed 2026-09-25: thinking 1,879 reasoning tokens in 44.6s, non-thinking 0
+  # in 11.9s, both coherent on a real screenshot. PROMPTED JSON is mandatory on
+  # the thinking rung, measured here rather than inherited from qwen3.8-flash:
+  # `tool_choice: required` WITH thinking returns HTTP 400 "The tool_choice
+  # parameter does not support being set to required or object in thinking mode"
+  # 2 of 2, while tools at choice auto, required WITHOUT thinking, and thinking
+  # without tools all answer 200 — the qwen3.7-plus signature. The wire contract
+  # lives in the provider profile; its replies came back as bare JSON objects
+  # (3 of 3, no markdown fence), so none of the flash entry's JSON leniencies
+  # are carried over.
+  slow:
+    thinking: true
+  observed:
+    thinking:
+      sample_turns: 0
+    non-thinking:
+      sample_turns: 0
+
 # ============================================================================
 # RETIRED ENTRIES — resolvable, not runnable, and not for the picker
 # ============================================================================

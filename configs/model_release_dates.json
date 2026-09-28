@@ -7,8 +7,10 @@
     "claude-opus-5": "2026-07-24",
     "claude-opus-5.5": "2026-09-22",
     "claude-sonnet-5": "2026-06-30",
+    "command-a-plus": "2026-09-22",
     "deepseek-v4-flash-vision-exp": "2026-08-21",
     "deepseek-v4.1-flash": "2026-09-10",
+    "ember-1": "2026-09-24",
     "fugu-ultra": "2026-06-24",
     "gemini-3.5-flash": "2026-05-19",
     "gemini-3.5-flash-lite": "2026-07-21",
@@ -33,6 +35,8 @@
     "pareto": "2026-09-18",
     "qwen3.7-plus": "2026-06-03",
     "qwen3.8-flash": "2026-08-26",
+    "qwen3.8-omni-flash": "2026-09-21",
+    "space-bunny-alpha": "2026-09-23",
     "ternary-bonsai-2-27b": "2026-09-18"
   }
 }
