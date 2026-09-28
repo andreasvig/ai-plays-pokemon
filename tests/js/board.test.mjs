@@ -13,6 +13,7 @@ import {
   baseModel, collapseBest, vendorOf, headlineSeries, secondarySeries, battleSeries, trainerTypicals, trainerMatrix, MIN_BATTLE_OBSERVATIONS, turnsPerMinute, costPer10, fmtTokens, PERF_LINE,
   legTurns, typicalTurnsPerLeg, projectRun, perTaskSeries, estimationMatrix, PROJECT_FROM_GATE, projectionCutoff, fmtMinutes,
   ofModel, levelOf, modelField, levelRows, runGateRows, isFree, costOf, costCell, LIST_NOTE, NO_PRICE,
+  classOf, classKey, currentGeneration, dropSuperseded, CLASS_OVERRIDES,
 } from '../../src/dashboard/web/src/lib/board.js'
 
 const GATES = ['left_bedroom', 'left_house', 'oaks_lab_entered', 'starter_chosen', 'rival1_done', 'route1_reached',
@@ -57,6 +58,71 @@ test('collapseBest keeps the first (best-ranked) row per model, in rank order', 
     'gpt-6-astra(medium)', 'gemini-3.8-flash(medium)', 'claude-opus-5(high)', 'glm-5.3-flash(high)', 'qwen3.8-flash(thinking)', 'gpt-5.6-luna(max)',
   ])
   assert.equal(out.length, RANKED.length - 1)   // mutation control: the low gemini is the one dropped
+})
+
+test('classOf drops the version and keeps everything that is not one', () => {
+  // The pairs the rule exists for: one line, two generations.
+  assert.equal(classOf('claude-opus-5.5(high)'), classOf('claude-opus-5(high)'))
+  assert.equal(classOf('gpt-6-sol(medium)'), classOf('gpt-5.6-sol(high)'))
+  assert.equal(classOf('claude-opus-5.5(high)'), 'claude-opus')
+  // A version glued to a word, and a "v" prefix.
+  assert.equal(classOf('qwen3.8-flash(thinking)'), 'qwen-flash')
+  assert.equal(classOf('mimo-v2.6-flash'), 'mimo-flash')
+  assert.equal(classOf('kimi-k3(high)'), 'kimi-k')
+  // And the other direction — things that must NOT collapse:
+  assert.notEqual(classOf('gemini-3.8-flash'), classOf('gemini-3.5-flash-lite'))
+  assert.notEqual(classOf('mimo-v2.6-flash'), classOf('mimo-v2.6-pro'))
+  assert.notEqual(classOf('gpt-6-sol'), classOf('gpt-6-luna'))
+  assert.equal(classOf('gemma-4-26b-a4b'), 'gemma-26b-a4b')   // a size is not a version
+  assert.equal(classOf('pareto'), 'pareto')                   // nothing to strip
+  assert.equal(classOf(null), '')
+  // Two labs both ship a "flash", so the class alone cannot be the key.
+  assert.notEqual(classKey({ model: 'gemini-3.8-flash(low)', modelResolved: 'google/gemini-3.8-flash' }),
+                  classKey({ model: 'glm-5.3-flash(low)', modelResolved: 'z-ai/glm-5.3-flash' }))
+})
+
+test('CLASS_OVERRIDES wins over the derivation', () => {
+  try {
+    CLASS_OVERRIDES['kimi-k3'] = 'kimi'
+    assert.equal(classOf('kimi-k3(high)'), 'kimi')
+  } finally {
+    delete CLASS_OVERRIDES['kimi-k3']
+  }
+  assert.equal(classOf('kimi-k3(high)'), 'kimi-k')
+})
+
+test('a class is represented by its best-ranked generation, and the other rows survive the board', () => {
+  const OLD = row('claude-opus-5(high)', 'anthropic/claude-opus-5', 100, 100, 369, 31.3, 0.06, FULL_A)
+  const NEW = row('claude-opus-5.5(high)', 'anthropic/claude-opus-5.5', 100, 140, 237, 20.0, 0.03, FULL_D)
+  const board = [RANKED[0], NEW, RANKED[1], OLD, RANKED[4]]
+  assert.deepEqual([...currentGeneration(board)].sort(),
+    ['claude-opus-5.5', 'gemini-3.8-flash', 'glm-5.3-flash', 'gpt-6-astra'])
+  assert.deepEqual(dropSuperseded(board).map((r) => r.model),
+    ['gpt-6-astra(medium)', 'claude-opus-5.5(high)', 'gemini-3.8-flash(medium)', 'glm-5.3-flash(high)'])
+
+  // RANK decides, not the name or the release: put the OLD generation ahead and
+  // it is the one that represents the class. (Mutation control — a rule keyed on
+  // the version number would keep 5.5 either way.)
+  const flipped = [RANKED[0], OLD, RANKED[1], NEW, RANKED[4]]
+  assert.ok(dropSuperseded(flipped).some((r) => r.model === 'claude-opus-5(high)'))
+  assert.ok(!dropSuperseded(flipped).some((r) => r.model === 'claude-opus-5.5(high)'))
+
+  // Nothing collapses when every model is the only one of its line — the filter
+  // is inert on a board without a superseded generation.
+  assert.deepEqual(dropSuperseded(RANKED), RANKED)
+})
+
+test("modelField drops superseded models from the field but never from their own page", () => {
+  const OLD = row('claude-opus-5(high)', 'anthropic/claude-opus-5', 100, 100, 369, 31.3, 0.06, FULL_A)
+  const OLD_LOW = row('claude-opus-5(low)', 'anthropic/claude-opus-5', 80, 80, 300, 30.0, 0.05, TEN)
+  const NEW = row('claude-opus-5.5(high)', 'anthropic/claude-opus-5.5', 100, 140, 237, 20.0, 0.03, FULL_D)
+  const board = [RANKED[0], NEW, OLD, OLD_LOW, RANKED[4]]
+  // Someone else's page: the superseded opus is out of the faded field.
+  assert.deepEqual(modelField(board, 'glm-5.3-flash').map((r) => r.model),
+    ['gpt-6-astra(medium)', 'claude-opus-5.5(high)', 'glm-5.3-flash(high)'])
+  // Its OWN page still draws every level it ran — the page stays reachable and complete.
+  assert.deepEqual(modelField(board, 'claude-opus-5').map((r) => r.model),
+    ['gpt-6-astra(medium)', 'claude-opus-5.5(high)', 'claude-opus-5(high)', 'claude-opus-5(low)', 'glm-5.3-flash(high)'])
 })
 
 test('vendorOf reads the OpenRouter prefix first and falls back to the alias', () => {

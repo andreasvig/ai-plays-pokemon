@@ -3,7 +3,7 @@
 // Run directly (`node tests/js/selection.test.mjs`) or via tests/test_live_feed_js.py.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { defaultPicked, applySelection, parsePicked, serializePicked, presets, paretoFront, bestPerLab } from '../../src/dashboard/web/src/lib/selection.js'
+import { defaultPicked, applySelection, parsePicked, serializePicked, presets, paretoFront, bestInClass } from '../../src/dashboard/web/src/lib/selection.js'
 import { GATES } from '../../src/dashboard/web/src/lib/gates.js'
 
 const GATE_IDS = GATES.slice(0, 12).map((g) => g.id)
@@ -49,16 +49,22 @@ test('paretoFront keeps the upper-left envelope and always keeps the cheapest po
   assert.deepEqual(paretoFront([]), [])
 })
 
-test('bestPerLab takes one row per lab, not per model family', () => {
-  const got = bestPerLab(ROWS).map((r) => r.model)
+test('bestInClass takes one row per lab per class — a line, not a lab and not an alias', () => {
+  const got = bestInClass(ROWS).map((r) => r.model)
   assert.deepEqual(got, ['gpt-6-astra(low)', 'gemini-3.8-flash(medium)', 'claude-fable-5.1(medium)'])
-  // Two rows of the same lab from DIFFERENT families still collapse to one.
-  const twoFamilies = [row('gpt-6-astra(low)', 'openai/gpt-6-astra', 150, 1, 10),
-                       row('gpt-5.6-sol(high)', 'openai/gpt-5.6-sol', 140, 1, 10)]
-  assert.deepEqual(bestPerLab(twoFamilies).map((r) => r.model), ['gpt-6-astra(low)'])
+  // Two LINES of one lab both stand. (Until 2026-09-25 this kept astra only —
+  // one row per lab — which is what hid claude-fable behind claude-opus.)
+  const twoLines = [row('gpt-6-astra(low)', 'openai/gpt-6-astra', 150, 1, 10),
+                    row('gpt-5.6-sol(high)', 'openai/gpt-5.6-sol', 140, 1, 10)]
+  assert.deepEqual(bestInClass(twoLines).map((r) => r.model), ['gpt-6-astra(low)', 'gpt-5.6-sol(high)'])
+  // Two GENERATIONS of one line collapse to the better-ranked, whichever it is.
+  const twoGens = [row('claude-opus-5.5(high)', 'anthropic/claude-opus-5.5', 150, 1, 10),
+                   row('claude-opus-5(high)', 'anthropic/claude-opus-5', 140, 1, 10)]
+  assert.deepEqual(bestInClass(twoGens).map((r) => r.model), ['claude-opus-5.5(high)'])
+  assert.deepEqual(bestInClass([twoGens[1], twoGens[0]]).map((r) => r.model), ['claude-opus-5(high)'])
 })
 
-test('the default is the best row per lab PLUS every row on either frontier', () => {
+test('the default is the best row per lab per class PLUS every row on either frontier', () => {
   const picked = defaultPicked(ROWS)
   // Board rank order is preserved.
   assert.deepEqual(picked, ['gpt-6-astra(low)', 'gemini-3.8-flash(medium)', 'gemini-3.8-flash(low)',
@@ -68,7 +74,7 @@ test('the default is the best row per lab PLUS every row on either frontier', ()
   assert.ok(picked.includes('gpt-6-astra(minimal)'), 'the cheapest row is in, though astra(low) outranks it')
   assert.ok(picked.includes('gemini-3.8-flash(low)'), 'the fastest row is in, though flash(medium) outranks it')
   // And the control: dominated on price, dominated on speed, not its lab's best.
-  assert.ok(!picked.includes('claude-fable-5.1(low)'), 'a row on neither frontier and not a lab best is left out')
+  assert.ok(!picked.includes('claude-fable-5.1(low)'), 'a row on neither frontier and not a class best is left out')
   assert.deepEqual(applySelection(ROWS, null).map((r) => r.model), picked)
 })
 
@@ -84,13 +90,13 @@ test('the price frontier is load-bearing on its own', () => {
   assert.ok(!defaultPicked(dear).includes('gpt-6-astra(minimal)'))
 })
 
-test('a row the board cannot project cannot reach a frontier, but its lab still stands', () => {
+test('a row the board cannot project cannot reach a frontier, but its class still stands', () => {
   // Stopped at task 3: no pace, no per-task figure. It is the only row of its
-  // lab, so it is in — on the lab rule alone, never on a frontier.
+  // class, so it is in — on the class rule alone, never on a frontier.
   const early = { ...row('grok-4.6(high)', 'x-ai/grok-4.6', 5, 0.01, 1), completion: 25, perfScore: 25,
     gateTurns: Object.fromEntries(GATE_IDS.slice(0, 3).map((g, i) => [g, (i + 1) * 2])) }
   const picked = defaultPicked([...ROWS, early])
-  assert.ok(picked.includes('grok-4.6(high)'), 'the lab is represented')
+  assert.ok(picked.includes('grok-4.6(high)'), 'the class is represented')
   assert.ok(!picked.includes('claude-fable-5.1(low)'), 'and nothing else sneaks in with it')
 })
 
@@ -126,8 +132,8 @@ test('presets: the default, best per model, all levels, completed only, open-wei
 })
 
 test('a free model cannot buy its way onto the default via the price frontier', () => {
-  // Same lab as B (so bestPerLab cannot be what keeps it) and strictly worse than
-  // B on speed (so the time frontier cannot either). Its ONLY claim is price, and
+  // Same class as B (so bestInClass cannot be what keeps it) and strictly worse
+  // than B on speed (so the time frontier cannot either). Its ONLY claim is price, and
   // at $0 that claim would be unbeatable — which is exactly what must not count.
   const FREE = { ...row('gpt-6-astra(free)', 'openai/gpt-6-astra', 130, 0, 90),
                  pricePerM: { prompt: 0, completion: 0 } }
@@ -139,4 +145,36 @@ test('a free model cannot buy its way onto the default via the price frontier', 
   const CHEAP = { ...FREE, model: 'gpt-6-astra(cheap)', pricePerM: { prompt: 0.01, completion: 0.01 },
                   totalCostUsd: 0.01, avgCostPerTurn: 0.01 / 24 }
   assert.ok(defaultPicked([...ROWS, CHEAP]).includes('gpt-6-astra(cheap)'))
+})
+
+test('a superseded generation is out of the default, and every way to find it still works', () => {
+  // claude-opus-5.5 outplays claude-opus-5, so the line is represented by 5.5.
+  // The old row is dominated on both axes here, so nothing but the class rule
+  // could have kept it — and the class rule is what drops it.
+  const NEW = row('claude-opus-5.5(high)', 'anthropic/claude-opus-5.5', 145, 3.0, 45)
+  const OLD = row('claude-opus-5(high)', 'anthropic/claude-opus-5', 115, 18.0, 120)
+  const board = [B, NEW, C, D, A, OLD, E, F]
+  const picked = defaultPicked(board)
+  assert.ok(picked.includes('claude-opus-5.5(high)'), 'the line is on the board')
+  assert.ok(!picked.includes('claude-opus-5(high)'), 'its predecessor is not beside it')
+  // Andreas 2026-09-25: "they should of course still be able to be activated and
+  // found" — the row is in the pool, tickable, and in the all-levels preset.
+  const by = Object.fromEntries(presets(board).map((p) => [p.key, p.picked]))
+  assert.ok(by.all.includes('claude-opus-5(high)'))
+  assert.ok(by.best.includes('claude-opus-5(high)'), 'and "best per model" still lists it')
+  assert.deepEqual(applySelection(board, ['claude-opus-5(high)']).map((r) => r.model), ['claude-opus-5(high)'])
+})
+
+test('a frontier overrides supersession: an old generation nothing dominates is shown', () => {
+  // Same pair, except the old row is now the cheapest per task on the board.
+  // Andreas 2026-09-25 chose NOT to filter the frontier by class: a row nothing
+  // dominates is worth seeing whatever its generation.
+  const NEW = row('claude-opus-5.5(high)', 'anthropic/claude-opus-5.5', 145, 3.0, 45)
+  const OLD_CHEAP = row('claude-opus-5(high)', 'anthropic/claude-opus-5', 115, 0.12, 120)
+  const picked = defaultPicked([B, NEW, C, D, A, OLD_CHEAP, E, F])
+  assert.ok(picked.includes('claude-opus-5(high)'), 'the cheapest row is in, superseded or not')
+  // Mutation control: the SAME row at an ordinary price is out again, so it is
+  // the frontier that readmits it and not its lab, its class or its rank.
+  const OLD_DEAR = { ...OLD_CHEAP, totalCostUsd: 18.0, avgCostPerTurn: 18.0 / 24 }
+  assert.ok(!defaultPicked([B, NEW, C, D, A, OLD_DEAR, E, F]).includes('claude-opus-5(high)'))
 })

@@ -70,6 +70,71 @@ export function vendorOf(row) {
   return UNKNOWN
 }
 
+// ───────────── model class + generation (Andreas 2026-09-25) ─────────────
+//
+// The board carried claude-opus-5 AND claude-opus-5.5, and both generations of
+// gpt-sol, because a model's identity here is its alias and those are two
+// aliases. Andreas: "best model per lab per class — eg if opus 5 is there then
+// no need for opus 4.8". So a default view collapses a LINE (one opus, one sol,
+// one flash-lite) to the row that got farthest, and the superseded generations
+// "should of course still be able to be activated and found": they stay in the
+// picker, in History and on their own model page, they just do not come up
+// unasked.
+
+/** Class overrides, base model → class, for any the derivation groups wrongly. */
+export const CLASS_OVERRIDES = {}
+
+/**
+ * The model LINE behind an alias: the base model with its version dropped.
+ * "claude-opus-5.5(high)" → "claude-opus", "gpt-6-sol" → "gpt-sol",
+ * "mimo-v2.6-flash" → "mimo-flash", "kimi-k3" → "kimi-k".
+ *
+ * A hyphen token is a version when it is only a number ("5.6", "v2.6"), and a
+ * version glued to the end of a word comes off it ("qwen3.8" → "qwen"). A SIZE
+ * is not a version and survives ("gemma-4-26b" → "gemma-26b"), which is what
+ * keeps two sizes of one family in different classes. Derived rather than
+ * declared so a model dropped from configs/models.yaml — several on the board
+ * already are — still classifies; `CLASS_OVERRIDES` is the escape hatch when a
+ * rename breaks the grouping.
+ */
+export function classOf(alias) {
+  const base = baseModel(alias)
+  if (CLASS_OVERRIDES[base]) return CLASS_OVERRIDES[base]
+  const parts = base
+    .split('-')
+    .filter((t) => !/^v?\d+(\.\d+)*$/.test(t))
+    .map((t) => t.replace(/v?\d+(\.\d+)*$/, ''))
+    .filter(Boolean)
+  return parts.length ? parts.join('-') : base
+}
+
+/** A row's class, lab included — two labs both ship a "flash". */
+export function classKey(row) {
+  return `${vendorOf(row).key}/${classOf(row?.model)}`
+}
+
+/**
+ * The base models that REPRESENT their class: the best-ranked one of each
+ * (lab, class). Rows arrive in board rank order, so a class's first row names
+ * it. Rank, not release date (Andreas 2026-09-25): a newer model that has not
+ * yet beaten its predecessor does not take the slot on the strength of its
+ * name — gpt-6-luna sits behind gpt-5.6-luna until it outplays it.
+ */
+export function currentGeneration(rows) {
+  const champion = new Map()
+  for (const r of rows) {
+    const k = classKey(r)
+    if (!champion.has(k)) champion.set(k, baseModel(r.model))
+  }
+  return new Set(champion.values())
+}
+
+/** `rows` minus every model a class-mate outranks, rank order preserved. */
+export function dropSuperseded(rows) {
+  const current = currentGeneration(rows)
+  return rows.filter((r) => current.has(baseModel(r.model)))
+}
+
 /**
  * A run served by an endpoint that lists $0 for both prompt and completion —
  * a free model (today: the stealth listings, free while under evaluation).
@@ -590,12 +655,16 @@ export function levelLabel(level) {
 
 /**
  * The field behind a model page's bars (decision 2A): every OTHER model at its
- * best-ranked level — the collapsed home board — plus every level of `base`,
- * in rank order.
+ * best-ranked level — the collapsed home board, superseded generations dropped
+ * with it (2026-09-25) — plus every level of `base`, in rank order.
+ *
+ * `base`'s own rows are kept whatever its standing, so the page of a superseded
+ * model still draws all of its levels; it is only the FIELD behind them that is
+ * one row per line.
  */
 export function modelField(rows, base) {
   const mine = ofModel(base)
-  const keep = new Set(collapseBest(rows.filter((r) => !mine(r))).map((r) => r.runId))
+  const keep = new Set(collapseBest(dropSuperseded(rows.filter((r) => !mine(r)))).map((r) => r.runId))
   return rows.filter((r) => mine(r) || keep.has(r.runId))
 }
 

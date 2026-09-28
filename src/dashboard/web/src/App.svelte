@@ -2,7 +2,7 @@
   import TopBar from './components/TopBar.svelte'
   import Leaderboard from './components/Leaderboard.svelte'
   import Sections from './components/Sections.svelte'
-  import { collapseBest, baseModel } from './lib/board.js'
+  import { collapseBest, dropSuperseded, baseModel } from './lib/board.js'
   import ModelPage from './components/ModelPage.svelte'
   import History from './components/History.svelte'
   import QueueBar from './components/QueueBar.svelte'
@@ -80,7 +80,13 @@
   // The board is the card strip (Andreas 2026-09-14, "1a": no ranked table).
   // Every card gets the full `leaderboard`; the picker-bearing ones narrow it
   // through the shared selection store, the headline three always show all.
-  const cardRows = $derived(collapseBest(leaderboard))
+  //
+  // "All" is one bar per model, and since 2026-09-25 one bar per model LINE:
+  // `collapseBest` keys on the alias, so claude-opus-5 and claude-opus-5.5 were
+  // two models to it and both got a bar. `dropSuperseded` resolves the line to
+  // the generation that got farthest first. The rows themselves are untouched —
+  // the picker below still offers every one of them.
+  const cardRows = $derived(collapseBest(dropSuperseded(leaderboard)))
 
 
 
